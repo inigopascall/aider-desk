@@ -83,6 +83,8 @@
     "@huggingface/transformers": "^3.8.1",
     "@lancedb/lancedb": "^0.22.3",
     "@legendapp/list": "^3.3.3",
+    "@milkdown/kit": "^7.22.0",
+    "@milkdown/react": "^7.22.0",
     "@openrouter/ai-sdk-provider": "3.0.0",
     "@opentelemetry/auto-instrumentations-node": "^0.77.0",
     "@opentelemetry/sdk-node": "^0.219.0",
