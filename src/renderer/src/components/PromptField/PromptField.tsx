@@ -17,7 +17,7 @@ import { useDebounce } from '@reactuses/core';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useTranslation } from 'react-i18next';
 import { BiSend } from 'react-icons/bi';
-import { MdSave, MdStop, MdMic, MdMicOff, MdOutlineScheduleSend } from 'react-icons/md';
+import { MdSave, MdStop, MdMic, MdMicOff, MdOutlineScheduleSend, MdOutlineFullscreen, MdOutlineFullscreenExit } from 'react-icons/md';
 import { AiOutlineClose } from 'react-icons/ai';
 import { clsx } from 'clsx';
 import { parseCommandArgs } from '@common/utils';
@@ -25,6 +25,7 @@ import { getSubagentId } from '@common/agent';
 
 import { QueuedPromptsList } from './QueuedPromptsList';
 import { usePromptFieldText } from './usePromptFieldText';
+import { MilkdownEditor, type MilkdownEditorRef } from './MilkdownEditor';
 
 import { useTaskQueuedPrompts } from '@/stores/taskStore';
 import { InputHistoryMenu } from '@/components/PromptField/InputHistoryMenu';
@@ -215,6 +216,8 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
     const [text, setText] = useState('');
     const [pastedImages, setPastedImages] = useState<string[]>([]);
     const debouncedText = useDebounce(text, 100);
+    const [isExpanded, setIsExpanded] = useState(false);
+    const milkdownRef = useRef<MilkdownEditorRef>(null);
     const { setText: setSavedText } = usePromptFieldText(baseDir, taskId, (text) => {
       const view = editorRef.current?.view;
       view?.dispatch({
@@ -268,6 +271,28 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       },
       [setText, setSavedText],
     );
+
+    // Called by Milkdown on every debounced markdown update.
+    // Updates React state and IndexedDB only — does NOT touch CodeMirror
+    // on every keystroke to avoid feedback loops. CodeMirror is synced once
+    // when the overlay closes via closeExpanded.
+    const handleMilkdownChange = useCallback(
+      (markdown: string) => {
+        setText(markdown);
+        setSavedText(markdown);
+      },
+      [setSavedText],
+    );
+
+    const openExpanded = useCallback(() => setIsExpanded(true), []);
+
+    // Read the authoritative markdown from Milkdown (covers the sub-200 ms
+    // debounce window), push it into CodeMirror, then close the overlay.
+    const closeExpanded = useCallback(() => {
+      const md = milkdownRef.current?.getMarkdown();
+      setTextWithDispatch(md ?? text);
+      setIsExpanded(false);
+    }, [setTextWithDispatch, text]);
 
     useEffect(() => {
       if (text) {
@@ -674,6 +699,9 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
     }, [isActive, disabled]);
 
     useEffect(() => {
+      if (isExpanded) {
+        return;
+      }
       const commandMatch = COMMANDS.find((cmd) => {
         // Skip auto-invoke for commands that need additional arguments
         if (cmd === '/subagent') {
@@ -689,7 +717,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       if (commandMatch) {
         invokeCommand(commandMatch, text.split(' ').slice(1).join(' '));
       }
-    }, [text, invokeCommand]);
+    }, [text, invokeCommand, isExpanded]);
 
     useEffect(() => {
       setHistoryLimit(Math.min(HISTORY_MENU_CHUNK_SIZE, allHistoryItems.length));
@@ -1268,6 +1296,15 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
             extensions={extensions}
           />
           <div className="absolute right-3 top-1/2 -translate-y-[12px] flex items-center space-x-1 text-text-muted-light">
+            <Tooltip content="Expand editor">
+              <button
+                onClick={openExpanded}
+                disabled={disabled}
+                className="text-text-muted-light hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200"
+              >
+                <MdOutlineFullscreen className="w-4 h-4" />
+              </button>
+            </Tooltip>
             {processing && (
               <Tooltip content={`${t('promptField.stopResponse')} (Ctrl+C)`}>
                 <button
@@ -1347,6 +1384,24 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
             }}
             onClose={() => setHistoryMenuVisible(false)}
           />
+        )}
+        {isExpanded && (
+          <div className="fixed inset-0 z-50 flex flex-col bg-bg-primary">
+            <div className="flex items-center justify-between px-4 py-2 border-b border-border-dark-light flex-shrink-0">
+              <span className="text-sm text-text-primary">Markdown editor</span>
+              <Tooltip content="Close editor">
+                <button
+                  onClick={closeExpanded}
+                  className="text-text-muted-light hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200"
+                >
+                  <MdOutlineFullscreenExit className="w-5 h-5" />
+                </button>
+              </Tooltip>
+            </div>
+            <div className="flex-grow overflow-y-auto p-6 milkdown-prompt-editor scrollbar-thin scrollbar-track-bg-secondary scrollbar-thumb-bg-fourth">
+              <MilkdownEditor ref={milkdownRef} initialValue={text} onChange={handleMilkdownChange} />
+            </div>
+          </div>
         )}
       </div>
     );
