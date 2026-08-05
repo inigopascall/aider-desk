@@ -87,7 +87,7 @@ const MilkdownInner = forwardRef<MilkdownEditorRef, Props>(({ initialValue, onCh
   // Invoke onReady exactly once when the editor instance and view are available.
   useEffect(() => {
     if (!editor || onReadyCalledRef.current) return;
-    const view = editor.get(editorViewCtx);
+    const view = editor.action((ctx) => ctx.get(editorViewCtx));
     if (!view || view.isDestroyed) return;
     onReadyCalledRef.current = true;
     onReadyRef.current?.();
@@ -104,7 +104,7 @@ const MilkdownInner = forwardRef<MilkdownEditorRef, Props>(({ initialValue, onCh
     focus: () => {
       const editor = getInstance();
       if (!editor) return;
-      const view = editor.get(editorViewCtx);
+      const view = editor.action((ctx) => ctx.get(editorViewCtx));
       if (!view || view.isDestroyed) return;
       // Calculate the final position in the document.
       const endPosition = view.state.doc.content.size;
