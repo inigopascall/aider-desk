@@ -224,7 +224,7 @@ export const touchTaskActivity = (taskId: string) => {
 export const useOptimizedTaskState = (taskId: string) =>
   useTaskStore(
     useShallow((state) => {
-      const { tokensInfo: _, todoItems: _ti, queuedPrompts: _qp, ...optimizedTaskState } = state.taskStateMap.get(taskId) || EMPTY_TASK_STATE;
+      const { tokensInfo: _, todoItems: _ti, queuedPrompts: _qp, lastActiveAt: _la, ...optimizedTaskState } = state.taskStateMap.get(taskId) || EMPTY_TASK_STATE;
       return optimizedTaskState;
     }),
   );

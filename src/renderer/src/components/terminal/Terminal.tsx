@@ -25,6 +25,7 @@ export const Terminal = forwardRef<TerminalRef, Props>(({ baseDir, taskId, visib
   const terminalContainerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<GhosttyTerminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const bufferRef = useRef<string>('');
   const [terminalId, setTerminalId] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -94,7 +95,7 @@ export const Terminal = forwardRef<TerminalRef, Props>(({ baseDir, taskId, visib
 
   // Initialize terminal
   useEffect(() => {
-    if (!isInitialized || !terminalContainerRef.current) {
+    if (!isInitialized || !terminalContainerRef.current || !visible) {
       return;
     }
 
@@ -137,6 +138,12 @@ export const Terminal = forwardRef<TerminalRef, Props>(({ baseDir, taskId, visib
     terminal.open(terminalContainerRef.current);
     fitAddon.fit();
 
+    // Replay any output that arrived while the renderer was hidden
+    if (bufferRef.current) {
+      terminal.write(bufferRef.current);
+      bufferRef.current = '';
+    }
+
     // Handle terminal input
     terminal.onData((data) => {
       if (terminalId) {
@@ -159,7 +166,7 @@ export const Terminal = forwardRef<TerminalRef, Props>(({ baseDir, taskId, visib
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [terminalId, api, isInitialized]);
+  }, [terminalId, api, isInitialized, visible]);
 
   // Create terminal process
   useEffect(() => {
@@ -208,8 +215,15 @@ export const Terminal = forwardRef<TerminalRef, Props>(({ baseDir, taskId, visib
     }
 
     const handleTerminalData = (data: TerminalData) => {
-      if (data.terminalId === terminalId && terminalRef.current) {
-        terminalRef.current.write(data.data);
+      if (data.terminalId === terminalId) {
+        if (terminalRef.current) {
+          terminalRef.current.write(data.data);
+        } else {
+          bufferRef.current += data.data;
+          if (bufferRef.current.length > 50000) {
+            bufferRef.current = bufferRef.current.slice(-50000);
+          }
+        }
       }
     };
 

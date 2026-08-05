@@ -292,16 +292,16 @@ export const GeneralSettings = ({ settings, setSettings, onLanguageChange, onZoo
               </div>
               <div className="flex items-center space-x-2">
                 <Checkbox
-                  label={t('settings.messages.throttleStreamingUpdates')}
-                  checked={settings.throttleStreamingUpdates ?? true}
+                  label={t('settings.messages.performanceMode')}
+                  checked={settings.performanceMode ?? true}
                   onChange={(checked) =>
                     setSettings({
                       ...settings,
-                      throttleStreamingUpdates: checked,
+                      performanceMode: checked,
                     })
                   }
                 />
-                <InfoIcon tooltip={t('settings.messages.throttleStreamingUpdatesTooltip')} />
+                <InfoIcon tooltip={t('settings.messages.performanceModeTooltip')} />
               </div>
             </div>
           </div>

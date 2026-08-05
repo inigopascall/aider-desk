@@ -6,6 +6,7 @@ import type { LogData, LogMessage, LoadingMessage, Message } from '@common/types
 
 import { useApi } from '@/contexts/ApiContext';
 import { setMessages, touchTaskActivity } from '@/stores/taskStore';
+import { flushCommandOutput } from './useTaskCommandHandlers';
 
 const isLoadingMessage = (message: Message): message is LoadingMessage => {
   return message.type === 'loading';
@@ -17,6 +18,8 @@ export const useTaskLogHandlers = (baseDir: string, taskId: string) => {
 
   const handleLog = useCallback(
     ({ level, message, finished, promptContext, actionIds, timestamp }: LogData) => {
+      // Flush any buffered command-output before handling other message types
+      flushCommandOutput(taskId);
       touchTaskActivity(taskId);
       if (level === 'loading') {
         if (finished) {
@@ -55,13 +58,17 @@ export const useTaskLogHandlers = (baseDir: string, taskId: string) => {
           setMessages(taskId, (prevMessages) => {
             const existingLoadingIndex = prevMessages.findIndex(isLoadingMessage);
             if (existingLoadingIndex !== -1) {
+              const existing = prevMessages[existingLoadingIndex];
+              // OPTIMIZATION: Skip update if content and promptContext are unchanged
+              if (existing.content === loadingMessage.content && existing.promptContext === loadingMessage.promptContext) {
+                return prevMessages;
+              }
               const updatedMessages = [...prevMessages];
               updatedMessages[existingLoadingIndex] = {
-                ...updatedMessages[existingLoadingIndex],
+                ...existing,
                 content: loadingMessage.content,
                 promptContext,
               };
-
               return updatedMessages;
             } else {
               return [...prevMessages, loadingMessage];

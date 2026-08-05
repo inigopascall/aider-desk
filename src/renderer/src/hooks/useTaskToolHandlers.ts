@@ -7,7 +7,9 @@ import { useApi } from '@/contexts/ApiContext';
 import { setMessages, setTodoItems, touchTaskActivity } from '@/stores/taskStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 
-const STREAM_FLUSH_INTERVAL_MS = 100;
+import { flushCommandOutput } from './useTaskCommandHandlers';
+
+const STREAM_FLUSH_INTERVAL_MS = 150;
 
 const activeToolInputIds = new Map<string, Set<string>>();
 const toolInputChunkBuffers = new Map<string, ToolInputChunkData[]>();
@@ -90,7 +92,7 @@ export function flushToolInputChunks(taskId: string): void {
 
 export const useTaskToolHandlers = (baseDir: string, taskId: string) => {
   const api = useApi();
-  const throttleStreamingUpdates = useSettingsStore((s) => s.settings?.throttleStreamingUpdates ?? true);
+  const performanceMode = useSettingsStore((s) => s.settings?.performanceMode ?? true);
 
   const handleTodoTool = useCallback(
     (toolName: string, args: Record<string, unknown> | undefined, response: string | undefined) => {
@@ -142,12 +144,13 @@ export const useTaskToolHandlers = (baseDir: string, taskId: string) => {
         return;
       }
 
+      flushCommandOutput(taskId);
       touchTaskActivity(taskId);
       const ids = activeToolInputIds.get(taskId) ?? new Set<string>();
       if (!activeToolInputIds.has(taskId)) activeToolInputIds.set(taskId, ids);
 
       // Buffer only if: throttling is enabled AND this is an update (tool already created)
-      const isUpdate = throttleStreamingUpdates && ids.has(toolCallId);
+      const isUpdate = performanceMode && ids.has(toolCallId);
 
       if (isUpdate) {
         bufferToolInputChunk(taskId, { toolCallId, serverName, toolName, partialArgs, isComplete, promptContext });
@@ -158,12 +161,13 @@ export const useTaskToolHandlers = (baseDir: string, taskId: string) => {
         applyToolInputChunk(taskId, { toolCallId, serverName, toolName, partialArgs, isComplete, promptContext });
       }
     },
-    [taskId, throttleStreamingUpdates],
+    [taskId, performanceMode],
   );
 
   const handleTool = useCallback(
     ({ id, serverName, toolName, args, response, usageReport, promptContext, finished, timestamp }: ToolData) => {
       // Flush any buffered arg updates before finalizing
+      flushCommandOutput(taskId);
       flushToolInputChunks(taskId);
 
       touchTaskActivity(taskId);

@@ -7,8 +7,9 @@ import type { ResponseChunkData, ResponseCompletedData, Message, ReflectedMessag
 import { useApi } from '@/contexts/ApiContext';
 import { setMessages, touchTaskActivity } from '@/stores/taskStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { flushCommandOutput } from './useTaskCommandHandlers';
 
-const STREAM_FLUSH_INTERVAL_MS = 100;
+const STREAM_FLUSH_INTERVAL_MS = 150;
 
 const processingResponseMessageMap = new Map<string, ResponseMessage>();
 const responseChunkBuffers = new Map<string, ResponseChunkData[]>();
@@ -144,13 +145,14 @@ export function flushResponseChunks(taskId: string): void {
 
 export const useTaskResponseHandlers = (baseDir: string, taskId: string) => {
   const api = useApi();
-  const throttleStreamingUpdates = useSettingsStore((s) => s.settings?.throttleStreamingUpdates ?? true);
+  const performanceMode = useSettingsStore((s) => s.settings?.performanceMode ?? true);
 
   const handleResponseChunk = useCallback(
     ({ messageId, chunk, reasoning, reflectedMessage, promptContext }: ResponseChunkData) => {
+      flushCommandOutput(taskId);
       const processing = processingResponseMessageMap.get(taskId);
       // Buffer only if: throttling is enabled AND this is an append (not a new message or reflected message)
-      const isAppend = throttleStreamingUpdates && !reflectedMessage && processing?.id === messageId;
+      const isAppend = performanceMode && !reflectedMessage && processing?.id === messageId;
 
       if (isAppend) {
         bufferResponseChunk(taskId, { messageId, chunk, reasoning, reflectedMessage, promptContext });
@@ -160,12 +162,13 @@ export const useTaskResponseHandlers = (baseDir: string, taskId: string) => {
         applyResponseChunk(taskId, { messageId, chunk, reasoning, reflectedMessage, promptContext });
       }
     },
-    [taskId, throttleStreamingUpdates],
+    [taskId, performanceMode],
   );
 
   const handleResponseCompleted = useCallback(
     ({ messageId, usageReport, content, reasoning, reflectedMessage, promptContext, timestamp }: ResponseCompletedData) => {
       // Flush any buffered chunks before finalizing
+      flushCommandOutput(taskId);
       flushResponseChunks(taskId);
 
       touchTaskActivity(taskId);
