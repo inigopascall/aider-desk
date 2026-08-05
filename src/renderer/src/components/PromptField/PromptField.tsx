@@ -12,14 +12,15 @@ import { EditorView, keymap } from '@codemirror/view';
 import { AIDER_MODES, Mode, PromptBehavior, QueuedPromptData, QuestionData, SuggestionMode } from '@common/types';
 import { githubDarkInit } from '@uiw/codemirror-theme-github';
 import CodeMirror, { Annotation, Prec, type Extension, type ReactCodeMirrorRef } from '@uiw/react-codemirror';
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type RefObject } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, useLayoutEffect, type RefObject, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { useDebounce } from '@reactuses/core';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useTranslation } from 'react-i18next';
 import { BiSend } from 'react-icons/bi';
-import { MdSave, MdStop, MdMic, MdMicOff, MdOutlineScheduleSend, MdOutlineFullscreen, MdOutlineFullscreenExit } from 'react-icons/md';
+import { MdSave, MdStop, MdMic, MdMicOff, MdOutlineScheduleSend, MdOutlineFullscreen } from 'react-icons/md';
 import { AiOutlineClose } from 'react-icons/ai';
+import { LuChevronsLeftRight, LuChevronsRightLeft } from 'react-icons/lu';
 import { clsx } from 'clsx';
 import { parseCommandArgs } from '@common/utils';
 import { getSubagentId } from '@common/agent';
@@ -139,6 +140,7 @@ export interface PromptFieldRef {
   setImages: (images: string[]) => void;
   toggleExpanded: () => void;
   toggleExpandedEditorMode: () => void;
+  toggleExpandedWidth: () => void;
 }
 
 type Props = {
@@ -236,6 +238,14 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
     // Whether the expanded overlay renders Milkdown (true) or a raw textarea (false).
     // Defaults to rendered mode; session-local, not persisted.
     const [showRenderedEditor, setShowRenderedEditor] = useState(true);
+    // Whether the expanded editor overlay is stretched to full viewport width.
+    const [isFullWidth, setIsFullWidth] = useState(false);
+    // Whether the CSS transition for the width slide should be active.
+    // Disabled during initial measurement to avoid an open-time animation.
+    const [widthTransitionEnabled, setWidthTransitionEnabled] = useState(false);
+    // Cached inset measurements of the central column, used to position the fixed overlay.
+    type OverlayInsets = { top: number; bottom: number; left: number; right: number; width: number };
+    const [overlayInsets, setOverlayInsets] = useState<OverlayInsets | null>(null);
     const milkdownRef = useRef<MilkdownEditorRef>(null);
     // Ref to the raw textarea used while in raw-editor mode.
     const rawTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -308,7 +318,10 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       [setSavedText],
     );
 
-    const openExpanded = useCallback(() => setIsExpanded(true), []);
+    const openExpanded = useCallback(() => {
+      setIsFullWidth(false);
+      setIsExpanded(true);
+    }, []);
 
     // Focus the compact CodeMirror prompt editor.
     const focusCompactPrompt = useCallback(() => {
@@ -347,8 +360,13 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
         // Raw mode: the shared `text` state already holds the current textarea value.
         setTextWithDispatch(text);
       }
+      setIsFullWidth(false);
       setIsExpanded(false);
     }, [showRenderedEditor, setTextWithDispatch, text]);
+
+    // Toggle the expanded editor between constrained central-column width and
+    // full viewport width. Only has effect when the overlay is open.
+    const toggleEditorWidth = useCallback(() => setIsFullWidth((prev) => !prev), []);
 
     // Switch from rendered Milkdown mode to raw textarea mode.
     // Reads the current Milkdown value first (capturing any in-flight changes),
@@ -410,11 +428,52 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       wasExpandedRef.current = false;
       // Schedule focus restoration after the portal has unmounted.
       const raf = requestAnimationFrame(() => {
-        focusCompactPrompt();
+        if (isActive) focusCompactPrompt();
       });
       // Cancel if the component unmounts or the overlay reopens before it runs.
       return () => cancelAnimationFrame(raf);
-    }, [isExpanded, focusCompactPrompt]);
+    }, [isExpanded, isActive, focusCompactPrompt]);
+
+    // Measure the central column and position the fixed overlay over it.
+    // The transition is armed one frame after the initial paint so the open
+    // is instant, but subsequent width toggles slide smoothly.
+    useLayoutEffect(() => {
+      if (!isExpanded) {
+        setWidthTransitionEnabled(false);
+        return;
+      }
+      const el = overlayContainerRef?.current;
+      if (!el) return;
+      const measure = () => {
+        const r = el.getBoundingClientRect();
+        setOverlayInsets({
+          top: r.top,
+          bottom: window.innerHeight - r.bottom,
+          left: r.left,
+          right: window.innerWidth - r.right,
+          width: r.width,
+        });
+      };
+      measure();
+      const raf = requestAnimationFrame(() => setWidthTransitionEnabled(true));
+      const ro = new ResizeObserver(measure);
+      ro.observe(el);
+      window.addEventListener('resize', measure);
+      return () => {
+        cancelAnimationFrame(raf);
+        ro.disconnect();
+        window.removeEventListener('resize', measure);
+      };
+    }, [isExpanded, overlayContainerRef]);
+
+    // Close the expanded overlay when the task/project becomes inactive.
+    // This prevents the portal from staying open and blocking hotkeys when
+    // the user switches to a different project or task.
+    useEffect(() => {
+      if (!isActive && isExpanded) {
+        closeExpanded();
+      }
+    }, [isActive, isExpanded, closeExpanded]);
 
     useEffect(() => {
       if (text) {
@@ -628,6 +687,11 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
           // Focus will be handled by handleMilkdownReady.
           switchToRenderedEditor();
         }
+      },
+      toggleExpandedWidth: () => {
+        // Only act when the expanded overlay is open.
+        if (!isExpanded) return;
+        setIsFullWidth((prev) => !prev);
       },
     }));
 

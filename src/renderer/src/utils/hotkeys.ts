@@ -34,6 +34,7 @@ export const DEFAULT_HOTKEY_CONFIG: HotkeyConfig = {
     closeTask: 'mod+shift+w',
     toggleMarkdownEditor: 'mod+shift+m',
     toggleMarkdownEditorMode: 'shift+ctrl+n',
+    toggleMarkdownEditorWidth: 'shift+ctrl+e',
   },
   dialogHotkeys: {
     browseFolder: 'mod+b',
@@ -99,6 +100,7 @@ export const getHotkeys = (config?: HotkeyConfig) => {
       CLOSE_TASK: tk.closeTask || tkDef.closeTask,
       TOGGLE_MARKDOWN_EDITOR: tk.toggleMarkdownEditor || tkDef.toggleMarkdownEditor,
       TOGGLE_MARKDOWN_EDITOR_MODE: tk.toggleMarkdownEditorMode ?? tkDef.toggleMarkdownEditorMode,
+      TOGGLE_MARKDOWN_EDITOR_WIDTH: tk.toggleMarkdownEditorWidth ?? tkDef.toggleMarkdownEditorWidth,
     },
     DIALOG_HOTKEYS: {
       BROWSE_FOLDER: dk.browseFolder || dkDef.browseFolder,

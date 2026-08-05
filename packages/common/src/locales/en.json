@@ -548,6 +548,7 @@
       "closeTask": "Close Task",
       "toggleMarkdownEditor": "Toggle Markdown Editor",
       "toggleMarkdownEditorMode": "Toggle Markdown/Raw Mode",
+      "toggleMarkdownEditorWidth": "Toggle Editor Full Width",
       "browseFolder": "Browse Folder",
       "enterHotkey": "Enter hotkey...",
       "resetToDefaults": "Reset to Defaults",
@@ -950,6 +951,19 @@
       "fullMessageRenderingTooltip": "Renders all messages in the DOM without virtualization. May impact performance with large conversation histories.",
       "performanceMode": "Performance mode",
       "performanceModeTooltip": "Batches rapid UI updates during streaming — assistant text, tool arguments, command output, and token counters — to significantly reduce CPU usage and lag on long AI responses and command runs. Turn off for the smoothest possible real-time updates."
+    },
+    "promptField": {
+      "agentModeOnly": "This command is only available in agent mode",
+      "invalidCommand": "Invalid command",
+      "saveError": "Failed to save prompt: {{error}}",
+      "switchToRawEditor": "Switch to Raw Editor",
+      "switchToRenderedEditor": "Switch to Rendered Editor",
+      "editorTitle": "Editor: {{mode}}",
+      "editorModeRendered": "rendered",
+      "editorModeRaw": "raw",
+      "expandEditorWidth": "Expand editor to full width",
+      "collapseEditorWidth": "Collapse editor width",
+      "closeEditor": "Close editor"
     },
     "memory": {
       "configuration": "Configuration",
