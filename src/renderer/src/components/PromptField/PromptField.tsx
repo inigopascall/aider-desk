@@ -401,6 +401,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
         }
       };
       document.addEventListener('keydown', handleOverlayKeyDown, true);
+
       return () => document.removeEventListener('keydown', handleOverlayKeyDown, true);
     }, [isExpanded, closeExpanded]);
 
@@ -1399,6 +1400,20 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       ],
     );
 
+    // Position the fixed expanded-editor overlay over the central column using
+    // the measured insets. When full-width is active, the left/right insets are
+    // overridden to 0 so the panel stretches edge-to-edge; the transition makes
+    // the width slide smooth once measurement has completed.
+    const panelStyle: CSSProperties = overlayInsets
+      ? {
+          top: overlayInsets.top,
+          bottom: overlayInsets.bottom,
+          left: isFullWidth ? 0 : overlayInsets.left,
+          right: isFullWidth ? 0 : overlayInsets.right,
+          transition: widthTransitionEnabled ? 'left 300ms ease, right 300ms ease' : undefined,
+        }
+      : { top: 0, right: 0, bottom: 0, left: 0 };
+
     return (
       <div className="w-full relative">
         {queuedPrompts && queuedPrompts.length > 0 && (
@@ -1595,9 +1610,24 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
         )}
         {isExpanded &&
           createPortal(
-            <div className="absolute inset-0 z-50 flex flex-col bg-bg-primary">
+            <div className="fixed z-50 flex flex-col bg-bg-primary shadow-2xl" style={panelStyle}>
               <div className="flex items-center justify-between px-4 py-2 border-b border-border-dark-light flex-shrink-0">
-                <span className="text-sm text-text-primary">Editor</span>
+                <div className="flex items-center gap-2">
+                  <Tooltip content={isFullWidth ? t('promptField.collapseEditorWidth') : t('promptField.expandEditorWidth')}>
+                    <button
+                      onClick={toggleEditorWidth}
+                      className="text-text-muted-light hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200"
+                      aria-label={isFullWidth ? t('promptField.collapseEditorWidth') : t('promptField.expandEditorWidth')}
+                    >
+                      {isFullWidth ? <LuChevronsRightLeft className="w-5 h-5" /> : <LuChevronsLeftRight className="w-5 h-5" />}
+                    </button>
+                  </Tooltip>
+                  <span className="text-sm text-text-primary">
+                    {t('promptField.editorTitle', {
+                      mode: showRenderedEditor ? t('promptField.editorModeRendered') : t('promptField.editorModeRaw'),
+                    })}
+                  </span>
+                </div>
                 <div className="flex items-center gap-1">
                   {/* Toggle between rendered Milkdown and raw textarea mode */}
                   <Tooltip content={showRenderedEditor ? t('promptField.switchToRawEditor') : t('promptField.switchToRenderedEditor')}>
@@ -1624,41 +1654,46 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
                       )}
                     </button>
                   </Tooltip>
-                  <Tooltip content="Close editor">
+                  <Tooltip content={t('promptField.closeEditor')}>
                     <button
                       onClick={closeExpanded}
                       className="text-text-muted-light hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200"
                     >
-                      <MdOutlineFullscreenExit className="w-5 h-5" />
+                      <AiOutlineClose className="w-5 h-5" />
                     </button>
                   </Tooltip>
                 </div>
               </div>
-              <div className="flex-grow overflow-y-auto p-6 milkdown-prompt-editor scrollbar-thin scrollbar-track-bg-secondary scrollbar-thumb-bg-fourth">
-                {showRenderedEditor ? (
-                  // Remount Milkdown when switching back to rendered mode via a mode-dependent key
-                  // so its defaultValueCtx is seeded with the current raw text.
-                  <MilkdownEditor key={showRenderedEditor ? 'rendered' : 'raw'} ref={milkdownRef} initialValue={text} onChange={handleMilkdownChange} onReady={handleMilkdownReady} />
-                ) : (
-                  <textarea
-                    ref={rawTextareaRef}
-                    value={text}
-                    onChange={(e) => {
-                      setText(e.target.value);
-                      setSavedText(e.target.value);
-                      setPendingCommand(null);
-                    }}
-                    onBlur={() => setSavedText(text)}
-                    placeholder={t('promptField.questionPlaceholder')}
-                    spellCheck={false}
-                    className="w-full h-full min-h-[200px] bg-transparent text-text-primary placeholder-text-muted-dark resize-none overflow-y-auto scrollbar-thin scrollbar-track-bg-secondary scrollbar-thumb-bg-fourth focus:outline-none text-sm"
-                    style={{ fontFamily: 'var(--font-family)' }}
-                    rows={1}
-                  />
-                )}
+              <div className="flex-grow overflow-y-auto scrollbar-thin scrollbar-track-bg-secondary scrollbar-thumb-bg-fourth">
+                <div
+                  className="w-full mx-auto px-6 py-6 min-h-full milkdown-prompt-editor"
+                  style={{ maxWidth: overlayInsets ? overlayInsets.width : undefined }}
+                >
+                  {showRenderedEditor ? (
+                    // Remount Milkdown when switching back to rendered mode via a mode-dependent key
+                    // so its defaultValueCtx is seeded with the current raw text.
+                    <MilkdownEditor key={showRenderedEditor ? 'rendered' : 'raw'} ref={milkdownRef} initialValue={text} onChange={handleMilkdownChange} onReady={handleMilkdownReady} />
+                  ) : (
+                    <textarea
+                      ref={rawTextareaRef}
+                      value={text}
+                      onChange={(e) => {
+                        setText(e.target.value);
+                        setSavedText(e.target.value);
+                        setPendingCommand(null);
+                      }}
+                      onBlur={() => setSavedText(text)}
+                      placeholder={t('promptField.questionPlaceholder')}
+                      spellCheck={false}
+                      className="w-full h-full min-h-[200px] bg-transparent text-text-primary placeholder-text-muted-dark resize-none overflow-y-auto scrollbar-thin scrollbar-track-bg-secondary scrollbar-thumb-bg-fourth focus:outline-none text-sm"
+                      style={{ fontFamily: 'var(--font-family)' }}
+                      rows={1}
+                    />
+                  )}
+                </div>
               </div>
             </div>,
-            overlayContainerRef?.current ?? document.body,
+            document.body,
           )}
       </div>
     );

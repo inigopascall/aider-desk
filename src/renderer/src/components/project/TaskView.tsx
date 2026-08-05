@@ -235,6 +235,22 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
       },
     );
 
+    // Toggle the expanded editor between constrained and full viewport width.
+    // Only acts when the expanded overlay is open.
+    useHotkeys(
+      TASK_HOTKEYS.TOGGLE_MARKDOWN_EDITOR_WIDTH,
+      (e) => {
+        e.preventDefault();
+        promptFieldRef.current?.toggleExpandedWidth();
+      },
+      {
+        enabled: isActive,
+        scopes: 'task',
+        enableOnFormTags: true,
+        enableOnContentEditable: true,
+      },
+    );
+
     const currentModel = useMemo(() => {
       let model: Model | undefined;
       if (!AIDER_MODES.includes(currentMode)) {
