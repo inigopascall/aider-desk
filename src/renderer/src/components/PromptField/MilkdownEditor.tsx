@@ -6,6 +6,7 @@ import { history } from '@milkdown/kit/plugin/history';
 import { listener, listenerCtx } from '@milkdown/kit/plugin/listener';
 import { getMarkdown as getMarkdownAction } from '@milkdown/kit/utils';
 import { Milkdown, MilkdownProvider, useEditor, useInstance } from '@milkdown/react';
+import { TextSelection } from 'prosemirror-state';
 
 /**
  * Imperative handle for reading the current markdown value on demand
@@ -110,12 +111,11 @@ const MilkdownInner = forwardRef<MilkdownEditorRef, Props>(({ initialValue, onCh
       if (!view || view.isDestroyed) return;
       // Calculate the final position in the document.
       const endPosition = view.state.doc.content.size;
-      // Create a selection at the end of the document and dispatch it.
-      // ProseMirror accepts a plain { anchor, head } object for the selection field.
-      view.dispatch({
-        selection: { anchor: endPosition, head: endPosition },
-        scrollIntoView: true,
-      });
+      // Create a proper ProseMirror transaction with the selection at end-of-doc.
+      const tr = view.state.tr
+        .setSelection(TextSelection.create(view.state.doc, endPosition))
+        .scrollIntoView();
+      view.dispatch(tr);
       // Focus the EditorView so the cursor becomes active.
       view.focus();
       // Fallback: if view.focus() didn't result in the element being focused
