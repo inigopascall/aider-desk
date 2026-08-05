@@ -19,7 +19,6 @@ const toolInputChunkFlushTimers = new Map<string, ReturnType<typeof setTimeout>>
  * immediate and buffered application of chunks.
  */
 function applyToolInputChunk(taskId: string, { toolCallId, serverName, toolName, partialArgs, isComplete, promptContext }: ToolInputChunkData): void {
-  touchTaskActivity(taskId);
   setMessages(taskId, (prevMessages) => {
     const existingIndex = prevMessages.findIndex((m) => m.id === toolCallId);
     if (existingIndex !== -1) {
