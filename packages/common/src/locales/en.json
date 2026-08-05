@@ -547,6 +547,7 @@
       "newTask": "New Task",
       "closeTask": "Close Task",
       "toggleMarkdownEditor": "Toggle Markdown Editor",
+      "toggleMarkdownEditorMode": "Toggle Markdown/Raw Mode",
       "browseFolder": "Browse Folder",
       "enterHotkey": "Enter hotkey...",
       "resetToDefaults": "Reset to Defaults",

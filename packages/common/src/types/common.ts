@@ -665,6 +665,7 @@ export interface HotkeyConfig {
     newTask: string;
     closeTask: string;
     toggleMarkdownEditor: string;
+    toggleMarkdownEditorMode: string;
   };
   dialogHotkeys: {
     browseFolder: string;

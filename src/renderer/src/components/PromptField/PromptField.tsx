@@ -138,6 +138,7 @@ export interface PromptFieldRef {
   appendText: (text: string) => void;
   setImages: (images: string[]) => void;
   toggleExpanded: () => void;
+  toggleExpandedEditorMode: () => void;
 }
 
 type Props = {
@@ -565,6 +566,21 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
           closeExpanded();
         } else {
           setIsExpanded(true);
+        }
+      },
+      toggleExpandedEditorMode: () => {
+        // Only act when the expanded overlay is open.
+        if (!isExpanded) return;
+        if (showRenderedEditor) {
+          // Rendered → raw: read the authoritative Milkdown value first,
+          // sanitize it, then switch to raw textarea mode.
+          switchToRawEditor();
+          requestAnimationFrame(() => rawTextareaRef.current?.focus());
+        } else {
+          // Raw → rendered: persist the raw text, remount Milkdown with the
+          // raw value as its defaultValue, and focus the ProseMirror view.
+          switchToRenderedEditor();
+          requestAnimationFrame(() => milkdownRef.current?.focus());
         }
       },
     }));

@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
-import { Editor, rootCtx, defaultValueCtx, remarkStringifyOptionsCtx } from '@milkdown/kit/core';
+import { Editor, rootCtx, defaultValueCtx, remarkStringifyOptionsCtx, editorViewCtx } from '@milkdown/kit/core';
 import { commonmark } from '@milkdown/kit/preset/commonmark';
 import { gfm } from '@milkdown/kit/preset/gfm';
 import { history } from '@milkdown/kit/plugin/history';
@@ -34,10 +34,6 @@ const MilkdownInner = forwardRef<MilkdownEditorRef, Props>(({ initialValue, onCh
     onChangeRef.current = onChange;
   }, [onChange]);
 
-  // Ref to the Milkdown root element so we can locate the ProseMirror canvas
-  // for imperative focus operations.
-  const rootRef = useRef<HTMLDivElement>(null);
-
   const [, getInstance] = useInstance();
 
   useEditor((root) =>
@@ -61,26 +57,62 @@ const MilkdownInner = forwardRef<MilkdownEditorRef, Props>(({ initialValue, onCh
       .use(listener),
   );
 
-  // Expose an imperative getter so the parent can read the authoritative
-  // markdown value at any time (e.g. on close, before the debounce fires).
+  // Stable ref for the deferred focus callback so cleanup can cancel it.
+  const pendingFocusRef = useRef<(() => void) | null>(null);
+
+  // Focus the actual ProseMirror editor view (not just the contenteditable div)
+  // and place the selection at the end of the document. Milkdown creates the
+  // editor view asynchronously, so we defer with requestAnimationFrame and
+  // retry only once per mount.
   useImperativeHandle(ref, () => ({
     getMarkdown: () => {
       const editor = getInstance();
       return editor ? editor.action(getMarkdownAction()) : initialValue;
     },
-    // Focus the ProseMirror contenteditable canvas. Uses requestAnimationFrame
-    // to ensure the canvas has been created by Milkdown before attempting focus.
     focus: () => {
-      requestAnimationFrame(() => {
-        const canvas = rootRef.current?.querySelector('.ProseMirror') as HTMLElement | null;
-        if (canvas) {
-          canvas.focus();
+      // Cancel any previous pending focus request so stale callbacks don't run
+      // after the editor has been remounted or unmounted.
+      pendingFocusRef.current = null;
+
+      const doFocus = () => {
+        const editor = getInstance();
+        if (!editor) return;
+        const view = editor.get(editorViewCtx);
+        if (!view || view.isDestroyed) return;
+        view.focus();
+        const end = view.state.doc.length;
+        view.dispatch({ selection: { anchor: end, head: end } });
+      };
+
+      // First attempt: wait for the next paint so Milkdown has created the view.
+      const raf = requestAnimationFrame(() => {
+        const editor = getInstance();
+        const view = editor ? editor.get(editorViewCtx) : null;
+        if (view && !view.isDestroyed) {
+          doFocus();
+        } else {
+          // View not yet ready; schedule one retry after another paint cycle.
+          pendingFocusRef.current = () => {
+            const editor = getInstance();
+            const view = editor ? editor.get(editorViewCtx) : null;
+            if (view && !view.isDestroyed) {
+              doFocus();
+            }
+            pendingFocusRef.current = null;
+          };
+          requestAnimationFrame(pendingFocusRef.current);
         }
       });
+
+      // Cleanup: cancel the deferred retry if the editor unmounts before it runs.
+      return () => {
+        cancelAnimationFrame(raf);
+        pendingFocusRef.current = null;
+      };
     },
   }), [getInstance, initialValue]);
 
-  return <Milkdown ref={rootRef} />;
+  return <Milkdown />;
 });
 
 MilkdownInner.displayName = 'MilkdownInner';

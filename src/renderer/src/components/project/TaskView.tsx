@@ -219,6 +219,22 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
       },
     );
 
+    // Toggle between rendered Milkdown and raw textarea mode within the expanded editor.
+    // Only acts when the expanded overlay is open.
+    useHotkeys(
+      TASK_HOTKEYS.TOGGLE_MARKDOWN_EDITOR_MODE,
+      (e) => {
+        e.preventDefault();
+        promptFieldRef.current?.toggleExpandedEditorMode();
+      },
+      {
+        enabled: isActive,
+        scopes: 'task',
+        enableOnFormTags: true,
+        enableOnContentEditable: true,
+      },
+    );
+
     const currentModel = useMemo(() => {
       let model: Model | undefined;
       if (!AIDER_MODES.includes(currentMode)) {
