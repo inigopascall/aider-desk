@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
-import { Editor, rootCtx, defaultValueCtx } from '@milkdown/kit/core';
+import { Editor, rootCtx, defaultValueCtx, remarkStringifyOptionsCtx } from '@milkdown/kit/core';
 import { commonmark } from '@milkdown/kit/preset/commonmark';
 import { gfm } from '@milkdown/kit/preset/gfm';
 import { history } from '@milkdown/kit/plugin/history';
@@ -41,6 +41,11 @@ const MilkdownInner = forwardRef<MilkdownEditorRef, Props>(({ initialValue, onCh
         ctx.set(rootCtx, root);
         // Seed the editor with the current prompt text on first mount.
         ctx.set(defaultValueCtx, initialValue);
+        ctx.set(remarkStringifyOptionsCtx, {
+          bullet: '-',
+          listItemIndent: 'one',
+          rule: '-',
+        });
         ctx.get(listenerCtx).markdownUpdated((_ctx, markdown) => {
           onChangeRef.current(markdown);
         });

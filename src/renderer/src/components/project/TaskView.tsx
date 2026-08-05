@@ -157,6 +157,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
     const isLastLoadingMessage = displayedMessages.length > 0 && isLoadingMessage(displayedMessages[displayedMessages.length - 1]);
 
     const promptFieldRef = useRef<PromptFieldRef>(null);
+    const centralColumnRef = useRef<HTMLDivElement>(null);
     const projectTopBarRef = useRef<TaskBarRef>(null);
     const messagesRef = useRef<MessagesRef | VirtualizedMessagesRef>(null);
     const terminalViewRef = useRef<TerminalViewRef | null>(null);
@@ -767,7 +768,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
       <div className={clsx('h-full bg-gradient-to-b from-bg-primary to-bg-primary-light relative', isMobile ? 'flex flex-col' : 'flex')}>
         {!loaded && <LoadingOverlay message={t('common.loadingTask')} />}
         {messagesPending && displayedMessages.length === 0 && <LoadingOverlay message={t('common.loadingMessages')} />}
-        <div className="flex flex-col flex-grow overflow-hidden">
+        <div ref={centralColumnRef} className="flex flex-col flex-grow overflow-hidden relative">
           <TaskBar
             ref={projectTopBarRef}
             baseDir={projectDir}
@@ -936,6 +937,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                   onToggleTaskInfoPanel={handleToggleTaskInfoPanel}
                   handoffConversation={handleHandoff}
                   createSubtask={handleCreateSubtask}
+                  overlayContainerRef={centralColumnRef}
                 />
                 <TaskControlBar
                   baseDir={projectDir}

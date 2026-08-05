@@ -12,7 +12,8 @@ import { EditorView, keymap } from '@codemirror/view';
 import { AIDER_MODES, Mode, PromptBehavior, QueuedPromptData, QuestionData, SuggestionMode } from '@common/types';
 import { githubDarkInit } from '@uiw/codemirror-theme-github';
 import CodeMirror, { Annotation, Prec, type Extension, type ReactCodeMirrorRef } from '@uiw/react-codemirror';
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { useDebounce } from '@reactuses/core';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useTranslation } from 'react-i18next';
@@ -85,6 +86,10 @@ const isPathLike = (input: string): boolean => {
   const firstWord = input.split(' ')[0];
   return (firstWord.match(/\//g) || []).length >= 2;
 };
+
+// The Milkdown serializer can emit <br /> for line breaks. We never want HTML
+// in the prompt text, so collapse all <br> variants back to real newlines.
+const sanitizeMilkdownMarkdown = (markdown: string): string => markdown.replace(/<br\s*\/?>/gi, '\n');
 
 const THEME = githubDarkInit({
   settings: {
@@ -165,6 +170,7 @@ type Props = {
   onToggleTaskInfoPanel?: () => void;
   handoffConversation?: (focus?: string) => Promise<void>;
   createSubtask?: (args?: string) => void;
+  overlayContainerRef?: RefObject<HTMLDivElement | null>;
 };
 
 export const PromptField = forwardRef<PromptFieldRef, Props>(
@@ -207,6 +213,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       onToggleTaskInfoPanel,
       handoffConversation,
       createSubtask,
+      overlayContainerRef,
     }: Props,
     ref,
   ) => {
@@ -278,8 +285,9 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
     // when the overlay closes via closeExpanded.
     const handleMilkdownChange = useCallback(
       (markdown: string) => {
-        setText(markdown);
-        setSavedText(markdown);
+        const clean = sanitizeMilkdownMarkdown(markdown);
+        setText(clean);
+        setSavedText(clean);
       },
       [setSavedText],
     );
@@ -290,9 +298,26 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
     // debounce window), push it into CodeMirror, then close the overlay.
     const closeExpanded = useCallback(() => {
       const md = milkdownRef.current?.getMarkdown();
-      setTextWithDispatch(md ?? text);
+      setTextWithDispatch(md !== undefined ? sanitizeMilkdownMarkdown(md) : text);
       setIsExpanded(false);
     }, [setTextWithDispatch, text]);
+
+    // Capture-phase document listener so Escape pre-empts both ProseMirror and
+    // the background CodeMirror Escape keymap while the overlay is open.
+    useEffect(() => {
+      if (!isExpanded) {
+        return;
+      }
+      const handleOverlayKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          closeExpanded();
+        }
+      };
+      document.addEventListener('keydown', handleOverlayKeyDown, true);
+      return () => document.removeEventListener('keydown', handleOverlayKeyDown, true);
+    }, [isExpanded, closeExpanded]);
 
     useEffect(() => {
       if (text) {
@@ -1385,24 +1410,26 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
             onClose={() => setHistoryMenuVisible(false)}
           />
         )}
-        {isExpanded && (
-          <div className="fixed inset-0 z-50 flex flex-col bg-bg-primary">
-            <div className="flex items-center justify-between px-4 py-2 border-b border-border-dark-light flex-shrink-0">
-              <span className="text-sm text-text-primary">Markdown editor</span>
-              <Tooltip content="Close editor">
-                <button
-                  onClick={closeExpanded}
-                  className="text-text-muted-light hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200"
-                >
-                  <MdOutlineFullscreenExit className="w-5 h-5" />
-                </button>
-              </Tooltip>
-            </div>
-            <div className="flex-grow overflow-y-auto p-6 milkdown-prompt-editor scrollbar-thin scrollbar-track-bg-secondary scrollbar-thumb-bg-fourth">
-              <MilkdownEditor ref={milkdownRef} initialValue={text} onChange={handleMilkdownChange} />
-            </div>
-          </div>
-        )}
+        {isExpanded &&
+          createPortal(
+            <div className="absolute inset-0 z-50 flex flex-col bg-bg-primary">
+              <div className="flex items-center justify-between px-4 py-2 border-b border-border-dark-light flex-shrink-0">
+                <span className="text-sm text-text-primary">Markdown editor</span>
+                <Tooltip content="Close editor">
+                  <button
+                    onClick={closeExpanded}
+                    className="text-text-muted-light hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200"
+                  >
+                    <MdOutlineFullscreenExit className="w-5 h-5" />
+                  </button>
+                </Tooltip>
+              </div>
+              <div className="flex-grow overflow-y-auto p-6 milkdown-prompt-editor scrollbar-thin scrollbar-track-bg-secondary scrollbar-thumb-bg-fourth">
+                <MilkdownEditor ref={milkdownRef} initialValue={text} onChange={handleMilkdownChange} />
+              </div>
+            </div>,
+            overlayContainerRef?.current ?? document.body,
+          )}
       </div>
     );
   },
