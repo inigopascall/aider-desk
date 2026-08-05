@@ -1,11 +1,12 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
-import { Editor, rootCtx, defaultValueCtx, remarkStringifyOptionsCtx, editorViewCtx } from '@milkdown/kit/core';
+import { Editor, rootCtx, defaultValueCtx, remarkStringifyOptionsCtx, editorViewCtx, editorViewOptionsCtx } from '@milkdown/kit/core';
 import { commonmark } from '@milkdown/kit/preset/commonmark';
 import { gfm } from '@milkdown/kit/preset/gfm';
 import { history } from '@milkdown/kit/plugin/history';
 import { listener, listenerCtx } from '@milkdown/kit/plugin/listener';
 import { getMarkdown as getMarkdownAction } from '@milkdown/kit/utils';
 import { Milkdown, MilkdownProvider, useEditor, useInstance } from '@milkdown/react';
+import { TextSelection } from '@milkdown/kit/prosemirror';
 
 /**
  * Imperative handle for reading the current markdown value on demand
@@ -19,6 +20,7 @@ export interface MilkdownEditorRef {
 type Props = {
   initialValue: string;
   onChange: (markdown: string) => void;
+  onReady?: () => void;
 };
 
 /**
@@ -26,7 +28,7 @@ type Props = {
  * Receives an initial markdown string, seeds the editor, and calls
  * onChange whenever the markdown content is updated (debounced by Milkdown).
  */
-const MilkdownInner = forwardRef<MilkdownEditorRef, Props>(({ initialValue, onChange }, ref) => {
+const MilkdownInner = forwardRef<MilkdownEditorRef, Props>(({ initialValue, onChange, onReady }, ref) => {
   // Keep a stable ref to the latest onChange so the listener never goes stale
   // and we don't need to recreate the editor on every callback change.
   const onChangeRef = useRef(onChange);
@@ -34,7 +36,14 @@ const MilkdownInner = forwardRef<MilkdownEditorRef, Props>(({ initialValue, onCh
     onChangeRef.current = onChange;
   }, [onChange]);
 
-  const [, getInstance] = useInstance();
+  // Keep a stable ref to the latest onReady callback so we can invoke it
+  // exactly once when the editor instance becomes available.
+  const onReadyRef = useRef(onReady);
+  useEffect(() => {
+    onReadyRef.current = onReady;
+  }, [onReady]);
+
+  const [editor, getInstance] = useInstance();
 
   useEditor((root) =>
     Editor.make()
@@ -47,6 +56,22 @@ const MilkdownInner = forwardRef<MilkdownEditorRef, Props>(({ initialValue, onCh
           listItemIndent: 'one',
           rule: '-',
         });
+        // Disable browser diagnostic features at the editor boundary.
+        // These attributes prevent spellcheck, autocorrect, autocapitalize,
+        // and grammar-checking tools (e.g. Grammarly) from attaching to the
+        // editable DOM, which would otherwise create stale diagnostic overlays.
+        ctx.update(editorViewOptionsCtx, (prev) => ({
+          ...prev,
+          attributes: {
+            ...prev?.attributes,
+            spellcheck: 'false',
+            autocorrect: 'off',
+            autocapitalize: 'off',
+            'data-gramm': 'false',
+            'data-gramm_editor': 'false',
+            'data-enable-grammarly': 'false',
+          },
+        }));
         ctx.get(listenerCtx).markdownUpdated((_ctx, markdown) => {
           onChangeRef.current(markdown);
         });
@@ -57,58 +82,41 @@ const MilkdownInner = forwardRef<MilkdownEditorRef, Props>(({ initialValue, onCh
       .use(listener),
   );
 
-  // Stable ref for the deferred focus callback so cleanup can cancel it.
-  const pendingFocusRef = useRef<(() => void) | null>(null);
+  // Track whether we've already invoked onReady for this editor instance.
+  const onReadyCalledRef = useRef(false);
 
-  // Focus the actual ProseMirror editor view (not just the contenteditable div)
-  // and place the selection at the end of the document. Milkdown creates the
-  // editor view asynchronously, so we defer with requestAnimationFrame and
-  // retry only once per mount.
+  // Invoke onReady exactly once when the editor instance and view are available.
+  useEffect(() => {
+    if (!editor || onReadyCalledRef.current) return;
+    const view = editor.get(editorViewCtx);
+    if (!view || view.isDestroyed) return;
+    onReadyCalledRef.current = true;
+    onReadyRef.current?.();
+  }, [editor, onReady]);
+
+  // Focus the actual ProseMirror editor view and place the selection at the
+  // end of the document. This is called only after Milkdown has fully
+  // initialized the editor view, so no retry mechanism is needed.
   useImperativeHandle(ref, () => ({
     getMarkdown: () => {
       const editor = getInstance();
       return editor ? editor.action(getMarkdownAction()) : initialValue;
     },
     focus: () => {
-      // Cancel any previous pending focus request so stale callbacks don't run
-      // after the editor has been remounted or unmounted.
-      pendingFocusRef.current = null;
-
-      const doFocus = () => {
-        const editor = getInstance();
-        if (!editor) return;
-        const view = editor.get(editorViewCtx);
-        if (!view || view.isDestroyed) return;
-        view.focus();
-        const end = view.state.doc.length;
-        view.dispatch({ selection: { anchor: end, head: end } });
-      };
-
-      // First attempt: wait for the next paint so Milkdown has created the view.
-      const raf = requestAnimationFrame(() => {
-        const editor = getInstance();
-        const view = editor ? editor.get(editorViewCtx) : null;
-        if (view && !view.isDestroyed) {
-          doFocus();
-        } else {
-          // View not yet ready; schedule one retry after another paint cycle.
-          pendingFocusRef.current = () => {
-            const editor = getInstance();
-            const view = editor ? editor.get(editorViewCtx) : null;
-            if (view && !view.isDestroyed) {
-              doFocus();
-            }
-            pendingFocusRef.current = null;
-          };
-          requestAnimationFrame(pendingFocusRef.current);
-        }
+      const editor = getInstance();
+      if (!editor) return;
+      const view = editor.get(editorViewCtx);
+      if (!view || view.isDestroyed) return;
+      // Calculate the final position in the document.
+      const endPosition = view.state.doc.content.size;
+      // Create a selection at the end of the document and dispatch it.
+      const selection = TextSelection.create(view.state.doc, endPosition);
+      view.dispatch({
+        selection,
+        scrollIntoView: true,
       });
-
-      // Cleanup: cancel the deferred retry if the editor unmounts before it runs.
-      return () => {
-        cancelAnimationFrame(raf);
-        pendingFocusRef.current = null;
-      };
+      // Focus the EditorView so the cursor becomes active.
+      view.focus();
     },
   }), [getInstance, initialValue]);
 
@@ -120,9 +128,9 @@ MilkdownInner.displayName = 'MilkdownInner';
 /**
  * Public MilkdownEditor component wrapped in a MilkdownProvider.
  */
-export const MilkdownEditor = forwardRef<MilkdownEditorRef, Props>((props, ref) => (
+export const MilkdownEditor = forwardRef<MilkdownEditorRef, Props>(({ onReady, ...props }, ref) => (
   <MilkdownProvider>
-    <MilkdownInner {...props} ref={ref} />
+    <MilkdownInner {...props} ref={ref} onReady={onReady} />
   </MilkdownProvider>
 ));
 MilkdownEditor.displayName = 'MilkdownEditor';

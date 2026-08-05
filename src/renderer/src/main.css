@@ -218,3 +218,9 @@ code {
 }
 .milkdown-prompt-editor .ProseMirror a { color: var(--color-info-light); text-decoration: underline; }
 .milkdown-prompt-editor .ProseMirror hr { border: none; border-top: 1px solid var(--color-border-default); margin: 1rem 0; }
+
+/* Explicit italic styling for Markdown emphasis (overrides global font-style: normal) */
+.milkdown-prompt-editor .ProseMirror em,
+.milkdown-prompt-editor .ProseMirror i {
+  font-style: italic;
+}

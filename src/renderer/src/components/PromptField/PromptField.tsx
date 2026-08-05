@@ -239,6 +239,8 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
     const milkdownRef = useRef<MilkdownEditorRef>(null);
     // Ref to the raw textarea used while in raw-editor mode.
     const rawTextareaRef = useRef<HTMLTextAreaElement>(null);
+    // Track whether the expanded overlay was previously open, for focus restoration.
+    const wasExpandedRef = useRef(false);
     const { setText: setSavedText } = usePromptFieldText(baseDir, taskId, (text) => {
       const view = editorRef.current?.view;
       view?.dispatch({
@@ -308,6 +310,32 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
 
     const openExpanded = useCallback(() => setIsExpanded(true), []);
 
+    // Focus the compact CodeMirror prompt editor.
+    const focusCompactPrompt = useCallback(() => {
+      editorRef.current?.view?.focus();
+    }, []);
+
+    // Focus the raw textarea and place the selection at the end.
+    const focusRawTextarea = useCallback(() => {
+      const textarea = rawTextareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      const len = textarea.value.length;
+      textarea.setSelectionRange(len, len);
+    }, []);
+
+    // Called when Milkdown has fully initialized its editor instance and view.
+    // Requests focus through the editor-ready lifecycle so we never target a
+    // stale or unmounted editor.
+    const handleMilkdownReady = useCallback(() => {
+      // Only focus if the expanded overlay is still open and rendered mode is
+      // still selected when the ready callback fires.
+      if (!isExpanded || !showRenderedEditor) return;
+      // Defer focus by one animation frame so the ready callback completes its
+      // current editor initialization before selection and focus are applied.
+      requestAnimationFrame(() => milkdownRef.current?.focus());
+    }, [isExpanded, showRenderedEditor]);
+
     // Read the authoritative markdown from Milkdown (covers the sub-200 ms
     // debounce window), push it into CodeMirror, then close the overlay.
     // In raw mode, the current text is already the authoritative value.
@@ -359,16 +387,34 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
     }, [isExpanded, closeExpanded]);
 
     // Focus the active editor when the overlay opens.
-    // In rendered mode, defer focus until Milkdown has created the ProseMirror canvas.
-    // In raw mode, focus the textarea once it mounts.
+    // In rendered mode, focus is handled by handleMilkdownReady which waits for
+    // Milkdown to fully initialize. In raw mode, focus the textarea once it mounts.
     useEffect(() => {
       if (!isExpanded) return;
-      if (showRenderedEditor) {
-        requestAnimationFrame(() => milkdownRef.current?.focus());
-      } else {
-        requestAnimationFrame(() => rawTextareaRef.current?.focus());
+      if (!showRenderedEditor) {
+        focusRawTextarea();
       }
-    }, [isExpanded, showRenderedEditor]);
+      // Note: rendered mode focus is handled by handleMilkdownReady
+    }, [isExpanded, showRenderedEditor, focusRawTextarea]);
+
+    // Restore focus to CodeMirror when the expanded overlay closes.
+    // This effect watches the isExpanded state and focuses the compact prompt
+    // only on the transition from open to closed (not on initial mount).
+    useEffect(() => {
+      if (isExpanded) {
+        wasExpandedRef.current = true;
+        return;
+      }
+      // Only act when transitioning from open to closed.
+      if (!wasExpandedRef.current) return;
+      wasExpandedRef.current = false;
+      // Schedule focus restoration after the portal has unmounted.
+      const raf = requestAnimationFrame(() => {
+        focusCompactPrompt();
+      });
+      // Cancel if the component unmounts or the overlay reopens before it runs.
+      return () => cancelAnimationFrame(raf);
+    }, [isExpanded, focusCompactPrompt]);
 
     useEffect(() => {
       if (text) {
@@ -574,13 +620,13 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
         if (showRenderedEditor) {
           // Rendered → raw: read the authoritative Milkdown value first,
           // sanitize it, then switch to raw textarea mode.
+          // Focus will be handled by the showRenderedEditor effect.
           switchToRawEditor();
-          requestAnimationFrame(() => rawTextareaRef.current?.focus());
         } else {
           // Raw → rendered: persist the raw text, remount Milkdown with the
-          // raw value as its defaultValue, and focus the ProseMirror view.
+          // raw value as its defaultValue, and let handleMilkdownReady focus.
+          // Focus will be handled by handleMilkdownReady.
           switchToRenderedEditor();
-          requestAnimationFrame(() => milkdownRef.current?.focus());
         }
       },
     }));
@@ -1528,7 +1574,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
                 {showRenderedEditor ? (
                   // Remount Milkdown when switching back to rendered mode via a mode-dependent key
                   // so its defaultValueCtx is seeded with the current raw text.
-                  <MilkdownEditor key={showRenderedEditor ? 'rendered' : 'raw'} ref={milkdownRef} initialValue={text} onChange={handleMilkdownChange} />
+                  <MilkdownEditor key={showRenderedEditor ? 'rendered' : 'raw'} ref={milkdownRef} initialValue={text} onChange={handleMilkdownChange} onReady={handleMilkdownReady} />
                 ) : (
                   <textarea
                     ref={rawTextareaRef}
