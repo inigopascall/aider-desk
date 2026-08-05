@@ -331,9 +331,9 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       // Only focus if the expanded overlay is still open and rendered mode is
       // still selected when the ready callback fires.
       if (!isExpanded || !showRenderedEditor) return;
-      // Defer focus by one animation frame so the ready callback completes its
-      // current editor initialization before selection and focus are applied.
-      requestAnimationFrame(() => milkdownRef.current?.focus());
+      // Call focus directly - Milkdown's ready callback already runs after
+      // the editor is fully initialized, so no additional deferral is needed.
+      milkdownRef.current?.focus();
     }, [isExpanded, showRenderedEditor]);
 
     // Read the authoritative markdown from Milkdown (covers the sub-200 ms

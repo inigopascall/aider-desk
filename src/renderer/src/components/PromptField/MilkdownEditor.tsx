@@ -118,6 +118,12 @@ const MilkdownInner = forwardRef<MilkdownEditorRef, Props>(({ initialValue, onCh
       });
       // Focus the EditorView so the cursor becomes active.
       view.focus();
+      // Fallback: if view.focus() didn't result in the element being focused
+      // (can happen with some browser/prosemirror configurations), focus the
+      // DOM node directly.
+      if (view.dom && document.activeElement !== view.dom) {
+        view.dom.focus();
+      }
     },
   }), [getInstance, initialValue]);
 
