@@ -42,7 +42,7 @@ const MilkdownInner = forwardRef<MilkdownEditorRef, Props>(({ initialValue, onCh
     onReadyRef.current = onReady;
   }, [onReady]);
 
-  const [editor, getInstance] = useInstance();
+  const [loading, getInstance] = useInstance();
 
   useEditor((root) =>
     Editor.make()
@@ -86,12 +86,14 @@ const MilkdownInner = forwardRef<MilkdownEditorRef, Props>(({ initialValue, onCh
 
   // Invoke onReady exactly once when the editor instance and view are available.
   useEffect(() => {
-    if (!editor || onReadyCalledRef.current) return;
+    if (loading || onReadyCalledRef.current) return;
+    const editor = getInstance();
+    if (!editor) return;
     const view = editor.action((ctx) => ctx.get(editorViewCtx));
     if (!view || view.isDestroyed) return;
     onReadyCalledRef.current = true;
     onReadyRef.current?.();
-  }, [editor, onReady]);
+  }, [loading, getInstance, onReady]);
 
   // Focus the actual ProseMirror editor view and place the selection at the
   // end of the document. This is called only after Milkdown has fully
