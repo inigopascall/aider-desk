@@ -97,6 +97,7 @@ export const HotkeysSettings = ({ settings, setSettings }: Props) => {
             {renderHotkeyConfig('taskHotkeys', 'newTask', t('settings.hotkeys.newTask'))}
             {renderHotkeyConfig('taskHotkeys', 'closeTask', t('settings.hotkeys.closeTask'))}
             {renderHotkeyConfig('taskHotkeys', 'toggleMarkdownEditor', t('settings.hotkeys.toggleMarkdownEditor'))}
+            {renderHotkeyConfig('taskHotkeys', 'toggleMarkdownEditorMode', t('settings.hotkeys.toggleMarkdownEditorMode'))}
             {renderHotkeyConfig('taskHotkeys', 'switchTask1', t('settings.hotkeys.switchTask', { number: 1 }))}
             {renderHotkeyConfig('taskHotkeys', 'switchTask2', t('settings.hotkeys.switchTask', { number: 2 }))}
             {renderHotkeyConfig('taskHotkeys', 'switchTask3', t('settings.hotkeys.switchTask', { number: 3 }))}
