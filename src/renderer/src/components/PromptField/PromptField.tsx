@@ -1519,6 +1519,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
                     value={text}
                     onChange={(e) => {
                       setText(e.target.value);
+                      setSavedText(e.target.value);
                       setPendingCommand(null);
                     }}
                     onBlur={() => setSavedText(text)}

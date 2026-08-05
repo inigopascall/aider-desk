@@ -1551,7 +1551,7 @@
     "taskInfo": "Show task information",
     "pastedImage": "Pasted image {{index}}",
     "switchToRawEditor": "Switch to raw text editor",
-    "switchToRenderedEditor": "Switch to rendered Markdown editor",
+    "switchToRenderedEditor": "Switch to rendered Markdown editor"
   },
   "agentProfiles": {
     "title": "Agents",
