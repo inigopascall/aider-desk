@@ -50,6 +50,7 @@ export const DEFAULT_SETTINGS: SettingsData = {
   font: 'Sono',
   renderMarkdown: true,
   fullMessageRendering: false,
+  throttleStreamingUpdates: true,
   aiderDeskAutoUpdate: true,
   messageViewMode: MessageViewMode.Compact,
   diffViewMode: DiffViewMode.SideBySide,

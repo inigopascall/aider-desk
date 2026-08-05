@@ -945,7 +945,9 @@
       "viewModeFull": "Full",
       "viewModeCompact": "Compact",
       "fullMessageRendering": "Use full message rendering (Legacy)",
-      "fullMessageRenderingTooltip": "Renders all messages in the DOM without virtualization. May impact performance with large conversation histories."
+      "fullMessageRenderingTooltip": "Renders all messages in the DOM without virtualization. May impact performance with large conversation histories.",
+      "throttleStreamingUpdates": "Throttle streaming updates",
+      "throttleStreamingUpdatesTooltip": "Batches streaming text and tool updates (~10×/sec) to reduce CPU usage and lag during long AI responses. Turn off for the smoothest possible streaming."
     },
     "memory": {
       "configuration": "Configuration",

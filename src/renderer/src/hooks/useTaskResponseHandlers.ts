@@ -6,93 +6,168 @@ import type { ResponseChunkData, ResponseCompletedData, Message, ReflectedMessag
 
 import { useApi } from '@/contexts/ApiContext';
 import { setMessages, touchTaskActivity } from '@/stores/taskStore';
+import { useSettingsStore } from '@/stores/settingsStore';
+
+const STREAM_FLUSH_INTERVAL_MS = 100;
 
 const processingResponseMessageMap = new Map<string, ResponseMessage>();
+const responseChunkBuffers = new Map<string, ResponseChunkData[]>();
+const responseChunkFlushTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export const cleanupProcessingResponseMessage = (taskId: string) => {
   processingResponseMessageMap.delete(taskId);
+  // Clear any pending flush timer
+  const timer = responseChunkFlushTimers.get(taskId);
+  if (timer) {
+    clearTimeout(timer);
+    responseChunkFlushTimers.delete(taskId);
+  }
+  // Clear any buffered chunks
+  responseChunkBuffers.delete(taskId);
 };
+
+/**
+ * Applies a single response chunk to the task's messages.
+ * This is the core logic extracted from handleResponseChunk to support both
+ * immediate and buffered application of chunks.
+ */
+function applyResponseChunk(taskId: string, { messageId, chunk, reasoning, reflectedMessage, promptContext }: ResponseChunkData): void {
+  touchTaskActivity(taskId);
+  const timestamp = Date.now();
+  let processingMessage = processingResponseMessageMap.get(taskId);
+  if (processingMessage?.id === messageId) {
+    processingMessage = {
+      ...processingMessage,
+      content: processingMessage.content + chunk,
+      reasoning: reasoning ? (processingMessage.reasoning || '') + reasoning : processingMessage.reasoning,
+      promptContext,
+    };
+    processingResponseMessageMap.set(taskId, processingMessage);
+    setMessages(taskId, (prevMessages) =>
+      prevMessages.map((message) => {
+        if (message.id === messageId && isResponseMessage(message)) {
+          return {
+            ...message,
+            content: message.content + chunk,
+            reasoning: reasoning ? (message.reasoning || '') + reasoning : message.reasoning,
+            promptContext,
+          };
+        }
+        return message;
+      }),
+    );
+  } else {
+    setMessages(taskId, (prevMessages) => {
+      const existingMessageIndex = prevMessages.findIndex((message) => message.id === messageId);
+      const newMessages: Message[] = [];
+
+      if (reflectedMessage) {
+        const reflected: ReflectedMessage = {
+          id: uuidv4(),
+          type: 'reflected-message',
+          content: reflectedMessage,
+          responseMessageId: messageId,
+          promptContext,
+        };
+
+        newMessages.push(reflected);
+      }
+
+      if (existingMessageIndex === -1) {
+        const newResponseMessage: ResponseMessage = {
+          id: messageId,
+          type: 'response',
+          content: chunk,
+          reasoning: reasoning || undefined,
+          promptContext,
+          timestamp,
+        };
+        processingResponseMessageMap.set(taskId, newResponseMessage);
+        newMessages.push(newResponseMessage);
+
+        return prevMessages.filter((message) => message.type !== 'loading').concat(...newMessages);
+      } else {
+        return prevMessages.map((message) => {
+          if (message.id === messageId && isResponseMessage(message)) {
+            return {
+              ...message,
+              content: message.content + chunk,
+              reasoning: reasoning ? (message.reasoning || '') + reasoning : message.reasoning,
+              promptContext,
+            };
+          }
+          return message;
+        });
+      }
+    });
+  }
+}
+
+/**
+ * Buffers a response chunk for later flushing.
+ * If no flush timer exists for this task, schedules one.
+ */
+function bufferResponseChunk(taskId: string, data: ResponseChunkData): void {
+  let buffer = responseChunkBuffers.get(taskId);
+  if (!buffer) {
+    buffer = [];
+    responseChunkBuffers.set(taskId, buffer);
+  }
+  buffer.push(data);
+
+  // Schedule a flush if one isn't already scheduled
+  if (!responseChunkFlushTimers.has(taskId)) {
+    const timer = setTimeout(() => flushResponseChunks(taskId), STREAM_FLUSH_INTERVAL_MS);
+    responseChunkFlushTimers.set(taskId, timer);
+  }
+}
+
+/**
+ * Flushes all buffered response chunks for a task.
+ * Clears the buffer and timer, then applies each chunk in order.
+ */
+export function flushResponseChunks(taskId: string): void {
+  const timer = responseChunkFlushTimers.get(taskId);
+  if (timer) {
+    clearTimeout(timer);
+    responseChunkFlushTimers.delete(taskId);
+  }
+
+  const buffer = responseChunkBuffers.get(taskId);
+  if (buffer && buffer.length > 0) {
+    responseChunkBuffers.delete(taskId);
+    for (const data of buffer) {
+      applyResponseChunk(taskId, data);
+    }
+  }
+}
 
 export const useTaskResponseHandlers = (baseDir: string, taskId: string) => {
   const api = useApi();
+  const throttleStreamingUpdates = useSettingsStore((s) => s.settings?.throttleStreamingUpdates ?? true);
 
   const handleResponseChunk = useCallback(
     ({ messageId, chunk, reasoning, reflectedMessage, promptContext }: ResponseChunkData) => {
-      touchTaskActivity(taskId);
-      const timestamp = Date.now();
-      let processingMessage = processingResponseMessageMap.get(taskId);
-      if (processingMessage?.id === messageId) {
-        processingMessage = {
-          ...processingMessage,
-          content: processingMessage.content + chunk,
-          reasoning: reasoning ? (processingMessage.reasoning || '') + reasoning : processingMessage.reasoning,
-          promptContext,
-        };
-        processingResponseMessageMap.set(taskId, processingMessage);
-        setMessages(taskId, (prevMessages) =>
-          prevMessages.map((message) => {
-            if (message.id === messageId && isResponseMessage(message)) {
-              return {
-                ...message,
-                content: message.content + chunk,
-                reasoning: reasoning ? (message.reasoning || '') + reasoning : message.reasoning,
-                promptContext,
-              };
-            }
-            return message;
-          }),
-        );
+      const processing = processingResponseMessageMap.get(taskId);
+      // Buffer only if: throttling is enabled AND this is an append (not a new message or reflected message)
+      const isAppend = throttleStreamingUpdates && !reflectedMessage && processing?.id === messageId;
+
+      if (isAppend) {
+        bufferResponseChunk(taskId, { messageId, chunk, reasoning, reflectedMessage, promptContext });
       } else {
-        setMessages(taskId, (prevMessages) => {
-          const existingMessageIndex = prevMessages.findIndex((message) => message.id === messageId);
-          const newMessages: Message[] = [];
-
-          if (reflectedMessage) {
-            const reflected: ReflectedMessage = {
-              id: uuidv4(),
-              type: 'reflected-message',
-              content: reflectedMessage,
-              responseMessageId: messageId,
-              promptContext,
-            };
-
-            newMessages.push(reflected);
-          }
-
-          if (existingMessageIndex === -1) {
-            const newResponseMessage: ResponseMessage = {
-              id: messageId,
-              type: 'response',
-              content: chunk,
-              reasoning: reasoning || undefined,
-              promptContext,
-              timestamp,
-            };
-            processingResponseMessageMap.set(taskId, newResponseMessage);
-            newMessages.push(newResponseMessage);
-
-            return prevMessages.filter((message) => message.type !== 'loading').concat(...newMessages);
-          } else {
-            return prevMessages.map((message) => {
-              if (message.id === messageId && isResponseMessage(message)) {
-                return {
-                  ...message,
-                  content: message.content + chunk,
-                  reasoning: reasoning ? (message.reasoning || '') + reasoning : message.reasoning,
-                  promptContext,
-                };
-              }
-              return message;
-            });
-          }
-        });
+        // Flush any buffered appends before handling non-append events
+        flushResponseChunks(taskId);
+        applyResponseChunk(taskId, { messageId, chunk, reasoning, reflectedMessage, promptContext });
       }
     },
-    [taskId],
+    [taskId, throttleStreamingUpdates],
   );
 
   const handleResponseCompleted = useCallback(
     ({ messageId, usageReport, content, reasoning, reflectedMessage, promptContext, timestamp }: ResponseCompletedData) => {
+      // Flush any buffered chunks before finalizing
+      flushResponseChunks(taskId);
+
       touchTaskActivity(taskId);
       const processingMessage = processingResponseMessageMap.get(taskId);
 
@@ -163,6 +238,8 @@ export const useTaskResponseHandlers = (baseDir: string, taskId: string) => {
     return () => {
       removeChunk();
       removeCompleted();
+      // Flush any remaining buffered chunks on cleanup
+      flushResponseChunks(taskId);
     };
   }, [api, baseDir, taskId, handleResponseChunk, handleResponseCompleted]);
 };

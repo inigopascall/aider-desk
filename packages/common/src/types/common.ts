@@ -741,6 +741,7 @@ export interface SettingsData {
   fontSize?: number;
   renderMarkdown: boolean;
   fullMessageRendering: boolean;
+  throttleStreamingUpdates?: boolean;
   aiderDeskAutoUpdate: boolean;
   diffViewMode?: DiffViewMode;
   messageViewMode?: MessageViewMode;

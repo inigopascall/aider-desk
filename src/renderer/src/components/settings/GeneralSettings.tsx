@@ -290,6 +290,19 @@ export const GeneralSettings = ({ settings, setSettings, onLanguageChange, onZoo
                 />
                 <InfoIcon tooltip={t('settings.messages.fullMessageRenderingTooltip')} />
               </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  label={t('settings.messages.throttleStreamingUpdates')}
+                  checked={settings.throttleStreamingUpdates ?? true}
+                  onChange={(checked) =>
+                    setSettings({
+                      ...settings,
+                      throttleStreamingUpdates: checked,
+                    })
+                  }
+                />
+                <InfoIcon tooltip={t('settings.messages.throttleStreamingUpdatesTooltip')} />
+              </div>
             </div>
           </div>
           <div className="space-y-2">
