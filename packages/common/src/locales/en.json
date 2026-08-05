@@ -546,6 +546,7 @@
       "focusPrompt": "Focus Prompt",
       "newTask": "New Task",
       "closeTask": "Close Task",
+      "toggleMarkdownEditor": "Toggle Markdown Editor",
       "browseFolder": "Browse Folder",
       "enterHotkey": "Enter hotkey...",
       "resetToDefaults": "Reset to Defaults",
@@ -1548,7 +1549,9 @@
     "agentModeOnly": "Available in Agent mode only",
     "handoffError": "Handoff failed: {{error}}",
     "taskInfo": "Show task information",
-    "pastedImage": "Pasted image {{index}}"
+    "pastedImage": "Pasted image {{index}}",
+    "switchToRawEditor": "Switch to raw text editor",
+    "switchToRenderedEditor": "Switch to rendered Markdown editor",
   },
   "agentProfiles": {
     "title": "Agents",

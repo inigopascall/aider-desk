@@ -89,7 +89,14 @@ const isPathLike = (input: string): boolean => {
 
 // The Milkdown serializer can emit <br /> for line breaks. We never want HTML
 // in the prompt text, so collapse all <br> variants back to real newlines.
-const sanitizeMilkdownMarkdown = (markdown: string): string => markdown.replace(/<br\s*\/?>/gi, '\n');
+// It also unnecessarily escapes plain punctuation (e.g. `\...?`) during
+// serialization; normalize those back so the prompt text stays clean.
+// Backslashes used for code, paths, commands, or other intentional Markdown
+// escapes are preserved — only the targeted punctuation escapes are collapsed.
+const sanitizeMilkdownMarkdown = (markdown: string): string =>
+  markdown
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/\\([.?!,:;])/g, '$1');
 
 const THEME = githubDarkInit({
   settings: {
@@ -130,6 +137,7 @@ export interface PromptFieldRef {
   setText: (text: string) => void;
   appendText: (text: string) => void;
   setImages: (images: string[]) => void;
+  toggleExpanded: () => void;
 }
 
 type Props = {
@@ -224,7 +232,12 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
     const [pastedImages, setPastedImages] = useState<string[]>([]);
     const debouncedText = useDebounce(text, 100);
     const [isExpanded, setIsExpanded] = useState(false);
+    // Whether the expanded overlay renders Milkdown (true) or a raw textarea (false).
+    // Defaults to rendered mode; session-local, not persisted.
+    const [showRenderedEditor, setShowRenderedEditor] = useState(true);
     const milkdownRef = useRef<MilkdownEditorRef>(null);
+    // Ref to the raw textarea used while in raw-editor mode.
+    const rawTextareaRef = useRef<HTMLTextAreaElement>(null);
     const { setText: setSavedText } = usePromptFieldText(baseDir, taskId, (text) => {
       const view = editorRef.current?.view;
       view?.dispatch({
@@ -296,11 +309,36 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
 
     // Read the authoritative markdown from Milkdown (covers the sub-200 ms
     // debounce window), push it into CodeMirror, then close the overlay.
+    // In raw mode, the current text is already the authoritative value.
     const closeExpanded = useCallback(() => {
-      const md = milkdownRef.current?.getMarkdown();
-      setTextWithDispatch(md !== undefined ? sanitizeMilkdownMarkdown(md) : text);
+      if (showRenderedEditor) {
+        const md = milkdownRef.current?.getMarkdown();
+        setTextWithDispatch(md !== undefined ? sanitizeMilkdownMarkdown(md) : text);
+      } else {
+        // Raw mode: the shared `text` state already holds the current textarea value.
+        setTextWithDispatch(text);
+      }
       setIsExpanded(false);
-    }, [setTextWithDispatch, text]);
+    }, [showRenderedEditor, setTextWithDispatch, text]);
+
+    // Switch from rendered Milkdown mode to raw textarea mode.
+    // Reads the current Milkdown value first (capturing any in-flight changes),
+    // sanitizes it, then swaps the editor component.
+    const switchToRawEditor = useCallback(() => {
+      const md = milkdownRef.current?.getMarkdown();
+      const clean = sanitizeMilkdownMarkdown(md !== undefined ? md : text);
+      setText(clean);
+      setSavedText(clean);
+      setShowRenderedEditor(false);
+    }, [text, setSavedText]);
+
+    // Switch from raw textarea mode back to rendered Milkdown mode.
+    // The raw textarea's value is already in `text`; we persist it and remount
+    // Milkdown with a new key so its defaultValueCtx is seeded with the raw text.
+    const switchToRenderedEditor = useCallback(() => {
+      setSavedText(text);
+      setShowRenderedEditor(true);
+    }, [text, setSavedText]);
 
     // Capture-phase document listener so Escape pre-empts both ProseMirror and
     // the background CodeMirror Escape keymap while the overlay is open.
@@ -318,6 +356,18 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       document.addEventListener('keydown', handleOverlayKeyDown, true);
       return () => document.removeEventListener('keydown', handleOverlayKeyDown, true);
     }, [isExpanded, closeExpanded]);
+
+    // Focus the active editor when the overlay opens.
+    // In rendered mode, defer focus until Milkdown has created the ProseMirror canvas.
+    // In raw mode, focus the textarea once it mounts.
+    useEffect(() => {
+      if (!isExpanded) return;
+      if (showRenderedEditor) {
+        requestAnimationFrame(() => milkdownRef.current?.focus());
+      } else {
+        requestAnimationFrame(() => rawTextareaRef.current?.focus());
+      }
+    }, [isExpanded, showRenderedEditor]);
 
     useEffect(() => {
       if (text) {
@@ -509,6 +559,13 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       },
       setImages: (newImages: string[]) => {
         setPastedImages(newImages);
+      },
+      toggleExpanded: () => {
+        if (isExpanded) {
+          closeExpanded();
+        } else {
+          setIsExpanded(true);
+        }
       },
     }));
 
@@ -1414,18 +1471,64 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
           createPortal(
             <div className="absolute inset-0 z-50 flex flex-col bg-bg-primary">
               <div className="flex items-center justify-between px-4 py-2 border-b border-border-dark-light flex-shrink-0">
-                <span className="text-sm text-text-primary">Markdown editor</span>
-                <Tooltip content="Close editor">
-                  <button
-                    onClick={closeExpanded}
-                    className="text-text-muted-light hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200"
-                  >
-                    <MdOutlineFullscreenExit className="w-5 h-5" />
-                  </button>
-                </Tooltip>
+                <span className="text-sm text-text-primary">Editor</span>
+                <div className="flex items-center gap-1">
+                  {/* Toggle between rendered Milkdown and raw textarea mode */}
+                  <Tooltip content={showRenderedEditor ? t('promptField.switchToRawEditor') : t('promptField.switchToRenderedEditor')}>
+                    <button
+                      onClick={showRenderedEditor ? switchToRawEditor : switchToRenderedEditor}
+                      className="text-text-muted-light hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200"
+                      aria-label={showRenderedEditor ? t('promptField.switchToRawEditor') : t('promptField.switchToRenderedEditor')}
+                    >
+                      {showRenderedEditor ? (
+                        // Raw mode icon: represents plain text
+                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                          <line x1="16" y1="13" x2="8" y2="13" />
+                          <line x1="16" y1="17" x2="8" y2="17" />
+                          <polyline points="10 9 9 9 8 9" />
+                        </svg>
+                      ) : (
+                        // Rendered mode icon: represents preview/rendered view
+                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      )}
+                    </button>
+                  </Tooltip>
+                  <Tooltip content="Close editor">
+                    <button
+                      onClick={closeExpanded}
+                      className="text-text-muted-light hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200"
+                    >
+                      <MdOutlineFullscreenExit className="w-5 h-5" />
+                    </button>
+                  </Tooltip>
+                </div>
               </div>
               <div className="flex-grow overflow-y-auto p-6 milkdown-prompt-editor scrollbar-thin scrollbar-track-bg-secondary scrollbar-thumb-bg-fourth">
-                <MilkdownEditor ref={milkdownRef} initialValue={text} onChange={handleMilkdownChange} />
+                {showRenderedEditor ? (
+                  // Remount Milkdown when switching back to rendered mode via a mode-dependent key
+                  // so its defaultValueCtx is seeded with the current raw text.
+                  <MilkdownEditor key={showRenderedEditor ? 'rendered' : 'raw'} ref={milkdownRef} initialValue={text} onChange={handleMilkdownChange} />
+                ) : (
+                  <textarea
+                    ref={rawTextareaRef}
+                    value={text}
+                    onChange={(e) => {
+                      setText(e.target.value);
+                      setPendingCommand(null);
+                    }}
+                    onBlur={() => setSavedText(text)}
+                    placeholder={t('promptField.questionPlaceholder')}
+                    spellCheck={false}
+                    className="w-full h-full min-h-[200px] bg-transparent text-text-primary placeholder-text-muted-dark resize-none overflow-y-auto scrollbar-thin scrollbar-track-bg-secondary scrollbar-thumb-bg-fourth focus:outline-none text-sm"
+                    style={{ fontFamily: 'var(--font-family)' }}
+                    rows={1}
+                  />
+                )}
               </div>
             </div>,
             overlayContainerRef?.current ?? document.body,

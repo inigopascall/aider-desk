@@ -32,6 +32,7 @@ export const DEFAULT_HOTKEY_CONFIG: HotkeyConfig = {
     focusPrompt: 'mod+l',
     newTask: 'mod+shift+t',
     closeTask: 'mod+shift+w',
+    toggleMarkdownEditor: 'mod+shift+m',
   },
   dialogHotkeys: {
     browseFolder: 'mod+b',
@@ -95,6 +96,7 @@ export const getHotkeys = (config?: HotkeyConfig) => {
       FOCUS_PROMPT: tk.focusPrompt || tkDef.focusPrompt,
       NEW_TASK: tk.newTask || tkDef.newTask,
       CLOSE_TASK: tk.closeTask || tkDef.closeTask,
+      TOGGLE_MARKDOWN_EDITOR: tk.toggleMarkdownEditor || tkDef.toggleMarkdownEditor,
     },
     DIALOG_HOTKEYS: {
       BROWSE_FOLDER: dk.browseFolder || dkDef.browseFolder,

@@ -9,10 +9,11 @@ import { Milkdown, MilkdownProvider, useEditor, useInstance } from '@milkdown/re
 
 /**
  * Imperative handle for reading the current markdown value on demand
- * (e.g. before the debounced listener fires).
+ * (e.g. before the debounced listener fires) and for focusing the canvas.
  */
 export interface MilkdownEditorRef {
   getMarkdown: () => string;
+  focus: () => void;
 }
 
 type Props = {
@@ -32,6 +33,10 @@ const MilkdownInner = forwardRef<MilkdownEditorRef, Props>(({ initialValue, onCh
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
+
+  // Ref to the Milkdown root element so we can locate the ProseMirror canvas
+  // for imperative focus operations.
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const [, getInstance] = useInstance();
 
@@ -63,9 +68,19 @@ const MilkdownInner = forwardRef<MilkdownEditorRef, Props>(({ initialValue, onCh
       const editor = getInstance();
       return editor ? editor.action(getMarkdownAction()) : initialValue;
     },
+    // Focus the ProseMirror contenteditable canvas. Uses requestAnimationFrame
+    // to ensure the canvas has been created by Milkdown before attempting focus.
+    focus: () => {
+      requestAnimationFrame(() => {
+        const canvas = rootRef.current?.querySelector('.ProseMirror') as HTMLElement | null;
+        if (canvas) {
+          canvas.focus();
+        }
+      });
+    },
   }), [getInstance, initialValue]);
 
-  return <Milkdown />;
+  return <Milkdown ref={rootRef} />;
 });
 
 MilkdownInner.displayName = 'MilkdownInner';

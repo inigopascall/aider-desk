@@ -204,6 +204,21 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
       },
     );
 
+    // Toggle the expanded prompt editor (rendered/raw)
+    useHotkeys(
+      TASK_HOTKEYS.TOGGLE_MARKDOWN_EDITOR,
+      (e) => {
+        e.preventDefault();
+        promptFieldRef.current?.toggleExpanded();
+      },
+      {
+        enabled: isActive,
+        scopes: 'task',
+        enableOnFormTags: true,
+        enableOnContentEditable: true,
+      },
+    );
+
     const currentModel = useMemo(() => {
       let model: Model | undefined;
       if (!AIDER_MODES.includes(currentMode)) {
