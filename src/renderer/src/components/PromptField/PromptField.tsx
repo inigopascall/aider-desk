@@ -86,7 +86,7 @@ const PLACEHOLDER_COUNT = 20;
 const MIN_EXPANDED_EDITOR_FONT_SIZE = 10;
 const MAX_EXPANDED_EDITOR_FONT_SIZE = 32;
 const EXPANDED_EDITOR_FONT_SIZE_STEP = 0.5;
-const DEFAULT_EXPANDED_EDITOR_FONT_SIZE = 15.2;
+const DEFAULT_EXPANDED_EDITOR_FONT_SIZE = 16.2;
 const EXPANDED_EDITOR_FONT_SIZE_STORAGE_KEY = 'prompt-expanded-editor-font-size';
 
 const isPathLike = (input: string): boolean => {
@@ -363,19 +363,23 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       scrollContainer.scrollTop = scrollContainer.scrollHeight;
     }, []);
 
-    const handleExpandedEditorWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
-      if (!event.ctrlKey && !event.metaKey) {
-        return;
-      }
+    const handleExpandedEditorWheel = useCallback(
+      (event: React.WheelEvent<HTMLDivElement>) => {
+        if (!showRenderedEditor || (!event.ctrlKey && !event.metaKey)) {
+          return;
+        }
 
       event.preventDefault();
-      setExpandedEditorFontSize((currentSize) =>
-        Math.min(
-          MAX_EXPANDED_EDITOR_FONT_SIZE,
-          Math.max(MIN_EXPANDED_EDITOR_FONT_SIZE, currentSize + (event.deltaY < 0 ? EXPANDED_EDITOR_FONT_SIZE_STEP : -EXPANDED_EDITOR_FONT_SIZE_STEP)),
-        ),
-      );
-    }, []);
+        event.preventDefault();
+        setExpandedEditorFontSize((currentSize) =>
+          Math.min(
+            MAX_EXPANDED_EDITOR_FONT_SIZE,
+            Math.max(MIN_EXPANDED_EDITOR_FONT_SIZE, currentSize + (event.deltaY < 0 ? EXPANDED_EDITOR_FONT_SIZE_STEP : -EXPANDED_EDITOR_FONT_SIZE_STEP)),
+          ),
+        );
+      },
+      [showRenderedEditor],
+    );
 
     useEffect(() => {
       try {
@@ -425,6 +429,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       const clean = sanitizeMilkdownMarkdown(md !== undefined ? md : text);
       setText(clean);
       setSavedText(clean);
+      setExpandedEditorFontSize(DEFAULT_EXPANDED_EDITOR_FONT_SIZE);
       setShowRenderedEditor(false);
     }, [text, setSavedText]);
 
@@ -1749,7 +1754,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
                 className="flex-grow overflow-y-auto scrollbar-thin scrollbar-track-bg-secondary scrollbar-thumb-bg-fourth"
               >
                 <div
-                  className="w-full mx-auto px-6 py-6 pb-16 min-h-full milkdown-prompt-editor"
+                  className="w-full mx-auto flex flex-col px-6 py-6 pb-16 min-h-full milkdown-prompt-editor"
                   style={
                     {
                       maxWidth: overlayInsets ? overlayInsets.width : undefined,
@@ -1773,8 +1778,8 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
                       onBlur={() => setSavedText(text)}
                       placeholder={t('promptField.questionPlaceholder')}
                       spellCheck={false}
-                      className="w-full h-full min-h-[200px] bg-transparent text-text-primary placeholder-text-muted-dark resize-none overflow-y-auto scrollbar-thin scrollbar-track-bg-secondary scrollbar-thumb-bg-fourth focus:outline-none"
-                      style={{ fontFamily: 'var(--font-family)', fontSize: 'var(--prompt-editor-font-size)' }}
+                      className="w-full flex-1 min-h-[200px] bg-transparent text-text-primary placeholder-text-muted-dark resize-none overflow-y-auto scrollbar-thin scrollbar-track-bg-secondary scrollbar-thumb-bg-fourth focus:outline-none"
+                      style={{ fontFamily: 'var(--font-family)', fontSize: '1rem' }}
                       rows={1}
                     />
                   )}
