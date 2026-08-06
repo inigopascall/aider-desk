@@ -153,7 +153,11 @@ export const ContextFilesSection = ({
           // Different project: convert relative paths to absolute, force readOnly.
           // If the path is already absolute (e.g. a file from outside the source
           // project), use it as-is.
-          const isAbsolute = file.path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(file.path);
+          const isAbsolute =
+            file.path.startsWith('/') ||
+            file.path.startsWith('~/') ||
+            file.path.startsWith('\\\\') ||
+            /^[A-Za-z]:[\\/]/.test(file.path);
           const absolutePath = isAbsolute ? file.path : `${sourceRoot}/${file.path}`;
           const readOnly = true;
           console.log('Pasting context file', { file, pathToAdd: absolutePath, readOnly, isSameProject });

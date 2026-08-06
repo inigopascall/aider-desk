@@ -349,7 +349,9 @@ export class EventsHandler {
     if (!task) {
       throw new Error(`Task ${taskId} not found in project ${baseDir}`);
     }
-    return (await task.addFiles({ path: filePath, readOnly })) === true;
+    // Expand a leading tilde (~) to the user's home directory before delegating,
+    // so that ~/... paths (e.g. rule files) resolve to absolute paths downstream.
+    return (await task.addFiles({ path: expandTilde(filePath), readOnly })) === true;
   }
 
   dropFile(baseDir: string, taskId: string, filePath: string): void {
