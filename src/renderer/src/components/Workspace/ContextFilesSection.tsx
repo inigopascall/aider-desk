@@ -110,9 +110,12 @@ export const ContextFilesSection = ({
     copyToClipboard(userContextFiles, baseDir);
   }, [copyToClipboard, userContextFiles, baseDir]);
 
-  const handlePaste = useCallback(() => {
+  const handlePaste = useCallback(async () => {
     const clipboardState = useContextFilesClipboard.getState();
+    console.log('Paste handler entered', clipboardState);
+
     if (!clipboardState.sourceBaseDir || clipboardState.copiedFiles.length === 0) {
+      console.warn('Paste aborted by clipboard guard', clipboardState);
       return;
     }
 
@@ -121,20 +124,27 @@ export const ContextFilesSection = ({
     // to avoid producing a double separator when joining relative paths.
     const sourceRoot = clipboardState.sourceBaseDir.replace(/[/\\]+$/, '');
 
-    for (const file of clipboardState.copiedFiles) {
+    const jobs = clipboardState.copiedFiles.map(async (file) => {
       if (isSameProject) {
-        // Same project: paths are already relative to the project root (or already
+        // Same project/Paths are already relative to the project root (or already
         // absolute for external read-only files). Preserve the original readOnly flag.
-        api.addFile(baseDir, taskId, file.path, file.readOnly);
+        const pathToAdd = file.path;
+        const readOnly = file.readOnly;
+        console.log('Pasting context file', { file, pathToAdd, readOnly, isSameProject });
+        await api.addFile(baseDir, taskId, pathToAdd, readOnly);
       } else {
         // Different project: convert relative paths to absolute, force readOnly.
         // If the path is already absolute (e.g. a file from outside the source
         // project), use it as-is.
         const isAbsolute = file.path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(file.path);
         const absolutePath = isAbsolute ? file.path : `${sourceRoot}/${file.path}`;
-        api.addFile(baseDir, taskId, absolutePath, true);
+        const readOnly = true;
+        console.log('Pasting context file', { file, pathToAdd: absolutePath, readOnly, isSameProject });
+        await api.addFile(baseDir, taskId, absolutePath, readOnly);
       }
-    }
+    });
+
+    await Promise.all(jobs);
   }, [api, baseDir, taskId]);
 
   const contextActions = useMemo(

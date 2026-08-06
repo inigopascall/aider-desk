@@ -59,8 +59,8 @@ export class ContextApi extends BaseApi {
         }
 
         const { projectDir, taskId, path, readOnly } = parsed;
-        await this.eventsHandler.addFile(projectDir, taskId, path, readOnly);
-        res.status(200).json({ message: 'File added to context' });
+        const added = await this.eventsHandler.addFile(projectDir, taskId, path, readOnly);
+        res.status(200).json({ added });
       }),
     );
 

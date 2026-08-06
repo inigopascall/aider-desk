@@ -1755,7 +1755,7 @@ export class Task {
       const extensionResult = await this.extensionManager.dispatchEvent('onFilesAdded', { files: [contextFile] }, this.project, this);
       if (extensionResult.files.length === 0) {
         logger.debug('File addition blocked by extension (empty files array)');
-        return false;
+        continue;
       }
       contextFile = extensionResult.files[0];
 

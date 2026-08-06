@@ -343,8 +343,13 @@ export class EventsHandler {
     return await task.getUpdatedFiles();
   }
 
-  async addFile(baseDir: string, taskId: string, filePath: string, readOnly = false): Promise<void> {
-    void this.projectManager.getProject(baseDir).getTask(taskId)?.addFiles({ path: filePath, readOnly });
+  async addFile(baseDir: string, taskId: string, filePath: string, readOnly = false): Promise<boolean> {
+    const project = this.projectManager.getProject(baseDir);
+    const task = project.getTask(taskId);
+    if (!task) {
+      throw new Error(`Task ${taskId} not found in project ${baseDir}`);
+    }
+    return (await task.addFiles({ path: filePath, readOnly })) === true;
   }
 
   dropFile(baseDir: string, taskId: string, filePath: string): void {

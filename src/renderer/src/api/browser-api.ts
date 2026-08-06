@@ -542,8 +542,8 @@ export class BrowserApi implements ApplicationAPI {
       taskId,
     });
   }
-  addFile(baseDir: string, taskId: string, filePath: string, readOnly?: boolean): void {
-    this.post('/add-context-file', {
+  async addFile(baseDir: string, taskId: string, filePath: string, readOnly?: boolean): Promise<void> {
+    await this.post('/add-context-file', {
       projectDir: baseDir,
       taskId,
       path: filePath,
