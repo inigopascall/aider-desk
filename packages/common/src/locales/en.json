@@ -1142,6 +1142,8 @@
     "expandAll": "Expand all",
     "collapseAll": "Collapse all",
     "dropAll": "Drop all context files",
+    "copyContextFiles": "Copy context files",
+    "pasteContextFiles": "Paste context files",
     "globalRule": "Global rule file",
     "projectRule": "Project rule file",
     "agentRule": "Agent rule file",
