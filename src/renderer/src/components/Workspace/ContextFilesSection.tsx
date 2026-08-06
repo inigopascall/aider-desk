@@ -1,5 +1,4 @@
 import { ContextFile, Mode, OS, TokensCost } from '@common/types';
-import { compareBaseDirs } from '@common/utils';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { HiOutlineTrash, HiPlus } from 'react-icons/hi';
 import { BiCopy, BiPaste } from 'react-icons/bi';
@@ -16,6 +15,23 @@ import type { TreeItem } from './types';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { useApi } from '@/contexts/ApiContext';
 import { useContextFilesClipboard, useHasCopiedFiles } from '@/stores/contextFilesClipboardStore';
+
+const areSameProject = (first: string, second: string): boolean => {
+  const normalize = (value: string): string => {
+    const normalized = value.replace(/\\/g, '/').replace(/\/+$/, '');
+    return normalized.length === 0 ? '/' : normalized;
+  };
+
+  const a = normalize(first);
+  const b = normalize(second);
+
+  // Windows paths are case-insensitive
+  if (/^[A-Za-z]:\//.test(a) || /^[A-Za-z]:\//.test(b)) {
+    return a.toLowerCase() === b.toLowerCase();
+  }
+
+  return a === b;
+};
 
 type Props = {
   mode: Mode;
@@ -119,32 +135,36 @@ export const ContextFilesSection = ({
       return;
     }
 
-    const isSameProject = compareBaseDirs(clipboardState.sourceBaseDir, baseDir);
-    // Project roots are stored without a trailing separator, but strip defensively
-    // to avoid producing a double separator when joining relative paths.
-    const sourceRoot = clipboardState.sourceBaseDir.replace(/[/\\]+$/, '');
+    try {
+      const isSameProject = areSameProject(clipboardState.sourceBaseDir, baseDir);
+      // Project roots are stored without a trailing separator, but strip defensively
+      // to avoid producing a double separator when joining relative paths.
+      const sourceRoot = clipboardState.sourceBaseDir.replace(/[/\\]+$/, '');
 
-    const jobs = clipboardState.copiedFiles.map(async (file) => {
-      if (isSameProject) {
-        // Same project/Paths are already relative to the project root (or already
-        // absolute for external read-only files). Preserve the original readOnly flag.
-        const pathToAdd = file.path;
-        const readOnly = file.readOnly;
-        console.log('Pasting context file', { file, pathToAdd, readOnly, isSameProject });
-        await api.addFile(baseDir, taskId, pathToAdd, readOnly);
-      } else {
-        // Different project: convert relative paths to absolute, force readOnly.
-        // If the path is already absolute (e.g. a file from outside the source
-        // project), use it as-is.
-        const isAbsolute = file.path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(file.path);
-        const absolutePath = isAbsolute ? file.path : `${sourceRoot}/${file.path}`;
-        const readOnly = true;
-        console.log('Pasting context file', { file, pathToAdd: absolutePath, readOnly, isSameProject });
-        await api.addFile(baseDir, taskId, absolutePath, readOnly);
-      }
-    });
+      const jobs = clipboardState.copiedFiles.map(async (file) => {
+        if (isSameProject) {
+          // Same project/Paths are already relative to the project root (or already
+          // absolute for external read-only files). Preserve the original readOnly flag.
+          const pathToAdd = file.path;
+          const readOnly = file.readOnly;
+          console.log('Pasting context file', { file, pathToAdd, readOnly, isSameProject });
+          await api.addFile(baseDir, taskId, pathToAdd, readOnly);
+        } else {
+          // Different project: convert relative paths to absolute, force readOnly.
+          // If the path is already absolute (e.g. a file from outside the source
+          // project), use it as-is.
+          const isAbsolute = file.path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(file.path);
+          const absolutePath = isAbsolute ? file.path : `${sourceRoot}/${file.path}`;
+          const readOnly = true;
+          console.log('Pasting context file', { file, pathToAdd: absolutePath, readOnly, isSameProject });
+          await api.addFile(baseDir, taskId, absolutePath, readOnly);
+        }
+      });
 
-    await Promise.all(jobs);
+      await Promise.all(jobs);
+    } catch (error) {
+      console.error('Failed to paste context files:', error);
+    }
   }, [api, baseDir, taskId]);
 
   const contextActions = useMemo(

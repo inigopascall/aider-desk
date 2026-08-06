@@ -137,7 +137,7 @@ export interface ApplicationAPI {
   generateCommitMessage: (baseDir: string, taskId: string) => Promise<string>;
   commitChanges: (baseDir: string, taskId: string, message: string, amend: boolean) => Promise<void>;
   cancelCommitChanges: (baseDir: string, taskId: string) => Promise<void>;
-  addFile: (baseDir: string, taskId: string, filePath: string, readOnly?: boolean) => void;
+  addFile: (baseDir: string, taskId: string, filePath: string, readOnly?: boolean) => Promise<void>;
   isValidPath: (baseDir: string, path: string) => Promise<boolean>;
   isProjectPath: (path: string) => Promise<boolean>;
   dropFile: (baseDir: string, taskId: string, path: string) => void;
