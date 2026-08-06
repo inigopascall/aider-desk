@@ -166,6 +166,7 @@ export const ContextFilesSection = ({
       });
 
       await Promise.all(jobs);
+      useContextFilesClipboard.getState().clear();
     } catch (error) {
       console.error('Failed to paste context files:', error);
     }
