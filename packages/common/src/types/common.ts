@@ -507,6 +507,7 @@ export interface PromptBehavior {
     modeSwitching: boolean;
   };
   useVimBindings: boolean;
+  openEditorAtFullWidth?: boolean;
 }
 
 export enum InvocationMode {

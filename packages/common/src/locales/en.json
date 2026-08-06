@@ -897,6 +897,8 @@
       "keyBindings": "Key bindings",
       "useVimBindings": "Use Vim bindings",
       "useVimBindingsTooltip": "Enable Vim key bindings for navigating and editing text in the prompt field.",
+      "openEditorAtFullWidth": "Open editor at full width",
+      "openEditorAtFullWidthTooltip": "When enabled, the expanded prompt editor automatically animates to full application width as soon as it opens.",
       "modeAtSign": "@ mention mode"
     },
     "network": {
@@ -957,13 +959,7 @@
       "invalidCommand": "Invalid command",
       "saveError": "Failed to save prompt: {{error}}",
       "switchToRawEditor": "Switch to Raw Editor",
-      "switchToRenderedEditor": "Switch to Rendered Editor",
-      "editorTitle": "Editor: {{mode}}",
-      "editorModeRendered": "rendered",
-      "editorModeRaw": "raw",
-      "expandEditorWidth": "Expand editor to full width",
-      "collapseEditorWidth": "Collapse editor width",
-      "closeEditor": "Close editor"
+      "switchToRenderedEditor": "Switch to Rendered Editor"
     },
     "memory": {
       "configuration": "Configuration",
@@ -1568,7 +1564,13 @@
     "taskInfo": "Show task information",
     "pastedImage": "Pasted image {{index}}",
     "switchToRawEditor": "Switch to raw text editor",
-    "switchToRenderedEditor": "Switch to rendered Markdown editor"
+    "switchToRenderedEditor": "Switch to rendered Markdown editor",
+    "editorTitle": "Editor: {{mode}}",
+    "editorModeRendered": "rendered",
+    "editorModeRaw": "raw",
+    "expandEditorWidth": "Expand editor to full width",
+    "collapseEditorWidth": "Collapse editor width",
+    "closeEditor": "Close editor"
   },
   "agentProfiles": {
     "title": "Agents",

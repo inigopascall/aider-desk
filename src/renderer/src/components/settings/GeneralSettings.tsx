@@ -418,6 +418,22 @@ export const GeneralSettings = ({ settings, setSettings, onLanguageChange, onZoo
               />
               <InfoIcon tooltip={t('settings.promptBehavior.useVimBindingsTooltip')} />
             </div>
+            <div className="flex items-center space-x-2 ml-0.5">
+              <Checkbox
+                label={t('settings.promptBehavior.openEditorAtFullWidth')}
+                checked={settings.promptBehavior.openEditorAtFullWidth ?? true}
+                onChange={(checked) =>
+                  setSettings({
+                    ...settings,
+                    promptBehavior: {
+                      ...settings.promptBehavior,
+                      openEditorAtFullWidth: checked,
+                    },
+                  })
+                }
+              />
+              <InfoIcon tooltip={t('settings.promptBehavior.openEditorAtFullWidthTooltip')} />
+            </div>
           </div>
         </div>
       </Section>

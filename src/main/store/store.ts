@@ -78,6 +78,7 @@ export const DEFAULT_SETTINGS: SettingsData = {
       modeSwitching: false,
     },
     useVimBindings: false,
+    openEditorAtFullWidth: true,
   },
   server: {
     enabled: false,

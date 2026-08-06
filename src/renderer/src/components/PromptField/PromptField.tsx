@@ -30,6 +30,7 @@ import { usePromptFieldText } from './usePromptFieldText';
 import { MilkdownEditor, type MilkdownEditorRef } from './MilkdownEditor';
 
 import { useTaskQueuedPrompts } from '@/stores/taskStore';
+import { useMarkdownEditorOverlayStore } from '@/stores/markdownEditorStore';
 import { InputHistoryMenu } from '@/components/PromptField/InputHistoryMenu';
 import { showErrorNotification } from '@/utils/notifications';
 import { useCommands } from '@/hooks/useCommands';
@@ -251,6 +252,8 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
     const rawTextareaRef = useRef<HTMLTextAreaElement>(null);
     // Track whether the expanded overlay was previously open, for focus restoration.
     const wasExpandedRef = useRef(false);
+    // When true, the next overlay open should auto-animate to full width once the transition is armed.
+    const autoExpandPendingRef = useRef(false);
     const { setText: setSavedText } = usePromptFieldText(baseDir, taskId, (text) => {
       const view = editorRef.current?.view;
       view?.dispatch({
@@ -320,8 +323,9 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
 
     const openExpanded = useCallback(() => {
       setIsFullWidth(false);
+      autoExpandPendingRef.current = promptBehavior.openEditorAtFullWidth ?? true;
       setIsExpanded(true);
-    }, []);
+    }, [promptBehavior.openEditorAtFullWidth]);
 
     // Focus the compact CodeMirror prompt editor.
     const focusCompactPrompt = useCallback(() => {
@@ -467,6 +471,15 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       };
     }, [isExpanded, overlayContainerRef]);
 
+    // Once the width transition is armed after opening, if auto-full-width is pending,
+    // flip to full width so the panel visibly slides from constrained to full width.
+    useEffect(() => {
+      if (widthTransitionEnabled && autoExpandPendingRef.current) {
+        autoExpandPendingRef.current = false;
+        setIsFullWidth(true);
+      }
+    }, [widthTransitionEnabled]);
+
     // Close the expanded overlay when the task/project becomes inactive.
     // This prevents the portal from staying open and blocking hotkeys when
     // the user switches to a different project or task.
@@ -475,6 +488,28 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
         closeExpanded();
       }
     }, [isActive, isExpanded, closeExpanded]);
+
+    // Keep a live ref to the latest closeExpanded so the global overlay store
+    // can always invoke the current close handler regardless of identity changes.
+    const closeExpandedRef = useRef(closeExpanded);
+    useEffect(() => {
+      closeExpandedRef.current = closeExpanded;
+    }, [closeExpanded]);
+
+    // Mirror the overlay's open state into the global coordination store so
+    // navigation owners can force-close it before the destination view paints.
+    useEffect(() => {
+      const store = useMarkdownEditorOverlayStore.getState();
+      if (isExpanded) {
+        store.open(taskId, () => closeExpandedRef.current());
+      } else {
+        store.close(taskId);
+      }
+    }, [isExpanded, taskId]);
+
+    // Unmount safety: clear the store entry if this field unmounts (e.g. on a
+    // task/project switch) so a stale owner can't block future closes.
+    useEffect(() => () => useMarkdownEditorOverlayStore.getState().close(taskId), [taskId]);
 
     useEffect(() => {
       if (text) {
@@ -671,7 +706,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
         if (isExpanded) {
           closeExpanded();
         } else {
-          setIsExpanded(true);
+          openExpanded();
         }
       },
       toggleExpandedEditorMode: () => {
@@ -1612,7 +1647,12 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
           createPortal(
             <div className="fixed z-50 flex flex-col bg-bg-primary shadow-2xl" style={panelStyle}>
               <div className="flex items-center justify-between px-4 py-2 border-b border-border-dark-light flex-shrink-0">
-                <div className="flex items-center gap-2">
+                <span className="text-sm text-text-primary">
+                  {t('promptField.editorTitle', {
+                    mode: showRenderedEditor ? t('promptField.editorModeRendered') : t('promptField.editorModeRaw'),
+                  })}
+                </span>
+                <div className="flex items-center gap-1">
                   <Tooltip content={isFullWidth ? t('promptField.collapseEditorWidth') : t('promptField.expandEditorWidth')}>
                     <button
                       onClick={toggleEditorWidth}
@@ -1622,13 +1662,6 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
                       {isFullWidth ? <LuChevronsRightLeft className="w-5 h-5" /> : <LuChevronsLeftRight className="w-5 h-5" />}
                     </button>
                   </Tooltip>
-                  <span className="text-sm text-text-primary">
-                    {t('promptField.editorTitle', {
-                      mode: showRenderedEditor ? t('promptField.editorModeRendered') : t('promptField.editorModeRaw'),
-                    })}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1">
                   {/* Toggle between rendered Milkdown and raw textarea mode */}
                   <Tooltip content={showRenderedEditor ? t('promptField.switchToRawEditor') : t('promptField.switchToRenderedEditor')}>
                     <button
