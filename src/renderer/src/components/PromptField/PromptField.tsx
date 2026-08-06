@@ -83,6 +83,11 @@ const ANSWERS = ['y', 'n', 'a', 'd', 'maybe']; // Added 'maybe' (Branch B)
 
 const HISTORY_MENU_CHUNK_SIZE = 20;
 const PLACEHOLDER_COUNT = 20;
+const MIN_EXPANDED_EDITOR_FONT_SIZE = 10;
+const MAX_EXPANDED_EDITOR_FONT_SIZE = 32;
+const EXPANDED_EDITOR_FONT_SIZE_STEP = 0.5;
+const DEFAULT_EXPANDED_EDITOR_FONT_SIZE = 15.2;
+const EXPANDED_EDITOR_FONT_SIZE_STORAGE_KEY = 'prompt-expanded-editor-font-size';
 
 const isPathLike = (input: string): boolean => {
   const firstWord = input.split(' ')[0];
@@ -236,6 +241,16 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
     const [pastedImages, setPastedImages] = useState<string[]>([]);
     const debouncedText = useDebounce(text, 100);
     const [isExpanded, setIsExpanded] = useState(false);
+    const [expandedEditorFontSize, setExpandedEditorFontSize] = useState(() => {
+      try {
+        const storedFontSize = Number(localStorage.getItem(EXPANDED_EDITOR_FONT_SIZE_STORAGE_KEY));
+        return Number.isFinite(storedFontSize)
+          ? Math.min(MAX_EXPANDED_EDITOR_FONT_SIZE, Math.max(MIN_EXPANDED_EDITOR_FONT_SIZE, storedFontSize))
+          : DEFAULT_EXPANDED_EDITOR_FONT_SIZE;
+      } catch {
+        return DEFAULT_EXPANDED_EDITOR_FONT_SIZE;
+      }
+    });
     // Whether the expanded overlay renders Milkdown (true) or a raw textarea (false).
     // Defaults to rendered mode; session-local, not persisted.
     const [showRenderedEditor, setShowRenderedEditor] = useState(true);
@@ -250,6 +265,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
     const milkdownRef = useRef<MilkdownEditorRef>(null);
     // Ref to the raw textarea used while in raw-editor mode.
     const rawTextareaRef = useRef<HTMLTextAreaElement>(null);
+    const expandedEditorScrollRef = useRef<HTMLDivElement>(null);
     // Track whether the expanded overlay was previously open, for focus restoration.
     const wasExpandedRef = useRef(false);
     // When true, the next overlay open should auto-animate to full width once the transition is armed.
@@ -341,6 +357,34 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       textarea.setSelectionRange(len, len);
     }, []);
 
+    const scrollExpandedEditorToBottom = useCallback(() => {
+      const scrollContainer = expandedEditorScrollRef.current;
+      if (!scrollContainer) return;
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    }, []);
+
+    const handleExpandedEditorWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+      if (!event.ctrlKey && !event.metaKey) {
+        return;
+      }
+
+      event.preventDefault();
+      setExpandedEditorFontSize((currentSize) =>
+        Math.min(
+          MAX_EXPANDED_EDITOR_FONT_SIZE,
+          Math.max(MIN_EXPANDED_EDITOR_FONT_SIZE, currentSize + (event.deltaY < 0 ? EXPANDED_EDITOR_FONT_SIZE_STEP : -EXPANDED_EDITOR_FONT_SIZE_STEP)),
+        ),
+      );
+    }, []);
+
+    useEffect(() => {
+      try {
+        localStorage.setItem(EXPANDED_EDITOR_FONT_SIZE_STORAGE_KEY, String(expandedEditorFontSize));
+      } catch {
+        // Ignore unavailable or restricted localStorage.
+      }
+    }, [expandedEditorFontSize]);
+
     // Called when Milkdown has fully initialized its editor instance and view.
     // Requests focus through the editor-ready lifecycle so we never target a
     // stale or unmounted editor.
@@ -351,7 +395,8 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       // Call focus directly - Milkdown's ready callback already runs after
       // the editor is fully initialized, so no additional deferral is needed.
       milkdownRef.current?.focus();
-    }, [isExpanded, showRenderedEditor]);
+      requestAnimationFrame(scrollExpandedEditorToBottom);
+    }, [isExpanded, showRenderedEditor, scrollExpandedEditorToBottom]);
 
     // Read the authoritative markdown from Milkdown (covers the sub-200 ms
     // debounce window), push it into CodeMirror, then close the overlay.
@@ -417,8 +462,9 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       if (!showRenderedEditor) {
         focusRawTextarea();
       }
+      requestAnimationFrame(scrollExpandedEditorToBottom);
       // Note: rendered mode focus is handled by handleMilkdownReady
-    }, [isExpanded, showRenderedEditor, focusRawTextarea]);
+    }, [isExpanded, showRenderedEditor, focusRawTextarea, scrollExpandedEditorToBottom]);
 
     // Restore focus to CodeMirror when the expanded overlay closes.
     // This effect watches the isExpanded state and focuses the compact prompt
@@ -1697,10 +1743,19 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
                   </Tooltip>
                 </div>
               </div>
-              <div className="flex-grow overflow-y-auto scrollbar-thin scrollbar-track-bg-secondary scrollbar-thumb-bg-fourth">
+              <div
+                ref={expandedEditorScrollRef}
+                onWheel={handleExpandedEditorWheel}
+                className="flex-grow overflow-y-auto scrollbar-thin scrollbar-track-bg-secondary scrollbar-thumb-bg-fourth"
+              >
                 <div
-                  className="w-full mx-auto px-6 py-6 min-h-full milkdown-prompt-editor"
-                  style={{ maxWidth: overlayInsets ? overlayInsets.width : undefined }}
+                  className="w-full mx-auto px-6 py-6 pb-16 min-h-full milkdown-prompt-editor"
+                  style={
+                    {
+                      maxWidth: overlayInsets ? overlayInsets.width : undefined,
+                      '--prompt-editor-font-size': `${expandedEditorFontSize}px`,
+                    } as CSSProperties
+                  }
                 >
                   {showRenderedEditor ? (
                     // Remount Milkdown when switching back to rendered mode via a mode-dependent key
@@ -1718,8 +1773,8 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
                       onBlur={() => setSavedText(text)}
                       placeholder={t('promptField.questionPlaceholder')}
                       spellCheck={false}
-                      className="w-full h-full min-h-[200px] bg-transparent text-text-primary placeholder-text-muted-dark resize-none overflow-y-auto scrollbar-thin scrollbar-track-bg-secondary scrollbar-thumb-bg-fourth focus:outline-none text-sm"
-                      style={{ fontFamily: 'var(--font-family)' }}
+                      className="w-full h-full min-h-[200px] bg-transparent text-text-primary placeholder-text-muted-dark resize-none overflow-y-auto scrollbar-thin scrollbar-track-bg-secondary scrollbar-thumb-bg-fourth focus:outline-none"
+                      style={{ fontFamily: 'var(--font-family)', fontSize: 'var(--prompt-editor-font-size)' }}
                       rows={1}
                     />
                   )}

@@ -171,7 +171,7 @@ code {
   max-width: 100%;
   outline: none;
   color: var(--color-text-primary);
-  font-size: 0.95rem;
+  font-size: var(--prompt-editor-font-size, 0.95rem);
   line-height: 1.6;
   caret-color: var(--color-text-primary);
   overflow-wrap: anywhere;
