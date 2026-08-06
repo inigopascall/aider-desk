@@ -96,6 +96,7 @@ import {
 } from '@/constants';
 import { Agent, AgentProfileManager, McpManager } from '@/agent';
 import { findEnabledSubagent, runSubagentTask } from '@/agent/subagent';
+import { getWorkflow, runWorkflow } from '@/workflows';
 import { Connector } from '@/connector';
 import { DataManager } from '@/data-manager';
 import logger from '@/logger';
@@ -1930,6 +1931,11 @@ export class Task {
       await this.handleSubagentCommand(command.trim().slice('subagent '.length));
     }
 
+    if (command.trim().startsWith('workflow ')) {
+      sendToConnectors = false;
+      await this.handleWorkflowCommand(command.trim().slice('workflow '.length));
+    }
+
     if (sendToConnectors) {
       if (AIDER_COMMANDS.includes(command.trim()) && !this.aiderManager.isStarted()) {
         logger.info('Starting Aider for command:', { command });
@@ -2097,6 +2103,169 @@ export class Task {
         await this.saveTask({ state: previousTaskState });
       }
     }
+  }
+
+  private async handleWorkflowCommand(commandArgs: string): Promise<void> {
+    const spaceIndex = commandArgs.indexOf(' ');
+    if (spaceIndex === -1) {
+      this.addLogMessage('error', 'Usage: /workflow <workflow-id> <prompt>');
+      return;
+    }
+
+    const workflowId = commandArgs.substring(0, spaceIndex).trim();
+    const prompt = commandArgs.substring(spaceIndex + 1).trim();
+
+    if (!prompt) {
+      this.addLogMessage('error', 'Usage: /workflow <workflow-id> <prompt>');
+      return;
+    }
+
+    const workflow = getWorkflow(workflowId);
+    if (!workflow) {
+      this.addLogMessage('error', `Workflow '${workflowId}' not found.`);
+      return;
+    }
+
+    const previousTaskState = this.task.state;
+    await this.saveTask({ state: DefaultTaskState.InProgress });
+
+    try {
+      // Show the user's prompt in the thread
+      this.addUserMessage(uuidv4(), prompt);
+      await runWorkflow(this, workflow, prompt);
+    } finally {
+      if (previousTaskState !== DefaultTaskState.InProgress) {
+        await this.saveTask({ state: previousTaskState });
+      }
+      await this.updateContextInfo();
+    }
+  }
+
+  public async dispatchSubagent(
+    targetSubagent: AgentProfile,
+    prompt: string,
+    description?: string,
+  ): Promise<{ status: 'success' | 'cancelled' | 'error'; outputText: string }> {
+    const toolCallId = uuidv4();
+    const fullToolName = `${SUBAGENTS_TOOL_GROUP_NAME}${TOOL_GROUP_NAME_SEPARATOR}${SUBAGENTS_TOOL_RUN_TASK}`;
+    const toolInput = { prompt, subagentId: getSubagentId(targetSubagent) };
+
+    const result = await runSubagentTask({
+      task: this,
+      targetSubagent,
+      prompt,
+      description,
+      onStarted: (promptContext) => {
+        this.addToolMessage(toolCallId, SUBAGENTS_TOOL_GROUP_NAME, SUBAGENTS_TOOL_RUN_TASK, toolInput, undefined, undefined, promptContext);
+        this.addLogMessage('loading', undefined, false, promptContext);
+      },
+    });
+
+    if (result.status === 'cancelled') {
+      const cancelledToolMessage: ContextToolMessage = {
+        id: uuidv4(),
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId,
+            toolName: fullToolName,
+            output: {
+              type: 'json',
+              value: {
+                messages: result.messages,
+                promptContext: result.promptContext,
+                cancelled: true,
+              } as unknown as JSONValue,
+            },
+          },
+        ],
+        promptContext: result.promptContext,
+      };
+
+      this.addToolMessage(
+        toolCallId,
+        SUBAGENTS_TOOL_GROUP_NAME,
+        SUBAGENTS_TOOL_RUN_TASK,
+        toolInput,
+        JSON.stringify(cancelledToolMessage.content[0].output),
+        undefined,
+        result.promptContext,
+      );
+      this.addLogMessage('loading', undefined, false, result.promptContext);
+      return { status: 'cancelled', outputText: '' };
+    }
+
+    if (result.status === 'error') {
+      logger.error('Error running subagent from command:', result.error);
+
+      this.addToolMessage(
+        toolCallId,
+        SUBAGENTS_TOOL_GROUP_NAME,
+        SUBAGENTS_TOOL_RUN_TASK,
+        toolInput,
+        JSON.stringify({ type: 'error-text', value: result.error }),
+        undefined,
+        result.promptContext,
+      );
+      this.addLogMessage('loading', undefined, false, result.promptContext);
+      return { status: 'error', outputText: '' };
+    }
+
+    const toolResultMessage: ContextToolMessage = {
+      id: uuidv4(),
+      role: 'tool',
+      content: [
+        {
+          type: 'tool-result',
+          toolCallId,
+          toolName: fullToolName,
+          output: {
+            type: 'json',
+            value: {
+              messages: result.messages,
+              promptContext: result.promptContext,
+            } as unknown as JSONValue,
+          },
+        },
+      ],
+      promptContext: result.promptContext,
+    };
+
+    const assistantMessage: ContextAssistantMessage = {
+      id: uuidv4(),
+      role: 'assistant',
+      content: [
+        {
+          type: 'tool-call',
+          toolCallId,
+          toolName: fullToolName,
+          input: toolInput,
+        },
+      ],
+      promptContext: result.promptContext,
+    };
+
+    await this.addContextMessage(assistantMessage);
+    await this.addContextMessage(toolResultMessage);
+
+    this.addToolMessage(
+      toolCallId,
+      SUBAGENTS_TOOL_GROUP_NAME,
+      SUBAGENTS_TOOL_RUN_TASK,
+      toolInput,
+      JSON.stringify(toolResultMessage.content[0].output),
+      undefined,
+      result.promptContext,
+    );
+    this.addLogMessage('loading', undefined, false, result.promptContext);
+
+    await this.updateContextInfo();
+
+    const lastAssistant = [...result.messages].reverse().find((message) => message.role === 'assistant') as ContextAssistantMessage | undefined;
+    const outputText = lastAssistant ? extractTextContent(lastAssistant.content) : '';
+
+    return { status: 'success', outputText };
   }
 
   public updateContextFiles(contextFiles: ContextFile[]) {

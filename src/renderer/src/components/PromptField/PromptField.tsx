@@ -20,7 +20,7 @@ import { useTranslation } from 'react-i18next';
 import { BiSend } from 'react-icons/bi';
 import { MdSave, MdStop, MdMic, MdMicOff, MdOutlineScheduleSend, MdOutlineFullscreen } from 'react-icons/md';
 import { AiOutlineClose } from 'react-icons/ai';
-import { LuChevronsLeftRight, LuChevronsRightLeft } from 'react-icons/lu';
+import { LuChevronsLeftRight, LuChevronsRightLeft, LuWorkflow } from 'react-icons/lu';
 import { clsx } from 'clsx';
 import { parseCommandArgs } from '@common/utils';
 import { getSubagentId } from '@common/agent';
@@ -80,6 +80,7 @@ const COMMANDS = [
 ];
 
 const ANSWERS = ['y', 'n', 'a', 'd', 'maybe']; // Added 'maybe' (Branch B)
+const MVP_WORKFLOW_ID = 'three-agent-relay';
 
 const HISTORY_MENU_CHUNK_SIZE = 20;
 const PLACEHOLDER_COUNT = 20;
@@ -1124,6 +1125,17 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       t,
     ]);
 
+    const handleRunWorkflow = useCallback(() => {
+      const trimmed = text.trim();
+      if (!trimmed) {
+        return;
+      }
+      scrollToBottom?.();
+      runCommand(`workflow ${MVP_WORKFLOW_ID} ${trimmed}`);
+      prepareForNextPrompt();
+      setPlaceholderIndex(Math.floor(Math.random() * PLACEHOLDER_COUNT));
+    }, [text, runCommand, prepareForNextPrompt, scrollToBottom]);
+
     const handleSavePrompt = async () => {
       if (text) {
         try {
@@ -1664,6 +1676,17 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
                       className={clsx('text-text-muted-light hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200')}
                     >
                       <MdSave className="w-4 h-4" />
+                    </button>
+                  </Tooltip>
+                )}
+                {!processing && (
+                  <Tooltip content="Run 3-agent workflow">
+                    <button
+                      onClick={handleRunWorkflow}
+                      disabled={disabled}
+                      className={clsx('hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200')}
+                    >
+                      <LuWorkflow className="w-4 h-4" />
                     </button>
                   </Tooltip>
                 )}
