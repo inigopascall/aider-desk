@@ -1,63 +1,21 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { AVAILABLE_WORKFLOWS, ProjectData } from '@common/types';
 import { useTranslation } from 'react-i18next';
 import { LuWorkflow } from 'react-icons/lu';
 import { clsx } from 'clsx';
 
 import { Checkbox } from '@/components/common/Checkbox';
-import { useApi } from '@/contexts/ApiContext';
 import { getPathBasename } from '@/utils/path-utils';
 
-/**
- * WORKFLOWS settings tab: master-detail view that lets the user choose,
- * for each workflow, which open projects it is available in.
- *
- * Availability is stored per-project in `ProjectSettings.enabledWorkflows`.
- * This component talks to the backend directly (getOpenProjects /
- * patchProjectSettings) because it must represent the full set of open
- * projects, not a single project's settings.
- */
-export const WorkflowsSettings = () => {
+type Props = {
+  projects: ProjectData[];
+  workflowsByProject: Record<string, string[]>;
+  onToggleWorkflowForProject: (baseDir: string, workflowId: string, checked: boolean) => void;
+};
+
+export const WorkflowsSettings = ({ projects, workflowsByProject, onToggleWorkflowForProject }: Props) => {
   const { t } = useTranslation();
-  const api = useApi();
-
-  const [projects, setProjects] = useState<ProjectData[]>([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const openProjects = await api.getOpenProjects();
-        if (!cancelled) {
-          setProjects(openProjects);
-        }
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('Failed to load open projects:', error);
-      }
-    };
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [api]);
-
-  const handleToggleProject = useCallback(
-    async (project: ProjectData, workflowId: string, checked: boolean) => {
-      const current = project.settings.enabledWorkflows ?? [];
-      const next = checked ? [...new Set([...current, workflowId])] : current.filter((id) => id !== workflowId);
-      try {
-        const updated = await api.patchProjectSettings(project.baseDir, { enabledWorkflows: next });
-        // Update local state with the returned settings so the checkbox reflects the saved value
-        setProjects((prev) => prev.map((p) => (p.baseDir === project.baseDir ? { ...p, settings: updated } : p)));
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error(`Failed to update workflow availability for ${project.baseDir}:`, error);
-      }
-    },
-    [api],
-  );
 
   const selectedWorkflow = AVAILABLE_WORKFLOWS.find((w) => w.id === selectedWorkflowId) ?? null;
 
@@ -110,7 +68,7 @@ export const WorkflowsSettings = () => {
               ) : (
                 <div className="space-y-2 max-w-3xl">
                   {projects.map((project) => {
-                    const isEnabled = (project.settings.enabledWorkflows ?? []).includes(selectedWorkflow.id);
+                    const isEnabled = (workflowsByProject[project.baseDir] ?? []).includes(selectedWorkflow.id);
                     return (
                       <div
                         key={project.baseDir}
@@ -119,7 +77,7 @@ export const WorkflowsSettings = () => {
                         <span className="text-sm text-text-primary truncate">{getPathBasename(project.baseDir)}</span>
                         <Checkbox
                           checked={isEnabled}
-                          onChange={(checked) => handleToggleProject(project, selectedWorkflow.id, checked)}
+                          onChange={(checked) => onToggleWorkflowForProject(project.baseDir, selectedWorkflow.id, checked)}
                           size="sm"
                         />
                       </div>

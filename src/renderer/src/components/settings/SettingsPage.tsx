@@ -31,6 +31,8 @@ export const SettingsPage = ({ onClose, initialPageId, initialOptions, openProje
 
   const [providers, setProviders] = useState<ProviderProfile[]>([]);
   const [originalProviders, setOriginalProviders] = useState<ProviderProfile[]>([]);
+  const [workflowsByProject, setWorkflowsByProject] = useState<Record<string, string[]>>({});
+  const [originalWorkflowsByProject, setOriginalWorkflowsByProject] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     if (originalSettings) {
@@ -57,12 +59,25 @@ export const SettingsPage = ({ onClose, initialPageId, initialOptions, openProje
     setAgentProfiles(originalAgentProfiles);
   }, [originalAgentProfiles]);
 
+  useEffect(() => {
+    if (openProjects && Object.keys(workflowsByProject).length === 0) {
+      const map: Record<string, string[]> = {};
+      for (const project of openProjects) {
+        map[project.baseDir] = project.settings.enabledWorkflows ?? [];
+      }
+      setWorkflowsByProject(map);
+      setOriginalWorkflowsByProject(map);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openProjects]);
+
   const hasChanges = useMemo(() => {
     const settingsChanged = localSettings && originalSettings && !isEqual(localSettings, originalSettings);
     const agentProfilesChanged = !isEqual(agentProfiles, originalAgentProfiles);
     const providersChanged = !isEqual(providers, originalProviders);
-    return settingsChanged || agentProfilesChanged || providersChanged;
-  }, [localSettings, originalSettings, agentProfiles, originalAgentProfiles, providers, originalProviders]);
+    const workflowsChanged = !isEqual(workflowsByProject, originalWorkflowsByProject);
+    return settingsChanged || agentProfilesChanged || providersChanged || workflowsChanged;
+  }, [localSettings, originalSettings, agentProfiles, originalAgentProfiles, providers, originalProviders, workflowsByProject, originalWorkflowsByProject]);
 
   const handleCancel = useCallback(() => {
     if (originalSettings && localSettings?.language !== originalSettings.language) {
@@ -90,6 +105,7 @@ export const SettingsPage = ({ onClose, initialPageId, initialOptions, openProje
 
     setAgentProfiles(originalAgentProfiles);
     setProviders(originalProviders);
+    setWorkflowsByProject(originalWorkflowsByProject);
     onClose();
   }, [originalSettings, localSettings, i18n, api, originalAgentProfiles, originalProviders, onClose]);
 
@@ -107,6 +123,20 @@ export const SettingsPage = ({ onClose, initialPageId, initialOptions, openProje
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error('Failed to save providers:', error);
+    }
+
+    // Save workflow availability changes (per-project enabledWorkflows)
+    try {
+      const changedBaseDirs = Object.keys(workflowsByProject).filter(
+        (baseDir) => !isEqual(workflowsByProject[baseDir], originalWorkflowsByProject[baseDir]),
+      );
+      for (const baseDir of changedBaseDirs) {
+        await api.patchProjectSettings(baseDir, { enabledWorkflows: workflowsByProject[baseDir] });
+      }
+      setOriginalWorkflowsByProject(workflowsByProject);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to save workflow availability:', error);
     }
 
     // Save agent profile changes
@@ -201,6 +231,16 @@ export const SettingsPage = ({ onClose, initialPageId, initialOptions, openProje
             agentProfiles={agentProfiles}
             setAgentProfiles={setAgentProfiles}
             openProjects={openProjects}
+            workflowsByProject={workflowsByProject}
+            onToggleWorkflowForProject={(baseDir, workflowId, checked) => {
+              setWorkflowsByProject((prev) => {
+                const current = prev[baseDir] ?? [];
+                const next = checked
+                  ? [...new Set([...current, workflowId])]
+                  : current.filter((id) => id !== workflowId);
+                return { ...prev, [baseDir]: next };
+              });
+            }}
             providers={providers}
             setProviders={setProviders}
             onShowLogs={onShowLogs}

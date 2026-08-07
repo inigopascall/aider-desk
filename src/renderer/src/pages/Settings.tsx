@@ -45,6 +45,8 @@ type Props = {
   openProjects?: ProjectData[];
   providers?: ProviderProfile[];
   setProviders?: (providers: ProviderProfile[]) => void;
+  workflowsByProject?: Record<string, string[]>;
+  onToggleWorkflowForProject?: (baseDir: string, workflowId: string, checked: boolean) => void;
   onShowLogs?: () => void;
 };
 
@@ -63,6 +65,8 @@ export const Settings = ({
   openProjects,
   providers,
   setProviders,
+  workflowsByProject,
+  onToggleWorkflowForProject,
   onShowLogs,
 }: Props) => {
   const { t } = useTranslation();
@@ -242,7 +246,13 @@ export const Settings = ({
           />
         );
       case 'workflows':
-        return <WorkflowsSettings />;
+        return (
+          <WorkflowsSettings
+            projects={openProjects ?? []}
+            workflowsByProject={workflowsByProject ?? {}}
+            onToggleWorkflowForProject={onToggleWorkflowForProject ?? (() => {})}
+          />
+        );
       case 'memory':
         return <MemorySettings settings={settings} setSettings={updateSettings} />;
       case 'tasks':
