@@ -440,12 +440,21 @@
   "select": {
     "placeholder": "Select an option"
   },
+  "workflowsSettings": {
+    "title": "Workflows",
+    "description": "Choose which projects each workflow is available in.",
+    "selectWorkflow": "Select a workflow to configure its project availability.",
+    "projectsTitle": "Available in projects",
+    "noWorkflows": "No workflows available.",
+    "noProjects": "No projects are currently open."
+  },
   "settings": {
     "title": "Settings",
     "tabs": {
       "general": "General",
       "aider": "Aider",
       "agents": "Agents",
+      "workflows": "Workflows",
       "tasks": "Tasks",
       "memory": "Memory",
       "voice": "Voice",
@@ -771,6 +780,7 @@
       "globalProfiles": "Global Profiles",
       "projectProfiles": "Project Profiles: {{projectName}}",
       "global": "Global",
+      "workflowProfiles": "Workflow Agents",
       "previousContext": "Previous project",
       "nextContext": "Next project",
       "noProfilesInContext": "No profiles found in this context",

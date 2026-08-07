@@ -4,13 +4,14 @@ import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { FaBrain, FaChevronDown, FaChevronRight, FaCog, FaInfoCircle, FaKeyboard, FaMicrophone, FaPuzzlePiece, FaRobot, FaServer } from 'react-icons/fa';
 import { MdTerminal } from 'react-icons/md';
-import { LuClipboardList } from 'react-icons/lu';
+import { LuClipboardList, LuWorkflow } from 'react-icons/lu';
 
 import { getPathBasename } from '@/utils/path-utils';
 import { useApi } from '@/contexts/ApiContext';
 import { AiderSettings } from '@/components/settings/AiderSettings';
 import { GeneralSettings } from '@/components/settings/GeneralSettings';
 import { AgentSettings } from '@/components/settings/agent/AgentSettings';
+import { WorkflowsSettings } from '@/components/settings/WorkflowsSettings';
 import { AboutSettings } from '@/components/settings/AboutSettings';
 import { NetworkSettings } from '@/components/settings/NetworkSettings';
 import { MemorySettings } from '@/components/settings/MemorySettings';
@@ -19,7 +20,7 @@ import { HotkeysSettings } from '@/components/settings/HotkeysSettings';
 import { TaskSettings } from '@/components/settings/TaskSettings';
 import { ExtensionsSettings } from '@/components/settings/ExtensionsSettings';
 
-type PageId = 'general' | 'aider' | 'agents' | 'tasks' | 'memory' | 'voice' | 'hotkeys' | 'network' | 'extensions' | 'about';
+type PageId = 'general' | 'aider' | 'agents' | 'workflows' | 'tasks' | 'memory' | 'voice' | 'hotkeys' | 'network' | 'extensions' | 'about';
 
 interface SidebarItem {
   id: string;
@@ -113,6 +114,12 @@ export const Settings = ({
           label: getPathBasename(project.baseDir),
         })),
       ],
+    },
+    {
+      id: 'workflows',
+      pageId: 'workflows',
+      label: t('settings.tabs.workflows'),
+      icon: <LuWorkflow className="w-4 h-4" />,
     },
     {
       id: 'tasks',
@@ -234,6 +241,8 @@ export const Settings = ({
             selectedProfileContext={selectedProfileContext}
           />
         );
+      case 'workflows':
+        return <WorkflowsSettings />;
       case 'memory':
         return <MemorySettings settings={settings} setSettings={updateSettings} />;
       case 'tasks':
@@ -314,7 +323,7 @@ export const Settings = ({
           ref={contentRef}
           className={clsx(
             'flex-1 w-full mx-auto',
-            activePage === 'agents'
+            activePage === 'agents' || activePage === 'workflows'
               ? 'overflow-hidden p-0 h-full'
               : 'overflow-y-auto p-8 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-bg-tertiary hover:scrollbar-thumb-bg-tertiary-strong max-w-[1024px]',
           )}

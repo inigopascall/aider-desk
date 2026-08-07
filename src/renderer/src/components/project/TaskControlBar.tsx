@@ -1,4 +1,5 @@
-import { AIDER_MODES, AutonomyMode, DEFAULT_AUTONOMY_MODE, Mode, TaskData } from '@common/types';
+import { AIDER_MODES, AutonomyMode, AVAILABLE_WORKFLOWS, DEFAULT_AUTONOMY_MODE, Mode, TaskData } from '@common/types';
+import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FaInfoCircle } from 'react-icons/fa';
 import { MdPlaylistRemove, MdUndo } from 'react-icons/md';
@@ -53,6 +54,17 @@ export const TaskControlBar = ({
   const { t } = useTranslation();
   const { projectSettings, saveProjectSettings } = useProjectSettings();
 
+  // Only workflows enabled for this project are offered in the selector
+  const enabledWorkflowIds = projectSettings?.enabledWorkflows ?? [];
+  const availableWorkflows = useMemo(() => AVAILABLE_WORKFLOWS.filter((w) => enabledWorkflowIds.includes(w.id)), [enabledWorkflowIds]);
+
+  // Clear a stale selection if the currently selected workflow is no longer available for this project
+  useEffect(() => {
+    if (selectedWorkflowId && !availableWorkflows.some((w) => w.id === selectedWorkflowId)) {
+      onWorkflowChange?.(null);
+    }
+  }, [selectedWorkflowId, availableWorkflows, onWorkflowChange]);
+
   const handleAutonomyLockChanged = (locked: boolean) => {
     void saveProjectSettings({
       autonomyModeLocked: locked,
@@ -73,8 +85,9 @@ export const TaskControlBar = ({
           onChange={onAutonomyModeChanged}
           onLockChange={handleAutonomyLockChanged}
         />
-        {onWorkflowChange && (
+        {onWorkflowChange && availableWorkflows.length > 0 && (
           <WorkflowSelector
+            workflows={availableWorkflows}
             selectedWorkflowId={selectedWorkflowId ?? null}
             onChange={onWorkflowChange}
           />

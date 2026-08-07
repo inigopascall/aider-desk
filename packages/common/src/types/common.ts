@@ -426,6 +426,7 @@ export const ProjectSettingsSchema = z.object({
   disabledRuleFiles: z.array(z.string()).default([]),
   contextSidebarSectionsOrder: z.array(z.string()).default([]),
   contextSidebarSectionsHidden: z.array(z.string()).default([]),
+  enabledWorkflows: z.array(z.string()).optional(),
 });
 
 export type ProjectSettings = z.infer<typeof ProjectSettingsSchema>;
@@ -546,6 +547,7 @@ export type ToolSettings = BashToolSettings;
 export interface AgentProfile {
   id: string;
   projectDir?: string; // If specified, it's a project-level profile, otherwise global
+  workflowAgent?: boolean; // true = belongs to the Workflow Agents tier (stored in ~/.aider-desk/workflow-agents); excluded from normal agent/subagent lists; usable only within Workflows
   name: string;
   provider: string;
   model: string;

@@ -60,7 +60,7 @@ export const AgentSettings = ({
   const [activeTab, setActiveTab] = useState<ProfileTab>(ProfileTab.General);
 
   // Profile context state for project-level profiles
-  const contexts = useMemo(() => ['global', ...openProjects.map((p) => p.baseDir)], [openProjects]);
+  const contexts = useMemo(() => ['global', 'workflow', ...openProjects.map((p) => p.baseDir)], [openProjects]);
   const [contextIndex, setContextIndex] = useState(0);
   const [profileContext, setProfileContext] = useState<'global' | string>(selectedProfileContext || 'global');
 
@@ -136,7 +136,10 @@ export const AgentSettings = ({
   // Filter profiles based on current context
   const filteredProfiles = useMemo(() => {
     if (profileContext === 'global') {
-      return agentProfiles.filter((p) => !p.projectDir);
+      return agentProfiles.filter((p) => !p.projectDir && !p.workflowAgent);
+    }
+    if (profileContext === 'workflow') {
+      return agentProfiles.filter((p) => p.workflowAgent === true);
     }
     return agentProfiles.filter((p) => p.projectDir === profileContext);
   }, [agentProfiles, profileContext]);
@@ -156,13 +159,18 @@ export const AgentSettings = ({
     if (!selectedProfile) {
       return [];
     }
-    return agentProfiles.filter((p) => p.id !== selectedProfile.id && p.subagent.enabled && (!p.projectDir || p.projectDir === profileContext));
+    return agentProfiles.filter(
+      (p) => p.id !== selectedProfile.id && p.subagent.enabled && !p.workflowAgent && (!p.projectDir || p.projectDir === profileContext),
+    );
   }, [agentProfiles, selectedProfile, profileContext]);
 
   // Get context display name
   const getContextDisplayName = () => {
     if (profileContext === 'global') {
       return 'Global';
+    }
+    if (profileContext === 'workflow') {
+      return t('settings.agent.workflowProfiles');
     }
     const project = openProjects.find((p) => p.baseDir === profileContext);
     return project ? getPathBasename(project.baseDir) : profileContext;
@@ -225,7 +233,8 @@ export const AgentSettings = ({
       name: t('settings.agent.newProfileName'),
       provider: defaultProfile.provider,
       model: defaultProfile.model,
-      projectDir: profileContext === 'global' ? undefined : profileContext,
+      projectDir: profileContext === 'global' || profileContext === 'workflow' ? undefined : profileContext,
+      ...(profileContext === 'workflow' ? { workflowAgent: true } : {}),
     };
     setAgentProfiles([...agentProfiles, newProfile]);
     setSelectedProfileId(newProfileId);
@@ -283,7 +292,8 @@ export const AgentSettings = ({
         ...clipboardProfile.profile,
         id: newProfileId,
         name: clipboardProfile.profile.name,
-        projectDir: profileContext === 'global' ? undefined : profileContext,
+        projectDir: profileContext === 'global' || profileContext === 'workflow' ? undefined : profileContext,
+        ...(profileContext === 'workflow' ? { workflowAgent: true } : {}),
       };
 
       // If this was a cut operation, remove the original and add new one

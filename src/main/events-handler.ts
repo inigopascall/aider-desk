@@ -123,6 +123,7 @@ export class EventsHandler {
     });
 
     this.projectManager.projectSettingsChanged(baseDir, oldProjectSettings, updatedSettings);
+    this.eventManager.sendProjectSettingsUpdated(baseDir, updatedSettings);
 
     return updatedSettings;
   }

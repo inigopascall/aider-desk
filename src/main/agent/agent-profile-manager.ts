@@ -21,7 +21,13 @@ import { shouldUsePolling } from '@/utils/file-watch';
 // Helper methods for directory management
 const getGlobalAgentsDir = (): string => path.join(AIDER_DESK_HOME_DIR, 'agents');
 const getProjectAgentsDir = (projectDir: string): string => path.join(projectDir, AIDER_DESK_AGENTS_DIR);
-const getAgentsDirForProfile = (profile: AgentProfile): string => (profile.projectDir ? getProjectAgentsDir(profile.projectDir) : getGlobalAgentsDir());
+const getWorkflowAgentsDir = (): string => path.join(AIDER_DESK_HOME_DIR, 'workflow-agents');
+const getAgentsDirForProfile = (profile: AgentProfile): string =>
+  profile.workflowAgent
+    ? getWorkflowAgentsDir()
+    : profile.projectDir
+      ? getProjectAgentsDir(profile.projectDir)
+      : getGlobalAgentsDir();
 
 // Helper methods for rule file discovery
 const getAgentRulesDir = (agentsDir: string, agentDirName: string): string => path.join(agentsDir, agentDirName, AIDER_DESK_RULES_DIR);
@@ -92,8 +98,11 @@ export class AgentProfileManager {
 
   public async init(): Promise<void> {
     await this.initializeProfiles();
+    await this.initializeWorkflowAgents();
     await this.setupGlobalFileWatcher();
+    await this.setupWatcherForDirectory(getWorkflowAgentsDir());
     this.extensionManager.addListener(this.extensionsChangeListener);
+    this.sendAgentProfilesUpdated();
   }
 
   public async initializeForProject(projectDir: string): Promise<void> {
@@ -152,6 +161,12 @@ export class AgentProfileManager {
     await this.loadProfilesFromDirectory(globalAgentsDir);
 
     this.sendAgentProfilesUpdated();
+  }
+
+  private async initializeWorkflowAgents(): Promise<void> {
+    const dir = getWorkflowAgentsDir();
+    await fs.mkdir(dir, { recursive: true }); // ensure exists; do NOT seed defaults
+    await this.loadProfilesFromDirectory(dir);
   }
 
   private async ensureDefaultProfiles(globalAgentsDir: string): Promise<void> {
@@ -363,6 +378,8 @@ export class AgentProfileManager {
           const profile = await this.loadProfileFile(configPath, entry.name);
 
           if (profile) {
+            // Force the tier from the directory (authoritative, independent of file contents)
+            profile.workflowAgent = agentsDir === getWorkflowAgentsDir();
             const profileContext: AgentProfileContext = {
               dirName: entry.name,
               order: 0, // Will be set by order file
@@ -544,7 +561,14 @@ export class AgentProfileManager {
       throw new Error('Agent profile must have an id');
     }
 
-    const agentsDir = projectDir ? getProjectAgentsDir(projectDir) : getGlobalAgentsDir();
+    const agentsDir = profile.workflowAgent
+      ? getWorkflowAgentsDir()
+      : projectDir
+        ? getProjectAgentsDir(projectDir)
+        : getGlobalAgentsDir();
+    if (profile.workflowAgent) {
+      profile.projectDir = undefined; // workflow agents are tier-scoped, never project-scoped
+    }
 
     // Get existing directory names for collision handling
     const existingDirNames = await this.getExistingDirNames(agentsDir);
@@ -680,7 +704,7 @@ export class AgentProfileManager {
   }
 
   private getGlobalProfiles(): AgentProfile[] {
-    return this.getOrderedProfiles(Array.from(this.profiles.values()).filter((ctx) => !ctx.agentProfile.projectDir));
+    return this.getOrderedProfiles(Array.from(this.profiles.values()).filter((ctx) => !ctx.agentProfile.projectDir && !ctx.agentProfile.workflowAgent));
   }
 
   public getAllProfiles(): AgentProfile[] {
@@ -709,40 +733,33 @@ export class AgentProfileManager {
     return profiles;
   }
 
-  public async updateAgentProfilesOrder(agentProfiles: AgentProfile[]): Promise<void> {
-    // Group profiles by their projectDir (undefined/null = global)
-    const profilesByProjectDir = new Map<string | undefined, AgentProfile[]>();
+  public getWorkflowAgentProfiles(): AgentProfile[] {
+    return this.getOrderedProfiles(
+      Array.from(this.profiles.values()).filter((ctx) => ctx.agentProfile.workflowAgent === true),
+    );
+  }
 
-    agentProfiles.forEach((profile) => {
-      const projectDir = profile.projectDir;
-      if (!profilesByProjectDir.has(projectDir)) {
-        profilesByProjectDir.set(projectDir, []);
-      }
-      profilesByProjectDir.get(projectDir)!.push(profile);
-    });
+  public async updateAgentProfilesOrder(agentProfiles: AgentProfile[]): Promise<void> {
+    // Group profiles by their resolved agents directory (global/project/workflow tiers)
+    const profilesByDir = new Map<string, AgentProfile[]>();
+    for (const p of agentProfiles) {
+      const dir = getAgentsDirForProfile(p);
+      (profilesByDir.get(dir) ?? profilesByDir.set(dir, []).get(dir)!).push(p);
+    }
 
     // Process each group separately
-    for (const [projectDir, profiles] of profilesByProjectDir.entries()) {
+    for (const [agentsDir, profiles] of profilesByDir.entries()) {
       // Create order map for this group
-      const order = new Map<string, number>();
-      profiles.forEach((profile, index) => {
-        order.set(profile.id, index);
-      });
-
-      // Determine the agents directory for this group
-      const agentsDir = projectDir ? getProjectAgentsDir(projectDir) : getGlobalAgentsDir();
+      const order = new Map(profiles.map((p, i) => [p.id, i]));
 
       // Save the order file for this group
       await this.saveOrderFile(agentsDir, order);
 
       // Update the in-memory profiles for this group
-      for (const [profileId, profileContext] of this.profiles.entries()) {
-        const profileAgentsDir = getAgentsDirForProfile(profileContext.agentProfile);
-        if (profileAgentsDir === agentsDir) {
+      for (const [profileId, ctx] of this.profiles.entries()) {
+        if (getAgentsDirForProfile(ctx.agentProfile) === agentsDir) {
           const newOrder = order.get(profileId);
-          if (newOrder !== undefined) {
-            profileContext.order = newOrder;
-          }
+          if (newOrder !== undefined) ctx.order = newOrder;
         }
       }
     }
@@ -830,6 +847,9 @@ export class AgentProfileManager {
       }
     }
 
-    return this.profiles.values().next().value?.agentProfile.id || DEFAULT_AGENT_PROFILE.id;
+    return (
+      this.profiles.values().find((c) => !c.agentProfile.workflowAgent)?.agentProfile.id
+      || DEFAULT_AGENT_PROFILE.id
+    );
   }
 }

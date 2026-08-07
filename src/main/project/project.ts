@@ -386,6 +386,10 @@ export class Project {
     return this.agentProfileManager.getProjectProfiles(this);
   }
 
+  public getWorkflowAgentProfiles(): AgentProfile[] {
+    return this.agentProfileManager.getWorkflowAgentProfiles();
+  }
+
   public resolveAgentProfile(id: string): AgentProfile | null {
     return this.agentProfileManager.resolveAgentProfile(id);
   }

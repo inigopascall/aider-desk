@@ -8,6 +8,7 @@ export interface AgentsContextType {
   loading: boolean;
   error: string | null;
   getProfiles: (projectDir: string) => AgentProfile[];
+  getWorkflowAgentProfiles: () => AgentProfile[];
   createProfile: (profile: AgentProfile, projectDir?: string) => Promise<void>;
   updateProfile: (profile: AgentProfile, projectDir?: string) => Promise<void>;
   deleteProfile: (profileId: string, projectDir?: string) => Promise<void>;
@@ -43,10 +44,15 @@ export const AgentsProvider = ({ children }: AgentsProviderProps) => {
 
   const getProfiles = useCallback(
     (projectDir: string) => {
-      return optimisticProfiles.filter((p) => p.projectDir === projectDir || !p.projectDir);
+      // Workflow agents (no projectDir) are excluded from every project's main-thread list
+      return optimisticProfiles.filter((p) => (p.projectDir === projectDir || !p.projectDir) && !p.workflowAgent);
     },
     [optimisticProfiles],
   );
+
+  const getWorkflowAgentProfiles = useCallback(() => {
+    return optimisticProfiles.filter((p) => p.workflowAgent === true);
+  }, [optimisticProfiles]);
 
   const createProfile = useCallback(
     async (profile: AgentProfile, projectDir?: string) => {
@@ -135,9 +141,10 @@ export const AgentsProvider = ({ children }: AgentsProviderProps) => {
       deleteProfile,
       refreshProfiles,
       getProfiles,
+      getWorkflowAgentProfiles,
       updateProfilesOrder,
     }),
-    [optimisticProfiles, loading, error, createProfile, updateProfile, deleteProfile, refreshProfiles, getProfiles, updateProfilesOrder],
+    [optimisticProfiles, loading, error, createProfile, updateProfile, deleteProfile, refreshProfiles, getProfiles, getWorkflowAgentProfiles, updateProfilesOrder],
   );
 
   return <AgentsContext.Provider value={value}>{children}</AgentsContext.Provider>;
