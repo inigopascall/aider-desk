@@ -20,7 +20,7 @@ import { useTranslation } from 'react-i18next';
 import { BiSend } from 'react-icons/bi';
 import { MdSave, MdStop, MdMic, MdMicOff, MdOutlineScheduleSend, MdOutlineFullscreen } from 'react-icons/md';
 import { AiOutlineClose } from 'react-icons/ai';
-import { LuChevronsLeftRight, LuChevronsRightLeft, LuWorkflow } from 'react-icons/lu';
+import { LuChevronsLeftRight, LuChevronsRightLeft } from 'react-icons/lu';
 import { clsx } from 'clsx';
 import { parseCommandArgs } from '@common/utils';
 import { getSubagentId } from '@common/agent';
@@ -80,7 +80,6 @@ const COMMANDS = [
 ];
 
 const ANSWERS = ['y', 'n', 'a', 'd', 'maybe']; // Added 'maybe' (Branch B)
-const MVP_WORKFLOW_ID = 'three-agent-relay';
 
 const HISTORY_MENU_CHUNK_SIZE = 20;
 const PLACEHOLDER_COUNT = 20;
@@ -450,6 +449,13 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       }
       const handleOverlayKeyDown = (e: KeyboardEvent) => {
         if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          closeExpanded();
+        } else if (e.key === 'Enter' && e.shiftKey) {
+          // Close the expanded editor on Shift+Enter without dispatching.
+          // The next Shift+Enter (after focus returns to CodeMirror) will
+          // submit the prompt (when submitOnEnter is false, the default).
           e.preventDefault();
           e.stopPropagation();
           closeExpanded();
@@ -1125,17 +1131,6 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       t,
     ]);
 
-    const handleRunWorkflow = useCallback(() => {
-      const trimmed = text.trim();
-      if (!trimmed) {
-        return;
-      }
-      scrollToBottom?.();
-      runCommand(`workflow ${MVP_WORKFLOW_ID} ${trimmed}`);
-      prepareForNextPrompt();
-      setPlaceholderIndex(Math.floor(Math.random() * PLACEHOLDER_COUNT));
-    }, [text, runCommand, prepareForNextPrompt, scrollToBottom]);
-
     const handleSavePrompt = async () => {
       if (text) {
         try {
@@ -1204,55 +1199,55 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
             preventDefault: true,
             run: toggleVoice,
           },
-          {
-            key: 'Shift-Enter',
-            preventDefault: true,
-            run: (view) => {
-              // On desktop, Shift+Enter inserts a new line
-              const cursorPos = view.state.selection.main.head;
-              view.dispatch({
-                changes: { from: cursorPos, insert: '\n' },
-                selection: { anchor: cursorPos + 1 },
-              });
-              return true;
-            },
-          },
-          {
-            key: 'Enter',
-            run: (view) => {
-              // On mobile, Enter inserts a new line (default behavior)
-              // On desktop, Enter submits the prompt
-              if (isMobile) {
-                return false; // Allow default behavior (new line)
-              }
-
-              // Desktop behavior: submit or handle special cases
-              if (question && selectedAnswer) {
-                const answers = question.answers?.map((answer) => answer.shortkey.toLowerCase()) || ANSWERS;
-                if (answers.includes(selectedAnswer.toLowerCase())) {
-                  answerQuestion(selectedAnswer);
-                  prepareForNextPrompt();
+          // Determine which key submits based on setting
+          ...(() => {
+            const enterSubmits = promptBehavior.submitOnEnter ?? false;
+            return [
+              // Submit binding — Shift+Enter by default, Enter if submitOnEnter is true
+              {
+                key: enterSubmits ? 'Enter' : 'Shift-Enter',
+                preventDefault: true,
+                run: (view: { state: { selection: { main: { head: number } }; doc: { length: number } } }) => {
+                  // On mobile, allow default (newline)
+                  if (isMobile) {
+                    return false;
+                  }
+                  // Desktop: submit or handle special cases
+                  if (question && selectedAnswer) {
+                    const answers = question.answers?.map((answer) => answer.shortkey.toLowerCase()) || ANSWERS;
+                    if (answers.includes(selectedAnswer.toLowerCase())) {
+                      answerQuestion(selectedAnswer);
+                      prepareForNextPrompt();
+                      return true;
+                    }
+                  } else if (historyMenuVisible) {
+                    setHistoryMenuVisible(false);
+                    const newText = historyItems[highlightedHistoryItemIndex];
+                    view.dispatch({
+                      changes: { from: 0, to: view.state.doc.length, insert: newText },
+                      selection: { anchor: newText.length },
+                    });
+                  } else {
+                    handleSubmit();
+                  }
                   return true;
-                }
-              } else if (historyMenuVisible) {
-                setHistoryMenuVisible(false);
-                const newText = historyItems[highlightedHistoryItemIndex];
-                view.dispatch({
-                  changes: {
-                    from: 0,
-                    to: view.state.doc.length,
-                    insert: newText,
-                  },
-                  selection: {
-                    anchor: newText.length,
-                  },
-                });
-              } else {
-                handleSubmit();
-              }
-              return true;
-            },
-          },
+                },
+              },
+              // Newline binding — Enter by default, Shift+Enter if submitOnEnter is true
+              {
+                key: enterSubmits ? 'Shift-Enter' : 'Enter',
+                preventDefault: true,
+                run: (view: { state: { selection: { main: { head: number } } } }) => {
+                  const cursorPos = view.state.selection.main.head;
+                  view.dispatch({
+                    changes: { from: cursorPos, insert: '\n' },
+                    selection: { anchor: cursorPos + 1 },
+                  });
+                  return true;
+                },
+              },
+            ];
+          })(),
           {
             key: 'Space',
             run: acceptCompletion,
@@ -1397,6 +1392,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
         text,
         loadMoreHistory,
         promptBehavior.suggestionMode,
+        promptBehavior.submitOnEnter,
       ],
     );
 
@@ -1680,17 +1676,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
                   </Tooltip>
                 )}
                 {!processing && (
-                  <Tooltip content="Run 3-agent workflow">
-                    <button
-                      onClick={handleRunWorkflow}
-                      disabled={disabled}
-                      className={clsx('hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200')}
-                    >
-                      <LuWorkflow className="w-4 h-4" />
-                    </button>
-                  </Tooltip>
-                )}
-                <Tooltip content={isProcessing ? t('promptField.queueMessage') : t('promptField.sendMessage')}>
+                  <Tooltip content={isProcessing ? t('promptField.queueMessage') : t('promptField.sendMessage')}>
                   <button
                     onClick={handleSubmit}
                     disabled={disabled}

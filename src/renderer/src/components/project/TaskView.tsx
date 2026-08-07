@@ -149,6 +149,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
     const [terminalVisible, setTerminalVisible] = useState(false);
     const [showTaskInfoPanel, setShowTaskInfoPanel] = useState(false);
     const [showSidebar, setShowSidebar] = useState(isMobile);
+    const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
     const { width: sidebarWidth, setWidth: setSidebarWidth } = useSidebarWidth(projectDir, task.id);
     const [isFilesSidebarCollapsed, setIsFilesSidebarCollapsed] = useLocalStorage(`files-sidebar-collapsed-${projectDir}-${task.id}`, false);
     const { renderSearchInput } = useSearchText(searchContainer, 'absolute top-1 left-1', isActive);
@@ -386,21 +387,26 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
           api.redoUserPrompt(projectDir, task.id, editedMessageId, currentMode, prompt, images);
         }
       } else {
-        if (!question && !inProgress) {
-          startTransition(() => {
-            // OPTIMISTIC: Add user message immediately before backend response
-            const optimisticUserMessage = {
-              id: uuidv4(),
-              type: 'user',
-              content: prompt,
-              images,
-              isOptimistic: true,
-            } satisfies UserMessage;
-            setMessages(task.id, (prevMessages) => [...prevMessages, optimisticUserMessage]);
-            setDisplayedMessages([...displayedMessages, optimisticUserMessage]);
-          });
+        if (selectedWorkflowId) {
+          // Workflow dispatch: no optimistic user message (server adds it)
+          runCommand(`workflow ${selectedWorkflowId} ${prompt}`);
+        } else {
+          if (!question && !inProgress) {
+            startTransition(() => {
+              // OPTIMISTIC: Add user message immediately before backend response
+              const optimisticUserMessage = {
+                id: uuidv4(),
+                type: 'user',
+                content: prompt,
+                images,
+                isOptimistic: true,
+              } satisfies UserMessage;
+              setMessages(task.id, (prevMessages) => [...prevMessages, optimisticUserMessage]);
+              setDisplayedMessages([...displayedMessages, optimisticUserMessage]);
+            });
+          }
+          api.runPrompt(projectDir, task.id, prompt, currentMode, images);
         }
-        api.runPrompt(projectDir, task.id, prompt, currentMode, images);
       }
     });
 
@@ -1001,6 +1007,8 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                   showSettingsPage={showSettingsPage}
                   canUndoContextChange={canUndoContextChange && messages.length === 0}
                   onUndoContextChange={handleUndoContextChange}
+                  selectedWorkflowId={selectedWorkflowId}
+                  onWorkflowChange={setSelectedWorkflowId}
                 />
               </div>
               <div className="flex gap-2 justify-between flex-wrap">

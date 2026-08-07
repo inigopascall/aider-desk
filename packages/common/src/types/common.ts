@@ -106,6 +106,15 @@ export const AIDER_MODES: Mode[] = ['code', 'ask', 'architect', 'context'];
 
 export const AIDER_COMMANDS: string[] = ['commit', 'map', 'map-refresh', 'tokens', 'test'];
 
+export interface WorkflowInfo {
+  id: string;
+  name: string;
+}
+
+export const AVAILABLE_WORKFLOWS: WorkflowInfo[] = [
+  { id: 'three-agent-relay', name: 'Three Agent Relay' },
+];
+
 export enum AutonomyMode {
   Manual = 'manual',
   Guided = 'guided',
@@ -508,6 +517,7 @@ export interface PromptBehavior {
   };
   useVimBindings: boolean;
   openEditorAtFullWidth?: boolean;
+  submitOnEnter?: boolean; // true = Enter submits; false (default) = Shift+Enter submits
 }
 
 export enum InvocationMode {

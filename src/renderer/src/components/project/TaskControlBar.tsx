@@ -8,6 +8,7 @@ import { clsx } from 'clsx';
 import { AgentSelector } from '@/components/AgentSelector';
 import { ModeSelector } from '@/components/PromptField/ModeSelector';
 import { AutonomySelector } from '@/components/PromptField/AutonomySelector';
+import { WorkflowSelector } from '@/components/PromptField/WorkflowSelector';
 import { Button } from '@/components/common/Button';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
 import { useProjectSettings } from '@/contexts/ProjectSettingsContext';
@@ -27,6 +28,8 @@ type Props = {
   showSettingsPage?: (pageId?: string, options?: Record<string, unknown>) => void;
   canUndoContextChange?: boolean;
   onUndoContextChange?: () => void;
+  selectedWorkflowId?: string | null;
+  onWorkflowChange?: (id: string | null) => void;
 };
 
 export const TaskControlBar = ({
@@ -44,6 +47,8 @@ export const TaskControlBar = ({
   showSettingsPage,
   canUndoContextChange,
   onUndoContextChange,
+  selectedWorkflowId,
+  onWorkflowChange,
 }: Props) => {
   const { t } = useTranslation();
   const { projectSettings, saveProjectSettings } = useProjectSettings();
@@ -68,6 +73,12 @@ export const TaskControlBar = ({
           onChange={onAutonomyModeChanged}
           onLockChange={handleAutonomyLockChanged}
         />
+        {onWorkflowChange && (
+          <WorkflowSelector
+            selectedWorkflowId={selectedWorkflowId ?? null}
+            onChange={onWorkflowChange}
+          />
+        )}
         <ExtensionComponentWrapper placement="task-input-toolbar-left" />
         <div className="ml-auto flex items-center gap-1">
           <ExtensionComponentWrapper placement="task-input-toolbar-right" />

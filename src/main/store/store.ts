@@ -79,6 +79,7 @@ export const DEFAULT_SETTINGS: SettingsData = {
     },
     useVimBindings: false,
     openEditorAtFullWidth: true,
+    submitOnEnter: false, // default to Shift+Enter for submitting
   },
   server: {
     enabled: false,

@@ -899,6 +899,8 @@
       "useVimBindingsTooltip": "Enable Vim key bindings for navigating and editing text in the prompt field.",
       "openEditorAtFullWidth": "Open editor at full width",
       "openEditorAtFullWidthTooltip": "When enabled, the expanded prompt editor automatically animates to full application width as soon as it opens.",
+      "submitOnEnter": "Press Enter to send",
+      "submitOnEnterTooltip": "When enabled, Enter sends the message and Shift+Enter inserts a new line. When disabled (default), Shift+Enter sends the message and Enter inserts a new line. Shift+Enter also closes the expanded markdown editor if it is open.",
       "modeAtSign": "@ mention mode"
     },
     "network": {

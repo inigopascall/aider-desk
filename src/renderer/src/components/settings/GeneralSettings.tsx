@@ -434,6 +434,22 @@ export const GeneralSettings = ({ settings, setSettings, onLanguageChange, onZoo
               />
               <InfoIcon tooltip={t('settings.promptBehavior.openEditorAtFullWidthTooltip')} />
             </div>
+            <div className="flex items-center space-x-2 ml-0.5">
+              <Checkbox
+                label={t('settings.promptBehavior.submitOnEnter')}
+                checked={settings.promptBehavior.submitOnEnter ?? false}
+                onChange={(checked) =>
+                  setSettings({
+                    ...settings,
+                    promptBehavior: {
+                      ...settings.promptBehavior,
+                      submitOnEnter: checked,
+                    },
+                  })
+                }
+              />
+              <InfoIcon tooltip={t('settings.promptBehavior.submitOnEnterTooltip')} />
+            </div>
           </div>
         </div>
       </Section>
