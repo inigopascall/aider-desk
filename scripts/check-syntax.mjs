@@ -31,7 +31,7 @@ const failures = [];
 
 for (const file of files) {
   // Skip files ignored via .prettierignore (e.g. the invalid extension fixture).
-  const info = prettier.getFileInfo.sync(file, { ignorePath: resolve(ROOT, '.prettierignore') });
+  const info = await prettier.getFileInfo(file, { ignorePath: resolve(ROOT, '.prettierignore') });
   if (info.ignored) {
     continue;
   }
@@ -53,7 +53,10 @@ if (failures.length > 0) {
 
     const loc = error.loc?.start;
     if (loc) {
-      console.error(`  ${error.message} (${loc.line}:${loc.column + 1})`);
+      // Prettier already embeds a (line:column) location in the message for
+      // most syntax errors, so only append one when it is missing.
+      const hasLocation = /\(\d+:\d+\)/.test(error.message);
+      console.error(hasLocation ? `  ${error.message}` : `  ${error.message} (${loc.line}:${loc.column})`);
       // Print a small code frame around the offending line.
       const lines = source.split('\n');
       const start = Math.max(0, loc.line - 2);
@@ -62,7 +65,9 @@ if (failures.length > 0) {
         const marker = i === loc.line - 1 ? '>' : ' ';
         console.error(`  ${marker} ${String(i + 1).padStart(4)} | ${lines[i]}`);
       }
-      console.error(`       | ${' '.repeat(loc.column)}^`);
+      // Prettier reports a 1-based column; subtract one to align the caret
+      // with the zero-based space offset within the printed line.
+      console.error(`       | ${' '.repeat(Math.max(0, loc.column - 1))}^`);
     } else {
       console.error(`  ${error.message}`);
     }
