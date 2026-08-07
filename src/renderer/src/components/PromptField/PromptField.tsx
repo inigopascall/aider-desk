@@ -370,7 +370,6 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
         }
 
       event.preventDefault();
-        event.preventDefault();
         setExpandedEditorFontSize((currentSize) =>
           Math.min(
             MAX_EXPANDED_EDITOR_FONT_SIZE,
