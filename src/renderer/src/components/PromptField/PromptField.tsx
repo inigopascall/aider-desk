@@ -1677,14 +1677,15 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
                 )}
                 {!processing && (
                   <Tooltip content={isProcessing ? t('promptField.queueMessage') : t('promptField.sendMessage')}>
-                  <button
-                    onClick={handleSubmit}
-                    disabled={disabled}
-                    className={clsx('hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200')}
-                  >
-                    {isProcessing && !question ? <MdOutlineScheduleSend className="w-4 h-4" /> : <BiSend className="w-4 h-4" />}
-                  </button>
-                </Tooltip>
+                    <button
+                      onClick={handleSubmit}
+                      disabled={disabled}
+                      className={clsx('hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200')}
+                    >
+                      {isProcessing && !question ? <MdOutlineScheduleSend className="w-4 h-4" /> : <BiSend className="w-4 h-4" />}
+                    </button>
+                  </Tooltip>
+                )}
               </>
             )}
             {processing && <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />}

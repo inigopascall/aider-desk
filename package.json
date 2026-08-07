@@ -11,6 +11,7 @@
   },
   "scripts": {
     "format": "prettier --write .",
+    "check:syntax": "node scripts/check-syntax.mjs",
     "lint": "eslint src --fix --cache",
     "lint:check": "eslint src --cache",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
