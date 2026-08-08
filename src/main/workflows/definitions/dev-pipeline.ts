@@ -457,7 +457,7 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
 
       // Commit this pass, then diff it. Because every pass makes its own
       // commit, HEAD~1..HEAD is always exactly the latest pass's changes.
-      const commitMsg = `[dev-pipeline pass ${pass}] ${planTitle.slice(0, 60)}`;
+      const commitMsg = `[dev-pipeline pass ${pass}] ${journey.planTitle.slice(0, 60)}`;
       await git.add('-A');
       await git.raw(['commit', '--no-verify', '--allow-empty', '-m', commitMsg]);
 
