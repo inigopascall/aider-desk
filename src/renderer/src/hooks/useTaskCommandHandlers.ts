@@ -11,7 +11,7 @@ const isCommandOutputMessage = (message: Message): message is CommandOutputMessa
   return message.type === 'command-output';
 };
 
-const STREAM_FLUSH_INTERVAL_MS = 250;
+const STREAM_FLUSH_INTERVAL_MS = 150;
 const commandOutputBuffers = new Map<string, CommandOutputData[]>();
 const commandOutputFlushTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
