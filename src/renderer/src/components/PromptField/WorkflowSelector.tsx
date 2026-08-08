@@ -51,7 +51,7 @@ export const WorkflowSelector = memo(({ selectedWorkflowId, onChange, workflows 
             >
               <div className="relative">
                 <LuWorkflow className="w-3.5 h-3.5" />
-                <span className="absolute -top-1.5 -right-1.5 text-[8px] font-bold leading-none text-text-muted-light">
+                <span className="absolute -top-1 -right-1 text-[8px] font-bold leading-none text-text-muted-light">
                   {index + 1}
                 </span>
               </div>

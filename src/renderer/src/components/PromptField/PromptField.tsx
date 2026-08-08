@@ -451,9 +451,9 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
           e.preventDefault();
           e.stopPropagation();
           closeExpanded();
-        } else if (e.key === 'Enter' && e.shiftKey) {
-          // Close the expanded editor on Shift+Enter without dispatching.
-          // The next Shift+Enter (after focus returns to CodeMirror) will
+        } else if (e.key === 'Enter' && e.ctrlKey) {
+          // Close the expanded editor on Ctrl+Enter without dispatching.
+          // The next Ctrl+Enter (after focus returns to CodeMirror) will
           // submit the prompt (when submitOnEnter is false, the default).
           e.preventDefault();
           e.stopPropagation();
@@ -1202,9 +1202,9 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
           ...(() => {
             const enterSubmits = promptBehavior.submitOnEnter ?? false;
             return [
-              // Submit binding — Shift+Enter by default, Enter if submitOnEnter is true
+              // Submit binding — Ctrl+Enter by default, Enter if submitOnEnter is true
               {
-                key: enterSubmits ? 'Enter' : 'Shift-Enter',
+                key: enterSubmits ? 'Enter' : 'Ctrl-Enter',
                 preventDefault: true,
                 run: (view: { state: { selection: { main: { head: number } }; doc: { length: number } } }) => {
                   // On mobile, allow default (newline)
@@ -1232,9 +1232,9 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
                   return true;
                 },
               },
-              // Newline binding — Enter by default, Shift+Enter if submitOnEnter is true
+              // Newline binding — Enter by default, Ctrl+Enter if submitOnEnter is true
               {
-                key: enterSubmits ? 'Shift-Enter' : 'Enter',
+                key: enterSubmits ? 'Ctrl-Enter' : 'Enter',
                 preventDefault: true,
                 run: (view: { state: { selection: { main: { head: number } } } }) => {
                   const cursorPos = view.state.selection.main.head;
