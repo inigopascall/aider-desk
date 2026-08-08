@@ -66,7 +66,15 @@ interface Journey {
   formatRetries: number;
   cancelled: boolean;
   error?: string;
-  // Internal report tracking
+}
+
+/**
+ * Report-only state used to render the final markdown report. Kept separate
+ * from the prescribed `Journey` interface: the journey itself carries only
+ * the fields defined by the workflow plan, while this structure holds the
+ * evidence rows, the final pipeline status, and the abort stage (if any).
+ */
+interface ReportState {
   evidenceRows: EvidenceRow[];
   status: 'aligned' | 'deficient' | 'aborted' | 'cancelled';
   abortStage?: string;
@@ -78,9 +86,10 @@ function normalizePath(p: string): string {
 }
 
 /**
- * Builds the final markdown report from the accumulated journey state.
+ * Builds the final markdown report from the accumulated journey state and
+ * the separate report-only state (evidence rows, final status, abort stage).
  */
-function buildReport(journey: Journey): string {
+function buildReport(journey: Journey, report: ReportState): string {
   const lines: string[] = [];
   lines.push('# 🏁 Dev Pipeline Report');
   lines.push('');
@@ -89,7 +98,7 @@ function buildReport(journey: Journey): string {
   lines.push('');
   lines.push('| Iteration | Verdict | Files added | Files removed | Research |');
   lines.push('|---|---|---|---|---|');
-  for (const row of journey.evidenceRows) {
+  for (const row of report.evidenceRows) {
     lines.push(`| ${row.iteration} | ${row.verdict} | ${row.added.join(', ') || '—'} | ${row.removed.join(', ') || '—'} | ${row.research ? 'yes' : 'no'} |`);
   }
   lines.push('');
@@ -130,14 +139,14 @@ function buildReport(journey: Journey): string {
   lines.push('');
 
   let statusLine: string;
-  if (journey.status === 'aligned') {
+  if (report.status === 'aligned') {
     statusLine = '✅ Completed aligned.';
-  } else if (journey.status === 'deficient') {
+  } else if (report.status === 'deficient') {
     statusLine = '⚠️ Completed with outstanding deficiencies.';
-  } else if (journey.status === 'cancelled') {
+  } else if (report.status === 'cancelled') {
     statusLine = '❌ Cancelled by user.';
   } else {
-    statusLine = `❌ Aborted at stage ${journey.abortStage ?? 'unknown'}.`;
+    statusLine = `❌ Aborted at stage ${report.abortStage ?? 'unknown'}.`;
   }
   lines.push(`**Status:** ${statusLine}`);
 
@@ -148,14 +157,14 @@ function buildReport(journey: Journey): string {
  * Persists the report into the task context and renders it as a completed
  * assistant response.
  */
-async function emitReport(task: Task, journey: Journey): Promise<void> {
-  const report = buildReport(journey);
+async function emitReport(task: Task, journey: Journey, report: ReportState): Promise<void> {
+  const reportText = buildReport(journey, report);
   const id = uuidv4();
   await task.addContextMessage(
-    { id, role: MessageRole.Assistant, content: report, timestamp: Date.now() } as ContextAssistantMessage,
+    { id, role: MessageRole.Assistant, content: reportText, timestamp: Date.now() } as ContextAssistantMessage,
     true,
   );
-  await task.processResponseMessage({ id, action: 'response', content: report, finished: true }, false);
+  await task.processResponseMessage({ id, action: 'response', content: reportText, finished: true }, false);
 }
 
 /**
@@ -191,6 +200,10 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
     passes: [],
     formatRetries: 0,
     cancelled: false,
+  };
+
+  // Report-only state: never part of the prescribed Journey interface.
+  const report: ReportState = {
     evidenceRows: [],
     status: 'aborted',
   };
@@ -204,7 +217,7 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
     }
 
     // ---- Stage 1: Evidence loop -------------------------------------------
-    journey.abortStage = 'evidence gathering';
+    report.abortStage = 'evidence gathering';
     const researchFindings: string[] = [];
 
     for (let i = 1; i <= MAX_EVIDENCE_ITERATIONS; i++) {
@@ -236,7 +249,7 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
       journey.digesterVerdicts.push(verdictResp.verdict);
 
       if (verdictResp.verdict === 'YES') {
-        journey.evidenceRows.push({ iteration: i, verdict: 'YES', added: [], removed: [], research: false });
+        report.evidenceRows.push({ iteration: i, verdict: 'YES', added: [], removed: [], research: false });
         journey.evidenceIterations = i;
         break;
       }
@@ -253,14 +266,20 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
         },
       );
 
-      // RESEARCHER failure is non-fatal: warn and continue with what we have.
+      // RESEARCHER failure is non-fatal only for WorkflowError: warn and
+      // continue with what we have. Cancellation propagates so the top-level
+      // handler emits a cancellation report, and any unexpected error also
+      // propagates so the pipeline is recorded as aborted.
       const researchP = verdictResp.researchBrief
         ? dispatchAgent(task, AGENTS.researcher, verdictResp.researchBrief, `Researching online (round ${i})`).catch((e) => {
             if (e instanceof WorkflowCancelled) {
               throw e;
             }
-            task.addLogMessage('warning', `Dev Pipeline ▸ RESEARCHER failed (round ${i}): ${e instanceof Error ? e.message : String(e)}`);
-            return null;
+            if (e instanceof WorkflowError) {
+              task.addLogMessage('warning', `Dev Pipeline ▸ RESEARCHER failed (round ${i}): ${e instanceof Error ? e.message : String(e)}`);
+              return null;
+            }
+            throw e;
           })
         : Promise.resolve(null);
 
@@ -294,7 +313,7 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
         journey.researchDocs++;
       }
 
-      journey.evidenceRows.push({
+      report.evidenceRows.push({
         iteration: i,
         verdict: 'NO',
         added: addedThisRound,
@@ -314,7 +333,7 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
     }
 
     // ---- Stage 2: Grand plan + unknown resolution --------------------------
-    journey.abortStage = 'planning';
+    report.abortStage = 'planning';
     const plannerPrompt = [
       '# User request',
       initialPrompt,
@@ -339,8 +358,11 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
           if (e instanceof WorkflowCancelled) {
             throw e;
           }
-          task.addLogMessage('warning', `Dev Pipeline ▸ RESEARCHER failed resolving plan unknowns: ${e instanceof Error ? e.message : String(e)}`);
-          return null;
+          if (e instanceof WorkflowError) {
+            task.addLogMessage('warning', `Dev Pipeline ▸ RESEARCHER failed resolving plan unknowns: ${e instanceof Error ? e.message : String(e)}`);
+            return null;
+          }
+          throw e;
         })
       : Promise.resolve(null);
 
@@ -375,7 +397,7 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
     );
 
     // ---- Stage 3: Decomposition --------------------------------------------
-    journey.abortStage = 'decomposition';
+    report.abortStage = 'decomposition';
     const decompPrompt = [
       '# Implementation Plan (verbatim — treat as strict instructions)',
       '',
@@ -403,7 +425,7 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
     task.addLogMessage('info', `Dev Pipeline ▸ plan decomposed into ${edits.length} file edit(s).`);
 
     // ---- Stage 4: Parallel edit → commit → diff → confirm loop -------------
-    journey.abortStage = 'editing';
+    report.abortStage = 'editing';
 
     // Snapshot any pre-existing dirty state so each pass's diff is clean.
     const status = await git.status();
@@ -496,19 +518,19 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
     }
 
     // ---- Stage 5: Final report ---------------------------------------------
-    journey.status = finalVerdict === 'ALIGNED' ? 'aligned' : 'deficient';
-    await emitReport(task, journey);
+    report.status = finalVerdict === 'ALIGNED' ? 'aligned' : 'deficient';
+    await emitReport(task, journey, report);
   } catch (error) {
     if (error instanceof WorkflowCancelled) {
       journey.cancelled = true;
-      journey.status = 'cancelled';
+      report.status = 'cancelled';
       task.addLogMessage('warning', 'Dev Pipeline cancelled by user.');
     } else {
-      journey.status = 'aborted';
+      report.status = 'aborted';
       journey.error = error instanceof Error ? error.message : String(error);
       task.addLogMessage('error', `Dev Pipeline aborted: ${journey.error}`);
     }
-    await emitReport(task, journey);
+    await emitReport(task, journey, report);
   }
 }
 
