@@ -1,3 +1,5 @@
+import type { Task } from '@/task';
+
 export interface WorkflowStepContext {
   initialPrompt: string;
   previousOutput: string;
@@ -13,8 +15,19 @@ export interface WorkflowStep {
   buildPrompt: (ctx: WorkflowStepContext) => string;
 }
 
+export interface WorkflowRunContext {
+  task: Task;
+  initialPrompt: string;
+}
+
 export interface WorkflowDefinition {
   id: string;
   name: string;
-  steps: WorkflowStep[];
+  /**
+   * A workflow provides *either* a linear list of `steps` *or* an imperative
+   * `run` function. When `run` is present it takes precedence and `steps` is
+   * ignored. When neither is provided the runner logs an error and returns.
+   */
+  steps?: WorkflowStep[];
+  run?: (ctx: WorkflowRunContext) => Promise<void>;
 }

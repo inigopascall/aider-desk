@@ -113,6 +113,7 @@ export interface WorkflowInfo {
 
 export const AVAILABLE_WORKFLOWS: WorkflowInfo[] = [
   { id: 'three-agent-relay', name: 'Three Agent Relay' },
+  { id: 'dev-pipeline', name: 'Dev Pipeline' },
 ];
 
 export enum AutonomyMode {

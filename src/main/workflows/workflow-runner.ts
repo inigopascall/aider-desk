@@ -5,13 +5,27 @@ import { WorkflowDefinition } from './types';
 import type { Task } from '@/task';
 
 export async function runWorkflow(task: Task, workflow: WorkflowDefinition, prompt: string): Promise<void> {
+  // Imperative workflows provide a `run` function that drives the whole
+  // pipeline itself; delegate to it and return.
+  if (workflow.run) {
+    await workflow.run({ task, initialPrompt: prompt });
+    return;
+  }
+
   // Workflow steps are resolved exclusively from the Workflow Agents tier.
   const workflowAgents = task.getProject().getWorkflowAgentProfiles();
 
   let previousOutput = prompt;
 
-  for (let stepIndex = 0; stepIndex < workflow.steps.length; stepIndex++) {
-    const step = workflow.steps[stepIndex];
+  const steps = workflow.steps ?? [];
+
+  if (steps.length === 0) {
+    task.addLogMessage('error', `Workflow '${workflow.name}' has neither a run function nor any steps.`);
+    return;
+  }
+
+  for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
+    const step = steps[stepIndex];
     const target = findEnabledSubagent(workflowAgents, step.subagentId, { matchByName: true });
 
     if (!target) {
