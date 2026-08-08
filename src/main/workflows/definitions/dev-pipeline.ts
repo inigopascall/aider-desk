@@ -27,13 +27,13 @@ import { dispatchAgent, dispatchParsed, WorkflowCancelled, WorkflowError } from 
  */
 
 const AGENTS = {
-  digester: 'digester',
-  investigator: 'investigator',
-  researcher: 'researcher',
-  planner: 'grand-planner',
-  decompositor: 'decompositor',
-  editor: 'editor',
-  confirmer: 'confirmer',
+  digester: 'DIGESTER',
+  investigator: 'INVESTIGATOR',
+  researcher: 'RESEARCHER',
+  planner: 'GRAND-PLANNER',
+  decompositor: 'DECOMPOSITOR',
+  editor: 'EDITOR',
+  confirmer: 'CONFIRMER',
 };
 
 const MAX_EVIDENCE_ITERATIONS = 3;
