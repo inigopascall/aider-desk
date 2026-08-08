@@ -52,7 +52,13 @@ export const SectionHeader = ({ section, title, count, totalCount, isOpen, total
         </span>
       ) : null}
 
-      {!editMode && section !== 'updated' && !isOpen && (
+      {!editMode && section === 'context' && (
+        <span className="text-2xs text-text-tertiary mr-2">
+          ({count})
+        </span>
+      )}
+
+      {!editMode && section !== 'updated' && section !== 'context' && !isOpen && (
         <span className="text-2xs text-text-tertiary mr-2 bg-bg-secondary-light px-1.5 rounded-full">
           {totalCount != null && totalCount !== count ? `${count}/${totalCount}` : count}
         </span>
