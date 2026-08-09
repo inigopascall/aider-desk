@@ -121,6 +121,18 @@ export const DEFAULT_WORKFLOW_MODEL_SET_ID = 'default';
 export const WORKFLOW_AGENT_ROLES: Record<string, string[]> = {
   'three-agent-relay': ['EDITOR-PRIMARY', 'CONFIRMER', 'REVIEWER-RECTIFIER'],
   'dev-pipeline': ['DIGESTER', 'INVESTIGATOR', 'RESEARCHER', 'GRAND-PLANNER', 'DECOMPOSITOR', 'EDITOR', 'CONFIRMER'],
+  'dev-pipeline-review': [
+    'DIGESTER',
+    'INVESTIGATOR',
+    'RESEARCHER',
+    'GRAND-PLANNER',
+    'DECOMPOSITOR',
+    'EDITOR',
+    'CONFIRMER',
+    'VERIFIER-CORRECTNESS',
+    'VERIFIER-QUALITY',
+    'REVIEWER-RECTIFIER',
+  ],
 };
 
 export interface WorkflowInfo {
@@ -132,6 +144,7 @@ export interface WorkflowInfo {
 export const AVAILABLE_WORKFLOWS: WorkflowInfo[] = [
   { id: 'three-agent-relay', name: 'Three Agent Relay', agents: WORKFLOW_AGENT_ROLES['three-agent-relay'] },
   { id: 'dev-pipeline', name: 'Dev Pipeline', agents: WORKFLOW_AGENT_ROLES['dev-pipeline'] },
+  { id: 'dev-pipeline-review', name: 'Dev Pipeline + Review', agents: WORKFLOW_AGENT_ROLES['dev-pipeline-review'] },
 ];
 
 export enum AutonomyMode {

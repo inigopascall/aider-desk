@@ -195,6 +195,101 @@ export function parseInvestigatorResponse(text: string): { add: string[]; remove
   };
 }
 
+export interface VerifierReport {
+  verdict: 'ALIGNED' | 'MISALIGNED';
+  findings: string;
+  areasSound: string;
+  raw: string;
+}
+
+export function parseVerifierResponse(text: string): VerifierReport {
+  const raw = text;
+  const t = stripCodeFences(text);
+  const verdictMarker = findMarker(t, '=== VERDICT ===');
+  const findingsMarker = findMarker(t, '=== FINDINGS ===');
+  const areasMarker = findMarker(t, '=== AREAS SOUND ===');
+
+  if (!verdictMarker || !findingsMarker) {
+    throw new ParseError('response must contain === VERDICT === followed by ALIGNED or MISALIGNED');
+  }
+
+  const verdictLine = t
+    .slice(verdictMarker.end)
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+
+  const verdict = verdictLine?.toUpperCase();
+  if (verdict !== 'ALIGNED' && verdict !== 'MISALIGNED') {
+    throw new ParseError('response must contain === VERDICT === followed by ALIGNED or MISALIGNED');
+  }
+
+  const findingsEnd = areasMarker && areasMarker.start >= findingsMarker.end ? areasMarker.start : t.length;
+  const findingsText = t.slice(findingsMarker.end, findingsEnd).trim();
+  const findings = findingsText.length === 0 || findingsText.toUpperCase() === 'NONE' ? '' : findingsText;
+
+  if (verdict === 'MISALIGNED' && findings.length === 0) {
+    throw new ParseError('MISALIGNED verdict requires a non-empty FINDINGS section');
+  }
+
+  const areasSound = areasMarker ? t.slice(areasMarker.end).trim() : '';
+
+  return {
+    verdict,
+    findings,
+    areasSound,
+    raw,
+  };
+}
+
+export interface ReviewerReport {
+  findings: string;
+  considerations: string | null;
+  rectificationPlan: string | null;
+  raw: string;
+}
+
+export function parseReviewerResponse(text: string): ReviewerReport {
+  const raw = text;
+  const t = stripCodeFences(text);
+  const findingsMarker = findMarker(t, '=== FINDINGS ===');
+  const considerationsMarker = findMarker(t, '=== CONSIDERATIONS ===');
+  const planMarker = findMarker(t, '=== RECTIFICATION PLAN ===');
+
+  if (!findingsMarker) {
+    throw new ParseError('response must contain a non-empty === FINDINGS === section');
+  }
+  if (!planMarker) {
+    throw new ParseError('response must contain === RECTIFICATION PLAN ===');
+  }
+
+  const findingsEnd =
+    [considerationsMarker, planMarker]
+      .filter((marker): marker is { start: number; end: number } => !!marker && marker.start >= findingsMarker.end)
+      .sort((a, b) => a.start - b.start)[0]?.start ?? t.length;
+  const findings = t.slice(findingsMarker.end, findingsEnd).trim();
+
+  if (!findings || findings.toUpperCase() === 'NONE') {
+    throw new ParseError('response must contain a non-empty === FINDINGS === section');
+  }
+
+  const considerationsEnd = planMarker.start >= (considerationsMarker?.end ?? 0) ? planMarker.start : t.length;
+  const considerationsText = considerationsMarker ? t.slice(considerationsMarker.end, considerationsEnd).trim() : '';
+  const considerations =
+    considerationsText.length === 0 || ['NONE', 'N/A'].includes(considerationsText.toUpperCase()) ? null : considerationsText;
+
+  const planText = t.slice(planMarker.end).trim();
+  const rectificationPlan =
+    planText.length === 0 || ['NONE', 'N/A'].includes(planText.toUpperCase()) ? null : planText;
+
+  return {
+    findings,
+    considerations,
+    rectificationPlan,
+    raw,
+  };
+}
+
 /**
  * Extracts the content of a `## UNKNOWNS: ...` section from a plan. The
  * content runs to the next `## ` heading or the end of the text. Returns
