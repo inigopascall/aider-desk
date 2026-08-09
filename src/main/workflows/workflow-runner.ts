@@ -15,16 +15,14 @@ export async function runWorkflow(task: Task, workflow: WorkflowDefinition, prom
   const conversationText = formatConversation(conversationMessages);
 
   // Resolve and validate the active model set.
-  const modelSet = resolveActiveModelSet(task, workflow.id);
-  if (modelSet) {
-    const problems = validateModelSet(task, modelSet);
-    if (problems.length > 0) {
-      task.addLogMessage(
-        'error',
-        `Workflow '${workflow.name}': model set '${modelSet.name}' cannot be used:\n${problems.map((p) => `- ${p}`).join('\n')}`,
-      );
-      return;
-    }
+  const modelSet = resolveActiveModelSet(task, workflow);
+  const problems = validateModelSet(task, modelSet);
+  if (problems.length > 0) {
+    task.addLogMessage(
+      'error',
+      `Workflow '${workflow.name}': model set '${modelSet.name}' cannot be used:\n${problems.map((p) => `- ${p}`).join('\n')}`,
+    );
+    return;
   }
 
   task.addLogMessage(

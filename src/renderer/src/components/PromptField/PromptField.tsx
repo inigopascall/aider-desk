@@ -1611,7 +1611,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
             indentWithTab={false}
             extensions={extensions}
           />
-          <div className="absolute right-3 top-1/2 -translate-y-[12px] flex items-center space-x-1 text-text-muted-light">
+          <div className="absolute right-2 top-1.5 flex flex-col items-center gap-0.5 text-text-muted-light">
             <Tooltip content="Expand editor">
               <button
                 onClick={openExpanded}
@@ -1621,12 +1621,29 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
                 <MdOutlineFullscreen className="w-4 h-4" />
               </button>
             </Tooltip>
+            {text.trim() && !isRecording && !processing && (!isEditingLastMessage || canSaveEditedPrompt) && (
+              <Tooltip content={t('promptField.savePrompt')}>
+                <button
+                  onClick={handleSavePrompt}
+                  disabled={disabled}
+                  className="text-text-muted-light hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200"
+                >
+                  <MdSave className="w-4 h-4" />
+                </button>
+              </Tooltip>
+            )}
+            {text.trim() && !isRecording && !processing && (
+              <Tooltip content={isProcessing ? t('promptField.queueMessage') : t('promptField.sendMessage')}>
+                <button onClick={handleSubmit} disabled={disabled} className="hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200">
+                  {isProcessing && !question ? <MdOutlineScheduleSend className="w-4 h-4" /> : <BiSend className="w-4 h-4" />}
+                </button>
+              </Tooltip>
+            )}
+          </div>
+          <div className="absolute right-3 top-1/2 -translate-y-[12px] flex items-center space-x-1 text-text-muted-light">
             {processing && (
               <Tooltip content={`${t('promptField.stopResponse')} (Ctrl+C)`}>
-                <button
-                  onClick={() => interruptResponse()}
-                  className="hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-colors duration-200 ml-1"
-                >
+                <button onClick={() => interruptResponse()} className="hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-colors duration-200 ml-1">
                   <MdStop className="w-4 h-4" />
                 </button>
               </Tooltip>
@@ -1660,32 +1677,6 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
                   )}
                 </button>
               </Tooltip>
-            )}
-            {text.trim() && !isRecording && (
-              <>
-                {!processing && (!isEditingLastMessage || canSaveEditedPrompt) && (
-                  <Tooltip content={t('promptField.savePrompt')}>
-                    <button
-                      onClick={handleSavePrompt}
-                      disabled={disabled}
-                      className={clsx('text-text-muted-light hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200')}
-                    >
-                      <MdSave className="w-4 h-4" />
-                    </button>
-                  </Tooltip>
-                )}
-                {!processing && (
-                  <Tooltip content={isProcessing ? t('promptField.queueMessage') : t('promptField.sendMessage')}>
-                    <button
-                      onClick={handleSubmit}
-                      disabled={disabled}
-                      className={clsx('hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200')}
-                    >
-                      {isProcessing && !question ? <MdOutlineScheduleSend className="w-4 h-4" /> : <BiSend className="w-4 h-4" />}
-                    </button>
-                  </Tooltip>
-                )}
-              </>
             )}
             {processing && <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />}
           </div>

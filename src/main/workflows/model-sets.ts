@@ -1,34 +1,39 @@
-import { AgentProfile, WorkflowModelSet } from '@common/types';
+import { AgentProfile, DEFAULT_WORKFLOW_MODEL_SET_ID, WorkflowModelSet } from '@common/types';
 import { extractProviderModel } from '@common/utils';
+import { buildDefaultWorkflowModelSet } from '@common/agent';
 
 import type { Task } from '@/task';
+import type { WorkflowDefinition } from './types';
 
 /**
  * Resolves the active model set for a given workflow on a given task.
- * Precedence: task-level override → project-level default → none.
- * Returns undefined when no set is selected or the referenced set no longer exists.
+ * Precedence: task-level override → project-level default → the workflow's
+ * built-in "Default" set (id === DEFAULT_WORKFLOW_MODEL_SET_ID).
+ * "Default" is synthesized live from the workflow agents' own configured
+ * provider/model whenever it hasn't been customized (persisted) yet.
  */
-export function resolveActiveModelSet(task: Task, workflowId: string): WorkflowModelSet | undefined {
+export function resolveActiveModelSet(task: Task, workflow: WorkflowDefinition): WorkflowModelSet {
   const settings = task.getSettings();
   const projectSettings = task.getProject().getProjectSettings();
 
-  const taskSetId = task.task.workflowModelSetIds?.[workflowId];
-  const projectSetId = projectSettings.workflowModelSetIds?.[workflowId];
-  const setId = taskSetId ?? projectSetId;
+  const taskSetId = task.task.workflowModelSetIds?.[workflow.id];
+  const projectSetId = projectSettings.workflowModelSetIds?.[workflow.id];
+  const setId = taskSetId ?? projectSetId ?? DEFAULT_WORKFLOW_MODEL_SET_ID;
 
-  if (!setId) return undefined;
-
-  const sets = settings.workflowModelSets?.[workflowId] ?? [];
+  const sets = settings.workflowModelSets?.[workflow.id] ?? [];
   const found = sets.find((s) => s.id === setId);
+  if (found) {
+    return found;
+  }
 
-  if (!found) {
+  if (setId !== DEFAULT_WORKFLOW_MODEL_SET_ID) {
     task.addLogMessage(
       'warning',
-      `Workflow model set '${setId}' not found for workflow '${workflowId}'. Using default agent profile models.`,
+      `Workflow model set '${setId}' not found for workflow '${workflow.id}'. Using default agent profile models.`,
     );
   }
 
-  return found;
+  return buildDefaultWorkflowModelSet(workflow.agents, task.getProject().getWorkflowAgentProfiles());
 }
 
 /**
@@ -50,8 +55,7 @@ export function validateModelSet(task: Task, set: WorkflowModelSet): string[] {
 /**
  * Returns a human-readable description for log messages.
  */
-export function describeModelSet(set?: WorkflowModelSet): string {
-  if (!set) return 'Default (agent profile models)';
+export function describeModelSet(set: WorkflowModelSet): string {
   return set.name;
 }
 

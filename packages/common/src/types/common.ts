@@ -115,6 +115,9 @@ export interface WorkflowModelSet {
 
 export type WorkflowModelSets = Record<string, WorkflowModelSet[]>;
 
+/** Stable id for each workflow's built-in, always-present "Default" model set. */
+export const DEFAULT_WORKFLOW_MODEL_SET_ID = 'default';
+
 export const WORKFLOW_AGENT_ROLES: Record<string, string[]> = {
   'three-agent-relay': ['EDITOR-PRIMARY', 'CONFIRMER', 'REVIEWER-RECTIFIER'],
   'dev-pipeline': ['DIGESTER', 'INVESTIGATOR', 'RESEARCHER', 'GRAND-PLANNER', 'DECOMPOSITOR', 'EDITOR', 'CONFIRMER'],

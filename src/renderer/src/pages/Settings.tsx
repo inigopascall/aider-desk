@@ -258,6 +258,7 @@ export const Settings = ({
             settings={settings}
             setSettings={updateSettings}
             providers={providers ?? []}
+            agentProfiles={agentProfiles ?? []}
             workflowModelSetIdsByProject={workflowModelSetIdsByProject ?? {}}
             onSetWorkflowModelSetId={onSetWorkflowModelSetId ?? (() => {})}
           />

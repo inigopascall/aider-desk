@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AVAILABLE_WORKFLOWS, ProjectData, ProviderProfile, SettingsData } from '@common/types';
+import { AgentProfile, AVAILABLE_WORKFLOWS, DEFAULT_WORKFLOW_MODEL_SET_ID, ProjectData, ProviderProfile, SettingsData } from '@common/types';
 import { useTranslation } from 'react-i18next';
 import { LuWorkflow } from 'react-icons/lu';
 import { clsx } from 'clsx';
@@ -16,6 +16,7 @@ type Props = {
   settings: SettingsData;
   setSettings: (updated: SettingsData) => void;
   providers?: ProviderProfile[];
+  agentProfiles?: AgentProfile[];
   workflowModelSetIdsByProject: Record<string, Record<string, string>>;
   onSetWorkflowModelSetId: (baseDir: string, workflowId: string, setId: string) => void;
 };
@@ -27,6 +28,7 @@ export const WorkflowsSettings = ({
   settings,
   setSettings,
   providers,
+  agentProfiles,
   workflowModelSetIdsByProject,
   onSetWorkflowModelSetId,
 }: Props) => {
@@ -91,25 +93,29 @@ export const WorkflowsSettings = ({
                         className="flex items-center justify-between p-3 border border-border-default rounded-md bg-bg-secondary-light"
                       >
                         <span className="text-sm text-text-primary truncate">{getPathBasename(project.baseDir)}</span>
-                        {isEnabled && (
-                          <select
-                            className="h-7 text-2xs bg-bg-secondary border border-border-default rounded px-1 text-text-primary focus:outline-none focus:border-border-light"
-                            value={workflowModelSetIdsByProject[project.baseDir]?.[selectedWorkflow.id] ?? ''}
-                            onChange={(e) => onSetWorkflowModelSetId(project.baseDir, selectedWorkflow.id, e.target.value)}
-                          >
-                            <option value="">Default</option>
-                            {(settings.workflowModelSets?.[selectedWorkflow.id] ?? []).map((set) => (
-                              <option key={set.id} value={set.id}>
-                                {set.name}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                        <Checkbox
-                          checked={isEnabled}
-                          onChange={(checked) => onToggleWorkflowForProject(project.baseDir, selectedWorkflow.id, checked)}
-                          size="sm"
-                        />
+                        <div className="flex items-center gap-6">
+                          {isEnabled && (
+                            <select
+                              className="h-7 text-2xs bg-bg-secondary border border-border-default rounded pl-1.5 pr-2 text-text-primary cursor-pointer focus:outline-none focus:border-border-light"
+                              value={workflowModelSetIdsByProject[project.baseDir]?.[selectedWorkflow.id] ?? DEFAULT_WORKFLOW_MODEL_SET_ID}
+                              onChange={(e) => onSetWorkflowModelSetId(project.baseDir, selectedWorkflow.id, e.target.value)}
+                            >
+                              <option value={DEFAULT_WORKFLOW_MODEL_SET_ID}>Default</option>
+                              {(settings.workflowModelSets?.[selectedWorkflow.id] ?? [])
+                                .filter((set) => set.id !== DEFAULT_WORKFLOW_MODEL_SET_ID)
+                                .map((set) => (
+                                  <option key={set.id} value={set.id}>
+                                    {set.name}
+                                  </option>
+                                ))}
+                            </select>
+                          )}
+                          <Checkbox
+                            checked={isEnabled}
+                            onChange={(checked) => onToggleWorkflowForProject(project.baseDir, selectedWorkflow.id, checked)}
+                            size="sm"
+                          />
+                        </div>
                       </div>
                     );
                   })}
@@ -124,7 +130,7 @@ export const WorkflowsSettings = ({
         )}
         <div className="p-4 border-t border-border-default space-y-2">
           <div className="text-sm font-medium text-text-primary">Model Sets</div>
-          <WorkflowModelSets settings={settings} setSettings={setSettings} providers={providers} />
+          <WorkflowModelSets settings={settings} setSettings={setSettings} providers={providers} agentProfiles={agentProfiles} />
         </div>
       </div>
     </div>
