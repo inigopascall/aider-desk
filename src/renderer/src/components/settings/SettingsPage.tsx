@@ -33,6 +33,8 @@ export const SettingsPage = ({ onClose, initialPageId, initialOptions, openProje
   const [originalProviders, setOriginalProviders] = useState<ProviderProfile[]>([]);
   const [workflowsByProject, setWorkflowsByProject] = useState<Record<string, string[]>>({});
   const [originalWorkflowsByProject, setOriginalWorkflowsByProject] = useState<Record<string, string[]>>({});
+  const [workflowModelSetIdsByProject, setWorkflowModelSetIdsByProject] = useState<Record<string, Record<string, string>>>({});
+  const [originalWorkflowModelSetIdsByProject, setOriginalWorkflowModelSetIdsByProject] = useState<Record<string, Record<string, string>>>({});
 
   useEffect(() => {
     if (originalSettings) {
@@ -62,11 +64,15 @@ export const SettingsPage = ({ onClose, initialPageId, initialOptions, openProje
   useEffect(() => {
     if (openProjects && Object.keys(workflowsByProject).length === 0) {
       const map: Record<string, string[]> = {};
+      const idsMap: Record<string, Record<string, string>> = {};
       for (const project of openProjects) {
         map[project.baseDir] = project.settings.enabledWorkflows ?? [];
+        idsMap[project.baseDir] = project.settings.workflowModelSetIds ?? {};
       }
       setWorkflowsByProject(map);
       setOriginalWorkflowsByProject(map);
+      setWorkflowModelSetIdsByProject(idsMap);
+      setOriginalWorkflowModelSetIdsByProject(idsMap);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openProjects]);
@@ -76,7 +82,8 @@ export const SettingsPage = ({ onClose, initialPageId, initialOptions, openProje
     const agentProfilesChanged = !isEqual(agentProfiles, originalAgentProfiles);
     const providersChanged = !isEqual(providers, originalProviders);
     const workflowsChanged = !isEqual(workflowsByProject, originalWorkflowsByProject);
-    return settingsChanged || agentProfilesChanged || providersChanged || workflowsChanged;
+    const workflowModelSetIdsChanged = !isEqual(workflowModelSetIdsByProject, originalWorkflowModelSetIdsByProject);
+    return settingsChanged || agentProfilesChanged || providersChanged || workflowsChanged || workflowModelSetIdsChanged;
   }, [localSettings, originalSettings, agentProfiles, originalAgentProfiles, providers, originalProviders, workflowsByProject, originalWorkflowsByProject]);
 
   const handleCancel = useCallback(() => {
@@ -106,8 +113,19 @@ export const SettingsPage = ({ onClose, initialPageId, initialOptions, openProje
     setAgentProfiles(originalAgentProfiles);
     setProviders(originalProviders);
     setWorkflowsByProject(originalWorkflowsByProject);
+    setWorkflowModelSetIdsByProject(originalWorkflowModelSetIdsByProject);
     onClose();
-  }, [originalSettings, localSettings, i18n, api, originalAgentProfiles, originalProviders, onClose]);
+  }, [
+    originalSettings,
+    localSettings,
+    i18n,
+    api,
+    originalAgentProfiles,
+    originalProviders,
+    originalWorkflowsByProject,
+    originalWorkflowModelSetIdsByProject,
+    onClose,
+  ]);
 
   const handleSave = async () => {
     if (localSettings) {
@@ -137,6 +155,20 @@ export const SettingsPage = ({ onClose, initialPageId, initialOptions, openProje
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error('Failed to save workflow availability:', error);
+    }
+
+    // Save workflow model set ID changes
+    try {
+      for (const baseDir of Object.keys(workflowModelSetIdsByProject)) {
+        const original = originalWorkflowModelSetIdsByProject[baseDir] ?? {};
+        if (!isEqual(workflowModelSetIdsByProject[baseDir], original)) {
+          await api.patchProjectSettings(baseDir, { workflowModelSetIds: workflowModelSetIdsByProject[baseDir] });
+        }
+      }
+      setOriginalWorkflowModelSetIdsByProject(workflowModelSetIdsByProject);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to save workflow model set IDs:', error);
     }
 
     // Save agent profile changes
@@ -232,6 +264,19 @@ export const SettingsPage = ({ onClose, initialPageId, initialOptions, openProje
             setAgentProfiles={setAgentProfiles}
             openProjects={openProjects}
             workflowsByProject={workflowsByProject}
+            workflowModelSetIdsByProject={workflowModelSetIdsByProject}
+            onSetWorkflowModelSetId={(baseDir, workflowId, setId) => {
+              setWorkflowModelSetIdsByProject((prev) => {
+                const current = prev[baseDir] ?? {};
+                const next = { ...current };
+                if (setId) {
+                  next[workflowId] = setId;
+                } else {
+                  delete next[workflowId];
+                }
+                return { ...prev, [baseDir]: next };
+              });
+            }}
             onToggleWorkflowForProject={(baseDir, workflowId, checked) => {
               setWorkflowsByProject((prev) => {
                 const current = prev[baseDir] ?? [];

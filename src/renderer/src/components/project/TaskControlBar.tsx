@@ -10,6 +10,7 @@ import { AgentSelector } from '@/components/AgentSelector';
 import { ModeSelector } from '@/components/PromptField/ModeSelector';
 import { AutonomySelector } from '@/components/PromptField/AutonomySelector';
 import { WorkflowSelector } from '@/components/PromptField/WorkflowSelector';
+import { WorkflowModelSetSelector } from '@/components/PromptField/WorkflowModelSetSelector';
 import { Button } from '@/components/common/Button';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
 import { useProjectSettings } from '@/contexts/ProjectSettingsContext';
@@ -91,6 +92,7 @@ export const TaskControlBar = ({
             selectedWorkflowId={selectedWorkflowId ?? null}
             onChange={onWorkflowChange}
           />
+          <WorkflowModelSetSelector baseDir={baseDir} task={task} selectedWorkflowId={selectedWorkflowId ?? null} />
         )}
         <ExtensionComponentWrapper placement="task-input-toolbar-left" />
         <div className="ml-auto flex items-center gap-1">
