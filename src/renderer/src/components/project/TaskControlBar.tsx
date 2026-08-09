@@ -3,7 +3,7 @@ import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FaInfoCircle } from 'react-icons/fa';
 import { Tooltip } from '@/components/ui/Tooltip';
-import { MdPlaylistRemove, MdUndo } from 'react-icons/md';
+import { MdOutlineFullscreen, MdPlaylistRemove, MdUndo } from 'react-icons/md';
 import { VscTerminal } from 'react-icons/vsc';
 import { clsx } from 'clsx';
 
