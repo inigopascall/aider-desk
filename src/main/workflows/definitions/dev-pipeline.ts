@@ -555,6 +555,17 @@ export async function runDevPipeline({ task, initialPrompt, conversationText, mo
         }),
       );
 
+      // Add any edited/created files to the task context so the final list reflects reality.
+      for (const result of results) {
+        const p = result.path;
+        if (await fileExists(path.resolve(task.getTaskDir(), p))) {
+          const added = await task.addFiles({ path: p, readOnly: false });
+          if (added) {
+            task.addLogMessage('info', `Dev Pipeline ▸ Added file to context: ${p}`);
+          }
+        }
+      }
+
       // Commit this pass, then diff it. Because every pass makes its own
       // commit, HEAD~1..HEAD is always exactly the latest pass's changes.
       const commitMsg = `[dev-pipeline pass ${pass}] ${journey.planTitle.slice(0, 60)}`;
