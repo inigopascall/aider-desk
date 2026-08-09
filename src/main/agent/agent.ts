@@ -472,9 +472,10 @@ export class Agent {
       Object.assign(toolSet, taskTools);
     }
 
-    // Add search parent task tool for subtasks
-    if (task.task.parentId !== null) {
-      toolSet[`${TASKS_TOOL_GROUP_NAME}${TOOL_GROUP_NAME_SEPARATOR}${TASKS_TOOL_SEARCH_PARENT_TASK}`] = createSearchParentTaskTool(task, promptContext);
+    // Add search parent task tool for subtasks when permitted by the profile
+    const searchParentTaskToolId = `${TASKS_TOOL_GROUP_NAME}${TOOL_GROUP_NAME_SEPARATOR}${TASKS_TOOL_SEARCH_PARENT_TASK}`;
+    if (task.task.parentId !== null && profile.toolApprovals[searchParentTaskToolId] !== ToolApprovalState.Never) {
+      toolSet[searchParentTaskToolId] = createSearchParentTaskTool(task, promptContext);
     }
 
     if (profile.useMemoryTools) {
