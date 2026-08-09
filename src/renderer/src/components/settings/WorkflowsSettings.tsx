@@ -115,10 +115,6 @@ export const WorkflowsSettings = ({
                   })}
                 </div>
               )}
-              <div className="mt-6 space-y-2">
-                <div className="text-sm font-medium text-text-primary">Model Sets</div>
-                <WorkflowModelSets settings={settings} setSettings={setSettings} providers={providers} />
-              </div>
             </div>
           </>
         ) : (
@@ -126,6 +122,10 @@ export const WorkflowsSettings = ({
             <p className="text-text-muted">{t('workflowsSettings.selectWorkflow')}</p>
           </div>
         )}
+        <div className="p-4 border-t border-border-default space-y-2">
+          <div className="text-sm font-medium text-text-primary">Model Sets</div>
+          <WorkflowModelSets settings={settings} setSettings={setSettings} providers={providers} />
+        </div>
       </div>
     </div>
   );

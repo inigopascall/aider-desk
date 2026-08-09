@@ -1,4 +1,4 @@
-import { AVAILABLE_WORKFLOWS, SettingsData, TaskData } from '@common/types';
+import { TaskData } from '@common/types';
 
 import { useApi } from '@/contexts/ApiContext';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -24,7 +24,7 @@ export const WorkflowModelSetSelector = ({ baseDir, task, selectedWorkflowId }: 
   const projectSetId = projectSettings?.workflowModelSetIds?.[selectedWorkflowId];
   const resolved = taskSetId ?? projectSetId ?? '';
   const value = sets.some((s) => s.id === resolved) ? resolved : '';
-  const isFromProject = !taskSetId && !!projectSetId;
+  const isFromProject = !taskSetId && !!projectSetId && sets.some((set) => set.id === projectSetId);
 
   const handleChange = async (newValue: string) => {
     const current = task.workflowModelSetIds ?? {};

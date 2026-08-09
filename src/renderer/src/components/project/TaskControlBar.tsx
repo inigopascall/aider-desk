@@ -87,12 +87,14 @@ export const TaskControlBar = ({
           onLockChange={handleAutonomyLockChanged}
         />
         {onWorkflowChange && availableWorkflows.length > 0 && (
-          <WorkflowSelector
-            workflows={availableWorkflows}
-            selectedWorkflowId={selectedWorkflowId ?? null}
-            onChange={onWorkflowChange}
-          />
-          <WorkflowModelSetSelector baseDir={baseDir} task={task} selectedWorkflowId={selectedWorkflowId ?? null} />
+          <>
+            <WorkflowSelector
+              workflows={availableWorkflows}
+              selectedWorkflowId={selectedWorkflowId ?? null}
+              onChange={onWorkflowChange}
+            />
+            <WorkflowModelSetSelector baseDir={baseDir} task={task} selectedWorkflowId={selectedWorkflowId ?? null} />
+          </>
         )}
         <ExtensionComponentWrapper placement="task-input-toolbar-left" />
         <div className="ml-auto flex items-center gap-1">

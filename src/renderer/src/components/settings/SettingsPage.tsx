@@ -84,7 +84,7 @@ export const SettingsPage = ({ onClose, initialPageId, initialOptions, openProje
     const workflowsChanged = !isEqual(workflowsByProject, originalWorkflowsByProject);
     const workflowModelSetIdsChanged = !isEqual(workflowModelSetIdsByProject, originalWorkflowModelSetIdsByProject);
     return settingsChanged || agentProfilesChanged || providersChanged || workflowsChanged || workflowModelSetIdsChanged;
-  }, [localSettings, originalSettings, agentProfiles, originalAgentProfiles, providers, originalProviders, workflowsByProject, originalWorkflowsByProject]);
+  }, [localSettings, originalSettings, agentProfiles, originalAgentProfiles, providers, originalProviders, workflowsByProject, originalWorkflowsByProject, workflowModelSetIdsByProject, originalWorkflowModelSetIdsByProject]);
 
   const handleCancel = useCallback(() => {
     if (originalSettings && localSettings?.language !== originalSettings.language) {
