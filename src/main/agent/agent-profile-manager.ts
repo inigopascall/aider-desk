@@ -459,6 +459,28 @@ export class AgentProfileManager {
       // Discover and load rule files for this profile
       profile.ruleFiles = await getAllRuleFilesForProfile(profile, dirName);
 
+      // Load prompts from Markdown sidecars (canonical source)
+      const agentDir = path.dirname(filePath);
+      const loadMdIfPresent = async (filename: string): Promise<string | undefined> => {
+        const mdPath = path.join(agentDir, filename);
+        if (await fileExists(mdPath)) {
+          return fs.readFile(mdPath, 'utf-8');
+        }
+        return undefined;
+      };
+
+      const customInstructions = await loadMdIfPresent('customInstructions.md');
+      if (customInstructions !== undefined) profile.customInstructions = customInstructions;
+
+      const systemPrompt = await loadMdIfPresent('systemPrompt.md');
+      if (systemPrompt !== undefined) profile.systemPrompt = systemPrompt;
+
+      const subagentSystemPrompt = await loadMdIfPresent('subagent.systemPrompt.md');
+      if (subagentSystemPrompt !== undefined) {
+        profile.subagent = profile.subagent || {} as AgentProfile['subagent'];
+        profile.subagent.systemPrompt = subagentSystemPrompt;
+      }
+
       logger.info(`Loaded agent profile: ${profile.name} with ${profile.ruleFiles.length} rule files`);
       return profile;
     } catch (err) {
@@ -472,6 +494,22 @@ export class AgentProfileManager {
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       // Create a copy of the profile without ruleFiles since they are dynamically discovered
       const { ruleFiles: _ruleFiles, ...profileToSave } = profile;
+
+      // Write prompt fields to Markdown sidecars (canonical source) and remove them from JSON
+      const agentDir = path.dirname(filePath);
+
+      await fs.writeFile(path.join(agentDir, 'customInstructions.md'), profileToSave.customInstructions || '', 'utf-8');
+      delete profileToSave.customInstructions;
+
+      await fs.writeFile(path.join(agentDir, 'systemPrompt.md'), profileToSave.systemPrompt || '', 'utf-8');
+      delete profileToSave.systemPrompt;
+
+      const subagentPrompt = profileToSave.subagent?.systemPrompt || '';
+      await fs.writeFile(path.join(agentDir, 'subagent.systemPrompt.md'), subagentPrompt, 'utf-8');
+      if (profileToSave.subagent) {
+        delete profileToSave.subagent.systemPrompt;
+      }
+
       await fs.writeFile(filePath, JSON.stringify(profileToSave, null, 2), 'utf-8');
     } catch (err) {
       logger.error(`Failed to save agent profile to ${filePath}: ${err}`);
