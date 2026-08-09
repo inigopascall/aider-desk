@@ -1003,6 +1003,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                   terminalVisible={terminalVisible}
                   showTaskInfoPanel={showTaskInfoPanel}
                   onToggleTaskInfoPanel={handleToggleTaskInfoPanel}
+                  onExpandEditor={() => promptFieldRef.current?.toggleExpanded()}
                   onAutonomyModeChanged={handleAutonomyModeChanged}
                   showSettingsPage={showSettingsPage}
                   canUndoContextChange={canUndoContextChange && messages.length === 0}

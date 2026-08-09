@@ -1574,6 +1574,7 @@
     "agentModeOnly": "Available in Agent mode only",
     "handoffError": "Handoff failed: {{error}}",
     "taskInfo": "Show task information",
+    "expandEditor": "Expand editor",
     "pastedImage": "Pasted image {{index}}",
     "switchToRawEditor": "Switch to raw text editor",
     "switchToRenderedEditor": "Switch to rendered Markdown editor",

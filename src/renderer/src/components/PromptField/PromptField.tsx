@@ -18,7 +18,7 @@ import { useDebounce } from '@reactuses/core';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useTranslation } from 'react-i18next';
 import { BiSend } from 'react-icons/bi';
-import { MdSave, MdStop, MdMic, MdMicOff, MdOutlineScheduleSend, MdOutlineFullscreen } from 'react-icons/md';
+import { MdSave, MdStop, MdMic, MdMicOff, MdOutlineScheduleSend } from 'react-icons/md';
 import { AiOutlineClose } from 'react-icons/ai';
 import { LuChevronsLeftRight, LuChevronsRightLeft } from 'react-icons/lu';
 import { clsx } from 'clsx';
@@ -1611,16 +1611,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
             indentWithTab={false}
             extensions={extensions}
           />
-          <div className="absolute right-2 top-1.5 flex flex-col items-center gap-0.5 text-text-muted-light">
-            <Tooltip content="Expand editor">
-              <button
-                onClick={openExpanded}
-                disabled={disabled}
-                className="text-text-muted-light hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200"
-              >
-                <MdOutlineFullscreen className="w-4 h-4" />
-              </button>
-            </Tooltip>
+          <div className="absolute right-2 top-1.5 flex items-center gap-0.5 text-text-muted-light">
             {text.trim() && !isRecording && !processing && (!isEditingLastMessage || canSaveEditedPrompt) && (
               <Tooltip content={t('promptField.savePrompt')}>
                 <button

@@ -1526,6 +1526,7 @@
     "agentModeOnly": "에이전트 모드에서만 사용 가능",
     "handoffError": "핸드오프 실패: {{error}}",
     "taskInfo": "작업 정보 표시",
+    "expandEditor": "편집기 펼치기",
     "pastedImage": "붙여넣은 이미지 {{index}}"
   },
   "agentProfiles": {

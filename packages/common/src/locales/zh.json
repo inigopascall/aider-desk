@@ -1497,6 +1497,7 @@
     "agentModeOnly": "仅在代理模式下可用",
     "handoffError": "交接失败：{{error}}",
     "taskInfo": "任务信息",
+    "expandEditor": "展开编辑器",
     "pastedImage": "粘贴的图片 {{index}}"
   },
   "agentProfiles": {
