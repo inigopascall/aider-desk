@@ -9,6 +9,7 @@ import { fileExists } from '@common/utils';
 import type { Task } from '@/task';
 import { WorkflowDefinition, WorkflowRunContext } from '../types';
 import {
+  type FileEditInstruction,
   parseConfirmerResponse,
   parseDecompositorResponse,
   parseDigesterResponse,
@@ -64,6 +65,7 @@ interface Journey {
   ambiguities: string | null;
   passes: { pass: number; editCount: number; done: number; failed: string[]; unknown: string[]; verdict: string; commit: string }[];
   formatRetries: number;
+  confirmerSkips: number;
   cancelled: boolean;
   error?: string;
 }
@@ -83,6 +85,61 @@ interface ReportState {
 /** Normalises path separators to forward slashes for reliable comparison. */
 function normalizePath(p: string): string {
   return p.replace(/\\/g, '/');
+}
+
+type EditorOutcome = { path: string; outcome: 'DONE' | 'FAILED' | 'UNKNOWN'; detail?: string };
+
+/**
+ * Parses the NUL-separated output of `git diff --name-only -z`.
+ *
+ * The `-z` flag is used specifically so git never quotes or escapes paths
+ * containing spaces or non-ASCII characters, making the comparison exact.
+ */
+function parseChangedPaths(raw: string): string[] {
+  return raw
+    .split('\0')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry) => (entry.startsWith('./') ? entry.slice(2) : entry))
+    .map(normalizePath);
+}
+
+/**
+ * Pure, never-throwing gate check. Returns `{ passed: true, reason: '' }` when
+ * every editor self-reported DONE and the changed-path set exactly matches the
+ * instructed path set. Any failure mode returns `{ passed: false, reason }`
+ * with a human-readable reason used verbatim in the fallback log line.
+ */
+function evaluateEditGate(results: EditorOutcome[], changedPaths: string[]): { passed: boolean; reason: string } {
+  // 1. Empty guard.
+  if (results.length === 0) {
+    return { passed: false, reason: 'no edits were dispatched' };
+  }
+
+  // 2. Self-report check.
+  const notDone = results.filter((r) => r.outcome !== 'DONE').map((r) => r.path);
+  if (notDone.length > 0) {
+    return { passed: false, reason: `editor did not report DONE for: ${notDone.join(', ')}` };
+  }
+
+  // 3. Build sets.
+  const expected = new Set(results.map((r) => normalizePath(r.path)));
+  const actual = new Set(changedPaths);
+
+  // 4. Missing check.
+  const missing = [...expected].filter((p) => !actual.has(p));
+  if (missing.length > 0) {
+    return { passed: false, reason: `instructed file(s) absent from the diff: ${missing.join(', ')}` };
+  }
+
+  // 5. Extras check.
+  const extra = [...actual].filter((p) => !expected.has(p));
+  if (extra.length > 0) {
+    return { passed: false, reason: `diff touches unexpected file(s): ${extra.join(', ')}` };
+  }
+
+  // 6. All checks passed.
+  return { passed: true, reason: '' };
 }
 
 /**
@@ -136,6 +193,8 @@ function buildReport(journey: Journey, report: ReportState): string {
   lines.push('');
 
   lines.push(`**Format retries:** ${journey.formatRetries}`);
+  lines.push('');
+  lines.push(`**CONFIRMER skips (fast-path gate):** ${journey.confirmerSkips}`);
   lines.push('');
 
   let statusLine: string;
@@ -199,6 +258,7 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
     ambiguities: null,
     passes: [],
     formatRetries: 0,
+    confirmerSkips: 0,
     cancelled: false,
   };
 
@@ -439,7 +499,7 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
 
     for (let pass = 1; pass <= MAX_CONFIRM_PASSES; pass++) {
       // Editors run in parallel, one dispatch per file edit.
-      const results = await Promise.all(
+      const results: EditorOutcome[] = await Promise.all(
         currentEdits.map(async (edit) => {
           const prompt = 'Apply the following edit to exactly one file, per your instructions.\n\n' + serializeFileEdits([edit]);
           try {
@@ -461,39 +521,67 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
       await git.add('-A');
       await git.raw(['commit', '--no-verify', '--allow-empty', '-m', commitMsg]);
 
-      let diff = await git.raw(['diff', 'HEAD~1', 'HEAD']);
-      if (diff.length > MAX_DIFF_CHARS) {
-        diff = diff.slice(0, MAX_DIFF_CHARS) + '\n…[diff truncated]';
-      }
-
-      const confirmerPrompt = [
-        '# File edits that were supposed to be applied',
-        '',
-        serializeFileEdits(currentEdits),
-        '',
-        '# Git diff of what was actually applied',
-        '',
-        '```diff',
-        diff,
-        '```',
-        '',
-        'Verify alignment now, per your instructions.',
-      ].join('\n');
-
-      const verdict = await dispatchParsed(
-        task,
-        AGENTS.confirmer,
-        confirmerPrompt,
-        `Confirming edits (pass ${pass})`,
-        parseConfirmerResponse,
-        () => {
-          journey.formatRetries++;
-        },
-      );
-
       const done = results.filter((r) => r.outcome === 'DONE').length;
       const failed = results.filter((r) => r.outcome === 'FAILED').map((r) => r.path);
       const unknown = results.filter((r) => r.outcome === 'UNKNOWN').map((r) => r.path);
+
+      // Cheap name-only query: the expensive full-diff text is fetched only
+      // when the gate fails and CONFIRMER actually needs it.
+      const changedPaths = parseChangedPaths(await git.raw(['diff', '--name-only', '-z', 'HEAD~1', 'HEAD']));
+
+      let passVerdict: string;
+      let aligned: boolean;
+      let nextEdits: FileEditInstruction[] | null = null;
+
+      const gate = evaluateEditGate(results, changedPaths);
+
+      if (gate.passed) {
+        journey.confirmerSkips++;
+        passVerdict = 'ALIGNED (gate)';
+        aligned = true;
+        task.addLogMessage(
+          'info',
+          `Dev Pipeline ▸ pass ${pass}: all ${results.length} edit(s) reported DONE and the diff matches the instructed file set exactly — skipping CONFIRMER.`,
+        );
+      } else {
+        task.addLogMessage('info', `Dev Pipeline ▸ pass ${pass}: fast-path gate not satisfied (${gate.reason}) — running CONFIRMER.`);
+
+        let diff = await git.raw(['diff', 'HEAD~1', 'HEAD']);
+        if (diff.length > MAX_DIFF_CHARS) {
+          diff = diff.slice(0, MAX_DIFF_CHARS) + '\n…[diff truncated]';
+        }
+
+        const confirmerPrompt = [
+          '# File edits that were supposed to be applied',
+          '',
+          serializeFileEdits(currentEdits),
+          '',
+          '# Git diff of what was actually applied',
+          '',
+          '```diff',
+          diff,
+          '```',
+          '',
+          'Verify alignment now, per your instructions.',
+        ].join('\n');
+
+        const verdict = await dispatchParsed(
+          task,
+          AGENTS.confirmer,
+          confirmerPrompt,
+          `Confirming edits (pass ${pass})`,
+          parseConfirmerResponse,
+          () => {
+            journey.formatRetries++;
+          },
+        );
+
+        passVerdict = verdict.verdict;
+        aligned = verdict.verdict === 'ALIGNED';
+        if (!aligned) {
+          nextEdits = verdict.edits;
+        }
+      }
 
       journey.passes.push({
         pass,
@@ -501,17 +589,17 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
         done,
         failed,
         unknown,
-        verdict: verdict.verdict,
+        verdict: passVerdict,
         commit: commitMsg,
       });
 
-      if (verdict.verdict === 'ALIGNED') {
+      if (aligned) {
         finalVerdict = 'ALIGNED';
         break;
       }
 
       // DEFICIENT → loop again with the confirmer's corrective edit list.
-      currentEdits = verdict.edits;
+      currentEdits = nextEdits!;
       if (pass === MAX_CONFIRM_PASSES) {
         task.addLogMessage('warning', 'Dev Pipeline ▸ max confirm passes reached with deficiencies outstanding.');
       }
