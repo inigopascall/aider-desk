@@ -3,7 +3,7 @@ import path from 'path';
 import { simpleGit } from 'simple-git';
 import { v4 as uuidv4 } from 'uuid';
 
-import { ContextAssistantMessage, MessageRole } from '@common/types';
+import { ContextAssistantMessage, MessageRole, WORKFLOW_AGENT_ROLES } from '@common/types';
 import { fileExists } from '@common/utils';
 
 import type { Task } from '@/task';
@@ -18,7 +18,7 @@ import {
   parsePlanUnknowns,
   serializeFileEdits,
 } from '../parsers';
-import { dispatchAgent, dispatchParsed, WorkflowCancelled, WorkflowError } from '../dispatch';
+import { WorkflowCancelled, WorkflowError } from '../dispatch';
 
 /**
  * The "Dev Pipeline" is an imperative, end-to-end development workflow. It
@@ -67,6 +67,12 @@ interface Journey {
   formatRetries: number;
   confirmerSkips: number;
   cancelled: boolean;
+  /** Name of the active model set, or '' when running on agent-profile models. */
+  modelSetName: string;
+  /** Role -> model id overrides actually in force for this run. */
+  modelOverrides: Record<string, string>;
+  /** Character length of the conversation transcript injected into DIGESTER/GRAND-PLANNER. */
+  conversationChars: number;
   error?: string;
 }
 
@@ -150,6 +156,22 @@ function buildReport(journey: Journey, report: ReportState): string {
   const lines: string[] = [];
   lines.push('# 🏁 Dev Pipeline Report');
   lines.push('');
+
+  lines.push('## Run configuration');
+  lines.push('');
+  lines.push(`- **Model set:** ${journey.modelSetName || 'Default (agent profile models)'}`);
+  lines.push(`- **Conversation context:** ${journey.conversationChars > 0 ? `${journey.conversationChars} characters` : 'none'}`);
+  lines.push('');
+
+  const overrideEntries = Object.entries(journey.modelOverrides).filter(([, v]) => v && v.trim().length > 0);
+  if (overrideEntries.length > 0) {
+    lines.push('| Agent | Model |');
+    lines.push('|---|---|');
+    for (const [role, model] of overrideEntries) {
+      lines.push(`| ${role} | \`${model}\` |`);
+    }
+    lines.push('');
+  }
 
   lines.push('## Evidence gathering');
   lines.push('');
@@ -244,7 +266,7 @@ async function addPathsToContext(task: Task, journey: Journey, paths: string[]):
 /**
  * Top-level entry point for the Dev Pipeline workflow.
  */
-export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext): Promise<void> {
+export async function runDevPipeline({ task, initialPrompt, conversationText, modelSet, dispatch }: WorkflowRunContext): Promise<void> {
   const journey: Journey = {
     evidenceIterations: 0,
     filesAdded: [],
@@ -260,6 +282,9 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
     formatRetries: 0,
     confirmerSkips: 0,
     cancelled: false,
+    modelSetName: modelSet?.name ?? '',
+    modelOverrides: modelSet?.models ?? {},
+    conversationChars: conversationText.length,
   };
 
   // Report-only state: never part of the prescribed Journey interface.
@@ -286,6 +311,16 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
         : 'None yet.';
 
       const digesterPrompt = [
+        ...(conversationText
+          ? [
+              '# Conversation so far',
+              '',
+              'This is the discussion that led to the request below. Use it to understand intent and prior decisions. It is context, not the instruction.',
+              '',
+              conversationText,
+              '',
+            ]
+          : []),
         '# User request',
         initialPrompt,
         '',
@@ -296,8 +331,7 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
         `This is evidence-gathering iteration ${i} of ${MAX_EVIDENCE_ITERATIONS}.`,
       ].join('\n');
 
-      const verdictResp = await dispatchParsed(
-        task,
+      const verdictResp = await dispatch.parsed(
         AGENTS.digester,
         digesterPrompt,
         `Assessing evidence (round ${i})`,
@@ -315,8 +349,7 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
       }
 
       // NO verdict → fan out to the investigator and (optionally) researcher.
-      const investigationP = dispatchParsed(
-        task,
+      const investigationP = dispatch.parsed(
         AGENTS.investigator,
         `${verdictResp.investigationBrief}\n\nReminder of your output contract: respond with exactly the === FILES TO ADD === and === FILES TO REMOVE === sections and nothing else.`,
         `Investigating codebase (round ${i})`,
@@ -331,7 +364,7 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
       // handler emits a cancellation report, and any unexpected error also
       // propagates so the pipeline is recorded as aborted.
       const researchP = verdictResp.researchBrief
-        ? dispatchAgent(task, AGENTS.researcher, verdictResp.researchBrief, `Researching online (round ${i})`).catch((e) => {
+        ? dispatch.agent(AGENTS.researcher, verdictResp.researchBrief, `Researching online (round ${i})`).catch((e) => {
             if (e instanceof WorkflowCancelled) {
               throw e;
             }
@@ -395,6 +428,16 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
     // ---- Stage 2: Grand plan + unknown resolution --------------------------
     report.abortStage = 'planning';
     const plannerPrompt = [
+      ...(conversationText
+        ? [
+            '# Conversation so far',
+            '',
+            'This is the discussion that led to the request below. Treat it as requirements context. It is context, not the instruction.',
+            '',
+            conversationText,
+            '',
+          ]
+        : []),
       '# User request',
       initialPrompt,
       '',
@@ -402,15 +445,14 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
       'Produce the Implementation Plan now, per your instructions.',
     ].join('\n');
 
-    const planText = await dispatchAgent(task, AGENTS.planner, plannerPrompt, 'Producing Implementation Plan');
+    const planText = await dispatch.agent(AGENTS.planner, plannerPrompt, 'Producing Implementation Plan');
     const { title, researchUnknowns, codebaseUnknowns } = parsePlanUnknowns(planText);
     journey.planTitle = title;
 
     let unknownsResearch: string | null = null;
 
     const researchP2 = researchUnknowns
-      ? dispatchAgent(
-          task,
+      ? dispatch.agent(
           AGENTS.researcher,
           `# Unknowns raised by the Implementation Plan — find the answers\n${researchUnknowns}`,
           'Resolving plan research unknowns',
@@ -427,8 +469,7 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
       : Promise.resolve(null);
 
     const codebaseP2 = codebaseUnknowns
-      ? dispatchParsed(
-          task,
+      ? dispatch.parsed(
           AGENTS.investigator,
           `# The Implementation Plan raised these codebase unknowns — locate the relevant files\n${codebaseUnknowns}`,
           'Resolving plan codebase unknowns',
@@ -467,8 +508,7 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
       'Decompose the plan into per-file edit blocks now, per your instructions.',
     ].join('\n');
 
-    const { ambiguities, edits } = await dispatchParsed(
-      task,
+    const { ambiguities, edits } = await dispatch.parsed(
       AGENTS.decompositor,
       decompPrompt,
       'Decomposing plan into file edits',
@@ -503,7 +543,7 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
         currentEdits.map(async (edit) => {
           const prompt = 'Apply the following edit to exactly one file, per your instructions.\n\n' + serializeFileEdits([edit]);
           try {
-            const raw = await dispatchAgent(task, AGENTS.editor, prompt, `Editing ${edit.path}`);
+            const raw = await dispatch.agent(AGENTS.editor, prompt, `Editing ${edit.path}`);
             return { path: edit.path, ...parseEditorResponse(raw) };
           } catch (e) {
             if (e instanceof WorkflowCancelled) {
@@ -565,8 +605,7 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
           'Verify alignment now, per your instructions.',
         ].join('\n');
 
-        const verdict = await dispatchParsed(
-          task,
+        const verdict = await dispatch.parsed(
           AGENTS.confirmer,
           confirmerPrompt,
           `Confirming edits (pass ${pass})`,
@@ -625,5 +664,6 @@ export async function runDevPipeline({ task, initialPrompt }: WorkflowRunContext
 export const devPipeline: WorkflowDefinition = {
   id: 'dev-pipeline',
   name: 'Dev Pipeline',
+  agents: WORKFLOW_AGENT_ROLES['dev-pipeline'],
   run: runDevPipeline,
 };

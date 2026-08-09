@@ -684,6 +684,19 @@ export class Task {
     return this.task.worktree ? this.task.worktree.path : this.project.baseDir;
   }
 
+  /** Global application settings. Exposed for the workflow layer's model-set resolution. */
+  public getSettings(): SettingsData {
+    return this.store.getSettings();
+  }
+
+  /**
+   * Whether a provider profile with the given id is configured.
+   * Mirrors the lookup performed by Agent.runAgent (existence only; `disabled` is not considered).
+   */
+  public hasProvider(providerId: string): boolean {
+    return this.modelManager.getProviders().some((p) => p.id === providerId);
+  }
+
   public compileCustomSystemPrompt(template: string): Promise<string> {
     return this.promptsManager.compileCustomSystemPrompt(this, template);
   }

@@ -1,9 +1,11 @@
-import { AgentProfile } from '@common/types';
+import { AgentProfile, WorkflowModelSet } from '@common/types';
 
 import { findEnabledSubagent } from '@/agent/subagent';
 import type { Task } from '@/task';
 
 import { ParseError } from './parsers';
+import { applyModelSetToProfile } from './model-sets';
+import { WorkflowDispatcher } from './types';
 
 /**
  * Raised for any non-cancellation failure within an imperative workflow
@@ -40,71 +42,57 @@ export function resolveWorkflowAgent(task: Task, subagentId: string): AgentProfi
 }
 
 /**
- * Dispatches a single workflow subagent run and returns its text output.
- * A cancelled run throws `WorkflowCancelled`; an errored run throws
- * `WorkflowError` (naming the agent).
+ * Creates a workflow dispatch handle bound to a task and (optionally) a model
+ * set. The returned `WorkflowDispatcher` resolves each workflow agent by role
+ * name, applies any model-set override, dispatches the run, and surfaces
+ * failures as `WorkflowError` / `WorkflowCancelled`.
  */
-export async function dispatchAgent(task: Task, subagentId: string, prompt: string, description: string): Promise<string> {
-  const target = resolveWorkflowAgent(task, subagentId);
-  const { status, outputText } = await task.dispatchSubagent(target, prompt, description);
+export function createWorkflowDispatcher(task: Task, modelSet?: WorkflowModelSet): WorkflowDispatcher {
+  const dispatcher: WorkflowDispatcher = {
+    agent: async (subagentId, prompt, description) => {
+      const base = resolveWorkflowAgent(task, subagentId);
+      const target = applyModelSetToProfile(base, subagentId, modelSet);
+      const { status, outputText } = await task.dispatchSubagent(target, prompt, description);
+      if (status === 'cancelled') throw new WorkflowCancelled();
+      if (status === 'error') throw new WorkflowError(`Workflow agent '${subagentId}' failed to complete its run.`);
+      return outputText;
+    },
 
-  if (status === 'cancelled') {
-    throw new WorkflowCancelled();
-  }
-  if (status === 'error') {
-    throw new WorkflowError(`Workflow agent '${subagentId}' failed to complete its run.`);
-  }
+    parsed: async (subagentId, prompt, description, parse, onRetry, maxAttempts = 3) => {
+      let lastError = '';
+      let lastRaw = '';
 
-  return outputText;
-}
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        let raw: string;
+        if (attempt === 1) {
+          raw = await dispatcher.agent(subagentId, prompt, description);
+        } else {
+          const footer = [
+            `⚠ FORMAT ERROR — RETRY ATTEMPT ${attempt}`,
+            `Your previous response could not be parsed: ${lastError}.`,
+            'Your previous response was:',
+            lastRaw.slice(0, 4000),
+            'Respond again now, strictly and exactly in the required output format. Output nothing else.',
+          ].join('\n');
+          raw = await dispatcher.agent(subagentId, `${prompt}\n\n${footer}`, description);
+        }
 
-/**
- * Dispatches a workflow subagent and parses its response, retrying on
- * malformed output. On a `ParseError` the agent is re-dispatched with the
- * original prompt plus a corrective footer describing the format error and
- * echoing the previous (truncated) response. Non-`ParseError` exceptions
- * propagate immediately. After `maxAttempts` consecutive failures a
- * `WorkflowError` is thrown.
- */
-export async function dispatchParsed<T>(
-  task: Task,
-  subagentId: string,
-  prompt: string,
-  description: string,
-  parse: (raw: string) => T,
-  onRetry?: (attempt: number, error: string) => void,
-  maxAttempts = 3,
-): Promise<T> {
-  let lastError = '';
-  let lastRaw = '';
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    let raw: string;
-    if (attempt === 1) {
-      raw = await dispatchAgent(task, subagentId, prompt, description);
-    } else {
-      const footer = [
-        `⚠ FORMAT ERROR — RETRY ATTEMPT ${attempt}`,
-        `Your previous response could not be parsed: ${lastError}.`,
-        'Your previous response was:',
-        lastRaw.slice(0, 4000),
-        'Respond again now, strictly and exactly in the required output format. Output nothing else.',
-      ].join('\n');
-      raw = await dispatchAgent(task, subagentId, `${prompt}\n\n${footer}`, description);
-    }
-
-    try {
-      return parse(raw);
-    } catch (error) {
-      if (error instanceof ParseError) {
-        lastError = error.message;
-        lastRaw = raw;
-        onRetry?.(attempt, error.message);
-        continue;
+        try {
+          return parse(raw);
+        } catch (error) {
+          if (error instanceof ParseError) {
+            lastError = error.message;
+            lastRaw = raw;
+            onRetry?.(attempt, error.message);
+            continue;
+          }
+          throw error;
+        }
       }
-      throw error;
-    }
-  }
 
-  throw new WorkflowError(`Workflow agent '${subagentId}' failed to produce a parseable response after ${maxAttempts} attempts`);
+      throw new WorkflowError(`Workflow agent '${subagentId}' failed to produce a parseable response after ${maxAttempts} attempts`);
+    },
+  };
+
+  return dispatcher;
 }

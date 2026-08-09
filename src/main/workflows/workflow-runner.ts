@@ -1,22 +1,50 @@
 import { findEnabledSubagent } from '@/agent/subagent';
 
+import { formatConversation } from './conversation';
+import { createWorkflowDispatcher } from './dispatch';
+import { applyModelSetToProfile, describeModelSet, resolveActiveModelSet, validateModelSet } from './model-sets';
 import { WorkflowDefinition } from './types';
 
 import type { Task } from '@/task';
 
 export async function runWorkflow(task: Task, workflow: WorkflowDefinition, prompt: string): Promise<void> {
-  // Imperative workflows provide a `run` function that drives the whole
-  // pipeline itself; delegate to it and return.
+  // Snapshot the conversation before the workflow command was added.
+  // handleWorkflowCommand emits the command via addUserMessage (UI-only, not
+  // persisted to context), so getContextMessages returns the prior thread.
+  const conversationMessages = await task.getContextMessages();
+  const conversationText = formatConversation(conversationMessages);
+
+  // Resolve and validate the active model set.
+  const modelSet = resolveActiveModelSet(task, workflow.id);
+  if (modelSet) {
+    const problems = validateModelSet(task, modelSet);
+    if (problems.length > 0) {
+      task.addLogMessage(
+        'error',
+        `Workflow '${workflow.name}': model set '${modelSet.name}' cannot be used:\n${problems.map((p) => `- ${p}`).join('\n')}`,
+      );
+      return;
+    }
+  }
+
+  task.addLogMessage(
+    'info',
+    `Workflow '${workflow.name}' starting with model set: ${describeModelSet(modelSet)}${
+      conversationText ? ` (conversation context: ${conversationText.length} characters)` : ' (no prior conversation)'
+    }.`,
+  );
+
+  const dispatch = createWorkflowDispatcher(task, modelSet);
+
+  // Imperative path
   if (workflow.run) {
-    await workflow.run({ task, initialPrompt: prompt });
+    await workflow.run({ task, initialPrompt: prompt, conversationText, conversationMessages, modelSet, dispatch });
     return;
   }
 
-  // Workflow steps are resolved exclusively from the Workflow Agents tier.
+  // Linear (steps) path
   const workflowAgents = task.getProject().getWorkflowAgentProfiles();
-
   let previousOutput = prompt;
-
   const steps = workflow.steps ?? [];
 
   if (steps.length === 0) {
@@ -26,14 +54,15 @@ export async function runWorkflow(task: Task, workflow: WorkflowDefinition, prom
 
   for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
     const step = steps[stepIndex];
-    const target = findEnabledSubagent(workflowAgents, step.subagentId, { matchByName: true });
+    const found = findEnabledSubagent(workflowAgents, step.subagentId, { matchByName: true });
 
-    if (!target) {
+    if (!found) {
       task.addLogMessage('error', `Workflow '${workflow.name}': workflow agent '${step.subagentId}' not found. Create it under Workflow Agents.`);
       return;
     }
 
-    const stepPrompt = step.buildPrompt({ initialPrompt: prompt, previousOutput, stepIndex });
+    const target = applyModelSetToProfile(found, step.subagentId, modelSet);
+    const stepPrompt = step.buildPrompt({ initialPrompt: prompt, previousOutput, stepIndex, conversationText });
     const label = step.description ?? `${workflow.name} — step ${stepIndex + 1}`;
 
     const { status, outputText } = await task.dispatchSubagent(target, stepPrompt, label);

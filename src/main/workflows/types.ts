@@ -1,9 +1,23 @@
+import type { ContextMessage, WorkflowModelSet } from '@common/types';
 import type { Task } from '@/task';
 
 export interface WorkflowStepContext {
   initialPrompt: string;
   previousOutput: string;
   stepIndex: number;
+  conversationText: string;
+}
+
+export interface WorkflowDispatcher {
+  agent(subagentId: string, prompt: string, description: string): Promise<string>;
+  parsed<T>(
+    subagentId: string,
+    prompt: string,
+    description: string,
+    parse: (raw: string) => T,
+    onRetry?: (attempt: number, error: string) => void,
+    maxAttempts?: number,
+  ): Promise<T>;
 }
 
 export interface WorkflowStep {
@@ -18,11 +32,16 @@ export interface WorkflowStep {
 export interface WorkflowRunContext {
   task: Task;
   initialPrompt: string;
+  conversationText: string;
+  conversationMessages: ContextMessage[];
+  modelSet?: WorkflowModelSet;
+  dispatch: WorkflowDispatcher;
 }
 
 export interface WorkflowDefinition {
   id: string;
   name: string;
+  agents: string[];
   /**
    * A workflow provides *either* a linear list of `steps` *or* an imperative
    * `run` function. When `run` is present it takes precedence and `steps` is

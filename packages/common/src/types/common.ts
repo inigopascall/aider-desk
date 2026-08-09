@@ -106,14 +106,29 @@ export const AIDER_MODES: Mode[] = ['code', 'ask', 'architect', 'context'];
 
 export const AIDER_COMMANDS: string[] = ['commit', 'map', 'map-refresh', 'tokens', 'test'];
 
+export interface WorkflowModelSet {
+  id: string;
+  name: string;
+  /** Maps agent role name (e.g. "DIGESTER") to a model ID in "provider/model" format. */
+  models: Record<string, string>;
+}
+
+export type WorkflowModelSets = Record<string, WorkflowModelSet[]>;
+
+export const WORKFLOW_AGENT_ROLES: Record<string, string[]> = {
+  'three-agent-relay': ['EDITOR-PRIMARY', 'CONFIRMER', 'REVIEWER-RECTIFIER'],
+  'dev-pipeline': ['DIGESTER', 'INVESTIGATOR', 'RESEARCHER', 'GRAND-PLANNER', 'DECOMPOSITOR', 'EDITOR', 'CONFIRMER'],
+};
+
 export interface WorkflowInfo {
   id: string;
   name: string;
+  agents: string[];
 }
 
 export const AVAILABLE_WORKFLOWS: WorkflowInfo[] = [
-  { id: 'three-agent-relay', name: 'Three Agent Relay' },
-  { id: 'dev-pipeline', name: 'Dev Pipeline' },
+  { id: 'three-agent-relay', name: 'Three Agent Relay', agents: WORKFLOW_AGENT_ROLES['three-agent-relay'] },
+  { id: 'dev-pipeline', name: 'Dev Pipeline', agents: WORKFLOW_AGENT_ROLES['dev-pipeline'] },
 ];
 
 export enum AutonomyMode {
@@ -428,6 +443,7 @@ export const ProjectSettingsSchema = z.object({
   contextSidebarSectionsOrder: z.array(z.string()).default([]),
   contextSidebarSectionsHidden: z.array(z.string()).default([]),
   enabledWorkflows: z.array(z.string()).optional(),
+  workflowModelSetIds: z.record(z.string(), z.string()).optional(),
 });
 
 export type ProjectSettings = z.infer<typeof ProjectSettingsSchema>;
@@ -819,6 +835,7 @@ export interface SettingsData {
     noProxy: string;
   };
   fileWatchMode?: FileWatchMode;
+  workflowModelSets?: WorkflowModelSets;
 }
 
 export interface ProviderProfile {
@@ -1022,6 +1039,7 @@ export const TaskDataSchema = z.object({
   handoff: z.boolean().optional(),
   lastAgentProviderMetadata: z.unknown().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  workflowModelSetIds: z.record(z.string(), z.string()).optional(),
 });
 
 export type TaskData = z.infer<typeof TaskDataSchema>;

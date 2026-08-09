@@ -1,8 +1,11 @@
+import { WORKFLOW_AGENT_ROLES } from '@common/types';
+
 import { WorkflowDefinition } from '../types';
 
 export const threeAgentRelay: WorkflowDefinition = {
   id: 'three-agent-relay',
   name: 'Three Agent Relay',
+  agents: WORKFLOW_AGENT_ROLES['three-agent-relay'],
   steps: [
     {
       subagentId: 'EDITOR-PRIMARY',
