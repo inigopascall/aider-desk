@@ -17,7 +17,7 @@ describe('task-utils', () => {
     ];
 
     it('should group subtasks under their parent tasks', () => {
-      const sorted = getSortedVisibleTasks(mockTasks as TaskData[], defaultStates);
+      const sorted = getSortedVisibleTasks(mockTasks as TaskData[], defaultStates, false, '', 'updatedAt');
 
       // Expected order:
       // 1. Parent 2 (Pinned)
@@ -35,7 +35,7 @@ describe('task-utils', () => {
         { id: '2', name: 'T2', updatedAt: '2026-01-14T11:00:00Z', pinned: false, parentId: null },
         { id: '3', name: 'T3', updatedAt: '2026-01-14T09:00:00Z', pinned: true, parentId: null },
       ];
-      const sorted = getSortedVisibleTasks(tasks as TaskData[], defaultStates);
+      const sorted = getSortedVisibleTasks(tasks as TaskData[], defaultStates, false, '', 'updatedAt');
       expect(sorted.map((t) => t.id)).toEqual(['3', '2', '1']);
     });
 
@@ -46,7 +46,7 @@ describe('task-utils', () => {
         { id: '3', name: 'Parent B', updatedAt: '2026-01-14T11:00:00Z', pinned: false, parentId: null },
         { id: '4', name: 'Subtask B1', updatedAt: '2026-01-14T10:30:00Z', pinned: false, parentId: '3' },
       ];
-      const sorted = getSortedVisibleTasks(tasks as TaskData[], defaultStates);
+      const sorted = getSortedVisibleTasks(tasks as TaskData[], defaultStates, false, '', 'updatedAt');
       // Parent A should be first because its subtask A1 (12:00) is newer than Parent B (11:00)
       expect(sorted.map((t) => t.id)).toEqual(['1', '2', '3', '4']);
     });
@@ -59,7 +59,7 @@ describe('task-utils', () => {
         { id: '4', name: 'Parent B', updatedAt: '2026-01-14T12:00:00Z', pinned: false, parentId: null },
         { id: '5', name: 'Subtask B1', updatedAt: '2026-01-14T11:00:00Z', pinned: false, parentId: '4' },
       ];
-      const sorted = getSortedVisibleTasks(tasks as TaskData[], defaultStates);
+      const sorted = getSortedVisibleTasks(tasks as TaskData[], defaultStates, false, '', 'updatedAt');
       // Parent A should be first because its nested subtask A1.1 (13:00) is newer than Parent B (12:00)
       expect(sorted.map((t) => t.id)).toEqual(['1', '2', '3', '4', '5']);
     });
@@ -70,7 +70,7 @@ describe('task-utils', () => {
         { id: '2', name: 'Subtask A1', updatedAt: '2026-01-14T11:00:00Z', pinned: false, parentId: '1' },
         { id: '3', name: 'Parent B', updatedAt: '2026-01-14T10:00:00Z', pinned: false, parentId: null },
       ];
-      const sorted = getSortedVisibleTasks(tasks as TaskData[], defaultStates);
+      const sorted = getSortedVisibleTasks(tasks as TaskData[], defaultStates, false, '', 'updatedAt');
       // Parent A should be first because its subtask (11:00) is newer than Parent B (10:00)
       expect(sorted.map((t) => t.id)).toEqual(['1', '2', '3']);
     });
@@ -84,7 +84,7 @@ describe('task-utils', () => {
       ];
       // When showArchived is true, all tasks should be shown
       // Subtask of archived parent (id: '2') appears as orphan since parent is filtered
-      const sorted = getSortedVisibleTasks(tasks as TaskData[], allStates, true);
+      const sorted = getSortedVisibleTasks(tasks as TaskData[], allStates, true, '', 'updatedAt');
       expect(sorted.map((t) => t.id)).toEqual(['3', '4', '1', '2']);
     });
 
@@ -94,7 +94,7 @@ describe('task-utils', () => {
         { id: '2', name: 'Archived Subtask', updatedAt: '2026-01-14T10:00:00Z', pinned: false, parentId: '1', archived: true },
         { id: '3', name: 'Active Subtask', updatedAt: '2026-01-14T11:00:00Z', pinned: false, parentId: '1', archived: false },
       ];
-      const sorted = getSortedVisibleTasks(tasks as TaskData[], allStates, true);
+      const sorted = getSortedVisibleTasks(tasks as TaskData[], allStates, true, '', 'updatedAt');
       // Should include both archived and active subtasks of active parent
       expect(sorted.map((t) => t.id)).toEqual(['1', '3', '2']);
     });

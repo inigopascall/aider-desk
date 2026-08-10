@@ -22,7 +22,13 @@ const getMostRecentUpdatedAt = (task: TaskData, allTasks: TaskData[]): string | 
   return mostRecent;
 };
 
-export const getSortedVisibleTasks = (tasks: TaskData[], selectedStates: Set<string>, showArchived: boolean = false, searchQuery: string = ''): TaskData[] => {
+export const getSortedVisibleTasks = (
+  tasks: TaskData[],
+  selectedStates: Set<string>,
+  showArchived: boolean = false,
+  searchQuery: string = '',
+  sortOrder: TaskSortOrder = 'createdAt',
+): TaskData[] => {
   const filteredTasks = tasks
     .filter((task) => {
       if (task.archived && !showArchived) {
