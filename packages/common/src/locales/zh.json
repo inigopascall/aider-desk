@@ -1651,7 +1651,9 @@
     "readOnlyCommand": "/read-only",
     "modelCommand": "/model",
     "modeSwitchingCommands": "模式切换命令 (/code, /agent, ...)",
-    "modeAtSign": "@ 提及模式"
+    "modeAtSign": "@ 提及模式",
+    "submitOnEnter": "按 Enter 发送",
+    "submitOnEnterTooltip": "启用时，Enter 发送消息，Ctrl+Enter 插入新行。禁用时（默认），Ctrl+Enter 发送消息，Enter 插入新行。Ctrl+Shift+Enter 始终发送消息并关闭展开的 Markdown 编辑器（如果已打开）。"
   },
   "network": {
     "proxy": "代理",
