@@ -899,7 +899,7 @@ const TaskSidebarComponent = ({
                             transform: `translateY(${virtualRow.start}px)`,
                           }}
                         >
-                          <div className="border-b border-border-default-dark pb-3 pt-4">
+                          <div className="border-b-4 border-border-dark pb-6 pt-4">
                             <TaskSectionHeader
                               title={
                                 item.title === 'today'
