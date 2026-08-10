@@ -1,3 +1,4 @@
+import fs from 'fs/promises';
 import path from 'path';
 import { simpleGit, SimpleGit } from 'simple-git';
 
@@ -27,9 +28,11 @@ import {
   formatPlanProduced,
   formatPlanUnknowns,
   formatResearchReceived,
+  formatVerificationFlags,
 } from '../reporting';
 import {
   FileEditInstruction,
+  EditVerificationResult,
   parseConfirmerResponse,
   parseDecompositorResponse,
   parseDigesterResponse,
@@ -37,6 +40,7 @@ import {
   parseInvestigatorResponse,
   parsePlanUnknowns,
   serializeFileEdits,
+  verifyEditAlignment,
 } from '../parsers';
 
 export const AGENTS = {
@@ -385,10 +389,15 @@ export async function runEditLoop(
 
   for (let localPass = 1; localPass <= MAX_CONFIRM_PASSES; localPass++) {
     const pass = journey.passes.length + 1;
+
     const results = await Promise.all(
       currentEdits.map(async (edit) => {
         try {
-          const raw = await ctx.dispatch.agent(AGENTS.editor, `Apply the following edit to exactly one file:\n\n${serializeFileEdits([edit])}`, `Editing ${edit.path}`);
+          const raw = await ctx.dispatch.agent(
+            AGENTS.editor,
+            `Apply the following edit to exactly one file:\n\n${serializeFileEdits([edit])}`,
+            `Editing ${edit.path}`,
+          );
           return { path: edit.path, ...parseEditorResponse(raw) };
         } catch (error) {
           if (error instanceof WorkflowCancelled) throw error;
@@ -405,8 +414,8 @@ export async function runEditLoop(
     await git.raw(['commit', '--no-verify', '--allow-empty', '-m', commitMessage]);
 
     const changedPaths = parseChangedPaths(await git.raw(['diff', '--name-only', '-z', 'HEAD~1', 'HEAD']));
-    const stats = await collectDiffStats(git);
-    const rows = buildEditRows(results, changedPaths, stats);
+    const statsMap = await collectDiffStats(git);
+    const rows = buildEditRows(results, changedPaths, statsMap);
     const gate = evaluateEditGate(results, changedPaths);
 
     for (const row of rows) {
@@ -418,28 +427,81 @@ export async function runEditLoop(
     }
 
     emitInfo(ctx.task, formatEditSummary(commitLabel, pass, rows, gate.passed, gate.reason));
-    let nextEdits: FileEditInstruction[] | null = null;
-    let passVerdict = gate.passed ? 'ALIGNED (gate)' : '';
+    if (!gate.passed) emitInfo(ctx.task, formatDeficiencyNotice(gate.reason));
 
-    if (!gate.passed) {
-      emitInfo(ctx.task, formatDeficiencyNotice(gate.reason));
-      let diff = await git.raw(['diff', 'HEAD~1', 'HEAD']);
-      if (diff.length > MAX_DIFF_CHARS) diff = diff.slice(0, MAX_DIFF_CHARS) + '\n…[diff truncated]';
-      const confirmation = await ctx.dispatch.parsed(
-        AGENTS.confirmer,
-        `# File edits that were supposed to be applied\n\n${serializeFileEdits(currentEdits)}\n\n# Git diff\n\n\`\`\`diff\n${diff}\n\`\`\`\n\nVerify alignment now.`,
-        `Confirming edits (pass ${pass})`,
-        parseConfirmerResponse,
-        () => {
-          journey.formatRetries++;
-        },
-      );
-      passVerdict = confirmation.verdict;
-      if (confirmation.verdict === 'DEFICIENT') nextEdits = confirmation.edits;
-      emitInfo(ctx.task, formatConfirmerVerdict(pass, confirmation.verdict, nextEdits?.length ?? 0));
-    } else {
-      journey.confirmerSkips++;
+    const verificationResults: EditVerificationResult[] = [];
+    for (const edit of currentEdits) {
+      const filePath = path.resolve(ctx.task.getTaskDir(), edit.path);
+      let fileContent: string | null = null;
+      try {
+        fileContent = await fs.readFile(filePath, 'utf-8');
+      } catch {
+        // Missing files are represented by null for deterministic verification.
+      }
+      const fileStats = statsMap.get(normalizePath(edit.path)) ?? { insertions: 0, deletions: 0 };
+      verificationResults.push(verifyEditAlignment(edit, fileContent, fileStats));
     }
+
+    const verificationMessage = formatVerificationFlags(verificationResults);
+    if (verificationMessage) emitInfo(ctx.task, verificationMessage);
+
+    let diff = await git.raw(['diff', 'HEAD~1', 'HEAD']);
+    if (diff.length > MAX_DIFF_CHARS) diff = diff.slice(0, MAX_DIFF_CHARS) + '\n…[diff truncated]';
+
+    const editorResultsSummary = results
+      .map((r) => `${r.path}: ${r.outcome}${r.detail ? ` — ${r.detail}` : ''}`)
+      .join('\n');
+    const suspiciousEdits = verificationResults.filter((v) => v.suspicious);
+    const suspiciousSummary = suspiciousEdits.length > 0
+      ? suspiciousEdits.map((v) => `${v.path}: ${v.reasons.join('; ')}`).join('\n')
+      : 'None';
+
+    const confirmerPrompt = [
+      `# File edits that were supposed to be applied`,
+      ``,
+      serializeFileEdits(currentEdits),
+      ``,
+      `# Git diff`,
+      ``,
+      '```diff',
+      diff,
+      '```',
+      ``,
+      `# Editor results`,
+      ``,
+      editorResultsSummary,
+      ``,
+      `# Suspicious edits flagged by script verification`,
+      ``,
+      suspiciousSummary,
+      ``,
+      `# Verification instructions`,
+      ``,
+      `You must verify that every instructed edit is present and correct in the diff/files.`,
+      ``,
+      `Critical rules:`,
+      `- If an editor reported FAILED for a file, you CANNOT return ALIGNED unless you have read that file and confirmed the edit was actually applied correctly despite the editor's report.`,
+      `- If an edit was flagged as suspicious by the script verification, you MUST read that file and verify the instruction was applied correctly. You CANNOT return ALIGNED for a suspicious edit without explicitly verifying it.`,
+      `- If an editor reported UNKNOWN, treat it the same as FAILED: you MUST NOT return ALIGNED for that file unless you have read the file and confirmed the edit was applied correctly.`,
+      ``,
+      `Verify alignment now.`,
+    ].join('\n');
+
+    const confirmation = await ctx.dispatch.parsed(
+      AGENTS.confirmer,
+      confirmerPrompt,
+      `Confirming edits (pass ${pass})`,
+      parseConfirmerResponse,
+      () => {
+        journey.formatRetries++;
+      },
+    );
+
+    let passVerdict = confirmation.verdict;
+    let nextEdits: FileEditInstruction[] | null = null;
+    if (confirmation.verdict === 'DEFICIENT') nextEdits = confirmation.edits;
+
+    emitInfo(ctx.task, formatConfirmerVerdict(pass, confirmation.verdict, nextEdits?.length ?? 0));
 
     const record: EditPassRecord = {
       pass,
@@ -454,7 +516,7 @@ export async function runEditLoop(
     };
     journey.passes.push(record);
 
-    if (gate.passed || passVerdict === 'ALIGNED') {
+    if (passVerdict === 'ALIGNED') {
       verdict = 'ALIGNED';
       break;
     }

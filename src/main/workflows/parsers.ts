@@ -479,17 +479,20 @@ export function parseConfirmerResponse(
  */
 export function parseEditorResponse(text: string): { outcome: 'DONE' | 'FAILED' | 'UNKNOWN'; detail?: string } {
   const t = stripCodeFences(text).trim();
+  const lines = t.split('\n');
 
-  if (t.toUpperCase().startsWith('DONE')) {
-    return { outcome: 'DONE' };
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.toUpperCase() === 'DONE') {
+      return { outcome: 'DONE' };
+    }
+    const failedMatch = trimmed.match(/^FAILED\s*[:\s]\s*(.*)$/i);
+    if (failedMatch) {
+      const detail = failedMatch[1].trim();
+      return { outcome: 'FAILED', detail: detail || undefined };
+    }
   }
-  if (t.toUpperCase().startsWith('FAILED')) {
-    const detail = t
-      .slice('FAILED'.length)
-      .replace(/^[\s:]*/, '')
-      .trim();
-    return { outcome: 'FAILED', detail: detail || undefined };
-  }
+
   return { outcome: 'UNKNOWN', detail: t.slice(0, 200) };
 }
 
@@ -506,4 +509,107 @@ export function serializeFileEdits(edits: FileEditInstruction[]): string {
       );
     })
     .join('\n\n');
+}
+
+export interface EditVerificationResult {
+  path: string;
+  type: 'NEW' | 'EDIT';
+  suspicious: boolean;
+  reasons: string[];
+}
+
+/**
+ * Extracts the content of all fenced code blocks from instruction text.
+ * Code blocks are delimited by triple backticks (with optional language tag).
+ * Returns an array of the inner content of each block.
+ */
+function extractCodeBlocks(text: string): string[] {
+  const blocks: string[] = [];
+  const re = /```[a-zA-Z0-9_-]*\n([\s\S]*?)\n```/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    blocks.push(match[1]);
+  }
+  return blocks;
+}
+
+/**
+ * Normalizes text for fuzzy presence comparison by removing all whitespace.
+ * This makes the check forgiving of indentation, line-ending, and formatting
+ * differences while still being specific enough to avoid false positives on
+ * code blocks of reasonable length (20+ non-whitespace characters).
+ */
+function normalizeForCompare(text: string): string {
+  return text.replace(/\s+/g, '');
+}
+
+/**
+ * Deterministic, script-level verification that a file edit instruction was
+ * likely applied correctly. This flags suspicious edits for the CONFIRMER to
+ * inspect closely without replacing agent-based verification.
+ */
+export function verifyEditAlignment(
+  edit: FileEditInstruction,
+  fileContent: string | null,
+  diffStats: { insertions: number; deletions: number },
+): EditVerificationResult {
+  const reasons: string[] = [];
+
+  if (edit.type === 'NEW') {
+    if (fileContent === null) {
+      reasons.push('file was not created');
+      return { path: edit.path, type: 'NEW', suspicious: true, reasons };
+    }
+    if (fileContent.trim().length === 0) {
+      reasons.push('file is empty');
+      return { path: edit.path, type: 'NEW', suspicious: true, reasons };
+    }
+    const expectedNorm = normalizeForCompare(edit.instructions);
+    const actualNorm = normalizeForCompare(fileContent);
+    if (expectedNorm.length > 20 && actualNorm.length > 0) {
+      const ratio = Math.min(expectedNorm.length, actualNorm.length) / Math.max(expectedNorm.length, actualNorm.length);
+      if (ratio < 0.5) {
+        reasons.push(`file content size mismatch: expected ~${expectedNorm.length} non-whitespace chars, got ~${actualNorm.length}`);
+      }
+    }
+    return { path: edit.path, type: 'NEW', suspicious: reasons.length > 0, reasons };
+  }
+
+  if (fileContent === null) {
+    reasons.push('file does not exist');
+    return { path: edit.path, type: 'EDIT', suspicious: true, reasons };
+  }
+
+  if (diffStats.insertions === 0 && diffStats.deletions === 0) {
+    reasons.push('diff shows no changes to this file');
+    return { path: edit.path, type: 'EDIT', suspicious: true, reasons };
+  }
+
+  const codeBlocks = extractCodeBlocks(edit.instructions);
+  if (codeBlocks.length === 0) {
+    return { path: edit.path, type: 'EDIT', suspicious: false, reasons: [] };
+  }
+
+  const fileNorm = normalizeForCompare(fileContent);
+  let missingBlocks = 0;
+  let checkedBlocks = 0;
+  for (const block of codeBlocks) {
+    const blockNorm = normalizeForCompare(block);
+    if (blockNorm.length < 10) continue;
+    checkedBlocks++;
+    if (!fileNorm.includes(blockNorm)) missingBlocks++;
+  }
+
+  if (checkedBlocks > 0 && missingBlocks === checkedBlocks) {
+    reasons.push(`none of ${checkedBlocks} expected code blocks found in post-edit file`);
+  } else if (missingBlocks > 0 && missingBlocks > checkedBlocks / 2) {
+    reasons.push(`${missingBlocks} of ${checkedBlocks} expected code blocks not found in post-edit file`);
+  }
+
+  const totalExpectedLines = codeBlocks.reduce((sum, block) => sum + block.split('\n').length, 0);
+  if (totalExpectedLines > 10 && diffStats.insertions > 0 && diffStats.insertions < totalExpectedLines * 0.2) {
+    reasons.push(`diff shows ${diffStats.insertions} insertions but instructions contain ~${totalExpectedLines} lines of code blocks`);
+  }
+
+  return { path: edit.path, type: 'EDIT', suspicious: reasons.length > 0, reasons };
 }

@@ -5,6 +5,7 @@ import type {
   Journey,
   ReportState,
 } from './journey';
+import type { EditVerificationResult } from './parsers';
 
 const ALIGNMENT_GLYPH: Record<FileChangeRow['alignment'], string> = {
   ok: '✅',
@@ -196,6 +197,15 @@ export function formatDeficiencyNotice(reason: string): string {
     'Possible deficiencies detected in applied edits; handing to CONFIRMER for confirmation.',
     `_${reason}_`,
   );
+}
+
+export function formatVerificationFlags(results: EditVerificationResult[]): string {
+  const suspicious = results.filter((r) => r.suspicious);
+  if (suspicious.length === 0) {
+    return '';
+  }
+  const lines = suspicious.map((r) => `- **${r.path}**: ${r.reasons.join('; ')}`);
+  return `### ⚠️ Script verification flags\n\n${lines.join('\n')}`;
 }
 
 export function formatConfirmerVerdict(
