@@ -519,13 +519,12 @@ export interface EditVerificationResult {
 }
 
 /**
- * Extracts the content of all fenced code blocks from instruction text.
- * Code blocks are delimited by triple backticks (with optional language tag).
- * Returns an array of the inner content of each block.
+ * Extracts fenced replacement blocks that follow an explicit REPLACE or
+ * REPLACEMENT label. Search blocks and unrelated explanatory fences are ignored.
  */
-function extractCodeBlocks(text: string): string[] {
+function extractReplacementCodeBlocks(text: string): string[] {
   const blocks: string[] = [];
-  const re = /```[a-zA-Z0-9_-]*\n([\s\S]*?)\n```/g;
+  const re = /(?:^|\n)\s*(?:REPLACE|REPLACEMENT)\s*:\s*\n\s*```[a-zA-Z0-9_-]*\n([\s\S]*?)\n```/gi;
   let match: RegExpExecArray | null;
   while ((match = re.exec(text)) !== null) {
     blocks.push(match[1]);
@@ -585,15 +584,15 @@ export function verifyEditAlignment(
     return { path: edit.path, type: 'EDIT', suspicious: true, reasons };
   }
 
-  const codeBlocks = extractCodeBlocks(edit.instructions);
-  if (codeBlocks.length === 0) {
+  const replacementBlocks = extractReplacementCodeBlocks(edit.instructions);
+  if (replacementBlocks.length === 0) {
     return { path: edit.path, type: 'EDIT', suspicious: false, reasons: [] };
   }
 
   const fileNorm = normalizeForCompare(fileContent);
   let missingBlocks = 0;
   let checkedBlocks = 0;
-  for (const block of codeBlocks) {
+  for (const block of replacementBlocks) {
     const blockNorm = normalizeForCompare(block);
     if (blockNorm.length < 10) continue;
     checkedBlocks++;
@@ -606,7 +605,7 @@ export function verifyEditAlignment(
     reasons.push(`${missingBlocks} of ${checkedBlocks} expected code blocks not found in post-edit file`);
   }
 
-  const totalExpectedLines = codeBlocks.reduce((sum, block) => sum + block.split('\n').length, 0);
+  const totalExpectedLines = replacementBlocks.reduce((sum, block) => sum + block.split('\n').length, 0);
   if (totalExpectedLines > 10 && diffStats.insertions > 0 && diffStats.insertions < totalExpectedLines * 0.2) {
     reasons.push(`diff shows ${diffStats.insertions} insertions but instructions contain ~${totalExpectedLines} lines of code blocks`);
   }
