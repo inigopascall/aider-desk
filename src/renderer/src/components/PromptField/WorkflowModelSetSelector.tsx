@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { MdKeyboardArrowUp } from 'react-icons/md';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -26,6 +26,8 @@ export const WorkflowModelSetSelector = ({ baseDir, task, selectedWorkflowId }: 
   const containerRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(false);
 
+  useClickOutside(containerRef, () => setIsOpen(false), isOpen);
+
   if (!selectedWorkflowId) return null;
 
   const allSets = settings?.workflowModelSets?.[selectedWorkflowId] ?? [];
@@ -36,7 +38,7 @@ export const WorkflowModelSetSelector = ({ baseDir, task, selectedWorkflowId }: 
   const persistedDefault = allSets.find((s) => s.id === DEFAULT_WORKFLOW_MODEL_SET_ID);
   const defaultSet: WorkflowModelSet =
     persistedDefault ?? buildDefaultWorkflowModelSet(workflowInfo?.agents ?? [], getWorkflowAgentProfiles());
-  const options = useMemo(() => [defaultSet, ...customSets], [defaultSet, customSets]);
+  const options = [defaultSet, ...customSets];
 
   const taskSetId = task.workflowModelSetIds?.[selectedWorkflowId];
   const projectSetId = projectSettings?.workflowModelSetIds?.[selectedWorkflowId];
@@ -58,8 +60,6 @@ export const WorkflowModelSetSelector = ({ baseDir, task, selectedWorkflowId }: 
     await api.updateTask(baseDir, task.id, { workflowModelSetIds: next });
     setIsOpen(false);
   };
-
-  useClickOutside(containerRef, () => setIsOpen(false), isOpen);
 
   return (
     <div className="relative" ref={containerRef}>

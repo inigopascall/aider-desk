@@ -416,6 +416,25 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       setIsExpanded(false);
     }, [showRenderedEditor, setTextWithDispatch, text]);
 
+    const submitExpanded = useCallback(() => {
+      scrollToBottom?.();
+      void stopRecording();
+      let submittedText = text;
+      if (showRenderedEditor) {
+        const md = milkdownRef.current?.getMarkdown();
+        submittedText = sanitizeMilkdownMarkdown(md !== undefined ? md : text);
+      }
+      setTextWithDispatch(submittedText);
+      const images = pastedImages.length > 0 ? pastedImages : undefined;
+      setIsFullWidth(false);
+      setIsExpanded(false);
+      if (submittedText.trim()) {
+        runPrompt(submittedText, images);
+        setPastedImages([]);
+        setPlaceholderIndex(Math.floor(Math.random() * PLACEHOLDER_COUNT));
+      }
+    }, [showRenderedEditor, text, setTextWithDispatch, runPrompt, pastedImages, scrollToBottom, stopRecording]);
+
     // Toggle the expanded editor between constrained central-column width and
     // full viewport width. Only has effect when the overlay is open.
     const toggleEditorWidth = useCallback(() => setIsFullWidth((prev) => !prev), []);
@@ -447,14 +466,11 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
         return;
       }
       const handleOverlayKeyDown = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') {
+        if (e.key === 'Enter' && e.ctrlKey && e.shiftKey) {
           e.preventDefault();
           e.stopPropagation();
-          closeExpanded();
-        } else if (e.key === 'Enter' && e.ctrlKey) {
-          // Close the expanded editor on Ctrl+Enter without dispatching.
-          // The next Ctrl+Enter (after focus returns to CodeMirror) will
-          // submit the prompt (when submitOnEnter is false, the default).
+          submitExpanded();
+        } else if (e.key === 'Escape') {
           e.preventDefault();
           e.stopPropagation();
           closeExpanded();
@@ -463,7 +479,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       document.addEventListener('keydown', handleOverlayKeyDown, true);
 
       return () => document.removeEventListener('keydown', handleOverlayKeyDown, true);
-    }, [isExpanded, closeExpanded]);
+    }, [isExpanded, closeExpanded, submitExpanded]);
 
     // Focus the active editor when the overlay opens.
     // In rendered mode, focus is handled by handleMilkdownReady which waits for
@@ -1247,6 +1263,15 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
               },
             ];
           })(),
+          {
+            key: 'Ctrl-Shift-Enter',
+            preventDefault: true,
+            run: () => {
+              if (isMobile) return false;
+              handleSubmit();
+              return true;
+            },
+          },
           {
             key: 'Space',
             run: acceptCompletion,
