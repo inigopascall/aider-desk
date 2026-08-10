@@ -2,9 +2,8 @@ import { WORKFLOW_AGENT_ROLES } from '@common/types';
 
 import { WorkflowDefinition, WorkflowRunContext } from '../types';
 import {
-  AGENTS,
-  MAX_DIFF_CHARS,
   emitReport,
+  emitInfo,
   getCumulativeDiff,
   prepareRepository,
   resolvePlanUnknowns,
@@ -12,9 +11,9 @@ import {
   runEditLoop,
   runEvidenceStage,
   runPlanningStage,
-  createJourney,
-  type ReportState,
 } from './dev-pipeline-core';
+import { createJourney, type ReportState } from '../journey';
+import { formatReviewRound } from '../reporting';
 import { parseReviewerResponse, parseVerifierResponse } from '../parsers';
 import { WorkflowCancelled, WorkflowError } from '../dispatch';
 
@@ -30,7 +29,7 @@ const MAX_VERIFIER_DIFF_CHARS = 60_000;
 export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<void> {
   const { task, modelSet, conversationText } = ctx;
   const journey = createJourney(modelSet, conversationText);
-  const report: ReportState = { evidenceRows: [], status: 'aborted' };
+  const report: ReportState = { status: 'aborted' };
 
   try {
     const { git, baselineCommit } = await prepareRepository(task);
@@ -93,6 +92,16 @@ export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<voi
 
       journey.reviewFindings.push({ round, findings: reviewer.findings });
       if (reviewer.considerations) journey.reviewerConsiderations = reviewer.considerations;
+      emitInfo(
+        task,
+        formatReviewRound(
+          round,
+          correctness?.verdict ?? null,
+          quality?.verdict ?? null,
+          reviewer.findings,
+          !!reviewer.rectificationPlan,
+        ),
+      );
 
       if (!reviewer.rectificationPlan) {
         journey.reviewTable.push({
@@ -108,7 +117,15 @@ export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<voi
 
       report.abortStage = `rectification (round ${round})`;
       const resolved = await resolvePlanUnknowns(ctx, journey, reviewer.rectificationPlan, `rectification round ${round}`);
-      const rectificationEdits = await runDecompositionStage(ctx, journey, report, reviewer.rectificationPlan, resolved, true);
+      const rectificationEdits = await runDecompositionStage(
+        ctx,
+        journey,
+        report,
+        reviewer.rectificationPlan,
+        resolved,
+        true,
+        `Rectification plan — round ${round}`,
+      );
       editVerdict = await runEditLoop(ctx, journey, report, git, rectificationEdits, `dev-pipeline-review rectification ${round}`);
       finalStatus = editVerdict === 'ALIGNED' ? 'aligned' : 'deficient';
       journey.reviewTable.push({
@@ -126,7 +143,7 @@ export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<voi
     }
 
     report.status = finalStatus;
-    await emitReport(task, journey, report);
+    await emitReport(task, journey, report, 'Dev Pipeline + Review');
   } catch (error) {
     if (error instanceof WorkflowCancelled) {
       journey.cancelled = true;
@@ -137,7 +154,7 @@ export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<voi
       journey.error = error instanceof Error ? error.message : String(error);
       task.addLogMessage('error', `Dev Pipeline + Review aborted: ${journey.error}`);
     }
-    await emitReport(task, journey, report);
+    await emitReport(task, journey, report, 'Dev Pipeline + Review');
   }
 }
 

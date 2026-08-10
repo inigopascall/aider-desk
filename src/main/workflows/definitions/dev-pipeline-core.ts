@@ -1,13 +1,33 @@
 import path from 'path';
 import { simpleGit, SimpleGit } from 'simple-git';
-import { v4 as uuidv4 } from 'uuid';
 
-import { ContextAssistantMessage, MessageRole, WORKFLOW_AGENT_ROLES, WorkflowModelSet } from '@common/types';
 import { fileExists } from '@common/utils';
 
 import { Task } from '@/task';
 import { WorkflowCancelled, WorkflowError } from '../dispatch';
 import { WorkflowRunContext } from '../types';
+import {
+  createJourney,
+  type EditPassRecord,
+  type EditorOutcome,
+  type EvidenceRow,
+  type FileChangeRow,
+  type Journey,
+  type ReportState,
+} from '../journey';
+import {
+  formatConfirmerVerdict,
+  formatContextChange,
+  formatDeficiencyNotice,
+  formatEditSummary,
+  formatEditTargets,
+  formatEvidenceInsufficient,
+  formatEvidenceSufficient,
+  formatJourneyReport,
+  formatPlanProduced,
+  formatPlanUnknowns,
+  formatResearchReceived,
+} from '../reporting';
 import {
   FileEditInstruction,
   parseConfirmerResponse,
@@ -33,87 +53,6 @@ export const MAX_EVIDENCE_ITERATIONS = 3;
 export const MAX_CONFIRM_PASSES = 3;
 export const MAX_DIFF_CHARS = 80_000;
 export const MAX_RESEARCH_DOC_CHARS = 30_000;
-
-export interface EvidenceRow {
-  iteration: number;
-  verdict: string;
-  added: string[];
-  removed: string[];
-  research: boolean;
-}
-
-export interface EditorOutcome {
-  path: string;
-  outcome: 'DONE' | 'FAILED' | 'UNKNOWN';
-  detail?: string;
-}
-
-export interface ReviewRoundRow {
-  round: number;
-  correctness: string;
-  quality: string;
-  outcome: 'clean' | 'rectified' | 'exhausted';
-  rectificationEdits: number;
-}
-
-export interface Journey {
-  evidenceIterations: number;
-  filesAdded: string[];
-  filesRemoved: string[];
-  filesSkipped: string[];
-  researchDocs: number;
-  digesterVerdicts: string[];
-  planTitle: string;
-  unknownsResearchResolved: boolean;
-  unknownsCodebaseResolved: boolean;
-  ambiguities: string | null;
-  passes: { pass: number; editCount: number; done: number; failed: string[]; unknown: string[]; verdict: string; commit: string }[];
-  formatRetries: number;
-  confirmerSkips: number;
-  cancelled: boolean;
-  modelSetName: string;
-  modelOverrides: Record<string, string>;
-  conversationChars: number;
-  reviewRounds: number;
-  reviewTable: ReviewRoundRow[];
-  reviewFindings: { round: number; findings: string }[];
-  reviewerConsiderations: string | null;
-  verifierFailures: string[];
-  error?: string;
-}
-
-export interface ReportState {
-  evidenceRows: EvidenceRow[];
-  status: 'aligned' | 'deficient' | 'aborted' | 'cancelled';
-  abortStage?: string;
-}
-
-export function createJourney(modelSet: WorkflowModelSet | undefined, conversationText: string): Journey {
-  return {
-    evidenceIterations: 0,
-    filesAdded: [],
-    filesRemoved: [],
-    filesSkipped: [],
-    researchDocs: 0,
-    digesterVerdicts: [],
-    planTitle: '',
-    unknownsResearchResolved: false,
-    unknownsCodebaseResolved: false,
-    ambiguities: null,
-    passes: [],
-    formatRetries: 0,
-    confirmerSkips: 0,
-    cancelled: false,
-    modelSetName: modelSet?.name ?? '',
-    modelOverrides: modelSet?.models ?? {},
-    conversationChars: conversationText.length,
-    reviewRounds: 0,
-    reviewTable: [],
-    reviewFindings: [],
-    reviewerConsiderations: null,
-    verifierFailures: [],
-  };
-}
 
 export function normalizePath(p: string): string {
   return p.replace(/\\/g, '/');
@@ -145,17 +84,6 @@ export function evaluateEditGate(results: EditorOutcome[], changedPaths: string[
   return { passed: true, reason: '' };
 }
 
-export async function addPathsToContext(task: Task, journey: Journey, paths: string[]): Promise<void> {
-  for (const filePath of paths) {
-    if (await fileExists(path.resolve(task.getTaskDir(), filePath))) {
-      await task.addFiles({ path: filePath, readOnly: false });
-      journey.filesAdded.push(filePath);
-    } else {
-      journey.filesSkipped.push(filePath);
-    }
-  }
-}
-
 export async function prepareRepository(task: Task): Promise<{ git: SimpleGit; baselineCommit: string }> {
   const git = simpleGit(task.getTaskDir());
   if (!(await git.checkIsRepo())) {
@@ -177,9 +105,116 @@ export async function getCumulativeDiff(git: SimpleGit, fromCommit: string, maxC
   return diff;
 }
 
+/** Single funnel for every workflow progress message. Keeps the channel and level consistent. */
+export function emitInfo(task: Task, message: string): void {
+  task.addLogMessage('info', message);
+}
+
+export async function reconfigureContext(
+  task: Task,
+  journey: Journey,
+  label: string,
+  addPaths: string[],
+  removePaths: string[] = [],
+): Promise<{ added: string[]; removed: string[]; skipped: string[] }> {
+  const added: string[] = [];
+  const removed: string[] = [];
+  const skipped: string[] = [];
+
+  for (const raw of addPaths) {
+    const filePath = normalizePath(raw);
+    if (!(await fileExists(path.resolve(task.getTaskDir(), filePath)))) {
+      skipped.push(filePath);
+      continue;
+    }
+    const wasAdded = await task.addFiles({ path: filePath, readOnly: false });
+    if (wasAdded) {
+      added.push(filePath);
+    }
+  }
+
+  if (removePaths.length > 0) {
+    const current = new Set((await task.getContextFiles()).map((file) => normalizePath(file.path)));
+    for (const raw of removePaths) {
+      const filePath = normalizePath(raw);
+      if (added.includes(filePath) || !current.has(filePath)) {
+        continue;
+      }
+      await task.dropFile(filePath);
+      removed.push(filePath);
+    }
+  }
+
+  journey.filesAdded.push(...added);
+  journey.filesRemoved.push(...removed);
+  journey.filesSkipped.push(...skipped);
+
+  if (added.length > 0 || removed.length > 0) {
+    journey.contextChanges.push({ label, added, removed, skipped });
+    emitInfo(task, formatContextChange(label, added, removed, skipped));
+  }
+
+  return { added, removed, skipped };
+}
+
+export async function collectDiffStats(git: SimpleGit): Promise<Map<string, { insertions: number; deletions: number }>> {
+  const stats = new Map<string, { insertions: number; deletions: number }>();
+  try {
+    const summary = await git.diffSummary(['HEAD~1', 'HEAD']);
+    for (const file of summary.files) {
+      const insertions = 'insertions' in file ? file.insertions : 0;
+      const deletions = 'deletions' in file ? file.deletions : 0;
+      stats.set(normalizePath(file.file), { insertions, deletions });
+    }
+  } catch {
+    // Binary-only or first-commit edge cases must never break the pipeline.
+  }
+  return stats;
+}
+
+export function buildEditRows(
+  results: EditorOutcome[],
+  changedPaths: string[],
+  stats: Map<string, { insertions: number; deletions: number }>,
+): FileChangeRow[] {
+  const changed = new Set(changedPaths);
+  const expected = new Set(results.map((result) => normalizePath(result.path)));
+  const rows: FileChangeRow[] = [];
+
+  for (const result of results) {
+    const filePath = normalizePath(result.path);
+    const stat = stats.get(filePath) ?? { insertions: 0, deletions: 0 };
+    rows.push({
+      path: filePath,
+      insertions: stat.insertions,
+      deletions: stat.deletions,
+      editorOutcome: result.outcome,
+      alignment: changed.has(filePath) ? 'ok' : 'missing',
+      detail: result.detail,
+    });
+  }
+
+  for (const filePath of changedPaths) {
+    if (expected.has(filePath)) {
+      continue;
+    }
+    const stat = stats.get(filePath) ?? { insertions: 0, deletions: 0 };
+    rows.push({
+      path: filePath,
+      insertions: stat.insertions,
+      deletions: stat.deletions,
+      editorOutcome: 'NOT INSTRUCTED',
+      alignment: 'unsolicited',
+    });
+  }
+
+  return rows;
+}
+
 export async function runEvidenceStage(ctx: WorkflowRunContext, journey: Journey, report: ReportState): Promise<string[]> {
   report.abortStage = 'evidence gathering';
   const findings: string[] = [];
+
   for (let iteration = 1; iteration <= MAX_EVIDENCE_ITERATIONS; iteration++) {
     const response = await ctx.dispatch.parsed(
       AGENTS.digester,
@@ -190,9 +225,34 @@ export async function runEvidenceStage(ctx: WorkflowRunContext, journey: Journey
         journey.formatRetries++;
       },
     );
+
     journey.digesterVerdicts.push(response.verdict);
     journey.evidenceIterations = iteration;
-    if (response.verdict === 'YES') break;
+    const row: EvidenceRow = {
+      iteration,
+      verdict: response.verdict,
+      added: [],
+      removed: [],
+      research: false,
+    };
+
+    if (response.verdict === 'YES') {
+      if (response.irrelevantFiles.length > 0) {
+        const change = await reconfigureContext(
+          ctx.task,
+          journey,
+          `DIGESTER — irrelevant files (round ${iteration})`,
+          [],
+          response.irrelevantFiles,
+        );
+        row.removed = change.removed;
+      }
+      emitInfo(ctx.task, formatEvidenceSufficient());
+      journey.evidenceRows.push(row);
+      break;
+    }
+
+    emitInfo(ctx.task, formatEvidenceInsufficient(iteration, MAX_EVIDENCE_ITERATIONS, !!response.researchBrief));
 
     const investigation = await ctx.dispatch.parsed(
       AGENTS.investigator,
@@ -203,14 +263,28 @@ export async function runEvidenceStage(ctx: WorkflowRunContext, journey: Journey
         journey.formatRetries++;
       },
     );
-    await addPathsToContext(ctx.task, journey, investigation.add);
+
+    const change = await reconfigureContext(
+      ctx.task,
+      journey,
+      `INVESTIGATOR — round ${iteration}`,
+      investigation.add,
+      investigation.remove,
+    );
+    row.added = change.added;
+    row.removed = change.removed;
 
     if (response.researchBrief) {
       const research = await ctx.dispatch.agent(AGENTS.researcher, response.researchBrief, `Researching online (round ${iteration})`);
       findings.push(research);
       journey.researchDocs++;
+      row.research = true;
+      emitInfo(ctx.task, formatResearchReceived(iteration, research.length));
     }
+
+    journey.evidenceRows.push(row);
   }
+
   return findings;
 }
 
@@ -221,6 +295,9 @@ export async function resolvePlanUnknowns(
   label: string,
 ): Promise<string | null> {
   const { researchUnknowns, codebaseUnknowns } = parsePlanUnknowns(planText);
+  if (researchUnknowns || codebaseUnknowns) {
+    emitInfo(ctx.task, formatPlanUnknowns(label, researchUnknowns, codebaseUnknowns));
+  }
   const researchPromise = researchUnknowns
     ? ctx.dispatch.agent(AGENTS.researcher, `# Unknowns raised by the Implementation Plan — find the answers\n${researchUnknowns}`, `Resolving ${label} research unknowns`)
     : Promise.resolve(null);
@@ -240,7 +317,7 @@ export async function resolvePlanUnknowns(
   if (research) journey.unknownsResearchResolved = true;
   if (codebase) {
     journey.unknownsCodebaseResolved = true;
-    await addPathsToContext(ctx.task, journey, codebase.add);
+    await reconfigureContext(ctx.task, journey, `${label} — codebase unknowns`, codebase.add, codebase.remove);
   }
   return research;
 }
@@ -258,6 +335,7 @@ export async function runPlanningStage(
     'Producing Implementation Plan',
   );
   journey.planTitle = parsePlanUnknowns(planText).title;
+  emitInfo(ctx.task, formatPlanProduced(journey.planTitle));
   return { planText, unknownsResearch: await resolvePlanUnknowns(ctx, journey, planText, 'plan') };
 }
 
@@ -268,8 +346,9 @@ export async function runDecompositionStage(
   planText: string,
   resolvedResearch: string | null,
   isRectification: boolean,
+  stageLabel?: string,
 ): Promise<FileEditInstruction[]> {
-  report.abortStage = isRectification ? 'rectification decomposition' : 'decomposition';
+  const label = stageLabel ?? (isRectification ? 'Rectification plan decomposed' : 'Implementation plan decomposed');
   const result = await ctx.dispatch.parsed(
     AGENTS.decompositor,
     `${isRectification ? '# Rectification Plan' : '# Implementation Plan'} (verbatim — treat as strict instructions)\n\n${planText}\n\n${
@@ -285,6 +364,10 @@ export async function runDecompositionStage(
   if (result.ambiguities) {
     journey.ambiguities = journey.ambiguities ? `${journey.ambiguities}\n\n---\n\n${result.ambiguities}` : result.ambiguities;
   }
+  emitInfo(
+    ctx.task,
+    formatEditTargets(label, result.edits.map((edit) => ({ path: edit.path, type: edit.type })), result.ambiguities),
+  );
   return result.edits;
 }
 
@@ -314,22 +397,32 @@ export async function runEditLoop(
       }),
     );
 
-    for (const result of results) {
-      if (await fileExists(path.resolve(ctx.task.getTaskDir(), result.path))) {
-        await ctx.task.addFiles({ path: result.path, readOnly: false });
-      }
-    }
+    const editedPaths = results.map((result) => result.path);
+    await reconfigureContext(ctx.task, journey, `${commitLabel} — pass ${pass} outputs`, editedPaths);
 
     const commitMessage = `[${commitLabel} pass ${pass}] ${journey.planTitle.slice(0, 60)}`;
     await git.add('-A');
     await git.raw(['commit', '--no-verify', '--allow-empty', '-m', commitMessage]);
 
     const changedPaths = parseChangedPaths(await git.raw(['diff', '--name-only', '-z', 'HEAD~1', 'HEAD']));
+    const stats = await collectDiffStats(git);
+    const rows = buildEditRows(results, changedPaths, stats);
     const gate = evaluateEditGate(results, changedPaths);
+
+    for (const row of rows) {
+      const entry = journey.fileStats[row.path] ?? { insertions: 0, deletions: 0, passes: 0 };
+      entry.insertions += row.insertions;
+      entry.deletions += row.deletions;
+      entry.passes += 1;
+      journey.fileStats[row.path] = entry;
+    }
+
+    emitInfo(ctx.task, formatEditSummary(commitLabel, pass, rows, gate.passed, gate.reason));
     let nextEdits: FileEditInstruction[] | null = null;
     let passVerdict = gate.passed ? 'ALIGNED (gate)' : '';
 
     if (!gate.passed) {
+      emitInfo(ctx.task, formatDeficiencyNotice(gate.reason));
       let diff = await git.raw(['diff', 'HEAD~1', 'HEAD']);
       if (diff.length > MAX_DIFF_CHARS) diff = diff.slice(0, MAX_DIFF_CHARS) + '\n…[diff truncated]';
       const confirmation = await ctx.dispatch.parsed(
@@ -343,20 +436,23 @@ export async function runEditLoop(
       );
       passVerdict = confirmation.verdict;
       if (confirmation.verdict === 'DEFICIENT') nextEdits = confirmation.edits;
+      emitInfo(ctx.task, formatConfirmerVerdict(pass, confirmation.verdict, nextEdits?.length ?? 0));
     } else {
       journey.confirmerSkips++;
     }
 
-    const done = results.filter((result) => result.outcome === 'DONE').length;
-    journey.passes.push({
+    const record: EditPassRecord = {
       pass,
+      stage: commitLabel,
       editCount: currentEdits.length,
-      done,
+      done: results.filter((result) => result.outcome === 'DONE').length,
       failed: results.filter((result) => result.outcome === 'FAILED').map((result) => result.path),
       unknown: results.filter((result) => result.outcome === 'UNKNOWN').map((result) => result.path),
       verdict: passVerdict,
       commit: commitMessage,
-    });
+      rows,
+    };
+    journey.passes.push(record);
 
     if (gate.passed || passVerdict === 'ALIGNED') {
       verdict = 'ALIGNED';
@@ -369,31 +465,6 @@ export async function runEditLoop(
   return verdict;
 }
 
-export async function buildReport(journey: Journey, report: ReportState): Promise<string> {
-  const lines = [`# 🏁 Dev Pipeline Report`, '', '## Plan', '', `- **Title:** ${journey.planTitle || '—'}`, ''];
-  lines.push('## Edit passes', '', '| Pass | Edits dispatched | DONE | FAILED | UNKNOWN | Confirmer verdict | Commit |', '|---|---|---|---|---|---|---|');
-  for (const pass of journey.passes) {
-    lines.push(`| ${pass.pass} | ${pass.editCount} | ${pass.done} | ${pass.failed.join(', ') || '—'} | ${pass.unknown.join(', ') || '—'} | ${pass.verdict} | \`${pass.commit}\` |`);
-  }
-  if (journey.reviewRounds > 0) {
-    lines.push('', '## Review', '', '| Round | Correctness | Quality | Outcome | Rectification edits |', '|---|---|---|---|---|');
-    for (const row of journey.reviewTable) {
-      lines.push(`| ${row.round} | ${row.correctness} | ${row.quality} | ${row.outcome} | ${row.rectificationEdits} |`);
-    }
-    for (const finding of journey.reviewFindings) {
-      lines.push('', `### Review round ${finding.round} — arbiter findings`, '', finding.findings);
-    }
-    if (journey.reviewerConsiderations) lines.push('', '### Reviewer considerations', '', journey.reviewerConsiderations);
-    if (journey.verifierFailures.length > 0) lines.push('', '### Verifier failures', '', ...journey.verifierFailures.map((failure) => `- ${failure}`));
-    lines.push('', `**Review rounds:** ${journey.reviewRounds}`);
-  }
-  lines.push('', `**Format retries:** ${journey.formatRetries}`, '', `**CONFIRMER skips (fast-path gate):** ${journey.confirmerSkips}`, '', `**Status:** ${report.status}`);
-  return lines.join('\n');
-}
-
-export async function emitReport(task: Task, journey: Journey, report: ReportState): Promise<void> {
-  const reportText = await buildReport(journey, report);
-  const id = uuidv4();
-  await task.addContextMessage({ id, role: MessageRole.Assistant, content: reportText, timestamp: Date.now() } as ContextAssistantMessage, true);
-  await task.processResponseMessage({ id, action: 'response', content: reportText, finished: true }, false);
+export async function emitReport(task: Task, journey: Journey, report: ReportState, workflowName: string): Promise<void> {
+  emitInfo(task, formatJourneyReport(journey, report, workflowName));
 }

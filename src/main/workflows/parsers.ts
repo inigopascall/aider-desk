@@ -120,14 +120,17 @@ function parsePathLines(lines: string[]): string[] {
  * Parses the DIGESTER's verdict response.
  *
  * The first non-empty line must be `VERDICT: YES` / `YES` or
- * `VERDICT: NO` / `NO`. A `NO` verdict must be followed by an
- * `=== INVESTIGATION BRIEF ===` section (non-empty) and an optional
- * `=== RESEARCH BRIEF ===` section whose content of `NONE` (or absence)
- * maps to `null`.
+ * `VERDICT: NO` / `NO`. A YES verdict may include an optional
+ * `=== IRRELEVANT CONTEXT FILES ===` section. A NO verdict must be
+ * followed by an `=== INVESTIGATION BRIEF ===` section (non-empty) and
+ * an optional `=== RESEARCH BRIEF ===` section whose content of `NONE`
+ * (or absence) maps to `null`.
  */
-export function parseDigesterResponse(
-  text: string,
-): { verdict: 'YES' } | { verdict: 'NO'; investigationBrief: string; researchBrief: string | null } {
+export type DigesterResponse =
+  | { verdict: 'YES'; irrelevantFiles: string[] }
+  | { verdict: 'NO'; investigationBrief: string; researchBrief: string | null };
+
+export function parseDigesterResponse(text: string): DigesterResponse {
   const t = stripCodeFences(text);
   const firstNonEmpty = t
     .split('\n')
@@ -140,7 +143,11 @@ export function parseDigesterResponse(
 
   const first = firstNonEmpty.toUpperCase();
   if (first === 'VERDICT: YES' || first === 'YES') {
-    return { verdict: 'YES' };
+    const irrelevantMarker = findMarker(t, '=== IRRELEVANT CONTEXT FILES ===');
+    const irrelevantFiles = irrelevantMarker
+      ? parsePathLines(contentUntilMarker(t, irrelevantMarker.end, null).split('\n'))
+      : [];
+    return { verdict: 'YES', irrelevantFiles };
   }
 
   if (first === 'VERDICT: NO' || first === 'NO') {
