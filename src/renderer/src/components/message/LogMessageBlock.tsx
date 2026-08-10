@@ -8,6 +8,7 @@ import { CopyMessageButton } from './CopyMessageButton';
 import { MessageActions } from './MessageActions';
 
 import { IconButton } from '@/components/common/IconButton';
+import { useParsedContent } from '@/hooks/useParsedContent';
 
 type Props = {
   baseDir: string;
@@ -20,6 +21,8 @@ type Props = {
 
 export const LogMessageBlock = ({ baseDir, taskId, message, onRemove, compact = false, onInterrupt }: Props) => {
   const { t } = useTranslation();
+  const translatedContent = t(message.content);
+  const parsedContent = useParsedContent(baseDir, translatedContent, [], true, false);
   const baseClasses = 'rounded-md p-3 max-w-full break-words whitespace-pre-wrap text-xs border';
 
   const levelConfig = {
@@ -44,9 +47,9 @@ export const LogMessageBlock = ({ baseDir, taskId, message, onRemove, compact = 
   const Icon = config.Icon;
 
   const renderMessage = () => (
-    <div className="flex items-start gap-3">
+    <div className="flex items-start gap-3 min-w-0">
       <Icon className="inline-block h-3 w-3 flex-shrink-0 mt-[3px]" />
-      <div>{t(message.content)}</div>
+      <div className="min-w-0 flex-1 overflow-hidden">{parsedContent}</div>
     </div>
   );
 
@@ -65,7 +68,7 @@ export const LogMessageBlock = ({ baseDir, taskId, message, onRemove, compact = 
         )}
         <div className="flex items-center space-x-1">
           <CopyMessageButton
-            content={t(message.content)}
+            content={translatedContent}
             className={clsx(config.tooltipClass, 'transition-colors text-text-dark group-hover:text-text-muted-light')}
             alwaysShow={true}
           />
