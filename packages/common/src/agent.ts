@@ -889,8 +889,8 @@ export const getWorkflowModelSetModelNames = (set: WorkflowModelSet): string[] =
       continue;
     }
 
-    const [, ...rest] = modelId.split('/');
-    const name = rest.join('/') || modelId;
+    const slashIndex = modelId.indexOf('/');
+    const name = slashIndex !== -1 ? modelId.slice(slashIndex + 1) : modelId;
 
     if (!names.includes(name)) {
       names.push(name);
