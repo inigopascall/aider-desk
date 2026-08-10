@@ -9,22 +9,14 @@ import { setMessages, touchTaskActivity } from '@/stores/taskStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { flushCommandOutput } from './useTaskCommandHandlers';
 
-const STREAM_FLUSH_INTERVAL_MS = 250;
+const STREAM_FLUSH_INTERVAL_MS = 150;
 
 const processingResponseMessageMap = new Map<string, ResponseMessage>();
 const responseChunkBuffers = new Map<string, ResponseChunkData[]>();
 const responseChunkFlushTimers = new Map<string, ReturnType<typeof setTimeout>>();
-const rawResponseContentMap = new Map<string, string>();
-const taskUsePlainTextMap = new Map<string, boolean>();
-
-function escapeMarkdown(text: string): string {
-  return text.replace(/\\/g, '\\\\').replace(/([*_`\[\]()#+.!>~|-])/g, '\\$1');
-}
 
 export const cleanupProcessingResponseMessage = (taskId: string) => {
   processingResponseMessageMap.delete(taskId);
-  rawResponseContentMap.delete(taskId);
-  taskUsePlainTextMap.delete(taskId);
   // Clear any pending flush timer
   const timer = responseChunkFlushTimers.get(taskId);
   if (timer) {
@@ -43,17 +35,11 @@ export const cleanupProcessingResponseMessage = (taskId: string) => {
 function applyResponseChunk(taskId: string, { messageId, chunk, reasoning, reflectedMessage, promptContext }: ResponseChunkData): void {
   touchTaskActivity(taskId);
   const timestamp = Date.now();
-  const usePlainText = taskUsePlainTextMap.get(taskId) ?? false;
-  if (usePlainText) {
-    rawResponseContentMap.set(taskId, (rawResponseContentMap.get(taskId) || '') + chunk);
-  }
-  const displayedChunk = usePlainText ? escapeMarkdown(chunk) : chunk;
-
   let processingMessage = processingResponseMessageMap.get(taskId);
   if (processingMessage?.id === messageId) {
     processingMessage = {
       ...processingMessage,
-      content: processingMessage.content + displayedChunk,
+      content: processingMessage.content + chunk,
       reasoning: reasoning ? (processingMessage.reasoning || '') + reasoning : processingMessage.reasoning,
       promptContext,
     };
@@ -63,7 +49,7 @@ function applyResponseChunk(taskId: string, { messageId, chunk, reasoning, refle
         if (message.id === messageId && isResponseMessage(message)) {
           return {
             ...message,
-            content: message.content + displayedChunk,
+            content: message.content + chunk,
             reasoning: reasoning ? (message.reasoning || '') + reasoning : message.reasoning,
             promptContext,
           };
@@ -92,7 +78,7 @@ function applyResponseChunk(taskId: string, { messageId, chunk, reasoning, refle
         const newResponseMessage: ResponseMessage = {
           id: messageId,
           type: 'response',
-          content: displayedChunk,
+          content: chunk,
           reasoning: reasoning || undefined,
           promptContext,
           timestamp,
@@ -106,7 +92,7 @@ function applyResponseChunk(taskId: string, { messageId, chunk, reasoning, refle
           if (message.id === messageId && isResponseMessage(message)) {
             return {
               ...message,
-              content: message.content + displayedChunk,
+              content: message.content + chunk,
               reasoning: reasoning ? (message.reasoning || '') + reasoning : message.reasoning,
               promptContext,
             };
@@ -160,13 +146,6 @@ export function flushResponseChunks(taskId: string): void {
 export const useTaskResponseHandlers = (baseDir: string, taskId: string) => {
   const api = useApi();
   const performanceMode = useSettingsStore((s) => s.settings?.performanceMode ?? true);
-
-  useEffect(() => {
-    taskUsePlainTextMap.set(taskId, performanceMode);
-    return () => {
-      taskUsePlainTextMap.delete(taskId);
-    };
-  }, [taskId, performanceMode]);
 
   const handleResponseChunk = useCallback(
     ({ messageId, chunk, reasoning, reflectedMessage, promptContext }: ResponseChunkData) => {
@@ -243,15 +222,13 @@ export const useTaskResponseHandlers = (baseDir: string, taskId: string) => {
       } else if (processingMessage && processingMessage.id === messageId) {
         processingMessage.usageReport = usageReport;
         processingMessage.promptContext = promptContext;
-        processingMessage.content = content || rawResponseContentMap.get(taskId) || processingMessage.content;
+        processingMessage.content = content || processingMessage.content;
         processingMessage.reasoning = reasoning || processingMessage.reasoning;
         setMessages(taskId, (prevMessages) => prevMessages.map((message) => (message.id === messageId ? processingMessage : message)));
       } else {
         setMessages(taskId, (prevMessages) => prevMessages.filter((message) => message.type !== 'loading'));
       }
 
-      rawResponseContentMap.delete(taskId);
-      taskUsePlainTextMap.delete(taskId);
       processingResponseMessageMap.delete(taskId);
     },
     [taskId],

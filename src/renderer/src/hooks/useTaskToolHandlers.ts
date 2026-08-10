@@ -9,7 +9,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 
 import { flushCommandOutput } from './useTaskCommandHandlers';
 
-const STREAM_FLUSH_INTERVAL_MS = 200;
+const STREAM_FLUSH_INTERVAL_MS = 150;
 
 const activeToolInputIds = new Map<string, Set<string>>();
 const toolInputChunkBuffers = new Map<string, ToolInputChunkData[]>();
