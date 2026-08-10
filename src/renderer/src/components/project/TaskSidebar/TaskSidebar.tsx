@@ -14,7 +14,6 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 
 import { TaskSidebarMultiSelectMenu } from './TaskSidebarMultiSelectMenu';
 import { TaskItem } from './TaskItem';
-import { TaskSectionHeader } from './TaskSectionHeader';
 
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
 import { flattenTasksForVirtualization } from '@/utils/task-utils';
@@ -899,18 +898,16 @@ const TaskSidebarComponent = ({
                             transform: `translateY(${virtualRow.start}px)`,
                           }}
                         >
-                          <div className="border-y-4 border-border-light pt-4 pb-2">
-                            <TaskSectionHeader
-                              title={
-                                item.title === 'today'
-                                  ? t('taskSidebar.today')
-                                  : item.title === 'yesterday'
-                                    ? t('taskSidebar.yesterday')
-                                    : item.title === 'unknown'
-                                      ? t('taskSidebar.noDate')
-                                      : item.title
-                              }
-                            />
+                          <div className="border-b-4 border-border-light pt-6 pb-1">
+                            <div className="px-2 text-3xs uppercase font-semibold text-text-primary">
+                              {item.title === 'today'
+                                ? t('taskSidebar.today')
+                                : item.title === 'yesterday'
+                                  ? t('taskSidebar.yesterday')
+                                  : item.title === 'unknown'
+                                    ? t('taskSidebar.noDate')
+                                    : item.title}
+                            </div>
                           </div>
                         </div>
                       );
