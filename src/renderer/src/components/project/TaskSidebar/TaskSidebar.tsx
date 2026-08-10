@@ -225,7 +225,7 @@ const TaskSidebarComponent = ({
   const virtualizer = useVirtualizer({
     count: virtualItems.length,
     getScrollElement: () => listContainerRef.current,
-    estimateSize: () => 28,
+    estimateSize: (index) => (virtualItems[index]?.type === 'header' ? 56 : 28),
     overscan: 10,
   });
 
@@ -894,17 +894,19 @@ const TaskSidebarComponent = ({
                             transform: `translateY(${virtualRow.start}px)`,
                           }}
                         >
-                          <TaskSectionHeader
-                            title={
-                              item.title === 'today'
-                                ? t('taskSidebar.today')
-                                : item.title === 'yesterday'
-                                  ? t('taskSidebar.yesterday')
-                                  : item.title === 'unknown'
-                                    ? t('taskSidebar.noDate')
-                                    : item.title
-                            }
-                          />
+                          <div className="border-b border-border-default-dark pb-3 pt-4">
+                            <TaskSectionHeader
+                              title={
+                                item.title === 'today'
+                                  ? t('taskSidebar.today')
+                                  : item.title === 'yesterday'
+                                    ? t('taskSidebar.yesterday')
+                                    : item.title === 'unknown'
+                                      ? t('taskSidebar.noDate')
+                                      : item.title
+                              }
+                            />
+                          </div>
                         </div>
                       );
                     }
