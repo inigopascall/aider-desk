@@ -200,13 +200,6 @@ export const TaskItem = memo(
     const showNameTooltip = !!task.name && task.name.length > 30;
     const highlightColor = typeof task.metadata?.highlightColor === 'string' ? task.metadata.highlightColor : undefined;
 
-    const hexToRgba = (hex: string, alpha: number) => {
-      const r = parseInt(hex.slice(1, 3), 16);
-      const g = parseInt(hex.slice(3, 5), 16);
-      const b = parseInt(hex.slice(5, 7), 16);
-      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-    };
-
     const isDraggingRef = useRef(false);
 
     const longPressProps = useLongPress(
@@ -302,9 +295,7 @@ export const TaskItem = memo(
                 : 'hover:bg-bg-secondary border-transparent',
           )}
           style={{
-            backgroundImage: highlightColor
-              ? `linear-gradient(45deg, ${hexToRgba(highlightColor, 0.8)} 0%, ${hexToRgba(highlightColor, 0.4)} 15%, ${hexToRgba(highlightColor, 0)} 25%)`
-              : undefined,
+            borderRight: highlightColor ? `4px solid ${highlightColor}` : undefined,
           }}
           onClick={(e) => onTaskClick(e, task.id)}
           data-task-id={task.id}
