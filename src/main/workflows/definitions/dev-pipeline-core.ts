@@ -43,6 +43,8 @@ import {
   verifyEditAlignment,
 } from '../parsers';
 
+import { buildPrompt, PromptSection } from '../prompt-formatting';
+
 export const AGENTS = {
   digester: 'DIGESTER',
   investigator: 'INVESTIGATOR',
@@ -220,9 +222,16 @@ export async function runEvidenceStage(ctx: WorkflowRunContext, journey: Journey
   const findings: string[] = [];
 
   for (let iteration = 1; iteration <= MAX_EVIDENCE_ITERATIONS; iteration++) {
+    const digesterPrompt = buildPrompt([
+      { title: 'CONVERSATION HISTORY', body: ctx.conversationText || 'No prior conversation.' },
+      { title: 'USER REQUEST', body: ctx.initialPrompt },
+      { title: 'RESEARCH FINDINGS GATHERED SO FAR', body: findings.join('\n\n---\n\n') || 'None yet.' },
+      { title: 'ITERATION', body: `This is evidence-gathering iteration ${iteration} of ${MAX_EVIDENCE_ITERATIONS}.` },
+    ]);
+
     const response = await ctx.dispatch.parsed(
       AGENTS.digester,
-      `# User request\n${ctx.initialPrompt}\n\n# Research findings gathered so far\n${findings.join('\n\n---\n\n') || 'None yet.'}\n\n# Iteration\nThis is evidence-gathering iteration ${iteration} of ${MAX_EVIDENCE_ITERATIONS}.`,
+      digesterPrompt,
       `Assessing evidence (round ${iteration})`,
       parseDigesterResponse,
       () => {
@@ -258,9 +267,16 @@ export async function runEvidenceStage(ctx: WorkflowRunContext, journey: Journey
 
     emitInfo(ctx.task, formatEvidenceInsufficient(iteration, MAX_EVIDENCE_ITERATIONS, !!response.researchBrief));
 
+    const investigatorPrompt = buildPrompt([
+      { title: 'CONVERSATION HISTORY', body: ctx.conversationText || 'No prior conversation.' },
+      { title: 'USER REQUEST', body: ctx.initialPrompt },
+      { title: 'INVESTIGATION BRIEF', body: response.investigationBrief },
+      { title: 'REMINDER', body: 'Respond with exactly the required file sections.' },
+    ]);
+
     const investigation = await ctx.dispatch.parsed(
       AGENTS.investigator,
-      `${response.investigationBrief}\n\nReminder: respond with exactly the required file sections.`,
+      investigatorPrompt,
       `Investigating codebase (round ${iteration})`,
       parseInvestigatorResponse,
       () => {
@@ -279,7 +295,12 @@ export async function runEvidenceStage(ctx: WorkflowRunContext, journey: Journey
     row.removed = change.removed;
 
     if (response.researchBrief) {
-      const research = await ctx.dispatch.agent(AGENTS.researcher, response.researchBrief, `Researching online (round ${iteration})`);
+      const researcherPrompt = buildPrompt([
+        { title: 'CONVERSATION HISTORY', body: ctx.conversationText || 'No prior conversation.' },
+        { title: 'USER REQUEST', body: ctx.initialPrompt },
+        { title: 'RESEARCH BRIEF', body: response.researchBrief },
+      ]);
+      const research = await ctx.dispatch.agent(AGENTS.researcher, researcherPrompt, `Researching online (round ${iteration})`);
       findings.push(research);
       journey.researchDocs++;
       row.research = true;
@@ -303,12 +324,24 @@ export async function resolvePlanUnknowns(
     emitInfo(ctx.task, formatPlanUnknowns(label, researchUnknowns, codebaseUnknowns));
   }
   const researchPromise = researchUnknowns
-    ? ctx.dispatch.agent(AGENTS.researcher, `# Unknowns raised by the Implementation Plan — find the answers\n${researchUnknowns}`, `Resolving ${label} research unknowns`)
+    ? ctx.dispatch.agent(
+        AGENTS.researcher,
+        buildPrompt([
+          { title: 'CONVERSATION HISTORY', body: ctx.conversationText || 'No prior conversation.' },
+          { title: 'USER REQUEST', body: ctx.initialPrompt },
+          { title: 'RESEARCH UNKNOWNS', body: researchUnknowns },
+        ]),
+        `Resolving ${label} research unknowns`,
+      )
     : Promise.resolve(null);
   const codebasePromise = codebaseUnknowns
     ? ctx.dispatch.parsed(
         AGENTS.investigator,
-        `# The Implementation Plan raised these codebase unknowns — locate the relevant files\n${codebaseUnknowns}`,
+        buildPrompt([
+          { title: 'CONVERSATION HISTORY', body: ctx.conversationText || 'No prior conversation.' },
+          { title: 'USER REQUEST', body: ctx.initialPrompt },
+          { title: 'CODEBASE UNKNOWNS', body: codebaseUnknowns },
+        ]),
         `Resolving ${label} codebase unknowns`,
         parseInvestigatorResponse,
         () => {
@@ -333,9 +366,16 @@ export async function runPlanningStage(
   researchFindings: string[],
 ): Promise<{ planText: string; unknownsResearch: string | null }> {
   report.abortStage = 'planning';
+  const plannerPrompt = buildPrompt([
+    { title: 'CONVERSATION HISTORY', body: ctx.conversationText || 'No prior conversation.' },
+    { title: 'USER REQUEST', body: ctx.initialPrompt },
+    { title: 'RESEARCH FINDINGS', body: researchFindings.join('\n\n---\n\n') || 'None yet.' },
+    { title: 'INSTRUCTION', body: 'Produce the Implementation Plan now, per your instructions.' },
+  ]);
+
   const planText = await ctx.dispatch.agent(
     AGENTS.planner,
-    `# User request\n${ctx.initialPrompt}\n\n${researchFindings.join('\n\n---\n\n')}\n\nProduce the Implementation Plan now, per your instructions.`,
+    plannerPrompt,
     'Producing Implementation Plan',
   );
   journey.planTitle = parsePlanUnknowns(planText).title;
@@ -353,11 +393,26 @@ export async function runDecompositionStage(
   stageLabel?: string,
 ): Promise<FileEditInstruction[]> {
   const label = stageLabel ?? (isRectification ? 'Rectification plan decomposed' : 'Implementation plan decomposed');
+  const decomposerSections: PromptSection[] = [
+    { title: 'CONVERSATION HISTORY', body: ctx.conversationText || 'No prior conversation.' },
+    { title: 'USER REQUEST', body: ctx.initialPrompt },
+    { title: isRectification ? 'RECTIFICATION PLAN' : 'IMPLEMENTATION PLAN', body: `${planText}\n\n(verbatim — treat as strict instructions)` },
+  ];
+
+  if (resolvedResearch) {
+    decomposerSections.push({ title: 'ADDITIONAL RESEARCH', body: resolvedResearch });
+  }
+
+  decomposerSections.push({
+    title: 'INSTRUCTION',
+    body: 'Decompose into per-file edit blocks now, per your instructions.',
+  });
+
+  const decomposerPrompt = buildPrompt(decomposerSections);
+
   const result = await ctx.dispatch.parsed(
     AGENTS.decompositor,
-    `${isRectification ? '# Rectification Plan' : '# Implementation Plan'} (verbatim — treat as strict instructions)\n\n${planText}\n\n${
-      resolvedResearch ? `# Additional research\n\n${resolvedResearch}\n\n` : ''
-    }Decompose into per-file edit blocks now, per your instructions.`,
+    decomposerPrompt,
     isRectification ? 'Decomposing rectification plan into file edits' : 'Decomposing plan into file edits',
     parseDecompositorResponse,
     () => {
@@ -456,36 +511,25 @@ export async function runEditLoop(
       ? suspiciousEdits.map((v) => `${v.path}: ${v.reasons.join('; ')}`).join('\n')
       : 'None';
 
-    const confirmerPrompt = [
-      `# File edits that were supposed to be applied`,
-      ``,
-      serializeFileEdits(currentEdits),
-      ``,
-      `# Git diff`,
-      ``,
-      '```diff',
-      diff,
-      '```',
-      ``,
-      `# Editor results`,
-      ``,
-      editorResultsSummary,
-      ``,
-      `# Suspicious edits flagged by script verification`,
-      ``,
-      suspiciousSummary,
-      ``,
-      `# Verification instructions`,
-      ``,
-      `You must verify that every instructed edit is present and correct in the diff/files.`,
-      ``,
-      `Critical rules:`,
-      `- If an editor reported FAILED for a file, you CANNOT return ALIGNED unless you have read that file and confirmed the edit was actually applied correctly despite the editor's report.`,
-      `- If an edit was flagged as suspicious by the script verification, you MUST read that file and verify the instruction was applied correctly. You CANNOT return ALIGNED for a suspicious edit without explicitly verifying it.`,
-      `- If an editor reported UNKNOWN, treat it the same as FAILED: you MUST NOT return ALIGNED for that file unless you have read the file and confirmed the edit was applied correctly.`,
-      ``,
-      `Verify alignment now.`,
-    ].join('\n');
+    const confirmerPrompt = buildPrompt([
+      { title: 'FILE EDITS THAT WERE SUPPOSED TO BE APPLIED', body: serializeFileEdits(currentEdits) },
+      { title: 'GIT DIFF', body: ['```diff', diff, '```'].join('\n') },
+      { title: 'EDITOR RESULTS', body: editorResultsSummary },
+      { title: 'SUSPICIOUS EDITS FLAGGED BY SCRIPT VERIFICATION', body: suspiciousSummary },
+      {
+        title: 'VERIFICATION INSTRUCTIONS',
+        body: [
+          'You must verify that every instructed edit is present and correct in the diff/files.',
+          '',
+          'Critical rules:',
+          "- If an editor reported FAILED for a file, you CANNOT return ALIGNED unless you have read that file and confirmed the edit was actually applied correctly despite the editor's report.",
+          '- If an edit was flagged as suspicious by the script verification, you MUST read that file and verify the instruction was applied correctly. You CANNOT return ALIGNED for a suspicious edit without explicitly verifying it.',
+          "- If an editor reported UNKNOWN, treat it the same as FAILED: you MUST NOT return ALIGNED for that file unless you have read the file and confirmed the edit was applied correctly.",
+          '',
+          'Verify alignment now.',
+        ].join('\n'),
+      },
+    ]);
 
     const confirmation = await ctx.dispatch.parsed(
       AGENTS.confirmer,

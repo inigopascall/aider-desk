@@ -20,13 +20,13 @@ export function formatConversation(messages: ContextMessage[]): string {
     if (msg.role === MessageRole.User) {
       const text = extractTextContent(msg.content).trim();
       if (text) {
-        lines.push('## User', '', text, '');
+        lines.push('=== USER TURN ===', '', text, '');
         totalChars += text.length;
       }
     } else if (msg.role === MessageRole.Assistant) {
       const text = extractTextContent(msg.content).trim();
       if (text) {
-        lines.push('## Assistant', '', text, '');
+        lines.push('=== ASSISTANT TURN ===', '', text, '');
         totalChars += text.length;
       }
     }

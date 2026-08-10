@@ -16,6 +16,7 @@ import { createJourney, type ReportState } from '../journey';
 import { formatReviewRound } from '../reporting';
 import { parseReviewerResponse, parseVerifierResponse } from '../parsers';
 import { WorkflowCancelled, WorkflowError } from '../dispatch';
+import { buildPrompt } from '../prompt-formatting';
 
 const REVIEW_AGENTS = {
   correctness: 'VERIFIER-CORRECTNESS',
@@ -44,7 +45,13 @@ export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<voi
     for (let round = 1; round <= MAX_REVIEW_ROUNDS; round++) {
       journey.reviewRounds = round;
       const diff = await getCumulativeDiff(git, baselineCommit, MAX_VERIFIER_DIFF_CHARS);
-      const descriptor = `# Review descriptor\n\nThe following work was carried out by an automated development pipeline and now requires review.\n\n## Original user request\n${ctx.initialPrompt}\n\n## Implementation plan title\n${journey.planTitle}\n\n## Cumulative git diff\n\`\`\`diff\n${diff}\n\`\`\``;
+      const descriptor = buildPrompt([
+        { title: 'REVIEW CONTEXT', body: 'The following work was carried out by an automated development pipeline and now requires review.' },
+        { title: 'CONVERSATION HISTORY', body: ctx.conversationText || 'No prior conversation.' },
+        { title: 'USER REQUEST', body: ctx.initialPrompt },
+        { title: 'IMPLEMENTATION PLAN TITLE', body: journey.planTitle },
+        { title: 'CUMULATIVE GIT DIFF', body: ['```diff', diff, '```'].join('\n') },
+      ]);
 
       const verify = async (agent: string, lens: string) => {
         try {
