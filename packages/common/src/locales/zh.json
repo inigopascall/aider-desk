@@ -1824,7 +1824,9 @@
     "createSubtask": "创建子任务",
     "dropToRoot": "拖放到此处以移动到顶级",
     "dropToSubtask": "设为子任务",
-    "deleteConfirmWithSubtasks": "此任务有 {{count}} 个子任务。仍然要删除吗？"
+    "deleteConfirmWithSubtasks": "此任务有 {{count}} 个子任务。仍然要删除吗？",
+    "highlightTask": "高亮任务",
+    "removeHighlight": "移除高亮"
   },
   "taskInfo": {
     "createdAt": "创建于",

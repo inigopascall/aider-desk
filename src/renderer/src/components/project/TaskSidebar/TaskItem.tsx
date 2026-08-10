@@ -41,6 +41,7 @@ type Props = {
   onTogglePin: (taskId: string) => Promise<void>;
   onChangeState: (taskId: string, newState: string) => Promise<void>;
   onMoveToTop?: (taskId: string) => Promise<void>;
+  onHighlightChange?: (taskId: string, color: string | null) => void;
   onCopyAsMarkdown?: (taskId: string) => void;
   onExportToMarkdown?: (taskId: string) => void;
   onExportToImage?: (taskId: string) => void;
@@ -71,7 +72,8 @@ const arePropsEqual = (prevProps: Props, nextProps: Props): boolean => {
     prevTask.state !== nextTask.state ||
     prevTask.pinned !== nextTask.pinned ||
     prevTask.workingMode !== nextTask.workingMode ||
-    prevTask.createdAt !== nextTask.createdAt
+    prevTask.createdAt !== nextTask.createdAt ||
+    prevTask.metadata !== nextTask.metadata
   ) {
     return false;
   }
@@ -121,6 +123,7 @@ const arePropsEqual = (prevProps: Props, nextProps: Props): boolean => {
     prevProps.onTogglePin !== nextProps.onTogglePin ||
     prevProps.onChangeState !== nextProps.onChangeState ||
     prevProps.onMoveToTop !== nextProps.onMoveToTop ||
+    prevProps.onHighlightChange !== nextProps.onHighlightChange ||
     prevProps.onCopyAsMarkdown !== nextProps.onCopyAsMarkdown ||
     prevProps.onExportToMarkdown !== nextProps.onExportToMarkdown ||
     prevProps.onExportToImage !== nextProps.onExportToImage ||
@@ -170,6 +173,7 @@ export const TaskItem = memo(
     onTogglePin,
     onChangeState,
     onMoveToTop,
+    onHighlightChange,
     onCopyAsMarkdown,
     onExportToMarkdown,
     onExportToImage,
@@ -194,6 +198,14 @@ export const TaskItem = memo(
     const isSubtask = level > 0;
     const taskName = task.name || t('taskSidebar.untitled');
     const showNameTooltip = !!task.name && task.name.length > 30;
+    const highlightColor = typeof task.metadata?.highlightColor === 'string' ? task.metadata.highlightColor : undefined;
+
+    const hexToRgba = (hex: string, alpha: number) => {
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    };
 
     const isDraggingRef = useRef(false);
 
@@ -289,6 +301,11 @@ export const TaskItem = memo(
                 ? 'bg-bg-secondary border-border-dark-light'
                 : 'hover:bg-bg-secondary border-transparent',
           )}
+          style={{
+            backgroundImage: highlightColor
+              ? `linear-gradient(45deg, ${hexToRgba(highlightColor, 0.8)} 0%, ${hexToRgba(highlightColor, 0.4)} 15%, ${hexToRgba(highlightColor, 0)} 25%)`
+              : undefined,
+          }}
           onClick={(e) => onTaskClick(e, task.id)}
           data-task-id={task.id}
         >
@@ -320,9 +337,10 @@ export const TaskItem = memo(
                 <div className="flex items-center justify-between">
                   <div
                     className={clsx(
-                      'text-xs font-medium truncate transition-colors',
+                      'text-xs font-medium truncate transition-colors uppercase',
                       task.archived && activeTaskId !== task.id ? 'text-text-muted group-hover:text-text-primary' : 'text-text-primary',
                     )}
+                    style={highlightColor ? { textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)' } : undefined}
                   >
                     {showNameTooltip ? (
                       <Tooltip content={taskName} delayDuration={1000}>
@@ -401,6 +419,7 @@ export const TaskItem = memo(
                   onTogglePin={() => onTogglePin(task.id)}
                   onChangeState={(newState) => onChangeState(task.id, newState)}
                   onMoveToTop={onMoveToTop && task.createdAt ? () => onMoveToTop(task.id) : undefined}
+                  onHighlightChange={onHighlightChange ? (color) => onHighlightChange(task.id, color) : undefined}
                   isPinned={task.pinned || false}
                 />
               )}

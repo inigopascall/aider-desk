@@ -1792,7 +1792,9 @@
     "generatingName": "이름 생성 중...",
     "changeState": "상태 변경",
     "createSubtask": "하위 작업 만들기",
-    "deleteConfirmWithSubtasks": "이 작업에는 {{count}}개의 하위 작업이 있습니다. 그래도 삭제하시겠습니까?"
+    "deleteConfirmWithSubtasks": "이 작업에는 {{count}}개의 하위 작업이 있습니다. 그래도 삭제하시겠습니까?",
+    "highlightTask": "작업 강조",
+    "removeHighlight": "강조 제거"
   },
   "taskInfo": {
     "createdAt": "생성일",

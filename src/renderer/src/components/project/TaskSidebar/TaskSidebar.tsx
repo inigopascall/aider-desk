@@ -427,6 +427,29 @@ const TaskSidebarComponent = ({
     [updateTask],
   );
 
+  const handleHighlightChange = useCallback(
+    async (taskId: string, color: string | null) => {
+      try {
+        if (updateTask) {
+          const task = tasks.find((t) => t.id === taskId);
+          if (task) {
+            const metadata = { ...(task.metadata ?? {}) };
+            if (color) {
+              metadata.highlightColor = color;
+            } else {
+              delete metadata.highlightColor;
+            }
+            await updateTask(taskId, { metadata });
+          }
+        }
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to update task highlight:', error);
+      }
+    },
+    [tasks, updateTask],
+  );
+
   const handleMoveToTop = useCallback(
     async (taskId: string) => {
       try {
@@ -925,6 +948,7 @@ const TaskSidebarComponent = ({
                           onTogglePin={handleTogglePin}
                           onChangeState={handleChangeState}
                           onMoveToTop={handleMoveToTop}
+                          onHighlightChange={handleHighlightChange}
                           onCopyAsMarkdown={onCopyAsMarkdown}
                           onExportToMarkdown={onExportToMarkdown}
                           onExportToImage={onExportToImage}
@@ -1087,7 +1111,8 @@ const arePropsEqual = (prevProps: Props, nextProps: Props): boolean => {
       prevTask.updatedAt !== nextTask.updatedAt ||
       prevTask.createdAt !== nextTask.createdAt ||
       prevTask.pinned !== nextTask.pinned ||
-      prevTask.parentId !== nextTask.parentId
+      prevTask.parentId !== nextTask.parentId ||
+      prevTask.metadata !== nextTask.metadata
     ) {
       return false;
     }

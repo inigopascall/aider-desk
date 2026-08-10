@@ -1,17 +1,19 @@
 import { DefaultTaskState, TaskData } from '@common/types';
 import { useTranslation } from 'react-i18next';
 import { MouseEvent, useRef, useState, useEffect, memo } from 'react';
-import { HiOutlinePencil, HiOutlineTrash } from 'react-icons/hi';
+import { HiCheck, HiOutlinePencil, HiOutlineTrash } from 'react-icons/hi';
 import { FaEllipsisVertical } from 'react-icons/fa6';
 import { IoLogoMarkdown } from 'react-icons/io';
 import { RiFlag2Line } from 'react-icons/ri';
-import { MdImage, MdPushPin, MdChevronRight, MdVerticalAlignTop } from 'react-icons/md';
+import { MdClose, MdColorLens, MdImage, MdPushPin, MdChevronRight, MdVerticalAlignTop } from 'react-icons/md';
 import { BiDuplicate, BiArchive, BiArchiveIn, BiCopy } from 'react-icons/bi';
 import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
 
 import { useClickOutside } from '@/hooks/useClickOutside';
 import { getTaskStateLabel } from '@/components/common/TaskStateChip';
+
+const TASK_HIGHLIGHT_COLORS = ['#E74C3C', '#E67E22', '#F1C40F', '#2ECC71', '#3498DB', '#9B59B6'];
 
 type Props = {
   task: TaskData;
@@ -26,6 +28,7 @@ type Props = {
   onTogglePin?: () => void;
   onChangeState?: (newState: string) => void;
   onMoveToTop?: () => void;
+  onHighlightChange?: (color: string | null) => void;
   isPinned?: boolean;
 };
 
@@ -43,6 +46,7 @@ export const TaskMenuButton = memo(
     onTogglePin,
     onChangeState,
     onMoveToTop,
+    onHighlightChange,
     isPinned,
   }: Props) => {
     const { t } = useTranslation();
@@ -55,6 +59,10 @@ export const TaskMenuButton = memo(
     const buttonRef = useRef<HTMLDivElement>(null);
     const stateSubmenuItemRef = useRef<HTMLLIElement>(null);
     const stateSubmenuRef = useRef<HTMLDivElement>(null);
+    const [isHighlightSubmenuOpen, setIsHighlightSubmenuOpen] = useState(false);
+    const [highlightSubmenuPosition, setHighlightSubmenuPosition] = useState<{ top: number; left: number } | null>(null);
+    const highlightSubmenuItemRef = useRef<HTMLLIElement>(null);
+    const highlightSubmenuRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
       if (isMenuOpen && buttonRef.current) {
@@ -80,11 +88,31 @@ export const TaskMenuButton = memo(
       }
     }, [isStateSubmenuOpen]);
 
+    useEffect(() => {
+      if (isHighlightSubmenuOpen && highlightSubmenuItemRef.current) {
+        const rect = highlightSubmenuItemRef.current.getBoundingClientRect();
+        setHighlightSubmenuPosition({
+          top: rect.top,
+          left: rect.right + 4,
+        });
+      } else {
+        setHighlightSubmenuPosition(null);
+      }
+    }, [isHighlightSubmenuOpen]);
+
+    useEffect(() => {
+      if (!isMenuOpen) {
+        setIsStateSubmenuOpen(false);
+        setIsHighlightSubmenuOpen(false);
+      }
+    }, [isMenuOpen]);
+
     useClickOutside(
-      [menuRef, buttonRef, stateSubmenuRef],
+      [menuRef, buttonRef, stateSubmenuRef, highlightSubmenuRef],
       () => {
         setIsMenuOpen(false);
         setIsStateSubmenuOpen(false);
+        setIsHighlightSubmenuOpen(false);
       },
       isMenuOpen,
     );
@@ -160,6 +188,17 @@ export const TaskMenuButton = memo(
       e.stopPropagation();
       onChangeState?.(state);
       setIsStateSubmenuOpen(false);
+      setIsMenuOpen(false);
+    };
+
+    const handleHighlightSubmenuToggle = () => {
+      setIsHighlightSubmenuOpen(!isHighlightSubmenuOpen);
+    };
+
+    const handleHighlightChange = (e: MouseEvent, color: string | null) => {
+      e.stopPropagation();
+      onHighlightChange?.(color);
+      setIsHighlightSubmenuOpen(false);
       setIsMenuOpen(false);
     };
 
@@ -258,6 +297,20 @@ export const TaskMenuButton = memo(
                     <MdChevronRight className="w-3.5 h-3.5 text-text-muted" />
                   </li>
                 )}
+                {onHighlightChange && (
+                  <li
+                    ref={highlightSubmenuItemRef}
+                    className="relative flex items-center gap-2 px-2 py-1 text-2xs text-text-primary hover:bg-bg-tertiary cursor-pointer transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleHighlightSubmenuToggle();
+                    }}
+                  >
+                    <MdColorLens className="w-4 h-4" />
+                    <span className="whitespace-nowrap flex-1">{t('taskSidebar.highlightTask')}</span>
+                    <MdChevronRight className="w-3.5 h-3.5 text-text-muted" />
+                  </li>
+                )}
                 {onMoveToTop && !isNewTask && (
                   <li
                     className="flex items-center gap-2 px-2 py-1 text-2xs text-text-primary hover:bg-bg-tertiary cursor-pointer transition-colors"
@@ -327,6 +380,51 @@ export const TaskMenuButton = memo(
                     {getTaskStateLabel(t, state)}
                   </li>
                 ))}
+              </ul>
+            </div>,
+            document.body,
+          )}
+        {isHighlightSubmenuOpen &&
+          highlightSubmenuPosition &&
+          createPortal(
+            <div
+              ref={highlightSubmenuRef}
+              style={{
+                position: 'fixed',
+                top: `${highlightSubmenuPosition.top}px`,
+                left: `${highlightSubmenuPosition.left}px`,
+              }}
+              className="w-[180px] bg-bg-secondary-light border border-border-default-dark rounded shadow-lg z-[9999]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <ul className="py-1">
+                {TASK_HIGHLIGHT_COLORS.map((color) => {
+                  const currentHighlight = typeof task.metadata?.highlightColor === 'string' ? task.metadata.highlightColor : undefined;
+                  const isActive = currentHighlight === color;
+                  return (
+                    <li
+                      key={color}
+                      className="flex items-center gap-2 px-2 py-1 text-2xs text-text-primary hover:bg-bg-tertiary cursor-pointer transition-colors"
+                      onClick={(e) => handleHighlightChange(e, color)}
+                    >
+                      <span className="w-4 h-4 rounded-full border border-border-default-dark" style={{ backgroundColor: color }} />
+                      <span className="uppercase">{color}</span>
+                      {isActive && <HiCheck className="w-4 h-4 ml-auto" />}
+                    </li>
+                  );
+                })}
+                {task.metadata?.highlightColor && (
+                  <>
+                    <li className="px-2 py-1"><div className="border-t border-border-default-dark" /></li>
+                    <li
+                      className="flex items-center gap-2 px-2 py-1 text-2xs text-text-primary hover:bg-bg-tertiary cursor-pointer transition-colors"
+                      onClick={(e) => handleHighlightChange(e, null)}
+                    >
+                      <MdClose className="w-4 h-4" />
+                      <span className="whitespace-nowrap">{t('taskSidebar.removeHighlight')}</span>
+                    </li>
+                  </>
+                )}
               </ul>
             </div>,
             document.body,

@@ -1806,7 +1806,9 @@
     "createSubtask": "Создать подзадачу",
     "dropToRoot": "Перетащите сюда, чтобы переместить на верхний уровень",
     "dropToSubtask": "Сделать подзадачей",
-    "deleteConfirmWithSubtasks": "Эта задача содержит {{count}} подзадач. Всё равно удалить?"
+    "deleteConfirmWithSubtasks": "Эта задача содержит {{count}} подзадач. Всё равно удалить?",
+    "highlightTask": "Выделить задачу",
+    "removeHighlight": "Убрать выделение"
   },
   "taskInfo": {
     "createdAt": "Создана",
