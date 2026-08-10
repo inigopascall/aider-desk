@@ -9,7 +9,7 @@ import { setMessages, touchTaskActivity } from '@/stores/taskStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { flushCommandOutput } from './useTaskCommandHandlers';
 
-const STREAM_FLUSH_INTERVAL_MS = 150;
+const STREAM_FLUSH_INTERVAL_MS = 250;
 
 const processingResponseMessageMap = new Map<string, ResponseMessage>();
 const responseChunkBuffers = new Map<string, ResponseChunkData[]>();
