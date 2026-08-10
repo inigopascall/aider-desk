@@ -898,8 +898,8 @@ const TaskSidebarComponent = ({
                             transform: `translateY(${virtualRow.start}px)`,
                           }}
                         >
-                          <div className="border-b-4 border-border-light pt-6 pb-1">
-                            <div className="px-2 text-3xs uppercase font-semibold text-text-primary">
+                          <div className="pt-6 pb-1">
+                            <div className="px-2 py-[5px] text-3xs uppercase font-semibold text-text-primary bg-black">
                               {item.title === 'today'
                                 ? t('taskSidebar.today')
                                 : item.title === 'yesterday'
