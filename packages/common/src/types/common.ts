@@ -135,16 +135,45 @@ export const WORKFLOW_AGENT_ROLES: Record<string, string[]> = {
   ],
 };
 
+/** Fallback dot colour for workflows with no explicit identity colour. */
+export const DEFAULT_WORKFLOW_COLOR = '#8A8A8A';
+
+/** Hard-coded identity colour per workflow id, used for the dot in the workflow selector. */
+export const WORKFLOW_COLORS: Record<string, string> = {
+  'three-agent-relay': '#3368A8',
+  'dev-pipeline': '#F8E61B',
+  'dev-pipeline-review': '#7ED321',
+};
+
+export const getWorkflowColor = (workflowId: string): string => WORKFLOW_COLORS[workflowId] ?? DEFAULT_WORKFLOW_COLOR;
+
 export interface WorkflowInfo {
   id: string;
   name: string;
   agents: string[];
+  /** Identity colour shown as a dot in the workflow selector. */
+  color?: string;
 }
 
 export const AVAILABLE_WORKFLOWS: WorkflowInfo[] = [
-  { id: 'three-agent-relay', name: 'Three Agent Relay', agents: WORKFLOW_AGENT_ROLES['three-agent-relay'] },
-  { id: 'dev-pipeline', name: 'Dev Pipeline', agents: WORKFLOW_AGENT_ROLES['dev-pipeline'] },
-  { id: 'dev-pipeline-review', name: 'Dev Pipeline + Review', agents: WORKFLOW_AGENT_ROLES['dev-pipeline-review'] },
+  {
+    id: 'three-agent-relay',
+    name: 'Three Agent Relay',
+    agents: WORKFLOW_AGENT_ROLES['three-agent-relay'],
+    color: WORKFLOW_COLORS['three-agent-relay'],
+  },
+  {
+    id: 'dev-pipeline',
+    name: 'Dev Pipeline',
+    agents: WORKFLOW_AGENT_ROLES['dev-pipeline'],
+    color: WORKFLOW_COLORS['dev-pipeline'],
+  },
+  {
+    id: 'dev-pipeline-review',
+    name: 'Dev Pipeline + Review',
+    agents: WORKFLOW_AGENT_ROLES['dev-pipeline-review'],
+    color: WORKFLOW_COLORS['dev-pipeline-review'],
+  },
 ];
 
 export enum AutonomyMode {

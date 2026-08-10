@@ -446,7 +446,26 @@
     "selectWorkflow": "Select a workflow to configure its project availability.",
     "projectsTitle": "Available in projects",
     "noWorkflows": "No workflows available.",
-    "noProjects": "No projects are currently open."
+    "noProjects": "No projects are currently open.",
+    "openSettings": "Workflow settings",
+    "tabs": {
+      "projects": "Projects",
+      "modelSets": "Model Sets"
+    },
+    "modelSetsTitle": "Model Sets",
+    "addModelSet": "Add model set",
+    "modelSetName": "Name",
+    "builtIn": "built-in",
+    "done": "Done",
+    "agentProfileDefault": "Agent profile default",
+    "modelUnavailable": "Model unavailable",
+    "providerNotConfigured": "Provider '{{provider}}' is not configured.",
+    "atLeastOneSet": "A workflow must have at least one model set.",
+    "newSetName": "New set",
+    "defaultSetName": "Default",
+    "noModelSets": "No model sets configured for this workflow.",
+    "taskModelSetTooltip": "Model set for this task",
+    "projectDefaultModelSetTooltip": "Project default (click to override for this task)"
   },
   "settings": {
     "title": "Settings",

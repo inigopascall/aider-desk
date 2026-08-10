@@ -876,3 +876,32 @@ export const buildDefaultWorkflowModelSet = (agentRoles: string[], workflowAgent
   }
   return { id: DEFAULT_WORKFLOW_MODEL_SET_ID, name: 'Default', models };
 };
+
+/**
+ * Unique model names (the part after the provider prefix) used by a model set,
+ * in first-appearance order. Empty entries are skipped.
+ */
+export const getWorkflowModelSetModelNames = (set: WorkflowModelSet): string[] => {
+  const names: string[] = [];
+
+  for (const modelId of Object.values(set.models)) {
+    if (!modelId || modelId.trim().length === 0) {
+      continue;
+    }
+
+    const [, ...rest] = modelId.split('/');
+    const name = rest.join('/') || modelId;
+
+    if (!names.includes(name)) {
+      names.push(name);
+    }
+  }
+
+  return names;
+};
+
+/** `"<name>: <model1>, <model2>"`, or just `"<name>"` when the set has no models. */
+export const getWorkflowModelSetLabel = (set: WorkflowModelSet): string => {
+  const names = getWorkflowModelSetModelNames(set);
+  return names.length > 0 ? `${set.name}: ${names.join(', ')}` : set.name;
+};

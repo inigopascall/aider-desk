@@ -1,7 +1,7 @@
 import { AIDER_MODES, AutonomyMode, AVAILABLE_WORKFLOWS, DEFAULT_AUTONOMY_MODE, Mode, TaskData } from '@common/types';
 import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FaInfoCircle } from 'react-icons/fa';
+import { FaCog, FaInfoCircle } from 'react-icons/fa';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { MdOutlineFullscreen, MdPlaylistRemove, MdUndo } from 'react-icons/md';
 import { VscTerminal } from 'react-icons/vsc';
@@ -91,7 +91,21 @@ export const TaskControlBar = ({
         />
         {onWorkflowChange && availableWorkflows.length > 0 && (
           <>
-            <WorkflowSelector
+          {showSettingsPage && (
+            <Tooltip content={t('workflowsSettings.openSettings')}>
+              <Button
+                variant="text"
+                color="tertiary"
+                size="xs"
+                onClick={() => showSettingsPage('workflows')}
+                aria-label={t('workflowsSettings.openSettings')}
+                title={t('workflowsSettings.openSettings')}
+              >
+                <FaCog className="w-3.5 h-3.5 text-text-secondary" />
+              </Button>
+            </Tooltip>
+          )}
+          <WorkflowSelector
               workflows={availableWorkflows}
               selectedWorkflowId={selectedWorkflowId ?? null}
               onChange={onWorkflowChange}

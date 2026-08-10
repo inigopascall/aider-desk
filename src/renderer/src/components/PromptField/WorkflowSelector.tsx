@@ -1,6 +1,6 @@
 import { memo, useCallback } from 'react';
 import { LuWorkflow } from 'react-icons/lu';
-import { AVAILABLE_WORKFLOWS, WorkflowInfo } from '@common/types';
+import { AVAILABLE_WORKFLOWS, getWorkflowColor, WorkflowInfo } from '@common/types';
 import { clsx } from 'clsx';
 
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -51,9 +51,10 @@ export const WorkflowSelector = memo(({ selectedWorkflowId, onChange, workflows 
             >
               <div className="relative">
                 <LuWorkflow className="w-3.5 h-3.5" />
-                <span className="absolute -top-0.5 -right-1 text-[8px] font-bold leading-none text-text-muted-light">
-                  {index + 1}
-                </span>
+                <span
+                  className="absolute -top-0.5 -right-1 w-1.5 h-1.5 rounded-full ring-1 ring-bg-secondary"
+                  style={{ backgroundColor: workflow.color ?? getWorkflowColor(workflow.id) }}
+                />
               </div>
             </button>
           </Tooltip>

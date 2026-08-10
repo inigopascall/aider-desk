@@ -1687,7 +1687,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
         )}
         {isExpanded &&
           createPortal(
-            <div className="fixed z-50 flex flex-col bg-bg-primary shadow-2xl" style={panelStyle}>
+            <div className="fixed z-50 flex flex-col bg-bg-secondary shadow-2xl" style={panelStyle}>
               <div className="flex items-center justify-between px-4 py-2 border-b border-border-dark-light flex-shrink-0">
                 <span className="text-sm text-text-primary">
                   {t('promptField.editorTitle', {

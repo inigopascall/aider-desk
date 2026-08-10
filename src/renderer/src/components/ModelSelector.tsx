@@ -108,11 +108,25 @@ export const ModelSelector = forwardRef<ModelSelectorRef, Props>(
     useEffect(() => {
       if (usePortal && isOpen && modelSelectorRef.current) {
         const rect = modelSelectorRef.current.getBoundingClientRect();
+        const POPUP_WIDTH = 500;
+        const GAP = 4;
+        const MARGIN = 8;
+        const ESTIMATED_HEIGHT = 280;
+        const MIN_HEIGHT = 160;
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+        const placeBottom =
+          popupPlacement === 'bottom'
+            ? spaceBelow >= ESTIMATED_HEIGHT + GAP || spaceBelow >= spaceAbove
+            : !(spaceAbove >= ESTIMATED_HEIGHT + GAP || spaceAbove >= spaceBelow);
+        const width = Math.min(POPUP_WIDTH, window.innerWidth - MARGIN * 2);
+        const left = Math.max(MARGIN, Math.min(rect.left, window.innerWidth - width - MARGIN));
+
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setPopupStyle(
-          popupPlacement === 'bottom'
-            ? { position: 'fixed', top: rect.bottom + 4, left: rect.left }
-            : { position: 'fixed', bottom: window.innerHeight - rect.top + 4, left: rect.left },
+          placeBottom
+            ? { position: 'fixed', top: rect.bottom + GAP, left, maxHeight: Math.max(MIN_HEIGHT, spaceBelow - GAP - MARGIN) }
+            : { position: 'fixed', bottom: window.innerHeight - rect.top + GAP, left, maxHeight: Math.max(MIN_HEIGHT, spaceAbove - GAP - MARGIN) },
         );
       }
     }, [usePortal, isOpen, popupPlacement]);
@@ -263,7 +277,7 @@ export const ModelSelector = forwardRef<ModelSelectorRef, Props>(
               <div
                 ref={popupRef}
                 style={popupStyle}
-                className="bg-bg-primary-light border border-border-default-dark rounded-md shadow-lg z-[9999] flex flex-col w-[500px] max-w-[calc(100vw-20px)]"
+                className="bg-bg-primary-light border border-border-default-dark rounded-md shadow-lg z-[9999] flex flex-col w-[500px] max-w-[calc(100vw-20px)] overflow-hidden"
               >
                 <div className="sticky top-0 p-2 border-b border-border-default-dark bg-bg-primary-light rounded-md z-10 flex items-center space-x-2">
                   <input
@@ -281,7 +295,7 @@ export const ModelSelector = forwardRef<ModelSelectorRef, Props>(
                     </div>
                   )}
                 </div>
-                <div className="overflow-y-auto scrollbar-thin scrollbar-track-bg-secondary-light scrollbar-thumb-bg-tertiary hover:scrollbar-thumb-bg-fourth max-h-48">
+                <div className="overflow-y-auto scrollbar-thin scrollbar-track-bg-secondary-light scrollbar-thumb-bg-tertiary hover:scrollbar-thumb-bg-fourth flex-1 min-h-0">
                   {labelOnNull && !debouncedSearchTerm && (
                     <>
                       <div
