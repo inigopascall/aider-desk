@@ -4,6 +4,8 @@ import { getTaskDateGroup } from './date-utils';
 
 export type VirtualTaskItem = { type: 'header'; id: string; title: string } | { type: 'task'; id: string; task: TaskData; level: number };
 
+export type TaskSortOrder = 'createdAt' | 'updatedAt';
+
 export const getTaskDir = (task: TaskData): string => task.worktree?.path ?? task.baseDir;
 
 const getMostRecentUpdatedAt = (task: TaskData, allTasks: TaskData[]): string | undefined => {
@@ -58,7 +60,25 @@ export const getSortedVisibleTasks = (tasks: TaskData[], selectedStates: Set<str
     if (!a.pinned && b.pinned) {
       return 1;
     }
-    // Then sort by most recent updatedAt (including subtasks, descending)
+
+    if (sortOrder === 'createdAt') {
+      // Sort by the task's own creation date (descending). Unlike updatedAt,
+      // this never changes for a task, so list order stays fixed across edits.
+      const aCreated = a.createdAt;
+      const bCreated = b.createdAt;
+      if (aCreated && !bCreated) {
+        return 1;
+      } else if (!aCreated && bCreated) {
+        return -1;
+      } else if (!aCreated && !bCreated) {
+        return 0;
+      } else {
+        return bCreated!.localeCompare(aCreated!);
+      }
+    }
+
+    // sortOrder === 'updatedAt': existing behavior — most recent updatedAt
+    // (including subtasks, descending)
     const aMostRecent = getMostRecentUpdatedAt(a, filteredTasks);
     const bMostRecent = getMostRecentUpdatedAt(b, filteredTasks);
     if (aMostRecent && !bMostRecent) {
@@ -92,8 +112,9 @@ export const flattenTasksForVirtualization = (
   selectedStates: Set<string>,
   showArchived: boolean = false,
   searchQuery: string = '',
+  sortOrder: TaskSortOrder = 'createdAt',
 ): VirtualTaskItem[] => {
-  const sortedTasks = getSortedVisibleTasks(tasks, selectedStates, showArchived, searchQuery);
+  const sortedTasks = getSortedVisibleTasks(tasks, selectedStates, showArchived, searchQuery, sortOrder);
   const topLevelTasks = sortedTasks.filter((task) => !task.parentId || !sortedTasks.some((t) => t.id === task.parentId));
 
   const pinnedTasks = topLevelTasks.filter((task) => task.pinned);
@@ -115,8 +136,8 @@ export const flattenTasksForVirtualization = (
 
   const groupedTasks = new Map<string, TaskData[]>();
   nonPinnedTasks.forEach((task) => {
-    const mostRecent = getMostRecentUpdatedAt(task, sortedTasks);
-    const group = mostRecent ? getTaskDateGroup({ ...task, updatedAt: mostRecent }) : getTaskDateGroup(task);
+    const groupDate = sortOrder === 'createdAt' ? task.createdAt : getMostRecentUpdatedAt(task, sortedTasks);
+    const group = groupDate ? getTaskDateGroup({ ...task, updatedAt: groupDate }) : getTaskDateGroup(task);
     if (!groupedTasks.has(group)) {
       groupedTasks.set(group, []);
     }

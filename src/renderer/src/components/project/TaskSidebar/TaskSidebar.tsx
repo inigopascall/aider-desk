@@ -81,6 +81,7 @@ const TaskSidebarComponent = ({
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [selectedStates, setSelectedStates] = useState<Set<string>>(() => new Set([...Object.values(DefaultTaskState)]));
   const [showArchived, setShowArchived] = useState<boolean>(false);
+  const [sortByDateModified, setSortByDateModified] = useState<boolean>(false);
   const [isFilterVisible, setIsFilterVisible] = useState<boolean>(false);
   const [isSearchVisible, setIsSearchVisible] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -217,8 +218,8 @@ const TaskSidebarComponent = ({
   const expandedIdsSet = useMemo(() => new Set(expandedIds ?? []), [expandedIds]);
 
   const virtualItems = useMemo(
-    () => flattenTasksForVirtualization(tasks, expandedIdsSet, selectedStates, showArchived, debouncedSearchQuery),
-    [tasks, expandedIdsSet, selectedStates, showArchived, debouncedSearchQuery],
+    () => flattenTasksForVirtualization(tasks, expandedIdsSet, selectedStates, showArchived, debouncedSearchQuery, sortByDateModified ? 'updatedAt' : 'createdAt'),
+    [tasks, expandedIdsSet, selectedStates, showArchived, debouncedSearchQuery, sortByDateModified],
   );
 
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -783,6 +784,10 @@ const TaskSidebarComponent = ({
             <div className="flex items-center gap-2 pt-1 border-t border-border-dark-light">
               <Toggle color="tertiary" size="sm" checked={showArchived} onChange={setShowArchived} />
               <span className="text-2xs">{t('taskSidebar.archived')}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Toggle color="tertiary" size="sm" checked={sortByDateModified} onChange={setSortByDateModified} />
+              <span className="text-2xs">{t('taskSidebar.sortByDateModified')}</span>
             </div>
           </div>
         </Activity>
