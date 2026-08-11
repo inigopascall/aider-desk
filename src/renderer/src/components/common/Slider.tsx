@@ -13,9 +13,10 @@ type Props = {
   showValue?: boolean;
   size?: SliderSize;
   formatValue?: (value: number) => string;
+  disabled?: boolean;
 };
 
-export const Slider = ({ label, min, max, step = 1, value, onChange, className = '', showValue = true, size = 'md', formatValue }: Props) => {
+export const Slider = ({ label, min, max, step = 1, value, onChange, className = '', showValue = true, size = 'md', formatValue, disabled = false }: Props) => {
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     onChange(Number(e.target.value));
   };
@@ -49,7 +50,8 @@ export const Slider = ({ label, min, max, step = 1, value, onChange, className =
         step={step}
         value={value}
         onChange={handleChange}
-        className={`w-full bg-bg-tertiary rounded-lg appearance-none cursor-pointer accent-accent-light transition-colors bg-slider-track ${sizeClasses[size]}`}
+        disabled={disabled}
+        className={`w-full bg-bg-tertiary rounded-lg appearance-none cursor-pointer accent-accent-light transition-colors bg-slider-track ${sizeClasses[size]} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         style={
           {
             '--slider-percentage': `${((value - min) / (max - min)) * 100}%`,

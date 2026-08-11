@@ -5,7 +5,7 @@ import { FaCog, FaInfoCircle } from 'react-icons/fa';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { MdOutlineFullscreen, MdPlaylistRemove, MdUndo } from 'react-icons/md';
 import { VscTerminal } from 'react-icons/vsc';
-import { LuEye, LuEyeOff } from 'react-icons/lu';
+import { LuSnowflake } from 'react-icons/lu';
 import { clsx } from 'clsx';
 
 import { AgentSelector } from '@/components/AgentSelector';
@@ -130,7 +130,7 @@ export const TaskControlBar = ({
               aria-label={isSnapshotMode ? t('taskControlBar.liveMode') : t('taskControlBar.snapshotMode')}
               title={isSnapshotMode ? t('taskControlBar.liveMode') : t('taskControlBar.snapshotMode')}
             >
-              {isSnapshotMode ? <LuEyeOff className="w-3.5 h-3.5 text-text-secondary" /> : <LuEye className="w-3.5 h-3.5 text-text-secondary" />}
+              <LuSnowflake className={clsx('w-3.5 h-3.5', isSnapshotMode ? 'text-info-light' : 'text-text-secondary')} />
             </Button>
           </Tooltip>
           {toggleTerminal && (

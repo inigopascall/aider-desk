@@ -9,7 +9,7 @@ import { setMessages, touchTaskActivity } from '@/stores/taskStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { flushCommandOutput } from './useTaskCommandHandlers';
 
-const STREAM_FLUSH_INTERVAL_MS = 150;
+const STREAM_FLUSH_INTERVAL_MS = 2500;
 
 const processingResponseMessageMap = new Map<string, ResponseMessage>();
 const responseChunkBuffers = new Map<string, ResponseChunkData[]>();
@@ -118,7 +118,8 @@ function bufferResponseChunk(taskId: string, data: ResponseChunkData): void {
 
   // Schedule a flush if one isn't already scheduled
   if (!responseChunkFlushTimers.has(taskId)) {
-    const timer = setTimeout(() => flushResponseChunks(taskId), STREAM_FLUSH_INTERVAL_MS);
+    const flushInterval = useSettingsStore.getState().settings?.streamFlushIntervalMs ?? STREAM_FLUSH_INTERVAL_MS;
+    const timer = setTimeout(() => flushResponseChunks(taskId), flushInterval);
     responseChunkFlushTimers.set(taskId, timer);
   }
 }

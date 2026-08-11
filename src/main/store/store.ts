@@ -51,6 +51,7 @@ export const DEFAULT_SETTINGS: SettingsData = {
   renderMarkdown: true,
   fullMessageRendering: false,
   performanceMode: true,
+  streamFlushIntervalMs: 2500,
   aiderDeskAutoUpdate: true,
   messageViewMode: MessageViewMode.Compact,
   diffViewMode: DiffViewMode.SideBySide,

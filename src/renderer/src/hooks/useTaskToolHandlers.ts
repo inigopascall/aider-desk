@@ -9,7 +9,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 
 import { flushCommandOutput } from './useTaskCommandHandlers';
 
-const STREAM_FLUSH_INTERVAL_MS = 150;
+const STREAM_FLUSH_INTERVAL_MS = 2500;
 
 const activeToolInputIds = new Map<string, Set<string>>();
 const toolInputChunkBuffers = new Map<string, ToolInputChunkData[]>();
@@ -65,7 +65,8 @@ function bufferToolInputChunk(taskId: string, data: ToolInputChunkData): void {
 
   // Schedule a flush if one isn't already scheduled
   if (!toolInputChunkFlushTimers.has(taskId)) {
-    const timer = setTimeout(() => flushToolInputChunks(taskId), STREAM_FLUSH_INTERVAL_MS);
+    const flushInterval = useSettingsStore.getState().settings?.streamFlushIntervalMs ?? STREAM_FLUSH_INTERVAL_MS;
+    const timer = setTimeout(() => flushToolInputChunks(taskId), flushInterval);
     toolInputChunkFlushTimers.set(taskId, timer);
   }
 }

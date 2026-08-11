@@ -820,6 +820,7 @@ export interface SettingsData {
   renderMarkdown: boolean;
   fullMessageRendering: boolean;
   performanceMode?: boolean;
+  streamFlushIntervalMs?: number;
   aiderDeskAutoUpdate: boolean;
   diffViewMode?: DiffViewMode;
   messageViewMode?: MessageViewMode;

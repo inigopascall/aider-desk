@@ -120,8 +120,8 @@ import { getProxyEnvVars } from '@/proxy-manager';
 import { CompactionLevel, extractSummary, smartCompactMessages } from '@/agent/compaction';
 
 export const INTERNAL_TASK_ID = 'internal';
-export const RESPONSE_CHUNK_FLUSH_INTERVAL_MS = 150;
-export const TOOL_INPUT_FLUSH_INTERVAL_MS = 150;
+export const RESPONSE_CHUNK_FLUSH_INTERVAL_MS = 2500;
+export const TOOL_INPUT_FLUSH_INTERVAL_MS = 2500;
 
 export const EMPTY_TASK_DATA: TaskData = {
   id: '',
@@ -1482,6 +1482,7 @@ export class Task {
         await sendResponseChunk(message.content, message.reasoning);
 
         const messageId = message.id;
+        const responseFlushInterval = this.store.getSettings().streamFlushIntervalMs ?? RESPONSE_CHUNK_FLUSH_INTERVAL_MS;
         const interval = setInterval(async () => {
           const entry = this.responseChunkMap.get(messageId);
           if (entry && (entry.contentBuffer.length > 0 || entry.reasoningBuffer.length > 0)) {
@@ -1503,7 +1504,7 @@ export class Task {
             clearInterval(interval);
             this.responseChunkMap.delete(messageId);
           }
-        }, RESPONSE_CHUNK_FLUSH_INTERVAL_MS);
+        }, responseFlushInterval);
         logger.debug('Created interval for message', {
           baseDir: this.project.baseDir,
           taskId: this.taskId,
@@ -1602,9 +1603,10 @@ export class Task {
     }
     entry.accumulatedDelta += delta;
     if (!entry.interval) {
+      const toolInputFlushInterval = this.store.getSettings().streamFlushIntervalMs ?? TOOL_INPUT_FLUSH_INTERVAL_MS;
       entry.interval = setInterval(async () => {
         await this.flushToolInput(toolCallId, false);
-      }, TOOL_INPUT_FLUSH_INTERVAL_MS);
+      }, toolInputFlushInterval);
     }
   }
 

@@ -181,6 +181,13 @@ export const GeneralSettings = ({ settings, setSettings, onLanguageChange, onZoo
     });
   };
 
+  const handleStreamFlushIntervalChange = (intervalMs: number) => {
+    setSettings({
+      ...settings,
+      streamFlushIntervalMs: intervalMs,
+    });
+  };
+
   const handleCommandConfirmationChange = (command: keyof typeof settings.promptBehavior.requireCommandConfirmation, checked: boolean) => {
     setSettings({
       ...settings,
@@ -302,6 +309,24 @@ export const GeneralSettings = ({ settings, setSettings, onLanguageChange, onZoo
                   }
                 />
                 <InfoIcon tooltip={t('settings.messages.performanceModeTooltip')} />
+              </div>
+              <div className="ml-0.5 pt-1">
+                <Slider
+                  label={
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs">{t('settings.messages.streamFlushInterval')}</span>
+                      <InfoIcon tooltip={t('settings.messages.streamFlushIntervalTooltip')} />
+                    </div>
+                  }
+                  min={150}
+                  max={5000}
+                  step={100}
+                  value={settings.performanceMode ?? true ? (settings.streamFlushIntervalMs ?? 2500) : 2500}
+                  onChange={handleStreamFlushIntervalChange}
+                  showValue={true}
+                  disabled={!(settings.performanceMode ?? true)}
+                  className="max-w-[260px]"
+                />
               </div>
             </div>
           </div>

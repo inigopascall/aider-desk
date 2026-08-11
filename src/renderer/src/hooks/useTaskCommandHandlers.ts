@@ -11,7 +11,7 @@ const isCommandOutputMessage = (message: Message): message is CommandOutputMessa
   return message.type === 'command-output';
 };
 
-const STREAM_FLUSH_INTERVAL_MS = 150;
+const STREAM_FLUSH_INTERVAL_MS = 2500;
 const commandOutputBuffers = new Map<string, CommandOutputData[]>();
 const commandOutputFlushTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -57,7 +57,8 @@ function bufferCommandOutput(taskId: string, data: CommandOutputData): void {
 
   // Schedule a flush if one isn't already scheduled
   if (!commandOutputFlushTimers.has(taskId)) {
-    const timer = setTimeout(() => flushCommandOutput(taskId), STREAM_FLUSH_INTERVAL_MS);
+    const flushInterval = useSettingsStore.getState().settings?.streamFlushIntervalMs ?? STREAM_FLUSH_INTERVAL_MS;
+    const timer = setTimeout(() => flushCommandOutput(taskId), flushInterval);
     commandOutputFlushTimers.set(taskId, timer);
   }
 }

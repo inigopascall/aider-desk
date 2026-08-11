@@ -987,7 +987,9 @@
       "fullMessageRendering": "Use full message rendering (Legacy)",
       "fullMessageRenderingTooltip": "Renders all messages in the DOM without virtualization. May impact performance with large conversation histories.",
       "performanceMode": "Performance mode",
-      "performanceModeTooltip": "Batches rapid UI updates during streaming — assistant text, tool arguments, command output, and token counters — to significantly reduce CPU usage and lag on long AI responses and command runs. Turn off for the smoothest possible real-time updates."
+      "performanceModeTooltip": "Batches rapid UI updates during streaming — assistant text, tool arguments, command output, and token counters — to significantly reduce CPU usage and lag on long AI responses and command runs. Turn off for the smoothest possible real-time updates.",
+      "streamFlushInterval": "Stream flush interval (ms)",
+      "streamFlushIntervalTooltip": "How often streamed updates (assistant text, tool arguments, command output) are batched and applied to the UI. Higher values reduce CPU usage and websocket traffic at the cost of more noticeable streaming latency."
     },
     "promptField": {
       "agentModeOnly": "This command is only available in agent mode",
