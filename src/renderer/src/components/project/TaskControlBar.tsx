@@ -5,6 +5,7 @@ import { FaCog, FaInfoCircle } from 'react-icons/fa';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { MdOutlineFullscreen, MdPlaylistRemove, MdUndo } from 'react-icons/md';
 import { VscTerminal } from 'react-icons/vsc';
+import { LuEye, LuEyeOff } from 'react-icons/lu';
 import { clsx } from 'clsx';
 
 import { AgentSelector } from '@/components/AgentSelector';
@@ -15,6 +16,7 @@ import { WorkflowModelSetSelector } from '@/components/PromptField/WorkflowModel
 import { Button } from '@/components/common/Button';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
 import { useProjectSettings } from '@/contexts/ProjectSettingsContext';
+import { useSnapshotModeStore } from '@/stores/snapshotModeStore';
 
 type Props = {
   baseDir: string;
@@ -57,6 +59,8 @@ export const TaskControlBar = ({
 }: Props) => {
   const { t } = useTranslation();
   const { projectSettings, saveProjectSettings } = useProjectSettings();
+  const isSnapshotMode = useSnapshotModeStore((s) => s.snapshotTaskIds.has(task.id));
+  const toggleSnapshotMode = useSnapshotModeStore((s) => s.toggleSnapshotMode);
 
   // Only workflows enabled for this project are offered in the selector
   const enabledWorkflowIds = projectSettings?.enabledWorkflows ?? [];
@@ -116,6 +120,19 @@ export const TaskControlBar = ({
         <ExtensionComponentWrapper placement="task-input-toolbar-left" />
         <div className="ml-auto flex items-center gap-1">
           <ExtensionComponentWrapper placement="task-input-toolbar-right" />
+          <Tooltip content={isSnapshotMode ? t('taskControlBar.liveMode') : t('taskControlBar.snapshotMode')}>
+            <Button
+              variant="text"
+              color="tertiary"
+              onClick={() => toggleSnapshotMode(task.id)}
+              className={clsx(isSnapshotMode && 'bg-bg-secondary-light')}
+              size="xs"
+              aria-label={isSnapshotMode ? t('taskControlBar.liveMode') : t('taskControlBar.snapshotMode')}
+              title={isSnapshotMode ? t('taskControlBar.liveMode') : t('taskControlBar.snapshotMode')}
+            >
+              {isSnapshotMode ? <LuEyeOff className="w-3.5 h-3.5 text-text-secondary" /> : <LuEye className="w-3.5 h-3.5 text-text-secondary" />}
+            </Button>
+          </Tooltip>
           {toggleTerminal && (
             <Tooltip content={t(terminalVisible ? 'terminal.minimize' : 'terminal.addTerminal')}>
               <Button

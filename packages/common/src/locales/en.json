@@ -58,6 +58,10 @@
     "previousResult": "Previous result (SHIFT + F3)",
     "nextResult": "Next result (F3)"
   },
+  "taskControlBar": {
+    "snapshotMode": "Snapshot mode — poll every 5s instead of live streaming (reduces CPU usage)",
+    "liveMode": "Live mode — restore real-time streaming"
+  },
   "onboarding": {
     "title": "Welcome to AiderDesk",
     "description": "Transparent, steerable AI orchestration for professional software engineers. More than a GUI for Aider — a complete orchestration layer that helps you:",
