@@ -26,10 +26,10 @@ export const ModelProviderProvider: React.FC<{ children: ReactNode }> = ({ child
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [models, setModels] = useState<Model[]>([]);
   const [providers, setProviders] = useState<ProviderProfile[]>([]);
-  const [optimisticProviders, setOptimisticProviders] = useOptimistic(providers);
-  const [optimisticModels, setOptimisticModels] = useOptimistic(models);
+  const [optimisticProviders, setOptimisticProviders] = useOptimistic(providers ?? []);
+  const [optimisticModels, setOptimisticModels] = useOptimistic(models ?? []);
 
-  const sortedProviders = useMemo(() => [...optimisticProviders].sort((a, b) => a.id.localeCompare(b.id)), [optimisticProviders]);
+  const sortedProviders = useMemo(() => [...(optimisticProviders ?? [])].sort((a, b) => a.id.localeCompare(b.id)), [optimisticProviders]);
 
   const sortedModels = useMemo(
     () =>
@@ -63,7 +63,7 @@ export const ModelProviderProvider: React.FC<{ children: ReactNode }> = ({ child
     try {
       setProvidersLoading(true);
       const data = await api.getProviders();
-      setProviders(data);
+      setProviders(data ?? []);
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error('Failed to load providers:', error);
@@ -198,7 +198,7 @@ export const ModelProviderProvider: React.FC<{ children: ReactNode }> = ({ child
 
   useEffect(() => {
     return api.addProvidersUpdatedListener((data) => {
-      setProviders(data.providers);
+      setProviders(data.providers ?? []);
     });
   }, [api]);
 
