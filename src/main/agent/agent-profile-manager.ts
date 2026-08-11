@@ -450,11 +450,10 @@ export class AgentProfileManager {
       const loadedProfile: AgentProfile = JSON.parse(content);
 
       // Sanitize profile with defaults
+      // Loading a profile must never write back to disk.
+      // Otherwise a watcher reload can overwrite a newer profile
+      // while the Settings page is saving it.
       const profile = this.sanitizeAgentProfile(loadedProfile, dirName);
-      if (JSON.stringify(profile) !== JSON.stringify(loadedProfile)) {
-        logger.debug(`Saving sanitized agent profile to ${filePath}`);
-        await this.saveProfileToFile(profile, filePath);
-      }
 
       // Discover and load rule files for this profile
       profile.ruleFiles = await getAllRuleFilesForProfile(profile, dirName);
@@ -477,8 +476,10 @@ export class AgentProfileManager {
 
       const subagentSystemPrompt = await loadMdIfPresent('subagent.systemPrompt.md');
       if (subagentSystemPrompt !== undefined) {
-        profile.subagent = profile.subagent || {} as AgentProfile['subagent'];
-        profile.subagent.systemPrompt = subagentSystemPrompt;
+        profile.subagent = {
+          ...profile.subagent,
+          systemPrompt: subagentSystemPrompt,
+        };
       }
 
       logger.info(`Loaded agent profile: ${profile.name} with ${profile.ruleFiles.length} rule files`);
