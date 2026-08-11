@@ -226,3 +226,11 @@ code {
 .milkdown-prompt-editor .ProseMirror i {
   font-style: italic;
 }
+
+/* Snapshot mode: kill all animations and transitions to eliminate GPU compositing */
+body.snapshot-mode-active *,
+body.snapshot-mode-active *::before,
+body.snapshot-mode-active *::after {
+    animation: none !important;
+    transition: none !important;
+}

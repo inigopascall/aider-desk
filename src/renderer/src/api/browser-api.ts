@@ -289,6 +289,18 @@ export class BrowserApi implements ApplicationAPI {
     });
   }
 
+  disconnectSocket(): void {
+    if (this.socket.connected) {
+      this.socket.disconnect();
+    }
+  }
+
+  reconnectSocket(): void {
+    if (!this.socket.connected) {
+      this.socket.connect();
+    }
+  }
+
   private addListener<T extends keyof EventDataMap>(eventType: T, callback: EventCallback<EventDataMap[T]>, baseDir?: string, taskId?: string): () => void {
     void this.ensureSocketConnected();
     const eventListeners = this.listeners[eventType];
@@ -301,37 +313,31 @@ export class BrowserApi implements ApplicationAPI {
   }
 
   private async post<B, R>(endpoint: string, body: B): Promise<R> {
-    await this.ensureSocketConnected();
     const response = await this.apiClient.post<R>(endpoint, body);
     return response.data;
   }
 
   private async get<T>(endpoint: string, params?: Record<string, unknown>): Promise<T> {
-    await this.ensureSocketConnected();
     const response = await this.apiClient.get<T>(endpoint, { params });
     return response.data;
   }
 
   private async patch<B, R>(endpoint: string, body: B): Promise<R> {
-    await this.ensureSocketConnected();
     const response = await this.apiClient.patch<R>(endpoint, body);
     return response.data;
   }
 
   private async delete<T>(endpoint: string, params?: Record<string, unknown>): Promise<T> {
-    await this.ensureSocketConnected();
     const response = await this.apiClient.delete<T>(endpoint, { params });
     return response.data;
   }
 
   private async deleteWithBody<B, T>(endpoint: string, body: B): Promise<T> {
-    await this.ensureSocketConnected();
     const response = await this.apiClient.delete<T>(endpoint, { data: body });
     return response.data;
   }
 
   private async put<B, R>(endpoint: string, body: B, params?: Record<string, unknown>): Promise<R> {
-    await this.ensureSocketConnected();
     const response = await this.apiClient.put<R>(endpoint, body, { params });
     return response.data;
   }
