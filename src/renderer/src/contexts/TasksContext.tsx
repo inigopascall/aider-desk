@@ -15,7 +15,6 @@ import { useTaskMessageHandlers } from '@/hooks/useTaskMessageHandlers';
 import { useTaskLifecycleHandlers } from '@/hooks/useTaskLifecycleHandlers';
 import { useTaskActions } from '@/hooks/useTaskActions';
 import { useSnapshotModeStore } from '@/stores/snapshotModeStore';
-import { TaskSnapshotPoller } from '@/components/TaskSnapshotPoller';
 
 const TASK_INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const INACTIVITY_CHECK_INTERVAL_MS = 60 * 1000; // Check every minute
@@ -66,7 +65,8 @@ const TaskEventSubscriberWrapper = memo(function TaskEventSubscriberWrapper({
   }
 
   if (isSnapshotMode) {
-    return <TaskSnapshotPoller baseDir={baseDir} taskId={taskId} />;
+    // Mute the task: listeners are unmounted, UI freezes to save CPU.
+    return null;
   }
 
   return <TaskEventSubscriber baseDir={baseDir} taskId={taskId} state={state} />;
