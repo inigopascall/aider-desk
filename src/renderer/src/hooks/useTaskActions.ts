@@ -107,6 +107,28 @@ export const useTaskActions = ({ baseDir }: UseTaskActionsParams) => {
     [api, baseDir],
   );
 
+  const refreshTask = useCallback(
+    async (taskId: string) => {
+      try {
+        const { messages: stateMessages, files, todoItems, question, queuedPrompts } = await api.loadTask(baseDir, taskId);
+        const messages = convertTaskStateMessages(stateMessages);
+
+        setMessages(taskId, () => messages);
+        updateTaskState(taskId, {
+          loaded: true,
+          contextFiles: files,
+          todoItems: todoItems || [],
+          question,
+          queuedPrompts,
+        });
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to refresh task:', error);
+      }
+    },
+    [api, baseDir],
+  );
+
   return useMemo(
     () => ({
       loadTask,
@@ -118,7 +140,8 @@ export const useTaskActions = ({ baseDir }: UseTaskActionsParams) => {
       updateTaskAgentProfile,
       refreshAllFiles,
       refreshContextFiles,
+      refreshTask,
     }),
-    [loadTask, resetTask, restartAiderConnector, answerQuestion, interruptResponse, updateTaskAgentProfile, refreshAllFiles, refreshContextFiles],
+    [loadTask, resetTask, restartAiderConnector, answerQuestion, interruptResponse, updateTaskAgentProfile, refreshAllFiles, refreshContextFiles, refreshTask],
   );
 };

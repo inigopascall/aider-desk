@@ -115,8 +115,16 @@ export const TasksProvider = ({
     } else {
       api.reconnectSocket();
       document.body.classList.remove('snapshot-mode-active');
+
+      // When exiting snapshot mode, reload all loaded tasks silently to catch up on missed events.
+      const taskStateMap = useTaskStore.getState().taskStateMap;
+      for (const [taskId, state] of taskStateMap) {
+        if (state.loaded) {
+          void taskActions.refreshTask(taskId);
+        }
+      }
     }
-  }, [api, snapshotCount]);
+  }, [api, snapshotCount, taskActions]);
 
   const inactivityCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
