@@ -10,13 +10,11 @@ type Props = {
 };
 
 export const LoadingMessageBlock = ({ message, baseDir, taskId, onInterrupt }: Props) => {
-  const displayedText = message.content;
-
   const baseClasses = 'rounded-md p-3 max-w-full break-words whitespace-pre-wrap text-xs bg-bg-secondary border border-border-dark-light text-text-primary';
 
   return (
     <div className={`${baseClasses} text-text-secondary relative group flex items-center`}>
-      <span className="flex-grow">{displayedText || ' '}</span>
+      <span className="flex-grow animate-pulse">{message.content}</span>
       {message.actionIds && (
         <div className="flex flex-wrap justify-end">
           <MessageActions actionIds={message.actionIds} baseDir={baseDir} taskId={taskId} onInterrupt={onInterrupt} />
