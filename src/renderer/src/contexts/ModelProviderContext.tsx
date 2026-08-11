@@ -97,7 +97,8 @@ export const ModelProviderProvider: React.FC<{ children: ReactNode }> = ({ child
 
       startTransition(async () => {
         setOptimisticProviders(updated);
-        setProviders(await api.updateProviders(updated));
+        setProviders(updated);
+        void api.updateProviders(updated);
       });
     },
     [api, providers, setOptimisticProviders],
@@ -109,7 +110,8 @@ export const ModelProviderProvider: React.FC<{ children: ReactNode }> = ({ child
 
       startTransition(async () => {
         setOptimisticProviders(updated);
-        setProviders(await api.updateProviders(updated));
+        setProviders(updated);
+        void api.updateProviders(updated);
       });
     },
     [api, providers, setOptimisticProviders],
