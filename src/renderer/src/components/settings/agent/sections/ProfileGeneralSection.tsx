@@ -1,6 +1,7 @@
 import { AgentProfile, ContextCompactionType, SettingsData } from '@common/types';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FaTimes } from 'react-icons/fa';
+import { FaTimes, FaExclamationTriangle, FaSyncAlt, FaFileImport, FaFileExport } from 'react-icons/fa';
 import { clsx } from 'clsx';
 
 import { Slider } from '@/components/common/Slider';
@@ -10,6 +11,7 @@ import { IconButton } from '@/components/common/IconButton';
 import { InfoIcon } from '@/components/common/InfoIcon';
 import { Checkbox } from '@/components/common/Checkbox';
 import { Tooltip } from '@/components/ui/Tooltip';
+import { useApi } from '@/contexts/ApiContext';
 
 type Props = {
   profile: AgentProfile;
@@ -19,6 +21,60 @@ type Props = {
 
 export const ProfileGeneralSection = ({ profile, settings, onSettingChange }: Props) => {
   const { t } = useTranslation();
+  const api = useApi();
+  const [syncStatus, setSyncStatus] = useState<{ mdNewer: string[]; configNewer: string[]; inSync: boolean } | null>(null);
+
+  useEffect(() => {
+    if (!profile.id) {
+      setSyncStatus(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .getAgentProfileSyncStatus(profile.id)
+      .then((status) => {
+        if (!cancelled) setSyncStatus(status);
+      })
+      .catch(() => {
+        if (!cancelled) setSyncStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, profile.id]);
+
+  const handleAutoSync = async () => {
+    if (!profile.id) return;
+    try {
+      await api.autoSyncAgentProfile(profile.id);
+      const status = await api.getAgentProfileSyncStatus(profile.id);
+      setSyncStatus(status);
+    } catch (err) {
+      console.error('Auto sync failed:', err);
+    }
+  };
+
+  const handleSyncMdToConfig = async () => {
+    if (!profile.id) return;
+    try {
+      await api.syncAgentProfileMdToConfig(profile.id);
+      const status = await api.getAgentProfileSyncStatus(profile.id);
+      setSyncStatus(status);
+    } catch (err) {
+      console.error('Sync MD to config failed:', err);
+    }
+  };
+
+  const handleSyncConfigToMd = async () => {
+    if (!profile.id) return;
+    try {
+      await api.syncAgentProfileConfigToMd(profile.id);
+      const status = await api.getAgentProfileSyncStatus(profile.id);
+      setSyncStatus(status);
+    } catch (err) {
+      console.error('Sync config to MD failed:', err);
+    }
+  };
 
   const renderCompactionTypeButton = (type: ContextCompactionType, label: string, tooltip: string) => {
     const handleClick = () => {
@@ -305,6 +361,44 @@ export const ProfileGeneralSection = ({ profile, settings, onSettingChange }: Pr
             onChange={(checked) => onSettingChange('includeRepoMap', checked)}
           />
         </div>
+      </div>
+
+      {/* Configuration File Sync */}
+      <div className="border-t border-border-default-dark pt-4">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-sm font-medium text-text-primary">Configuration File Sync</span>
+          {syncStatus && !syncStatus.inSync && (
+            <span className="text-yellow-500" title={`Out of sync: ${syncStatus.mdNewer.length > 0 ? syncStatus.mdNewer.join(', ') + ' newer than config' : syncStatus.configNewer.join(', ') + ' older than config'}`}>
+              <FaExclamationTriangle className="w-3.5 h-3.5" />
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="text" size="sm" onClick={handleAutoSync} className="text-xs">
+            <FaSyncAlt className="mr-1.5 w-2.5 h-2.5" /> Auto Sync
+          </Button>
+          <Button variant="text" size="sm" onClick={handleSyncMdToConfig} className="text-xs">
+            <FaFileImport className="mr-1.5 w-2.5 h-2.5" /> Sync MD → Config
+          </Button>
+          <Button variant="text" size="sm" onClick={handleSyncConfigToMd} className="text-xs">
+            <FaFileExport className="mr-1.5 w-2.5 h-2.5" /> Sync Config → MD
+          </Button>
+        </div>
+        {syncStatus && !syncStatus.inSync && (
+          <div className="mt-2 text-xs text-text-muted-light">
+            {syncStatus.mdNewer.length > 0 && (
+              <div>⚠ Markdown files newer than config: {syncStatus.mdNewer.join(', ')}</div>
+            )}
+            {syncStatus.configNewer.length > 0 && (
+              <div>⚠ Config newer than markdown: {syncStatus.configNewer.join(', ')}</div>
+            )}
+          </div>
+        )}
+        {syncStatus && syncStatus.inSync && (
+          <div className="mt-2 text-xs text-text-muted-light">
+            All configuration files are in sync.
+          </div>
+        )}
       </div>
     </div>
   );

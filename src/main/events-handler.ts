@@ -1234,6 +1234,27 @@ export class EventsHandler {
     await this.agentProfileManager.updateAgentProfilesOrder(agentProfiles);
   }
 
+  async getAgentProfileSyncStatus(profileId: string): Promise<{ mdNewer: string[]; configNewer: string[]; inSync: boolean }> {
+    return await this.agentProfileManager.getSyncStatus(profileId);
+  }
+
+  async syncAgentProfileMdToConfig(profileId: string): Promise<AgentProfile[]> {
+    await this.agentProfileManager.syncMdToConfig(profileId);
+    return this.agentProfileManager.getAllProfiles();
+  }
+
+  async syncAgentProfileConfigToMd(profileId: string): Promise<void> {
+    await this.agentProfileManager.syncConfigToMd(profileId);
+  }
+
+  async autoSyncAgentProfile(profileId: string): Promise<{ direction: string; files: string[] }> {
+    return await this.agentProfileManager.autoSyncProfile(profileId);
+  }
+
+  async autoSyncAllAgentProfiles(): Promise<Array<{ profileId: string; profileName: string; result: { direction: string; files: string[] } | null }>> {
+    return await this.agentProfileManager.autoSyncAllProfiles();
+  }
+
   async listAllMemories(): Promise<MemoryEntry[]> {
     return await this.memoryManager.getAllMemories();
   }
