@@ -120,8 +120,8 @@ import { getProxyEnvVars } from '@/proxy-manager';
 import { CompactionLevel, extractSummary, smartCompactMessages } from '@/agent/compaction';
 
 export const INTERNAL_TASK_ID = 'internal';
-export const RESPONSE_CHUNK_FLUSH_INTERVAL_MS = 10;
-export const TOOL_INPUT_FLUSH_INTERVAL_MS = 50;
+export const RESPONSE_CHUNK_FLUSH_INTERVAL_MS = 150;
+export const TOOL_INPUT_FLUSH_INTERVAL_MS = 150;
 
 export const EMPTY_TASK_DATA: TaskData = {
   id: '',
