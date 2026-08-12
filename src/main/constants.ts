@@ -25,6 +25,7 @@ export const AIDER_DESK_DIR = process.env.AIDER_DESK_DIR || '.aider-desk';
 export const AIDER_DESK_HOME_DIR = process.env.AIDER_DESK_HOME_DIR || path.join(homedir(), AIDER_DESK_DIR);
 export const AIDER_DESK_TASKS_DIR = path.join(AIDER_DESK_DIR, 'tasks');
 export const AIDER_DESK_TODOS_FILE = 'todos.json';
+export const AIDER_DESK_WORKFLOW_EVENTS_FILE = 'workflow-events.jsonl';
 export const AIDER_DESK_RULES_DIR = 'rules';
 export const AIDER_DESK_PROJECT_RULES_DIR = path.join(AIDER_DESK_DIR, AIDER_DESK_RULES_DIR);
 export const AIDER_DESK_GLOBAL_RULES_DIR = path.join(AIDER_DESK_HOME_DIR, AIDER_DESK_RULES_DIR);

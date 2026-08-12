@@ -1,9 +1,9 @@
-import { TaskData, TokensInfoData } from './common';
+import { LogLevel, TaskData, TokensInfoData } from './common';
 import { PromptContext, UsageReportData, Group } from './context';
 
 export interface Message {
   id: string;
-  type: 'user' | 'response' | 'loading' | 'reflected-message' | 'command-output' | 'log' | 'tokens-info' | 'tool' | 'group' | 'task-info' | 'assistant-group';
+  type: 'user' | 'response' | 'loading' | 'reflected-message' | 'command-output' | 'log' | 'workflow-log' | 'tokens-info' | 'tool' | 'group' | 'task-info' | 'assistant-group';
   content: string;
   promptContext?: PromptContext;
   timestamp?: number;
@@ -32,6 +32,21 @@ export interface LogMessage extends Message {
   level: 'info' | 'warning' | 'error';
   actionIds?: string[];
 }
+
+export interface WorkflowLogMessage extends Message {
+  type: 'workflow-log';
+  level: LogLevel;
+  runId: string;
+  workflowId: string;
+  workflowName: string;
+  actionIds?: string[];
+  finished?: boolean;
+  sequence: number;
+}
+
+export const isWorkflowLogMessage = (message: Message): message is WorkflowLogMessage => {
+  return message.type === 'workflow-log';
+};
 
 export interface LoadingMessage extends Message {
   type: 'loading';

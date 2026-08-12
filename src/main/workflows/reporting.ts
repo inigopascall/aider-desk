@@ -120,6 +120,47 @@ export function formatResearchReceived(round: number, chars: number): string {
   );
 }
 
+export function formatWorkflowStart(workflowName: string, modelSetName: string, conversationChars: number): string {
+  return section(
+    `### 🚀 ${workflowName} starting`,
+    markdownTable(
+      ['Field', 'Value'],
+      ['left', 'left'],
+      [
+        ['Model set', modelSetName],
+        ['Prior conversation', `${conversationChars.toLocaleString()} characters`],
+      ],
+    ),
+  );
+}
+
+export function formatCheckpointReport(journey: Journey, workflowName: string, label: string): string {
+  const rows = [
+    ['Evidence rounds', String(journey.evidenceIterations)],
+    ['Research documents', String(journey.researchDocs)],
+    ['Context files', `+${journey.filesAdded.length} / −${journey.filesRemoved.length}`],
+    ['Edit passes', String(journey.passes.length)],
+    ['Files touched', String(Object.keys(journey.fileStats).length)],
+  ];
+
+  return [
+    `## ${workflowName} — ${label} Checkpoint`,
+    markdownTable(['Field', 'Value'], ['left', 'left'], rows),
+    journey.evidenceRows.length
+      ? section('### 🧾 Evidence', markdownTable(['Round', 'Verdict', 'Added', 'Removed', 'Research'], ['right', 'left', 'left', 'left', 'center'], evidenceRows(journey.evidenceRows)))
+      : null,
+    journey.contextChanges.length
+      ? section('### 📂 Context reconfiguration', markdownTable(['Stage', 'Change', 'Path'], ['left', 'center', 'left'], contextRows(journey.contextChanges)))
+      : null,
+    journey.passes.length
+      ? section('### ✍️ Edit passes', markdownTable(['Pass', 'Stage', 'Edits', 'Verdict'], ['right', 'left', 'right', 'left'], journey.passes.map((pass) => [String(pass.pass), pass.stage, String(pass.editCount), pass.verdict])))
+      : null,
+    journey.ambiguities ? section('### ❓ Ambiguities', journey.ambiguities) : null,
+  ]
+    .filter((block): block is string => !!block && block.trim().length > 0)
+    .join('\n\n');
+}
+
 export function formatPlanProduced(title: string): string {
   return section('### 🧭 Implementation Plan produced', `**${title}**`);
 }

@@ -4,6 +4,8 @@ import { formatConversation } from './conversation';
 import { createWorkflowDispatcher } from './dispatch';
 import { applyModelSetToProfile, describeModelSet, resolveActiveModelSet, validateModelSet } from './model-sets';
 import { WorkflowDefinition } from './types';
+import { createWorkflowLogger, createWorkflowRun } from './logging';
+import { formatWorkflowStart } from './reporting';
 
 import type { Task } from '@/task';
 
@@ -14,29 +16,27 @@ export async function runWorkflow(task: Task, workflow: WorkflowDefinition, prom
   const conversationMessages = await task.getContextMessages();
   const conversationText = formatConversation(conversationMessages);
 
+  const run = createWorkflowRun(workflow);
+  const log = createWorkflowLogger(task, run);
+  await task.addWorkflowInvocationMessage(prompt, run);
+
   // Resolve and validate the active model set.
   const modelSet = resolveActiveModelSet(task, workflow);
   const problems = validateModelSet(task, modelSet);
   if (problems.length > 0) {
-    task.addLogMessage(
-      'error',
+    await log.error(
       `Workflow '${workflow.name}': model set '${modelSet.name}' cannot be used:\n${problems.map((p) => `- ${p}`).join('\n')}`,
     );
     return;
   }
 
-  task.addLogMessage(
-    'info',
-    `Workflow '${workflow.name}' starting with model set: ${describeModelSet(modelSet)}${
-      conversationText ? ` (conversation context: ${conversationText.length} characters)` : ' (no prior conversation)'
-    }.`,
-  );
+  await log.info(formatWorkflowStart(workflow.name, describeModelSet(modelSet), conversationText.length));
 
   const dispatch = createWorkflowDispatcher(task, modelSet);
 
   // Imperative path
   if (workflow.run) {
-    await workflow.run({ task, initialPrompt: prompt, conversationText, conversationMessages, modelSet, dispatch });
+    await workflow.run({ task, initialPrompt: prompt, conversationText, conversationMessages, modelSet, dispatch, run, log });
     return;
   }
 
@@ -46,7 +46,7 @@ export async function runWorkflow(task: Task, workflow: WorkflowDefinition, prom
   const steps = workflow.steps ?? [];
 
   if (steps.length === 0) {
-    task.addLogMessage('error', `Workflow '${workflow.name}' has neither a run function nor any steps.`);
+    await log.error(`Workflow '${workflow.name}' has neither a run function nor any steps.`);
     return;
   }
 
@@ -55,7 +55,7 @@ export async function runWorkflow(task: Task, workflow: WorkflowDefinition, prom
     const found = findEnabledSubagent(workflowAgents, step.subagentId, { matchByName: true });
 
     if (!found) {
-      task.addLogMessage('error', `Workflow '${workflow.name}': workflow agent '${step.subagentId}' not found. Create it under Workflow Agents.`);
+      await log.error(`Workflow '${workflow.name}': workflow agent '${step.subagentId}' not found. Create it under Workflow Agents.`);
       return;
     }
 
@@ -63,15 +63,17 @@ export async function runWorkflow(task: Task, workflow: WorkflowDefinition, prom
     const stepPrompt = step.buildPrompt({ initialPrompt: prompt, previousOutput, stepIndex, conversationText });
     const label = step.description ?? `${workflow.name} — step ${stepIndex + 1}`;
 
+    await log.info(`### ▶️ ${label}`);
     const { status, outputText } = await task.dispatchSubagent(target, stepPrompt, label);
 
     if (status !== 'success') {
-      task.addLogMessage('warning', `Workflow '${workflow.name}' stopped at step ${stepIndex + 1} (status: ${status}).`);
+      await log.warning(`Workflow '${workflow.name}' stopped at step ${stepIndex + 1} (status: ${status}).`);
       return;
     }
 
     previousOutput = outputText;
   }
 
-  task.addLogMessage('info', `Workflow '${workflow.name}' completed.`);
+  await log.info(`Workflow '${workflow.name}' completed.`);
+  await log.summary(`## ${workflow.name} — Summary\n\n${previousOutput}`, 'final-summary');
 }

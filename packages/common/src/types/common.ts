@@ -338,6 +338,37 @@ export interface LogData {
   timestamp?: number;
 }
 
+/** Identifies a single execution of a workflow within a task. */
+export interface WorkflowRunInfo {
+  runId: string;
+  workflowId: string;
+  workflowName: string;
+}
+
+/**
+ * A durable workflow progress event. It is task history metadata and is never
+ * included in LLM context or connector conversation messages.
+ */
+export interface WorkflowLogData extends WorkflowRunInfo {
+  id: string;
+  baseDir: string;
+  taskId: string;
+  level: LogLevel;
+  message: string;
+  finished?: boolean;
+  promptContext?: PromptContext;
+  actionIds?: string[];
+  timestamp: number;
+  /** Monotonic per-task ordinal; authoritative ordering key. */
+  sequence: number;
+}
+
+export interface WorkflowLogsUpdatedData {
+  baseDir: string;
+  taskId: string;
+  logs: WorkflowLogData[];
+}
+
 // System log types (for application-wide logging)
 export type SystemLogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -1049,6 +1080,8 @@ export interface TaskStateData {
   question: QuestionData | null;
   queuedPrompts: QueuedPromptData[];
   workingMode: WorkingMode;
+  /** Persisted workflow progress events in ascending sequence order. */
+  workflowLogs: WorkflowLogData[];
 }
 
 export const WorkingModeSchema = z.enum(['local', 'worktree']);

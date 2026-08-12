@@ -962,6 +962,7 @@ export class EventsHandler {
         queuedPrompts: [],
         question: null,
         workingMode: 'local',
+        workflowLogs: [],
       }
     );
   }

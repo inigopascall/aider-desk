@@ -2,6 +2,7 @@ import { WORKFLOW_AGENT_ROLES } from '@common/types';
 
 import { WorkflowDefinition, WorkflowRunContext } from '../types';
 import {
+  emitCheckpoint,
   emitReport,
   emitInfo,
   getCumulativeDiff,
@@ -35,9 +36,12 @@ export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<voi
   try {
     const { git, baselineCommit } = await prepareRepository(task);
     const researchFindings = await runEvidenceStage(ctx, journey, report);
+    await emitCheckpoint(ctx, journey, 'Dev Pipeline + Review', 'Evidence');
     const { planText, unknownsResearch } = await runPlanningStage(ctx, journey, report, researchFindings);
+    await emitCheckpoint(ctx, journey, 'Dev Pipeline + Review', 'Plan');
     const edits = await runDecompositionStage(ctx, journey, report, planText, unknownsResearch, false);
     let editVerdict = await runEditLoop(ctx, journey, report, git, edits, 'dev-pipeline-review');
+    await emitCheckpoint(ctx, journey, 'Dev Pipeline + Review', 'Edit Loop');
 
     let finalStatus: 'aligned' | 'deficient' = editVerdict === 'ALIGNED' ? 'aligned' : 'deficient';
     report.abortStage = 'review';
@@ -69,7 +73,7 @@ export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<voi
           if (error instanceof WorkflowError) {
             const message = error instanceof Error ? error.message : String(error);
             journey.verifierFailures.push(message);
-            task.addLogMessage('warning', `Dev Pipeline + Review ▸ ${agent} failed (round ${round}): ${message}`);
+            await ctx.log.warning(`Dev Pipeline + Review ▸ ${agent} failed (round ${round}): ${message}`);
             return null;
           }
           throw error;
@@ -83,7 +87,7 @@ export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<voi
 
       if (!correctness && !quality) {
         journey.reviewTable.push({ round, correctness: 'FAILED', quality: 'FAILED', outcome: 'exhausted', rectificationEdits: 0 });
-        task.addLogMessage('warning', 'Dev Pipeline + Review ▸ both verifiers failed.');
+        await ctx.log.warning('Dev Pipeline + Review ▸ both verifiers failed.');
         break;
       }
 
@@ -100,7 +104,7 @@ export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<voi
       journey.reviewFindings.push({ round, findings: reviewer.findings });
       if (reviewer.considerations) journey.reviewerConsiderations = reviewer.considerations;
       emitInfo(
-        task,
+        ctx.log,
         formatReviewRound(
           round,
           correctness?.verdict ?? null,
@@ -142,24 +146,25 @@ export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<voi
         outcome: round === MAX_REVIEW_ROUNDS ? 'exhausted' : 'rectified',
         rectificationEdits: rectificationEdits.length,
       });
+      await emitCheckpoint(ctx, journey, 'Dev Pipeline + Review', `Review Round ${round}`);
     }
 
     if (journey.reviewTable.at(-1)?.outcome === 'exhausted') {
-      task.addLogMessage('warning', 'Dev Pipeline + Review ▸ max review rounds reached with rectifications still outstanding.');
+      await ctx.log.warning('Dev Pipeline + Review ▸ max review rounds reached with rectifications still outstanding.');
       finalStatus = 'deficient';
     }
 
     report.status = finalStatus;
-    await emitReport(task, journey, report, 'Dev Pipeline + Review');
+    await emitReport(ctx, journey, report, 'Dev Pipeline + Review');
   } catch (error) {
     if (error instanceof WorkflowCancelled) {
       journey.cancelled = true;
       report.status = 'cancelled';
-      task.addLogMessage('warning', 'Dev Pipeline + Review cancelled by user.');
+      await ctx.log.warning('Dev Pipeline + Review cancelled by user.');
     } else {
       report.status = 'aborted';
       journey.error = error instanceof Error ? error.message : String(error);
-      task.addLogMessage('error', `Dev Pipeline + Review aborted: ${journey.error}`);
+      await ctx.log.error(`Dev Pipeline + Review aborted: ${journey.error}`);
     }
     await emitReport(task, journey, report, 'Dev Pipeline + Review');
   }

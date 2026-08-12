@@ -85,6 +85,7 @@ export interface Journey {
 export interface ReportState {
   status: 'aligned' | 'deficient' | 'aborted' | 'cancelled';
   abortStage?: string;
+  reportEmitted?: boolean;
 }
 
 export function createJourney(modelSet: WorkflowModelSet | undefined, conversationText: string): Journey {

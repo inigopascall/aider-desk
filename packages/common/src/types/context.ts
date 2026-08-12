@@ -129,9 +129,18 @@ export interface UsageReportData {
   agentTotalCost?: number;
 }
 
+export interface WorkflowMessageMeta {
+  runId: string;
+  workflowId: string;
+  workflowName: string;
+  kind: 'invocation' | 'checkpoint' | 'final-summary';
+  label?: string;
+}
+
 export interface PromptContext {
   id: string;
   group?: Group;
+  workflow?: WorkflowMessageMeta;
 }
 
 export enum MessageRole {

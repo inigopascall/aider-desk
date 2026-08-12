@@ -43,6 +43,8 @@ import {
   ExtensionUIRefreshData,
   ModalOverlayUrlData,
   ContextInfoData,
+  WorkflowLogData,
+  WorkflowLogsUpdatedData,
 } from '@common/types';
 
 import type { WindowManager } from '@/window-manager';
@@ -358,6 +360,16 @@ export class EventManager {
   sendLog(data: LogData): void {
     this.sendToWindows('log', data);
     this.broadcastToEventConnectors('log', data);
+  }
+
+  sendWorkflowLog(data: WorkflowLogData): void {
+    this.sendToWindows('workflow-log', data);
+    this.broadcastToEventConnectors('workflow-log', data);
+  }
+
+  sendWorkflowLogsUpdated(data: WorkflowLogsUpdatedData): void {
+    this.sendToWindows('workflow-logs-updated', data);
+    this.broadcastToEventConnectors('workflow-logs-updated', data);
   }
 
   // System log events (application-wide logs)

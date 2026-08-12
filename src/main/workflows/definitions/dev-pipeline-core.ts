@@ -6,7 +6,7 @@ import { fileExists } from '@common/utils';
 
 import { Task } from '@/task';
 import { WorkflowCancelled, WorkflowError } from '../dispatch';
-import { WorkflowRunContext } from '../types';
+import { WorkflowLogger, WorkflowRunContext } from '../types';
 import {
   createJourney,
   type EditPassRecord,
@@ -25,6 +25,7 @@ import {
   formatEvidenceInsufficient,
   formatEvidenceSufficient,
   formatJourneyReport,
+  formatCheckpointReport,
   formatPlanProduced,
   formatPlanUnknowns,
   formatResearchReceived,
@@ -112,8 +113,12 @@ export async function getCumulativeDiff(git: SimpleGit, fromCommit: string, maxC
 }
 
 /** Single funnel for every workflow progress message. Keeps the channel and level consistent. */
-export function emitInfo(task: Task, message: string): void {
-  task.addLogMessage('info', message);
+export async function emitInfo(log: WorkflowLogger, message: string): Promise<void> {
+  await log.info(message);
+}
+
+export async function emitCheckpoint(ctx: WorkflowRunContext, journey: Journey, workflowName: string, label: string): Promise<void> {
+  await ctx.log.summary(formatCheckpointReport(journey, workflowName, label), 'checkpoint', label);
 }
 
 export async function reconfigureContext(
@@ -157,7 +162,7 @@ export async function reconfigureContext(
 
   if (added.length > 0 || removed.length > 0) {
     journey.contextChanges.push({ label, added, removed, skipped });
-    emitInfo(task, formatContextChange(label, added, removed, skipped));
+    await emitInfo(ctx.log, formatContextChange(label, added, removed, skipped));
   }
 
   return { added, removed, skipped };
@@ -260,12 +265,12 @@ export async function runEvidenceStage(ctx: WorkflowRunContext, journey: Journey
         );
         row.removed = change.removed;
       }
-      emitInfo(ctx.task, formatEvidenceSufficient());
+      await emitInfo(ctx.log, formatEvidenceSufficient());
       journey.evidenceRows.push(row);
       break;
     }
 
-    emitInfo(ctx.task, formatEvidenceInsufficient(iteration, MAX_EVIDENCE_ITERATIONS, !!response.researchBrief));
+    await emitInfo(ctx.log, formatEvidenceInsufficient(iteration, MAX_EVIDENCE_ITERATIONS, !!response.researchBrief));
 
     const investigatorPrompt = buildPrompt([
       { title: 'CONVERSATION HISTORY', body: ctx.conversationText || 'No prior conversation.' },
@@ -304,7 +309,7 @@ export async function runEvidenceStage(ctx: WorkflowRunContext, journey: Journey
       findings.push(research);
       journey.researchDocs++;
       row.research = true;
-      emitInfo(ctx.task, formatResearchReceived(iteration, research.length));
+      await emitInfo(ctx.log, formatResearchReceived(iteration, research.length));
     }
 
     journey.evidenceRows.push(row);
@@ -321,7 +326,7 @@ export async function resolvePlanUnknowns(
 ): Promise<string | null> {
   const { researchUnknowns, codebaseUnknowns } = parsePlanUnknowns(planText);
   if (researchUnknowns || codebaseUnknowns) {
-    emitInfo(ctx.task, formatPlanUnknowns(label, researchUnknowns, codebaseUnknowns));
+    await emitInfo(ctx.log, formatPlanUnknowns(label, researchUnknowns, codebaseUnknowns));
   }
   const researchPromise = researchUnknowns
     ? ctx.dispatch.agent(
@@ -379,7 +384,7 @@ export async function runPlanningStage(
     'Producing Implementation Plan',
   );
   journey.planTitle = parsePlanUnknowns(planText).title;
-  emitInfo(ctx.task, formatPlanProduced(journey.planTitle));
+  await emitInfo(ctx.log, formatPlanProduced(journey.planTitle));
   return { planText, unknownsResearch: await resolvePlanUnknowns(ctx, journey, planText, 'plan') };
 }
 
@@ -423,8 +428,8 @@ export async function runDecompositionStage(
   if (result.ambiguities) {
     journey.ambiguities = journey.ambiguities ? `${journey.ambiguities}\n\n---\n\n${result.ambiguities}` : result.ambiguities;
   }
-  emitInfo(
-    ctx.task,
+  await emitInfo(
+    ctx.log,
     formatEditTargets(label, result.edits.map((edit) => ({ path: edit.path, type: edit.type })), result.ambiguities),
   );
   return result.edits;
@@ -481,8 +486,8 @@ export async function runEditLoop(
       journey.fileStats[row.path] = entry;
     }
 
-    emitInfo(ctx.task, formatEditSummary(commitLabel, pass, rows, gate.passed, gate.reason));
-    if (!gate.passed) emitInfo(ctx.task, formatDeficiencyNotice(gate.reason));
+    await emitInfo(ctx.log, formatEditSummary(commitLabel, pass, rows, gate.passed, gate.reason));
+    if (!gate.passed) await emitInfo(ctx.log, formatDeficiencyNotice(gate.reason));
 
     const verificationResults: EditVerificationResult[] = [];
     for (const edit of currentEdits) {
@@ -498,7 +503,7 @@ export async function runEditLoop(
     }
 
     const verificationMessage = formatVerificationFlags(verificationResults);
-    if (verificationMessage) emitInfo(ctx.task, verificationMessage);
+    if (verificationMessage) await emitInfo(ctx.log, verificationMessage);
 
     let diff = await git.raw(['diff', 'HEAD~1', 'HEAD']);
     if (diff.length > MAX_DIFF_CHARS) diff = diff.slice(0, MAX_DIFF_CHARS) + '\n…[diff truncated]';
@@ -545,7 +550,7 @@ export async function runEditLoop(
     let nextEdits: FileEditInstruction[] | null = null;
     if (confirmation.verdict === 'DEFICIENT') nextEdits = confirmation.edits;
 
-    emitInfo(ctx.task, formatConfirmerVerdict(pass, confirmation.verdict, nextEdits?.length ?? 0));
+    await emitInfo(ctx.log, formatConfirmerVerdict(pass, confirmation.verdict, nextEdits?.length ?? 0));
 
     const record: EditPassRecord = {
       pass,
@@ -571,6 +576,17 @@ export async function runEditLoop(
   return verdict;
 }
 
-export async function emitReport(task: Task, journey: Journey, report: ReportState, workflowName: string): Promise<void> {
-  emitInfo(task, formatJourneyReport(journey, report, workflowName));
+export async function emitReport(
+  ctx: WorkflowRunContext,
+  journey: Journey,
+  report: ReportState,
+  workflowName: string,
+): Promise<void> {
+  if (report.reportEmitted) {
+    return;
+  }
+  report.reportEmitted = true;
+  const text = formatJourneyReport(journey, report, workflowName);
+  await emitInfo(ctx.log, `### 🏁 ${workflowName} finished — journey report added to the conversation.`);
+  await ctx.log.summary(text, 'final-summary');
 }

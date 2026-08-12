@@ -1,4 +1,4 @@
-import type { ContextMessage, WorkflowModelSet } from '@common/types';
+import type { ContextMessage, WorkflowModelSet, WorkflowRunInfo } from '@common/types';
 import type { Task } from '@/task';
 
 export interface WorkflowStepContext {
@@ -29,6 +29,14 @@ export interface WorkflowStep {
   buildPrompt: (ctx: WorkflowStepContext) => string;
 }
 
+export interface WorkflowLogger {
+  readonly run: WorkflowRunInfo;
+  info(message: string): Promise<void>;
+  warning(message: string): Promise<void>;
+  error(message: string): Promise<void>;
+  summary(content: string, kind: 'checkpoint' | 'final-summary', label?: string): Promise<void>;
+}
+
 export interface WorkflowRunContext {
   task: Task;
   initialPrompt: string;
@@ -36,6 +44,8 @@ export interface WorkflowRunContext {
   conversationMessages: ContextMessage[];
   modelSet?: WorkflowModelSet;
   dispatch: WorkflowDispatcher;
+  run: WorkflowRunInfo;
+  log: WorkflowLogger;
 }
 
 export interface WorkflowDefinition {

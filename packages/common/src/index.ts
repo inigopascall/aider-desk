@@ -1,5 +1,6 @@
 export * from './types';
 export * from './api';
+export * from './workflow-api';
 export * from './agent';
 export * from './tools';
 export * from './utils';
