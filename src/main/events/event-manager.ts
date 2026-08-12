@@ -53,15 +53,163 @@ export interface EventsConnectorConfig {
   eventTypes?: string[];
   baseDirs?: string[];
   readonly?: boolean;
+  streamMode?: 'live' | 'coalesced';
+  streamFlushIntervalMs?: number;
+}
+
+/**
+ * A pending event held in the coalescing buffer before being flushed to a connector.
+ */
+interface PendingEvent {
+  type: string;
+  data: unknown;
+  taskId?: string;
 }
 
 export interface EventsConnector extends EventsConnectorConfig {
   socket: Socket;
+  /** Buffered events awaiting flush, keyed by `${eventType}::${coalesceKey}`. */
+  pending: Map<string, PendingEvent>;
+  /** Timer for the next scheduled flush, or null if none scheduled. */
+  flushTimer: NodeJS.Timeout | null;
+  /** Resolved stream mode (defaults to 'coalesced' if not specified). */
+  resolvedStreamMode: 'live' | 'coalesced';
+  /** Resolved flush interval in milliseconds, clamped to [MIN, MAX]. */
+  resolvedFlushIntervalMs: number;
 }
 
 type EventListener = (event: { type: string; data: unknown }) => void;
 
 const EVENT_BUFFER_SIZE = 200;
+
+/** Default interval at which coalesced events are flushed to each connector. */
+const DEFAULT_STREAM_FLUSH_INTERVAL_MS = 2500;
+/** Minimum allowed flush interval (prevents excessive timer churn). */
+const MIN_STREAM_FLUSH_INTERVAL_MS = 50;
+/** Maximum allowed flush interval (prevents stale data). */
+const MAX_STREAM_FLUSH_INTERVAL_MS = 30_000;
+/** If a single coalesced entry exceeds this character count, flush immediately. */
+const MAX_COALESCED_ENTRY_CHARS = 262_144;
+
+// ── Coalescing strategy helpers ──────────────────────────────────────────────
+
+/** Builds a composite key from baseDir + taskId for grouping events by task. */
+const taskKey = (d: any): string => `${d?.baseDir ?? ''}|${d?.taskId ?? ''}`;
+
+/** Merge function that simply replaces the previous value with the next. */
+const latest = (_prev: any, next: any) => next;
+
+/** Extracts the taskId from an event payload, checking both `taskId` and `id`. */
+const getEventTaskId = (d: any): string | undefined =>
+  d && typeof d === 'object' ? (d.taskId ?? d.id) : undefined;
+
+/**
+ * Merges two response-chunk events by concatenating their `chunk` and `reasoning`
+ * fields. Used when multiple text deltas for the same message are coalesced.
+ */
+const mergeResponseChunk = (prev: any, next: any) => ({
+  ...next,
+  chunk: (prev.chunk ?? '') + (next.chunk ?? ''),
+  reasoning:
+    prev.reasoning || next.reasoning
+      ? (prev.reasoning ?? '') + (next.reasoning ?? '')
+      : undefined,
+});
+
+/**
+ * Merges two command-output events by concatenating `output` and preserving
+ * the earliest `timestamp`.
+ */
+const mergeCommandOutput = (prev: any, next: any) => ({
+  ...next,
+  output: (prev.output ?? '') + (next.output ?? ''),
+  timestamp: prev.timestamp ?? next.timestamp,
+});
+
+/**
+ * Merges two tool events, preferring `next` for most fields but preserving
+ * the earliest `timestamp` and falling back to `prev` for optional fields.
+ */
+const mergeTool = (prev: any, next: any) => ({
+  ...prev,
+  ...next,
+  args: next.args ?? prev.args,
+  response: next.response ?? prev.response,
+  usageReport: next.usageReport ?? prev.usageReport,
+  promptContext: next.promptContext ?? prev.promptContext,
+  finished: next.finished ?? prev.finished,
+  timestamp: prev.timestamp ?? next.timestamp,
+});
+
+/**
+ * Strategy table: for each coalesceable event type, a function that computes
+ * a grouping key from the event data (or returns null for "send immediately"),
+ * and a merge function that combines a previous and next event with the same key.
+ *
+ * Events not listed here are always sent immediately (no coalescing).
+ */
+interface CoalesceStrategy {
+  key: (d: any) => string | null;
+  merge: (prev: any, next: any) => any;
+}
+
+const COALESCE_STRATEGIES: Record<string, CoalesceStrategy> = {
+  'response-chunk': {
+    key: (d) => (d.reflectedMessage ? null : `${taskKey(d)}|${d.messageId}`),
+    merge: mergeResponseChunk,
+  },
+  'tool-input-chunk': {
+    key: (d) => `${taskKey(d)}|${d.toolCallId}`,
+    merge: latest,
+  },
+  tool: {
+    key: (d) => `${taskKey(d)}|${d.id}`,
+    merge: mergeTool,
+  },
+  'command-output': {
+    key: (d) => `${taskKey(d)}|${d.command}`,
+    merge: mergeCommandOutput,
+  },
+  log: {
+    key: (d) =>
+      d.level === 'loading' && !d.finished
+        ? `${taskKey(d)}|${d.promptContext?.group?.id ?? ''}`
+        : null,
+    merge: latest,
+  },
+  'update-tokens-info': {
+    key: (d) => taskKey(d),
+    merge: latest,
+  },
+  'update-autocompletion': {
+    key: (d) => taskKey(d),
+    merge: latest,
+  },
+  'context-files-updated': {
+    key: (d) => taskKey(d),
+    merge: latest,
+  },
+  'updated-files-updated': {
+    key: (d) => taskKey(d),
+    merge: latest,
+  },
+  'skills-updated': {
+    key: (d) => taskKey(d),
+    merge: latest,
+  },
+  'worktree-integration-status-updated': {
+    key: (d) => taskKey(d),
+    merge: latest,
+  },
+  'queued-prompts-updated': {
+    key: (d) => taskKey(d),
+    merge: latest,
+  },
+  'task-updated': {
+    key: (d) => `${d.baseDir}|${d.id}`,
+    merge: latest,
+  },
+};
 
 export class EventManager {
   private eventsConnectors: EventsConnector[] = [];
@@ -398,23 +546,53 @@ export class EventManager {
   }
 
   subscribe(socket: Socket, config: EventsConnectorConfig): void {
+    // Clear any existing connector's flush timer for the same socket (re-subscribe)
+    for (const existing of this.eventsConnectors) {
+      if (existing.socket.id === socket.id && existing.flushTimer) {
+        clearTimeout(existing.flushTimer);
+        existing.flushTimer = null;
+      }
+    }
     this.eventsConnectors = this.eventsConnectors.filter((connector) => connector.socket.id !== socket.id);
+
+    const resolvedStreamMode = config.streamMode ?? 'coalesced';
+    const resolvedFlushIntervalMs = Math.min(
+      Math.max(config.streamFlushIntervalMs ?? DEFAULT_STREAM_FLUSH_INTERVAL_MS, MIN_STREAM_FLUSH_INTERVAL_MS),
+      MAX_STREAM_FLUSH_INTERVAL_MS,
+    );
+
     logger.info('Subscribing to events', {
       eventTypes: config.eventTypes,
       baseDirs: config.baseDirs,
       readonly: config.readonly,
+      streamMode: resolvedStreamMode,
+      streamFlushIntervalMs: resolvedFlushIntervalMs,
     });
     this.eventsConnectors.push({
       socket,
       eventTypes: config.eventTypes,
       baseDirs: config.baseDirs,
       readonly: config.readonly,
+      pending: new Map(),
+      flushTimer: null,
+      resolvedStreamMode,
+      resolvedFlushIntervalMs,
     });
   }
 
   unsubscribe(socket: Socket, log = true): void {
     const before = this.eventsConnectors.length;
-    this.eventsConnectors = this.eventsConnectors.filter((connector) => connector.socket.id !== socket.id);
+    // Clear flush timers and pending maps for removed connectors
+    this.eventsConnectors = this.eventsConnectors.filter((connector) => {
+      if (connector.socket.id === socket.id) {
+        if (connector.flushTimer) {
+          clearTimeout(connector.flushTimer);
+        }
+        connector.pending.clear();
+        return false;
+      }
+      return true;
+    });
     if (log) {
       logger.info('Unsubscribed from events', {
         before,
@@ -470,18 +648,7 @@ export class EventManager {
         return;
       }
 
-      try {
-        if (log) {
-          logger.debug('Broadcasting event to connector:', {
-            eventType,
-            baseDir: eventProjectDir,
-          });
-        }
-        connector.socket.emit('event', { type: eventType, data });
-      } catch {
-        // Remove disconnected sockets
-        this.unsubscribe(connector.socket, log);
-      }
+      this.dispatchToConnector(connector, eventType, data, log);
     });
 
     // Notify SSE listeners
@@ -500,6 +667,120 @@ export class EventManager {
     this.eventBuffer.push(event);
     if (this.eventBuffer.length > EVENT_BUFFER_SIZE) {
       this.eventBuffer.shift();
+    }
+  }
+
+  /**
+   * Routes an event to a single connector, either immediately (live mode or
+   * non-coalesceable events) or by buffering it in the connector's pending map
+   * for a scheduled flush.
+   */
+  private dispatchToConnector(connector: EventsConnector, eventType: string, data: unknown, log: boolean): void {
+    // Live mode: emit immediately
+    if (connector.resolvedStreamMode !== 'coalesced') {
+      this.emitToConnector(connector, eventType, data, log);
+      return;
+    }
+
+    // Look up coalescing strategy for this event type
+    const strategy = COALESCE_STRATEGIES[eventType];
+    const key = strategy ? strategy.key(data) : null;
+
+    // No strategy or key is null → send immediately, but first flush any
+    // pending events for the same task to preserve ordering
+    if (!strategy || key === null) {
+      const taskId = getEventTaskId(data);
+      if (taskId) {
+        this.flushConnectorForTask(connector, taskId);
+      }
+      this.emitToConnector(connector, eventType, data, log);
+      return;
+    }
+
+    // Buffer the event in the pending map
+    const mapKey = `${eventType}::${key}`;
+    const existing = connector.pending.get(mapKey);
+    if (existing) {
+      existing.data = strategy.merge(existing.data, data);
+      // Re-set to preserve insertion order (Map.set on existing key does not change order)
+      connector.pending.set(mapKey, existing);
+    } else {
+      connector.pending.set(mapKey, { type: eventType, data, taskId: getEventTaskId(data) });
+    }
+
+    // If the merged entry exceeds the size limit, flush immediately
+    const mergedEntry = connector.pending.get(mapKey)!;
+    const mergedData = mergedEntry.data as any;
+    const entryLength =
+      (typeof mergedData?.output === 'string' ? mergedData.output.length : 0) ||
+      (typeof mergedData?.chunk === 'string' ? mergedData.chunk.length : 0);
+    if (entryLength > MAX_COALESCED_ENTRY_CHARS) {
+      this.flushConnector(connector);
+      return;
+    }
+
+    // Otherwise, schedule a flush if one isn't already pending
+    this.scheduleFlush(connector);
+  }
+
+  /**
+   * Emits a single event to a connector's socket, handling disconnection errors.
+   */
+  private emitToConnector(connector: EventsConnector, type: string, data: unknown, log: boolean): void {
+    try {
+      if (log) {
+        logger.debug('Broadcasting event to connector:', {
+          eventType: type,
+        });
+      }
+      connector.socket.emit('event', { type, data });
+    } catch {
+      // Remove disconnected sockets
+      this.unsubscribe(connector.socket, log);
+    }
+  }
+
+  /**
+   * Schedules a deferred flush for a connector if no timer is already running.
+   */
+  private scheduleFlush(connector: EventsConnector): void {
+    if (connector.flushTimer) {
+      return;
+    }
+    connector.flushTimer = setTimeout(() => {
+      this.flushConnector(connector);
+    }, connector.resolvedFlushIntervalMs);
+  }
+
+  /**
+   * Flushes all pending events for a connector, emitting them in insertion order.
+   */
+  private flushConnector(connector: EventsConnector): void {
+    if (connector.flushTimer) {
+      clearTimeout(connector.flushTimer);
+      connector.flushTimer = null;
+    }
+    for (const entry of connector.pending.values()) {
+      this.emitToConnector(connector, entry.type, entry.data, true);
+    }
+    connector.pending.clear();
+  }
+
+  /**
+   * Flushes only the pending events belonging to a specific task, preserving
+   * insertion order. Used before sending an immediate (non-coalesceable) event
+   * to ensure the client sees buffered data before the new event arrives.
+   */
+  private flushConnectorForTask(connector: EventsConnector, taskId: string): void {
+    for (const [mapKey, entry] of connector.pending) {
+      if (entry.taskId === taskId) {
+        this.emitToConnector(connector, entry.type, entry.data, true);
+        connector.pending.delete(mapKey);
+      }
+    }
+    if (connector.pending.size === 0 && connector.flushTimer) {
+      clearTimeout(connector.flushTimer);
+      connector.flushTimer = null;
     }
   }
 

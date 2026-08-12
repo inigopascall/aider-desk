@@ -1058,7 +1058,9 @@ export class Agent {
           let currentMessageHasReasoning = false;
           try {
             for await (const chunk of result.stream) {
-              logger.debug('Chunk:', { chunk, responseMessageIndex });
+              if (chunk.type !== 'text-delta' && chunk.type !== 'reasoning-delta' && chunk.type !== 'tool-input-delta') {
+                logger.debug('Chunk:', { chunk, responseMessageIndex });
+              }
 
               const responseMessageId = responseMessageIndex > 0 ? `${currentResponseId}-${responseMessageIndex}` : currentResponseId;
               if (chunk.type === 'text-start') {

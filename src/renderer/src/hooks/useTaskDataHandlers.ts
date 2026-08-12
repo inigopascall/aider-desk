@@ -15,32 +15,12 @@ import { useProjectStore } from '@/stores/projectStore';
 import { setTaskAllFiles, setTaskAutocompletionWords } from '@/stores/taskFilesStore';
 import { updateTaskState, setQuestion, setTokensInfo, setAiderModelsData, setQueuedPrompts, touchTaskActivity } from '@/stores/taskStore';
 import { getTaskDir } from '@/utils/task-utils';
-import { useSettingsStore } from '@/stores/settingsStore';
 
 const getTaskDirById = (baseDir: string, taskId: string) => {
   const tasks = useProjectStore.getState().projectTasksMap.get(baseDir) || [];
   const task = tasks.find((t) => t.id === taskId);
   return task ? getTaskDir(task) : baseDir;
 };
-
-const TOKENS_INFO_FLUSH_INTERVAL_MS = 500;
-const tokensInfoLatest = new Map<string, TokensInfoData>();
-const tokensInfoTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
-/**
- * Flushes the latest buffered tokens-info update for a task.
- * Called after the leading-edge flush to handle a continuing burst.
- */
-function flushTokensInfo(taskId: string): void {
-  tokensInfoTimers.delete(taskId);
-  const latest = tokensInfoLatest.get(taskId);
-  if (latest !== undefined) {
-    tokensInfoLatest.delete(taskId);
-    setTokensInfo(taskId, latest);
-    // keep throttling a continuing burst
-    tokensInfoTimers.set(taskId, setTimeout(() => flushTokensInfo(taskId), TOKENS_INFO_FLUSH_INTERVAL_MS));
-  }
-}
 
 export const useTaskDataHandlers = (baseDir: string, taskId: string) => {
   const api = useApi();
@@ -58,23 +38,11 @@ export const useTaskDataHandlers = (baseDir: string, taskId: string) => {
     [baseDir, taskId],
   );
 
-  const performanceMode = useSettingsStore((s) => s.settings?.performanceMode ?? true);
-
   const handleTokensInfo = useCallback(
     (data: TokensInfoData) => {
-      if (!performanceMode) {
-        setTokensInfo(taskId, data);
-        return;
-      }
-      tokensInfoLatest.set(taskId, data);
-      if (!tokensInfoTimers.has(taskId)) {
-        // leading edge: apply immediately
-        tokensInfoLatest.delete(taskId);
-        setTokensInfo(taskId, data);
-        tokensInfoTimers.set(taskId, setTimeout(() => flushTokensInfo(taskId), TOKENS_INFO_FLUSH_INTERVAL_MS));
-      }
+      setTokensInfo(taskId, data);
     },
-    [taskId, performanceMode],
+    [taskId],
   );
 
   const handleQuestion = useCallback(
@@ -138,14 +106,6 @@ export const useTaskDataHandlers = (baseDir: string, taskId: string) => {
       removeUpdateAiderModels();
       removeQueuedPrompts();
       removeContextInfoUpdated();
-
-      // Clear the tokens-info throttle timer and buffer
-      const timer = tokensInfoTimers.get(taskId);
-      if (timer) {
-        clearTimeout(timer);
-        tokensInfoTimers.delete(taskId);
-      }
-      tokensInfoLatest.delete(taskId);
     };
   }, [
     api,

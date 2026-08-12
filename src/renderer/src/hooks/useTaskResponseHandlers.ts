@@ -6,31 +6,17 @@ import type { ResponseChunkData, ResponseCompletedData, Message, ReflectedMessag
 
 import { useApi } from '@/contexts/ApiContext';
 import { setMessages, touchTaskActivity } from '@/stores/taskStore';
-import { useSettingsStore } from '@/stores/settingsStore';
-import { flushCommandOutput } from './useTaskCommandHandlers';
-
-const STREAM_FLUSH_INTERVAL_MS = 2500;
 
 const processingResponseMessageMap = new Map<string, ResponseMessage>();
-const responseChunkBuffers = new Map<string, ResponseChunkData[]>();
-const responseChunkFlushTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export const cleanupProcessingResponseMessage = (taskId: string) => {
   processingResponseMessageMap.delete(taskId);
-  // Clear any pending flush timer
-  const timer = responseChunkFlushTimers.get(taskId);
-  if (timer) {
-    clearTimeout(timer);
-    responseChunkFlushTimers.delete(taskId);
-  }
-  // Clear any buffered chunks
-  responseChunkBuffers.delete(taskId);
 };
 
 /**
  * Applies a single response chunk to the task's messages.
- * This is the core logic extracted from handleResponseChunk to support both
- * immediate and buffered application of chunks.
+ * The server-side coalescing engine now handles batching, so each chunk
+ * received by the renderer is applied directly.
  */
 function applyResponseChunk(taskId: string, { messageId, chunk, reasoning, reflectedMessage, promptContext }: ResponseChunkData): void {
   touchTaskActivity(taskId);
@@ -104,74 +90,18 @@ function applyResponseChunk(taskId: string, { messageId, chunk, reasoning, refle
   }
 }
 
-/**
- * Buffers a response chunk for later flushing.
- * If no flush timer exists for this task, schedules one.
- */
-function bufferResponseChunk(taskId: string, data: ResponseChunkData): void {
-  let buffer = responseChunkBuffers.get(taskId);
-  if (!buffer) {
-    buffer = [];
-    responseChunkBuffers.set(taskId, buffer);
-  }
-  buffer.push(data);
-
-  // Schedule a flush if one isn't already scheduled
-  if (!responseChunkFlushTimers.has(taskId)) {
-    const flushInterval = useSettingsStore.getState().settings?.streamFlushIntervalMs ?? STREAM_FLUSH_INTERVAL_MS;
-    const timer = setTimeout(() => flushResponseChunks(taskId), flushInterval);
-    responseChunkFlushTimers.set(taskId, timer);
-  }
-}
-
-/**
- * Flushes all buffered response chunks for a task.
- * Clears the buffer and timer, then applies each chunk in order.
- */
-export function flushResponseChunks(taskId: string): void {
-  const timer = responseChunkFlushTimers.get(taskId);
-  if (timer) {
-    clearTimeout(timer);
-    responseChunkFlushTimers.delete(taskId);
-  }
-
-  const buffer = responseChunkBuffers.get(taskId);
-  if (buffer && buffer.length > 0) {
-    responseChunkBuffers.delete(taskId);
-    for (const data of buffer) {
-      applyResponseChunk(taskId, data);
-    }
-  }
-}
-
 export const useTaskResponseHandlers = (baseDir: string, taskId: string) => {
   const api = useApi();
-  const performanceMode = useSettingsStore((s) => s.settings?.performanceMode ?? true);
 
   const handleResponseChunk = useCallback(
-    ({ messageId, chunk, reasoning, reflectedMessage, promptContext }: ResponseChunkData) => {
-      flushCommandOutput(taskId);
-      const processing = processingResponseMessageMap.get(taskId);
-      // Buffer only if: throttling is enabled AND this is an append (not a new message or reflected message)
-      const isAppend = performanceMode && !reflectedMessage && processing?.id === messageId;
-
-      if (isAppend) {
-        bufferResponseChunk(taskId, { messageId, chunk, reasoning, reflectedMessage, promptContext });
-      } else {
-        // Flush any buffered appends before handling non-append events
-        flushResponseChunks(taskId);
-        applyResponseChunk(taskId, { messageId, chunk, reasoning, reflectedMessage, promptContext });
-      }
+    (data: ResponseChunkData) => {
+      applyResponseChunk(taskId, data);
     },
-    [taskId, performanceMode],
+    [taskId],
   );
 
   const handleResponseCompleted = useCallback(
     ({ messageId, usageReport, content, reasoning, reflectedMessage, promptContext, timestamp }: ResponseCompletedData) => {
-      // Flush any buffered chunks before finalizing
-      flushCommandOutput(taskId);
-      flushResponseChunks(taskId);
-
       touchTaskActivity(taskId);
       const processingMessage = processingResponseMessageMap.get(taskId);
 
@@ -242,8 +172,6 @@ export const useTaskResponseHandlers = (baseDir: string, taskId: string) => {
     return () => {
       removeChunk();
       removeCompleted();
-      // Flush any remaining buffered chunks on cleanup
-      flushResponseChunks(taskId);
     };
   }, [api, baseDir, taskId, handleResponseChunk, handleResponseCompleted]);
 };

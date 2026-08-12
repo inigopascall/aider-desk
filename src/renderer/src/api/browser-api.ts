@@ -83,6 +83,7 @@ import { type AxiosInstance, create } from 'axios';
 import { io, Socket } from 'socket.io-client';
 import { compareBaseDirs } from '@common/utils';
 import { v4 as uuidv4 } from 'uuid';
+import { getStreamConfig, onStreamConfigChange, type StreamConfig } from '@/api/stream-config';
 
 type EventDataMap = {
   'settings-updated': SettingsData;
@@ -152,6 +153,12 @@ export class BrowserApi implements ApplicationAPI {
   };
   private readonly apiClient: AxiosInstance;
   private appOS: OS | null = null;
+  /** Cached signature of the last subscription sent to the server. */
+  private subscribedEventTypes = '';
+  /** Whether a subscription update is already queued via microtask. */
+  private subscriptionUpdateScheduled = false;
+  /** Unsubscribe function for the stream-config change listener. */
+  private readonly streamConfigUnsubscribe: () => void;
 
   constructor() {
     const port = window.location.port === '5173' ? '24337' : window.location.port;
@@ -228,10 +235,9 @@ export class BrowserApi implements ApplicationAPI {
       },
     );
     this.socket.on('connect', () => {
-      this.socket.emit('message', {
-        action: 'subscribe-events',
-        eventTypes: Object.keys(this.listeners),
-      });
+      // Reset the cached signature so the subscription is always re-sent on reconnect
+      this.subscribedEventTypes = '';
+      this.emitSubscription(true);
       this.getOS().then((os) => {
         this.appOS = os;
       });
@@ -244,10 +250,16 @@ export class BrowserApi implements ApplicationAPI {
       // eslint-disable-next-line no-console
       console.error('Socket.IO connection error:', error);
     });
+    // Re-emit subscription whenever stream config changes (e.g. performance mode toggled)
+    this.streamConfigUnsubscribe = onStreamConfigChange(() => this.emitSubscription());
     this.socket.on('event', (eventData: { type: string; data: unknown }) => {
       const { type, data } = eventData;
       const eventType = type as keyof EventDataMap;
       const eventListeners = this.listeners[eventType];
+      // Fast path: if no listeners are registered for this event type, skip entirely
+      if (!eventListeners || eventListeners.size === 0) {
+        return;
+      }
       if (eventListeners) {
         const typedData = data as EventDataMap[typeof eventType];
         eventListeners.forEach((entry) => {
@@ -317,10 +329,72 @@ export class BrowserApi implements ApplicationAPI {
     const eventListeners = this.listeners[eventType];
     const id = uuidv4();
     eventListeners.set(id, { callback, baseDir, taskId });
+    this.scheduleSubscriptionUpdate();
 
     return () => {
       eventListeners.delete(id);
+      this.scheduleSubscriptionUpdate();
     };
+  }
+
+  /**
+   * Computes the list of event types that currently have at least one registered
+   * listener, sorted alphabetically for deterministic comparison.
+   */
+  private computeActiveEventTypes(): string[] {
+    return Object.entries(this.listeners)
+      .filter(([, map]) => map.size > 0)
+      .map(([key]) => key)
+      .sort();
+  }
+
+  /**
+   * Emits a subscribe-events message to the server with the current set of
+   * active event types and stream configuration. Skips if the signature hasn't
+   * changed (unless `force` is true). Only emits when the socket is connected;
+   * the connect handler will re-emit on reconnect.
+   */
+  private emitSubscription(force = false): void {
+    const eventTypes = this.computeActiveEventTypes();
+    const signature = eventTypes.join(',');
+    const streamConfig: StreamConfig = getStreamConfig();
+    const fullSignature = `${signature}|${streamConfig.streamMode}|${streamConfig.streamFlushIntervalMs}`;
+    if (!force && fullSignature === this.subscribedEventTypes) {
+      return;
+    }
+    this.subscribedEventTypes = fullSignature;
+    if (this.socket.connected) {
+      this.socket.emit('message', {
+        action: 'subscribe-events',
+        eventTypes,
+        streamMode: streamConfig.streamMode,
+        streamFlushIntervalMs: streamConfig.streamFlushIntervalMs,
+      });
+    }
+  }
+
+  /**
+   * Schedules a subscription update on the next microtask, coalescing multiple
+   * rapid listener add/remove calls into a single emit.
+   */
+  private scheduleSubscriptionUpdate(): void {
+    if (this.subscriptionUpdateScheduled) {
+      return;
+    }
+    this.subscriptionUpdateScheduled = true;
+    queueMicrotask(() => {
+      this.subscriptionUpdateScheduled = false;
+      this.emitSubscription();
+    });
+  }
+
+  /**
+   * Cleans up the socket connection and stream-config listener.
+   * Should be called when the BrowserApi instance is no longer needed.
+   */
+  destroy(): void {
+    this.streamConfigUnsubscribe();
+    this.socket.disconnect();
   }
 
   private async post<B, R>(endpoint: string, body: B): Promise<R> {

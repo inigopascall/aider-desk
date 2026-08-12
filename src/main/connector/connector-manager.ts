@@ -161,6 +161,8 @@ export class ConnectorManager {
             eventTypes: message.eventTypes,
             baseDirs: [message.projectDir],
             readonly: true,
+            streamMode: message.streamMode,
+            streamFlushIntervalMs: message.streamFlushIntervalMs,
           });
           return;
         }
@@ -357,6 +359,8 @@ export class ConnectorManager {
         this.eventManager.subscribe(socket, {
           eventTypes: message.eventTypes,
           baseDirs: message.baseDirs,
+          streamMode: message.streamMode,
+          streamFlushIntervalMs: message.streamFlushIntervalMs,
         });
       } else if (isUnsubscribeEventsMessage(message)) {
         logger.info('Unsubscribing from events');

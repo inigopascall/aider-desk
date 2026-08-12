@@ -5,6 +5,7 @@ import { devtools } from 'zustand/middleware';
 import { Font, SettingsData, Theme } from '@common/types';
 
 import { useApi } from '@/contexts/ApiContext';
+import { setStreamConfig } from '@/api/stream-config';
 
 interface SettingsState {
   settings: SettingsData | null;
@@ -42,13 +43,24 @@ export const useSettingsStore = createWithEqualityFn<SettingsStore>()(
       font: null,
       fontSize: null,
       readonlyExtensionUi: null,
-      setSettingsState: (newSettings) =>
+      setSettingsState: (newSettings) => {
+        // Push stream config to the BrowserApi so it can re-subscribe with the
+        // correct coalescing mode and flush interval. Also toggle the
+        // `performance-mode` CSS class on <body> — this is the single guaranteed
+        // choke point for the class (mirrors `snapshot-mode-active`).
+        const performanceMode = newSettings.performanceMode ?? true;
+        setStreamConfig({
+          streamMode: performanceMode ? 'coalesced' : 'live',
+          streamFlushIntervalMs: newSettings.streamFlushIntervalMs ?? 2500,
+        });
+        document.body.classList.toggle('performance-mode', performanceMode);
         set({
           settings: newSettings,
           theme: newSettings.theme ?? null,
           font: newSettings.font ?? null,
           fontSize: newSettings.fontSize ?? null,
-        }),
+        });
+      },
       setThemeValue: (theme) => set({ theme }),
       setFontValue: (font) => set({ font }),
       setFontSizeValue: (fontSize) => set({ fontSize }),

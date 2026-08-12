@@ -59,8 +59,8 @@
     "nextResult": "Next result (F3)"
   },
   "taskControlBar": {
-    "snapshotMode": "Snapshot mode — poll every 5s instead of live streaming (reduces CPU usage)",
-    "liveMode": "Live mode — restore real-time streaming"
+    "snapshotMode": "Freeze — disconnect live updates for this task (stops all CPU/GPU work until unfrozen)",
+    "liveMode": "Unfreeze — reconnect and reload the latest task state"
   },
   "onboarding": {
     "title": "Welcome to AiderDesk",
@@ -991,9 +991,9 @@
       "fullMessageRendering": "Use full message rendering (Legacy)",
       "fullMessageRenderingTooltip": "Renders all messages in the DOM without virtualization. May impact performance with large conversation histories.",
       "performanceMode": "Performance mode",
-      "performanceModeTooltip": "Batches rapid UI updates during streaming — assistant text, tool arguments, command output, and token counters — to significantly reduce CPU usage and lag on long AI responses and command runs. Turn off for the smoothest possible real-time updates.",
+      "performanceModeTooltip": "Batches and merges streamed updates on the server before they are sent to the browser, and disables non-essential animations. Dramatically reduces websocket traffic and CPU/GPU load during long responses, tool chains, and subagent runs. Turn off for fully live, unbatched updates.",
       "streamFlushInterval": "Stream flush interval (ms)",
-      "streamFlushIntervalTooltip": "How often streamed updates (assistant text, tool arguments, command output) are batched and applied to the UI. Higher values reduce CPU usage and websocket traffic at the cost of more noticeable streaming latency."
+      "streamFlushIntervalTooltip": "How often the server merges and sends batched updates (assistant text, tool arguments, tool results, command output, token counters, task status). Higher values mean far fewer websocket messages and lower CPU usage, at the cost of choppier streaming."
     },
     "promptField": {
       "agentModeOnly": "This command is only available in agent mode",
