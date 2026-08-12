@@ -66,11 +66,6 @@ const TaskEventSubscriberWrapper = memo(function TaskEventSubscriberWrapper({
     return null;
   }
 
-  if (isSnapshotMode) {
-    // Mute the task: listeners are unmounted, UI freezes to save CPU.
-    return null;
-  }
-
   return <TaskEventSubscriber baseDir={baseDir} taskId={taskId} state={state} />;
 });
 
@@ -110,22 +105,14 @@ export const TasksProvider = ({
   const snapshotCount = useSnapshotModeStore((s) => s.snapshotTaskIds.size);
 
   useEffect(() => {
-    if (snapshotCount > 0) {
-      api.disconnectSocket();
-      document.body.classList.add('snapshot-mode-active');
-    } else {
-      api.reconnectSocket();
-      document.body.classList.remove('snapshot-mode-active');
+    // Diagnostic animation-only mode: retain Socket.IO and task listeners while
+    // disabling all CSS animations and transitions via the body class.
+    document.body.classList.toggle('snapshot-mode-active', snapshotCount > 0);
 
-      // When exiting snapshot mode, reload all loaded tasks silently to catch up on missed events.
-      const taskStateMap = useTaskStore.getState().taskStateMap;
-      for (const [taskId, state] of taskStateMap) {
-        if (state.loaded) {
-          void taskActions.refreshTask(taskId);
-        }
-      }
-    }
-  }, [api, snapshotCount, taskActions]);
+    return () => {
+      document.body.classList.remove('snapshot-mode-active');
+    };
+  }, [snapshotCount]);
 
   const inactivityCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
