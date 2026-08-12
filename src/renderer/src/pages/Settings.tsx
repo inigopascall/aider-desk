@@ -1,8 +1,20 @@
-import { AgentProfile, Font, ProjectData, ProviderProfile, SettingsData, Theme } from '@common/types';
-import { ReactNode, useRef, useState } from 'react';
+import { AgentProfile, Font, McpServersData, ProjectData, ProviderProfile, SettingsData, Theme } from '@common/types';
+import { Dispatch, ReactNode, SetStateAction, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { FaBrain, FaChevronDown, FaChevronRight, FaCog, FaInfoCircle, FaKeyboard, FaMicrophone, FaPuzzlePiece, FaRobot, FaServer } from 'react-icons/fa';
+import {
+  FaBrain,
+  FaChevronDown,
+  FaChevronRight,
+  FaCog,
+  FaInfoCircle,
+  FaKeyboard,
+  FaMicrophone,
+  FaPlug,
+  FaPuzzlePiece,
+  FaRobot,
+  FaServer,
+} from 'react-icons/fa';
 import { MdTerminal } from 'react-icons/md';
 import { LuClipboardList, LuWorkflow } from 'react-icons/lu';
 
@@ -12,6 +24,7 @@ import { AiderSettings } from '@/components/settings/AiderSettings';
 import { GeneralSettings } from '@/components/settings/GeneralSettings';
 import { AgentSettings } from '@/components/settings/agent/AgentSettings';
 import { WorkflowsSettings } from '@/components/settings/WorkflowsSettings';
+import { McpSettings } from '@/components/settings/mcp/McpSettings';
 import { AboutSettings } from '@/components/settings/AboutSettings';
 import { NetworkSettings } from '@/components/settings/NetworkSettings';
 import { MemorySettings } from '@/components/settings/MemorySettings';
@@ -20,7 +33,7 @@ import { HotkeysSettings } from '@/components/settings/HotkeysSettings';
 import { TaskSettings } from '@/components/settings/TaskSettings';
 import { ExtensionsSettings } from '@/components/settings/ExtensionsSettings';
 
-type PageId = 'general' | 'aider' | 'agents' | 'workflows' | 'tasks' | 'memory' | 'voice' | 'hotkeys' | 'network' | 'extensions' | 'about';
+type PageId = 'general' | 'aider' | 'agents' | 'workflows' | 'mcpServers' | 'tasks' | 'memory' | 'voice' | 'hotkeys' | 'network' | 'extensions' | 'about';
 
 interface SidebarItem {
   id: string;
@@ -42,6 +55,8 @@ type Props = {
   initialOptions?: Record<string, unknown>;
   agentProfiles?: AgentProfile[];
   setAgentProfiles?: (profiles: AgentProfile[]) => void;
+  mcpServers: McpServersData;
+  setMcpServers: Dispatch<SetStateAction<McpServersData>>;
   openProjects?: ProjectData[];
   providers?: ProviderProfile[];
   setProviders?: (providers: ProviderProfile[]) => void;
@@ -64,6 +79,8 @@ export const Settings = ({
   initialOptions,
   agentProfiles,
   setAgentProfiles,
+  mcpServers,
+  setMcpServers,
   openProjects,
   providers,
   setProviders,
@@ -128,6 +145,18 @@ export const Settings = ({
       pageId: 'workflows',
       label: t('settings.tabs.workflows'),
       icon: <LuWorkflow className="w-4 h-4" />,
+    },
+    {
+      id: 'mcpServers',
+      pageId: 'mcpServers',
+      label: t('settings.tabs.mcpServers'),
+      icon: <FaPlug className="w-4 h-4" />,
+      children: [
+        ...(openProjects || []).map((project) => ({
+          id: `mcpServers-${project.baseDir}`,
+          label: getPathBasename(project.baseDir),
+        })),
+      ],
     },
     {
       id: 'tasks',
@@ -204,6 +233,11 @@ export const Settings = ({
     setActivePage(item.pageId);
   };
 
+  const handleOpenMcpServers = (context?: string) => {
+    setSelectedProfileContext(context || 'global');
+    setActivePage('mcpServers');
+  };
+
   const handleChildClick = (pageId: PageId, sectionId: string) => {
     setActivePage(pageId);
 
@@ -211,6 +245,10 @@ export const Settings = ({
     if (pageId === 'agents' && sectionId.startsWith('agent-')) {
       // Extract project baseDir from sectionId (format: agent-{baseDir})
       const projectBaseDir = sectionId.replace('agent-', '');
+      setSelectedProfileContext(projectBaseDir);
+    } else if (pageId === 'mcpServers' && sectionId.startsWith('mcpServers-')) {
+      // Extract project baseDir from sectionId (format: mcpServers-{baseDir})
+      const projectBaseDir = sectionId.replace('mcpServers-', '');
       setSelectedProfileContext(projectBaseDir);
     } else if (pageId === 'extensions' && sectionId.startsWith('extension-')) {
       // Extract project baseDir from sectionId (format: extension-{baseDir})
@@ -244,9 +282,11 @@ export const Settings = ({
             setSettings={updateSettings}
             agentProfiles={agentProfiles || []}
             setAgentProfiles={setAgentProfiles || (() => {})}
+            mcpServersData={mcpServers}
             initialProfileId={initialOptions?.agentProfileId as string | undefined}
             openProjects={openProjects}
             selectedProfileContext={selectedProfileContext}
+            onOpenMcpServers={handleOpenMcpServers}
           />
         );
       case 'workflows':
@@ -263,6 +303,8 @@ export const Settings = ({
             onSetWorkflowModelSetId={onSetWorkflowModelSetId ?? (() => {})}
           />
         );
+      case 'mcpServers':
+        return <McpSettings mcpServers={mcpServers} setMcpServers={setMcpServers} openProjects={openProjects} selectedMcpContext={selectedProfileContext} />;
       case 'memory':
         return <MemorySettings settings={settings} setSettings={updateSettings} />;
       case 'tasks':
@@ -343,7 +385,7 @@ export const Settings = ({
           ref={contentRef}
           className={clsx(
             'flex-1 w-full mx-auto',
-            activePage === 'agents' || activePage === 'workflows'
+            activePage === 'agents' || activePage === 'workflows' || activePage === 'mcpServers'
               ? 'overflow-hidden p-0 h-full'
               : 'overflow-y-auto p-8 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-bg-tertiary hover:scrollbar-thumb-bg-tertiary-strong max-w-[1024px]',
           )}

@@ -1,5 +1,6 @@
 import {
   AgentProfilesUpdatedData,
+  McpServersData,
   AutocompletionData,
   ClearTaskData,
   CloudflareTunnelStatus,
@@ -17,6 +18,7 @@ import {
   SystemLogData,
   SystemLogLevel,
   SystemLogsResponse,
+  McpOAuthStatusData,
   McpServerConfig,
   McpTool,
   MessageRemovedData,
@@ -109,6 +111,7 @@ type EventDataMap = {
   'project-settings-updated': { baseDir: string; settings: ProjectSettings };
   'worktree-integration-status-updated': WorktreeIntegrationStatusUpdatedData;
   'agent-profiles-updated': AgentProfilesUpdatedData;
+  'mcp-servers-updated': McpServersData;
   'updated-files-updated': UpdatedFilesUpdatedData;
   'skills-updated': SkillsUpdatedData;
   notification: NotificationData;
@@ -198,6 +201,7 @@ export class BrowserApi implements ApplicationAPI {
       'task-completed': new Map(),
       'task-cancelled': new Map(),
       'agent-profiles-updated': new Map(),
+      'mcp-servers-updated': new Map(),
       notification: new Map(),
       'message-removed': new Map(),
       'terminal-data': new Map(),
@@ -272,7 +276,17 @@ export class BrowserApi implements ApplicationAPI {
     }
 
     return new Promise((resolve) => {
+      const cleanup = () => {
+        this.socket.off('connect', onConnect);
+        this.socket.off('disconnect', onDisconnect);
+      };
+
       const onConnect = () => {
+        cleanup();
+        resolve();
+      };
+
+      const onDisconnect = () => {
         cleanup();
         resolve();
       };
@@ -282,10 +296,7 @@ export class BrowserApi implements ApplicationAPI {
       }
 
       this.socket.once('connect', onConnect);
-
-      const cleanup = () => {
-        this.socket.off('connect', onConnect);
-      };
+      this.socket.once('disconnect', onDisconnect);
     });
   }
 
@@ -633,14 +644,46 @@ export class BrowserApi implements ApplicationAPI {
   clearAllTodos(baseDir: string, taskId: string): Promise<TodoItem[]> {
     return this.post('/project/todo/clear', { projectDir: baseDir, taskId });
   }
-  loadMcpServerTools(serverName: string, config?: McpServerConfig): Promise<McpTool[] | null> {
-    return this.post('/mcp/tools', { serverName, config });
+  loadMcpServerTools(serverName: string, config?: McpServerConfig, projectDir?: string): Promise<McpTool[] | null> {
+    return this.post('/mcp/tools', { serverName, config, projectDir });
   }
-  reloadMcpServers(mcpServers: Record<string, McpServerConfig>, force = false): Promise<void> {
-    return this.post('/mcp/reload', { mcpServers, force });
+  reloadMcpServers(projectDir?: string, force = false): Promise<void> {
+    return this.post('/mcp/reload', { projectDir, force });
   }
   reloadMcpServer(serverName: string, config: McpServerConfig): Promise<McpTool[]> {
     return this.post('/mcp/reload-single', { serverName, config });
+  }
+  getMcpOAuthStatus(serverName: string, config?: McpServerConfig, projectDir?: string): Promise<McpOAuthStatusData> {
+    return this.post('/mcp/oauth/status', { serverName, config, projectDir });
+  }
+  async startMcpOAuth(serverName: string, config?: McpServerConfig, projectDir?: string): Promise<string> {
+    const response = await this.post<{ serverName: string; config?: McpServerConfig; projectDir?: string }, { authorizationUrl: string }>(
+      '/mcp/oauth/connect',
+      {
+        serverName,
+        config,
+        projectDir,
+      },
+    );
+    return response.authorizationUrl;
+  }
+  disconnectMcpOAuth(serverName: string, config?: McpServerConfig, projectDir?: string): Promise<void> {
+    return this.post('/mcp/oauth/disconnect', { serverName, config, projectDir });
+  }
+  getMcpServers(): Promise<McpServersData> {
+    return this.get('/mcp/servers');
+  }
+  addMcpServer(name: string, config: McpServerConfig, projectDir?: string): Promise<McpServersData> {
+    return this.post('/mcp/server/add', { name, config, projectDir });
+  }
+  updateMcpServer(oldName: string, name: string, config: McpServerConfig, projectDir?: string): Promise<McpServersData> {
+    return this.post('/mcp/server/update', { oldName, name, config, projectDir });
+  }
+  removeMcpServer(name: string, projectDir?: string): Promise<McpServersData> {
+    return this.post('/mcp/server/remove', { name, projectDir });
+  }
+  replaceMcpServers(servers: Record<string, McpServerConfig>, projectDir?: string): Promise<McpServersData> {
+    return this.post('/mcp/servers/replace', { servers, projectDir });
   }
   createNewTask(baseDir: string, params?: CreateTaskParams): Promise<TaskData> {
     return this.post('/project/tasks/new', { projectDir: baseDir, ...params });
@@ -912,6 +955,10 @@ export class BrowserApi implements ApplicationAPI {
     return this.addListener('agent-profiles-updated', callback);
   }
 
+  addMcpServersUpdatedListener(callback: (data: McpServersData) => void): () => void {
+    return this.addListener('mcp-servers-updated', callback);
+  }
+
   addProjectSettingsUpdatedListener(baseDir: string, callback: (data: { baseDir: string; settings: ProjectSettings }) => void): () => void {
     return this.addListener('project-settings-updated', callback, baseDir);
   }
@@ -1103,6 +1150,14 @@ export class BrowserApi implements ApplicationAPI {
     });
   }
 
+  addFileToGit(baseDir: string, taskId: string, filePath: string): Promise<void> {
+    return this.post('/project/worktree/add-file-to-git', {
+      projectDir: baseDir,
+      taskId,
+      filePath,
+    });
+  }
+
   restoreFile(baseDir: string, taskId: string, filePath: string): Promise<void> {
     return this.post('/project/worktree/restore-file', {
       projectDir: baseDir,
@@ -1223,6 +1278,10 @@ export class BrowserApi implements ApplicationAPI {
 
   async openUrlInWindow(_url: string, _title?: string): Promise<void> {
     window.open(_url, '_blank');
+  }
+
+  async openUrlExternally(url: string): Promise<void> {
+    window.open(url, '_blank');
   }
 
   // Agent profile operations
@@ -1411,5 +1470,10 @@ export class BrowserApi implements ApplicationAPI {
 
   async getAiderConnectorStatus(): Promise<AiderConnectorStatus> {
     return this.get('/system/aider-connector-status');
+  }
+
+  destroy(): void {
+    this.socket.removeAllListeners();
+    this.socket.disconnect();
   }
 }

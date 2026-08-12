@@ -15,6 +15,7 @@ import {
   ProviderModelsData,
   ProviderProfile,
   TodoItem,
+  McpOAuthStatus,
   McpTool,
   CloudflareTunnelStatus,
   BranchInfo,
@@ -102,6 +103,7 @@ export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedOb
     getAllFiles: vi.fn((): Promise<string[]> => Promise.resolve([])),
     refreshContextFiles: vi.fn((): Promise<void> => Promise.resolve()),
     getUpdatedFiles: vi.fn((): Promise<Array<{ path: string; additions: number; deletions: number }>> => Promise.resolve([])),
+    addFileToGit: vi.fn((): Promise<void> => Promise.resolve()),
     restoreFile: vi.fn((): Promise<void> => Promise.resolve()),
     generateCommitMessage: vi.fn((): Promise<string> => Promise.resolve('')),
     commitChanges: vi.fn((): Promise<void> => Promise.resolve()),
@@ -132,6 +134,14 @@ export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedOb
     loadMcpServerTools: vi.fn((): Promise<McpTool[] | null> => Promise.resolve([])),
     reloadMcpServers: vi.fn((): Promise<void> => Promise.resolve()),
     reloadMcpServer: vi.fn((): Promise<McpTool[]> => Promise.resolve([])),
+    getMcpServers: vi.fn(() => Promise.resolve({ global: {}, projectServers: {} })),
+    addMcpServer: vi.fn(() => Promise.resolve({ global: {}, projectServers: {} })),
+    updateMcpServer: vi.fn(() => Promise.resolve({ global: {}, projectServers: {} })),
+    removeMcpServer: vi.fn(() => Promise.resolve({ global: {}, projectServers: {} })),
+    replaceMcpServers: vi.fn(() => Promise.resolve({ global: {}, projectServers: {} })),
+    getMcpOAuthStatus: vi.fn(() => Promise.resolve({ status: McpOAuthStatus.NotRequired })),
+    startMcpOAuth: vi.fn((): Promise<string> => Promise.resolve('https://example.com/authorize')),
+    disconnectMcpOAuth: vi.fn((): Promise<void> => Promise.resolve()),
 
     // Task operations
     createNewTask: vi.fn((): Promise<TaskData> => Promise.resolve({ id: 'mock-task-id' } as TaskData)),
@@ -211,6 +221,7 @@ export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedOb
     addProviderModelsUpdatedListener: vi.fn(() => vi.fn()),
     addProvidersUpdatedListener: vi.fn(() => vi.fn()),
     addAgentProfilesUpdatedListener: vi.fn(() => vi.fn()),
+    addMcpServersUpdatedListener: vi.fn(() => vi.fn()),
     addNotificationListener: vi.fn(() => vi.fn()),
     addProjectSettingsUpdatedListener: vi.fn(() => vi.fn()),
     addWorktreeIntegrationStatusUpdatedListener: vi.fn(() => vi.fn()),
@@ -289,6 +300,7 @@ export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedOb
     writeToClipboard: vi.fn((): Promise<void> => Promise.resolve()),
     openPath: vi.fn((): Promise<boolean> => Promise.resolve(true)),
     openUrlInWindow: vi.fn((): Promise<void> => Promise.resolve()),
+    openUrlExternally: vi.fn((): Promise<void> => Promise.resolve()),
 
     // Custom modes operations
     getCustomModes: vi.fn((): Promise<ModeDefinition[]> => Promise.resolve([])),

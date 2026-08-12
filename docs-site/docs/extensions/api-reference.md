@@ -112,6 +112,9 @@ interface ExtensionContext {
   getSetting(key: string): Promise<unknown>;
   updateSettings(updates: Partial<SettingsData>): Promise<void>;
 
+  // MCP Servers
+  getMcpServers(projectDir?: string): Promise<Record<string, McpServerConfig>>;
+
   // UI refresh
   triggerUIDataRefresh(componentId?: string, taskId?: string): void;
   triggerUIComponentsReload(): void;
@@ -135,6 +138,7 @@ interface ExtensionContext {
 | `getModelConfigs()` | Get all available model configurations |
 | `getSetting(key)` | Get a setting value (supports dot-notation) |
 | `updateSettings(updates)` | Update multiple settings at once |
+| `getMcpServers(projectDir?)` | Get merged MCP server configurations (global overridden by project-specific) |
 | `triggerUIDataRefresh(componentId?, taskId?)` | Trigger UI component data refresh |
 | `triggerUIComponentsReload()` | Reload all UI component definitions for this extension |
 | `openUrl(url, target?)` | Open URL in external browser, new window, or modal overlay |
@@ -537,21 +541,24 @@ Pre-built UI components available via `props.ui`:
 
 ```typescript
 interface UIComponents {
-  Button: UIComponent;            // Standard button with variants
-  IconButton: UIComponent;        // Button with icon only
-  Checkbox: UIComponent;          // Checkbox input with label
-  Input: UIComponent;             // Text input field
-  Select: UIComponent;            // Dropdown select
-  MultiSelect: UIComponent;       // Multi-value select
-  TextArea: UIComponent;          // Multi-line text input
-  RadioButton: UIComponent;       // Radio button input
-  Slider: UIComponent;            // Range slider
-  DatePicker: UIComponent;        // Date picker
-  Chip: UIComponent;              // Tag/chip component
-  ModelSelector: UIComponent;     // AiderDesk model selector
-  Tooltip: UIComponent;           // Tooltip wrapper
-  LoadingOverlay: UIComponent;    // Loading spinner with message
-  ConfirmDialog: UIComponent;     // Confirmation dialog modal
+  Button: UIComponent;                 // Standard button with variants
+  IconButton: UIComponent;             // Button with icon only
+  Checkbox: UIComponent;               // Checkbox input with label
+  Input: UIComponent;                  // Text input field
+  Select: UIComponent;                 // Dropdown select
+  MultiSelect: UIComponent;            // Multi-value select
+  TextArea: UIComponent;               // Multi-line text input
+  RadioButton: UIComponent;            // Radio button input
+  Slider: UIComponent;                 // Range slider
+  DatePicker: UIComponent;             // Date picker
+  Chip: UIComponent;                   // Tag/chip component
+  ModelSelector: UIComponent;          // AiderDesk model selector
+  Tooltip: UIComponent;                // Tooltip wrapper
+  LoadingOverlay: UIComponent;         // Loading spinner with message
+  ConfirmDialog: UIComponent;          // Confirmation dialog modal
+  ModalOverlayLayout: UIComponent;     // Modal layout and title bar
+  CodeBlock: UIComponent;              // Syntax-highlighted code and diffs
+  ExpandableMessageBlock: UIComponent; // Collapsible tool-style message block
 }
 ```
 

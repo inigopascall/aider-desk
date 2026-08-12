@@ -94,7 +94,7 @@ import {
   AIDER_DESK_TODOS_FILE,
   WORKTREE_BRANCH_PREFIX,
 } from '@/constants';
-import { Agent, AgentProfileManager, McpManager } from '@/agent';
+import { Agent, AgentProfileManager, McpConfigManager, McpManager } from '@/agent';
 import { findEnabledSubagent, runSubagentTask } from '@/agent/subagent';
 import { getWorkflow, runWorkflow } from '@/workflows';
 import { Connector } from '@/connector';
@@ -196,6 +196,7 @@ export class Task {
     public readonly taskId: string,
     private readonly store: Store,
     private readonly mcpManager: McpManager,
+    private readonly mcpConfigManager: McpConfigManager,
     private readonly customCommandManager: CustomCommandManager,
     private readonly agentProfileManager: AgentProfileManager,
     private readonly telemetryManager: TelemetryManager,
@@ -222,6 +223,7 @@ export class Task {
       this.store,
       this.agentProfileManager,
       this.mcpManager,
+      this.mcpConfigManager,
       this.modelManager,
       this.telemetryManager,
       this.memoryManager,
@@ -603,10 +605,12 @@ export class Task {
   }
 
   public async load(readonly = false): Promise<TaskStateData> {
-    logger.info('Loading task', {
-      baseDir: this.project.baseDir,
-      taskId: this.taskId,
-    });
+    if (!this.initialized) {
+      logger.info('Loading task', {
+        baseDir: this.project.baseDir,
+        taskId: this.taskId,
+      });
+    }
 
     await this.init(readonly);
 
@@ -1169,7 +1173,9 @@ export class Task {
       const settings = this.store.getSettings();
       let state: string | null = DefaultTaskState.ReadyForReview;
 
-      if (settings.taskSettings.smartTaskState) {
+      if (this.isWaitingForApproval(agentMessages)) {
+        state = DefaultTaskState.ReadyForImplementation;
+      } else if (settings.taskSettings.smartTaskState) {
         state = await this.determineTaskState(agentMessages);
 
         // check once again after determining task state which can task some time
@@ -1236,6 +1242,23 @@ export class Task {
     }
 
     return null;
+  }
+
+  private isWaitingForApproval(resultMessages: ContextMessage[]): boolean {
+    const lastAssistantMessage = [...resultMessages].reverse().find((msg) => msg.role === MessageRole.Assistant) as ContextAssistantMessage | undefined;
+
+    if (!lastAssistantMessage) {
+      return false;
+    }
+
+    const contentText = extractTextContent(lastAssistantMessage.content);
+    const lastLine = contentText.trim().split('\n').pop();
+    if (!lastLine) {
+      return false;
+    }
+
+    const lower = lastLine.toLowerCase();
+    return lower.includes('proceed') && lower.includes('(y/n)');
   }
 
   private async determineTaskState(resultMessages: ContextMessage[]): Promise<string | null> {
@@ -1827,7 +1850,7 @@ export class Task {
     this.findMessageConnectors('drop-file').forEach((connector) => connector.sendDropFileMessage(pathToSend, noUpdate));
   }
 
-  public async addToGit(absolutePath: string, promptContext?: PromptContext): Promise<void> {
+  public async addToGit(absolutePath: string): Promise<void> {
     if (!this.git) {
       return;
     }
@@ -1844,7 +1867,10 @@ export class Task {
       await this.updateAutocompletionData(undefined, true);
     } catch (gitError) {
       const gitErrorMessage = gitError instanceof Error ? gitError.message : String(gitError);
-      this.addLogMessage('warning', `Failed to add new file ${absolutePath} to git staging area: ${gitErrorMessage}`, false, promptContext);
+      logger.warn(`Failed to add new file ${absolutePath} to git staging area: ${gitErrorMessage}`, {
+        baseDir: this.project.baseDir,
+        taskId: this.taskId,
+      });
     }
   }
 
@@ -4764,6 +4790,18 @@ ${error.stderr}`,
       );
     }
 
+    await this.sendUpdatedFilesUpdated();
+    await this.sendWorktreeIntegrationStatusUpdated();
+  }
+
+  public async addFileToGit(filePath: string): Promise<void> {
+    logger.info('Adding file to Git', {
+      baseDir: this.project.baseDir,
+      taskId: this.taskId,
+      filePath,
+    });
+
+    await this.worktreeManager.addFileToGit(this.getTaskDir(), filePath);
     await this.sendUpdatedFilesUpdated();
     await this.sendWorktreeIntegrationStatusUpdated();
   }

@@ -12,6 +12,7 @@ import {
   InputHistoryData,
   LogData,
   McpServerConfig,
+  McpServersData,
   MessageRemovedData,
   ModalOverlayUrlData,
   ModelsData,
@@ -98,12 +99,15 @@ const api: ApplicationAPI = {
   getAllFiles: (baseDir, taskId, useGit = true) => ipcRenderer.invoke('get-all-files', baseDir, taskId, useGit),
   refreshContextFiles: (baseDir, taskId) => ipcRenderer.invoke('refresh-context-files', baseDir, taskId),
   getUpdatedFiles: (baseDir, taskId) => ipcRenderer.invoke('get-updated-files', baseDir, taskId),
+  addFileToGit: (baseDir, taskId, filePath) => ipcRenderer.invoke('add-file-to-git', baseDir, taskId, filePath),
   restoreFile: (baseDir, taskId, filePath) => ipcRenderer.invoke('restore-file', baseDir, taskId, filePath),
   readFile: (baseDir, taskId, filePath) => ipcRenderer.invoke('read-file', baseDir, taskId, filePath),
   generateCommitMessage: (baseDir, taskId) => ipcRenderer.invoke('generate-commit-message', baseDir, taskId),
   commitChanges: (baseDir, taskId, message, amend) => ipcRenderer.invoke('commit-changes', baseDir, taskId, message, amend),
   cancelCommitChanges: (baseDir, taskId) => ipcRenderer.invoke('cancel-commit-changes', baseDir, taskId),
-  addFile: (baseDir, taskId, filePath, readOnly = false) => ipcRenderer.send('add-file', baseDir, taskId, filePath, readOnly),
+  addFile: async (baseDir, taskId, filePath, readOnly = false) => {
+    ipcRenderer.send('add-file', baseDir, taskId, filePath, readOnly);
+  },
   isValidPath: (baseDir, path) => ipcRenderer.invoke('is-valid-path', baseDir, path),
   isProjectPath: (path) => ipcRenderer.invoke('is-project-path', path),
   dropFile: (baseDir, taskId, path) => ipcRenderer.send('drop-file', baseDir, taskId, path),
@@ -122,9 +126,21 @@ const api: ApplicationAPI = {
   deleteTodo: (baseDir, taskId, name) => ipcRenderer.invoke('delete-todo', baseDir, taskId, name),
   clearAllTodos: (baseDir, taskId) => ipcRenderer.invoke('clear-all-todos', baseDir, taskId),
 
-  loadMcpServerTools: (serverName, config?: McpServerConfig) => ipcRenderer.invoke('load-mcp-server-tools', serverName, config),
-  reloadMcpServers: (mcpServers, force = false) => ipcRenderer.invoke('reload-mcp-servers', mcpServers, force),
+  loadMcpServerTools: (serverName, config?: McpServerConfig, projectDir?: string) =>
+    ipcRenderer.invoke('load-mcp-server-tools', serverName, config, projectDir),
+  reloadMcpServers: (projectDir?: string, force = false) => ipcRenderer.invoke('reload-mcp-servers', projectDir, force),
   reloadMcpServer: (serverName: string, config: McpServerConfig) => ipcRenderer.invoke('reload-mcp-server', serverName, config),
+  getMcpOAuthStatus: (serverName: string, config?: McpServerConfig, projectDir?: string) =>
+    ipcRenderer.invoke('get-mcp-oauth-status', serverName, config, projectDir),
+  startMcpOAuth: (serverName: string, config?: McpServerConfig, projectDir?: string) => ipcRenderer.invoke('start-mcp-oauth', serverName, config, projectDir),
+  disconnectMcpOAuth: (serverName: string, config?: McpServerConfig, projectDir?: string) =>
+    ipcRenderer.invoke('disconnect-mcp-oauth', serverName, config, projectDir),
+  getMcpServers: () => ipcRenderer.invoke('get-mcp-servers'),
+  addMcpServer: (name: string, config: McpServerConfig, projectDir?: string) => ipcRenderer.invoke('add-mcp-server', name, config, projectDir),
+  updateMcpServer: (oldName: string, name: string, config: McpServerConfig, projectDir?: string) =>
+    ipcRenderer.invoke('update-mcp-server', oldName, name, config, projectDir),
+  removeMcpServer: (name: string, projectDir?: string) => ipcRenderer.invoke('remove-mcp-server', name, projectDir),
+  replaceMcpServers: (servers: Record<string, McpServerConfig>, projectDir?: string) => ipcRenderer.invoke('replace-mcp-servers', servers, projectDir),
 
   // Extension operations
   getInstalledExtensions: (projectDir?: string) => ipcRenderer.invoke('get-installed-extensions', projectDir),
@@ -731,6 +747,11 @@ const api: ApplicationAPI = {
   updateAgentProfile: (profile, baseDir) => ipcRenderer.invoke('update-agent-profile', profile, baseDir),
   deleteAgentProfile: (profileId, baseDir) => ipcRenderer.invoke('delete-agent-profile', profileId, baseDir),
   updateAgentProfilesOrder: (agentProfiles) => ipcRenderer.invoke('update-agent-profiles-order', agentProfiles),
+  getAgentProfileSyncStatus: (profileId) => ipcRenderer.invoke('get-agent-profile-sync-status', profileId),
+  syncAgentProfileMdToConfig: (profileId) => ipcRenderer.invoke('sync-agent-profile-md-to-config', profileId),
+  syncAgentProfileConfigToMd: (profileId) => ipcRenderer.invoke('sync-agent-profile-config-to-md', profileId),
+  autoSyncAgentProfile: (profileId) => ipcRenderer.invoke('auto-sync-agent-profile', profileId),
+  autoSyncAllAgentProfiles: () => ipcRenderer.invoke('auto-sync-all-agent-profiles'),
 
   // Memory operations
   listAllMemories: () => ipcRenderer.invoke('list-all-memories'),
@@ -741,6 +762,7 @@ const api: ApplicationAPI = {
   writeToClipboard: (text: string) => ipcRenderer.invoke('clipboard-write-text', text),
   openPath: (path: string) => ipcRenderer.invoke('open-path', path),
   openUrlInWindow: (url: string, title?: string) => ipcRenderer.invoke('open-url-in-window', url, title),
+  openUrlExternally: (url: string) => ipcRenderer.invoke('open-url-externally', url),
 
   // System logs
   getSystemLogs: (fromId?: number, limit?: number, levels?: SystemLogLevel[]) => ipcRenderer.invoke('get-system-logs', fromId, limit, levels),
@@ -755,6 +777,12 @@ const api: ApplicationAPI = {
     const listener = (_, data) => callback(data);
     ipcRenderer.on('agent-profiles-updated', listener);
     return () => ipcRenderer.off('agent-profiles-updated', listener);
+  },
+
+  addMcpServersUpdatedListener: (callback: (data: McpServersData) => void) => {
+    const listener = (_, data) => callback(data);
+    ipcRenderer.on('mcp-servers-updated', listener);
+    return () => ipcRenderer.off('mcp-servers-updated', listener);
   },
 
   addNotificationListener: () => {

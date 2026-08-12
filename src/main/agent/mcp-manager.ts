@@ -2,14 +2,34 @@ import path from 'path';
 import fs from 'fs/promises';
 
 import { v4 as uuidv4 } from 'uuid';
-import { McpServerConfig, McpTool } from '@common/types';
-import { Client as McpSdkClient } from '@modelcontextprotocol/sdk/client/index.js';
+import { createMCPClient, UnauthorizedError as AiSdkUnauthorizedError, type CallToolResult, type ListToolsResult, type MCPClient } from '@ai-sdk/mcp';
+import { type JSONValue } from '@ai-sdk/provider';
+import { UnauthorizedError as McpSdkUnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { type Tool, type ToolExecutionOptions, type ToolSet } from 'ai';
+import {
+  AgentProfile,
+  McpOAuthStatus,
+  McpServerConfig,
+  McpTool,
+  McpToolInputSchema,
+  PromptContext,
+  ToolApprovalState,
+  type McpOAuthStatusData,
+} from '@common/types';
+import { LlmProviderName } from '@common/agent';
+import { delay } from '@common/utils';
+import { TOOL_GROUP_NAME_SEPARATOR } from '@common/tools';
+
+import { ApprovalManager } from './tools/approval-manager';
+import { McpOAuthManager } from './mcp-oauth-manager';
+import { truncateToolResult } from './utils';
 
 import logger from '@/logger';
 import { AIDER_DESK_CACHE_DIR } from '@/constants';
+import { translate } from '@/utils/i18n';
+import { Task } from '@/task';
 
 const MCP_TOOLS_CACHE_FILE = path.join(AIDER_DESK_CACHE_DIR, 'mcp-tools-cache.json');
 const MCP_TOOLS_CACHE_VERSION = 1;
@@ -24,26 +44,322 @@ export interface McpToolsCache {
   servers: Record<string, McpToolsCacheEntry>;
 }
 
-// increasing timeout for MCP client requests
-export const MCP_CLIENT_TIMEOUT = 600_000;
+const MCP_CLIENT_TIMEOUT = 600_000;
 
-export interface McpConnector {
-  client: McpSdkClient;
+export class McpAuthenticationRequiredError extends Error {
+  constructor(serverName: string, language?: string) {
+    super(translate(language, 'mcp.oauth.authenticationRequiredMessage', { serverName }));
+    this.name = 'McpAuthenticationRequiredError';
+  }
+}
+
+interface McpConnector {
+  client: MCPClient;
   serverName: string;
   tools: McpTool[];
+  toolDefinitions: ListToolsResult;
   serverConfig: McpServerConfig;
 }
 
+type McpClientTransport = Parameters<typeof createMCPClient>[0]['transport'];
+
 export class McpManager {
   private mcpConnectors: Map<string, Promise<McpConnector>> = new Map();
+  private connectorServerUrls: Map<string, string> = new Map();
   private currentInitId: string | null = null;
   private toolsCache: McpToolsCache = { version: MCP_TOOLS_CACHE_VERSION, servers: {} };
 
+  constructor(
+    private readonly oauthManager = new McpOAuthManager(),
+    private readonly getLanguage: () => string = () => 'en',
+  ) {}
+
   async init() {
-    await this.loadToolsCache();
+    await Promise.all([this.loadToolsCache(), this.oauthManager.init()]);
   }
 
-  async initMcpConnectors(
+  async createToolset(
+    task: Task,
+    profile: AgentProfile,
+    providerName: LlmProviderName,
+    mcpServers: Record<string, McpServerConfig>,
+    approvalManager: ApprovalManager,
+    promptContext?: PromptContext,
+  ): Promise<ToolSet> {
+    let connectors: McpConnector[] = [];
+    try {
+      const initStartTime = Date.now();
+      let loadingMessageShown = false;
+
+      const loadingTimeout = setTimeout(() => {
+        loadingMessageShown = true;
+        task.addLogMessage('loading', 'Initializing MCP servers...', false, promptContext);
+      }, 3000);
+
+      try {
+        connectors = await this.initMcpConnectors(mcpServers, task.getProjectDir(), task.getTaskDir(), false, profile.enabledServers);
+      } finally {
+        clearTimeout(loadingTimeout);
+        if (loadingMessageShown) {
+          task.addLogMessage('loading', undefined, false, promptContext);
+        }
+      }
+
+      for (const serverName of profile.enabledServers) {
+        const config = mcpServers[serverName];
+        if (!config?.url) {
+          continue;
+        }
+        const oauthStatus = await this.oauthManager.getStatus(config.url);
+        if (oauthStatus.status === McpOAuthStatus.AuthenticationRequired || oauthStatus.status === McpOAuthStatus.Authorizing) {
+          task.addLogMessage('error', translate(this.getLanguage(), 'mcp.oauth.authenticationRequiredMessage', { serverName }), false, promptContext);
+        }
+      }
+
+      const initTime = Date.now() - initStartTime;
+      logger.debug(`MCP servers initialized in ${initTime}ms`);
+    } catch (error) {
+      logger.error('Error initializing MCP clients:', error);
+      task.addLogMessage('error', `Error initializing MCP clients: ${error}`, false, promptContext);
+    }
+
+    const toolSet: ToolSet = {};
+    const lastToolCallTimeRef = { value: 0 };
+
+    for (const mcpConnector of connectors) {
+      if (!profile.enabledServers.includes(mcpConnector.serverName)) {
+        continue;
+      }
+
+      const toolDefinitions = {
+        ...mcpConnector.toolDefinitions,
+        tools: mcpConnector.toolDefinitions.tools.map((toolDefinition) => ({
+          ...toolDefinition,
+          inputSchema: this.fixInputSchema(providerName, toolDefinition.inputSchema),
+        })),
+      } satisfies ListToolsResult;
+      const mcpTools = mcpConnector.client.toolsFromDefinitions(toolDefinitions);
+
+      for (const toolDefinition of toolDefinitions.tools) {
+        const toolId = `${mcpConnector.serverName}${TOOL_GROUP_NAME_SEPARATOR}${toolDefinition.name}`;
+        const normalizedToolId = toolId.toLowerCase().replaceAll(/\s+/g, '_');
+
+        const approvalState = profile.toolApprovals[toolId];
+        if (approvalState === ToolApprovalState.Never) {
+          logger.debug(`Skipping tool due to 'Never' approval state: ${toolId}`);
+          continue;
+        }
+
+        const mcpTool = mcpTools[toolDefinition.name];
+        if (!mcpTool) {
+          logger.warn(`AI SDK did not create MCP tool: ${toolId}`);
+          continue;
+        }
+
+        toolSet[normalizedToolId] = this.wrapMcpTool(
+          mcpConnector.serverName,
+          toolDefinition.name,
+          task,
+          profile,
+          mcpTool,
+          approvalManager,
+          lastToolCallTimeRef,
+          promptContext,
+        );
+      }
+    }
+
+    return toolSet;
+  }
+
+  private wrapMcpTool(
+    serverName: string,
+    toolName: string,
+    task: Task,
+    profile: AgentProfile,
+    toolDef: Tool,
+    approvalManager: ApprovalManager,
+    lastToolCallTimeRef: { value: number },
+    promptContext?: PromptContext,
+  ): Tool {
+    const toolId = `${serverName}${TOOL_GROUP_NAME_SEPARATOR}${toolName}`;
+    const originalExecute = toolDef.execute;
+    if (!originalExecute) {
+      throw new Error(`AI SDK MCP tool ${toolId} does not have an execute function`);
+    }
+
+    const execute = async (args: unknown, options: ToolExecutionOptions<unknown>) => {
+      const input = args as Record<string, unknown> | undefined;
+      task.addToolMessage(options.toolCallId, serverName, toolName, input, undefined, undefined, promptContext);
+
+      const questionText = `Approve tool ${toolName} from ${serverName} MCP server?`;
+      const questionSubject = input ? JSON.stringify(input) : undefined;
+      const [isApproved, userInput] = await approvalManager.handleToolApproval(toolId, input, toolId, questionText, questionSubject);
+
+      if (!isApproved) {
+        logger.warn(`Tool execution denied by user: ${toolId}`);
+        return this.createMcpErrorResult(`Tool execution denied by user.${userInput ? ` User input: ${userInput}` : ''}`);
+      }
+      logger.debug(`Tool execution approved: ${toolId}`);
+
+      const timeSinceLastCall = Date.now() - lastToolCallTimeRef.value;
+      const currentMinTime = profile.minTimeBetweenToolCalls;
+      const remainingDelay = currentMinTime - timeSinceLastCall;
+
+      if (remainingDelay > 0) {
+        logger.debug(`Delaying tool call by ${remainingDelay}ms to respect minTimeBetweenToolCalls (${currentMinTime}ms)`);
+        await delay(remainingDelay);
+      }
+
+      try {
+        const timeoutSignal = AbortSignal.timeout(MCP_CLIENT_TIMEOUT);
+        const abortSignal = options.abortSignal ? AbortSignal.any([options.abortSignal, timeoutSignal]) : timeoutSignal;
+        const response = await originalExecute(args, { ...options, abortSignal });
+
+        logger.debug(`Tool ${toolName} returned response`, { response });
+
+        if (response && typeof response === 'object' && 'content' in response && Array.isArray(response.content)) {
+          for (const part of response.content) {
+            if (part && typeof part === 'object' && part.type === 'text' && typeof part.text === 'string') {
+              part.text = await truncateToolResult(part.text);
+            }
+          }
+        }
+
+        lastToolCallTimeRef.value = Date.now();
+        return response;
+      } catch (error) {
+        lastToolCallTimeRef.value = Date.now();
+        if (options.abortSignal?.aborted) {
+          throw error;
+        }
+
+        logger.error(`Error calling tool ${toolId}:`, error);
+        return this.createMcpErrorResult(`Error executing tool ${toolName}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    };
+
+    const originalToModelOutput = toolDef.toModelOutput;
+    const toModelOutput: Tool['toModelOutput'] = originalToModelOutput
+      ? (options) => {
+          if (this.isMcpCallToolResult(options.output)) {
+            return originalToModelOutput(options);
+          }
+          return { type: 'json', value: options.output as JSONValue };
+        }
+      : undefined;
+
+    logger.debug(`Wrapping AI SDK MCP tool: ${toolName}`, toolDef);
+    return {
+      ...toolDef,
+      execute,
+      ...(toModelOutput ? { toModelOutput } : {}),
+    };
+  }
+
+  private createMcpErrorResult(message: string): CallToolResult {
+    return {
+      content: [{ type: 'text', text: message }],
+      isError: true,
+    };
+  }
+
+  private isMcpCallToolResult(value: unknown): value is CallToolResult {
+    return typeof value === 'object' && value !== null && 'content' in value && Array.isArray(value.content);
+  }
+
+  private stripUnsupportedSchemaKeywords(schema: Record<string, unknown>): Record<string, unknown> {
+    const unsupportedKeywords = [
+      'propertyNames',
+      'unevaluatedProperties',
+      'dependentSchemas',
+      'dependentRequired',
+      'contains',
+      'contentMediaType',
+      'contentEncoding',
+      'examples',
+      '$defs',
+      '$anchor',
+      '$recursiveRef',
+      '$recursiveAnchor',
+    ];
+
+    const processObject = (obj: Record<string, unknown>): Record<string, unknown> => {
+      const result: Record<string, unknown> = {};
+
+      for (const [key, value] of Object.entries(obj)) {
+        if (unsupportedKeywords.includes(key)) {
+          continue;
+        }
+
+        if (value !== null && typeof value === 'object') {
+          if (Array.isArray(value)) {
+            result[key] = value.map((item) => (item !== null && typeof item === 'object' ? processObject(item as Record<string, unknown>) : item));
+          } else {
+            result[key] = processObject(value as Record<string, unknown>);
+          }
+        } else {
+          result[key] = value;
+        }
+      }
+
+      return result;
+    };
+
+    return processObject(schema);
+  }
+
+  private fixInputSchema(provider: LlmProviderName, inputSchema: McpToolInputSchema): McpToolInputSchema {
+    if (provider === 'gemini') {
+      const fixedSchema = JSON.parse(JSON.stringify(inputSchema));
+
+      const strippedSchema = this.stripUnsupportedSchemaKeywords(fixedSchema) as unknown as McpToolInputSchema;
+
+      if (strippedSchema.properties) {
+        for (const key of Object.keys(strippedSchema.properties)) {
+          let property = strippedSchema.properties[key] as Record<string, unknown>;
+
+          if (property.anyOf) {
+            property = { any_of: property.anyOf };
+            strippedSchema.properties[key] = property as import('json-schema').JSONSchema7Definition;
+          } else if (property.oneOf) {
+            property = { one_of: property.oneOf };
+            strippedSchema.properties[key] = property as import('json-schema').JSONSchema7Definition;
+          } else if (property.allOf) {
+            property = { all_of: property.allOf };
+            strippedSchema.properties[key] = property as import('json-schema').JSONSchema7Definition;
+          } else {
+            if (property.default !== undefined) {
+              delete property.default;
+            }
+
+            if (property.type === 'string' && property.format && !['enum', 'date-time'].includes(property.format as string)) {
+              logger.debug(`Removing unsupported format '${property.format}' for property '${key}' in Gemini schema`);
+              delete property.format;
+            }
+
+            if (!property.type || property.type === 'null') {
+              property.type = 'string';
+            }
+          }
+        }
+        if (Object.keys(strippedSchema.properties).length === 0) {
+          strippedSchema.properties = {
+            placeholder: {
+              type: 'string',
+              description: 'Placeholder property to satisfy Gemini schema requirements',
+            },
+          };
+        }
+      }
+
+      return strippedSchema;
+    }
+
+    return inputSchema;
+  }
+
+  private async initMcpConnectors(
     mcpServers: Record<string, McpServerConfig>,
     projectDir: string | null,
     taskDir: string | null,
@@ -71,11 +387,10 @@ export class McpManager {
       const existingConnector = this.getPooledConnector(scope, serverName);
       if (!existingConnector || forceReload) {
         const connectorPromise = this.initMcpConnector(projectDir, taskDir, serverName, serverConfig, forceReload, initId, scope);
-        this.setPooledConnector(scope, serverName, connectorPromise);
+        this.setPooledConnector(scope, serverName, connectorPromise, serverConfig);
         connectorsToInitialize.push(connectorPromise);
 
         if (existingConnector) {
-          // close old connector
           try {
             const oldConnector = await existingConnector;
             await oldConnector.client.close();
@@ -87,7 +402,6 @@ export class McpManager {
       }
     }
 
-    // Wait for initialization and update cache
     const initializedConnectors: McpConnector[] = [];
     for (const connectorPromise of connectorsToInitialize) {
       try {
@@ -99,7 +413,6 @@ export class McpManager {
       }
     }
 
-    // Save cache to disk after initialization
     if (initializedConnectors.length > 0) {
       await this.saveToolsCache();
     }
@@ -125,8 +438,8 @@ export class McpManager {
       if (result.status === 'fulfilled') {
         successfullyResolvedConnectors.push(result.value);
       } else {
-        const serverNames = Object.keys(allConnectors);
         // Ensure index is within bounds for serverNames, though it should be if Object.values and Object.keys maintain order
+        const serverNames = Object.keys(allConnectors);
         const failedServerName = serverNames[index] || 'unknown server';
         logger.warn(`Connector promise for server '${failedServerName}' was rejected when trying to get all connectors:`, result.reason);
       }
@@ -164,7 +477,7 @@ export class McpManager {
         try {
           await oldConnector.client.close();
           logger.info(`Closed old MCP connector for server: ${serverName}`);
-          oldConnector = null; // Clear the old client reference
+          oldConnector = null;
         } catch (closeError) {
           logger.error(`Error closing old MCP connector for server ${serverName}:`, closeError);
         }
@@ -191,9 +504,7 @@ export class McpManager {
     const config = JSON.parse(JSON.stringify(serverConfig)) as McpServerConfig;
 
     const interpolateValue = (value: string): string => {
-      // Replace ${projectDir} with the project root directory
       let result = value.replace(/\${projectDir}/g, projectDir || '.');
-      // Replace ${taskDir} with the task directory (worktree dir or project root)
       result = result.replace(/\${taskDir}/g, taskDir || projectDir || '.');
       return result;
     };
@@ -260,8 +571,7 @@ export class McpManager {
 
     let scope: string;
     if (!hasProjectDirInterpolation && !hasTaskDirInterpolation) {
-      // No interpolation: scope = ${taskDir || projectDir || 'global'}
-      scope = taskDir || projectDir || 'global';
+      scope = !serverConfig.command && serverConfig.url ? 'global' : taskDir || projectDir || 'global';
     } else if (hasProjectDirInterpolation && !hasTaskDirInterpolation) {
       // Has ${projectDir} only: scope = ${projectDir || 'global'}
       scope = projectDir || 'global';
@@ -281,19 +591,19 @@ export class McpManager {
     return scope;
   }
 
+  private createClient(transport: McpClientTransport): Promise<MCPClient> {
+    return createMCPClient({
+      transport,
+      clientName: 'aider-desk-client',
+      version: '1.0.0',
+    });
+  }
+
   private async createMcpConnector(serverName: string, config: McpServerConfig, projectDir: string | null, taskDir: string | null): Promise<McpConnector> {
     logger.info(`Initializing MCP client for server: ${serverName}`);
     logger.debug(`Server configuration: ${JSON.stringify(config)}`);
 
-    const client = new McpSdkClient(
-      {
-        name: 'aider-desk-client',
-        version: '1.0.0',
-      },
-      {
-        capabilities: {},
-      },
-    );
+    let client: MCPClient;
 
     if (config.command) {
       const env = { ...config.env };
@@ -304,7 +614,6 @@ export class McpManager {
         env.HOME = process.env.HOME;
       }
 
-      // Handle npx command on Windows
       let command = config.command;
       let args = config.args || [];
       if (process.platform === 'win32' && command === 'npx') {
@@ -329,16 +638,11 @@ export class McpManager {
         }
 
         if (runSubcommandIndex !== -1) {
-          // Check if '--init' already exists anywhere in the arguments
-          // (Docker might tolerate duplicates, but it's cleaner not to add it if present)
           if (!args.includes('--init')) {
-            // Insert '--init' immediately after the 'run' subcommand
             args.splice(runSubcommandIndex + 1, 0, '--init');
             logger.debug(`Added '--init' flag after 'run' for server ${serverName} docker command.`);
           }
         } else {
-          // Log a warning if we couldn't confidently find the 'run' command
-          // This might happen with unusual docker commands defined in the config
           logger.warn(`Could not find 'run' subcommand at the expected position in docker args for server ${serverName} from config.`);
         }
       }
@@ -351,55 +655,73 @@ export class McpManager {
       });
 
       logger.debug(`Connecting to MCP server using STDIO: ${serverName}`);
-      await client.connect(transport);
+      client = await this.createClient(transport);
       logger.debug(`Connected to MCP server: ${serverName}`);
     } else if (config.url) {
-      const baseUrl = new URL(config.url);
+      const headers = config.headers ? { ...config.headers } : undefined;
+      const oauthProvider = await this.oauthManager.getProvider(config.url);
+      const mcpSdkOAuthProvider = await this.oauthManager.getMcpSdkProvider(config.url);
+      const validatedFetch = this.oauthManager.createValidatedFetch(config.url);
+      const transport = new StreamableHTTPClientTransport(new URL(config.url), {
+        requestInit: { headers, redirect: 'error' },
+        authProvider: mcpSdkOAuthProvider,
+        fetch: validatedFetch,
+      });
+
       try {
-        const transport = new StreamableHTTPClientTransport(new URL(baseUrl), {
-          requestInit: {
-            headers: config.headers,
-          },
-        });
         logger.debug(`Connecting to MCP server using Streamable HTTP: ${serverName}`);
-        await client.connect(transport);
+        client = await this.createClient(transport);
         logger.debug(`Connected to MCP server: ${serverName}`);
       } catch (error) {
-        logger.debug(`Failed to connect to MCP server using Streamable HTTP: ${serverName}`, { message: (error as Error).message });
+        if (error instanceof McpSdkUnauthorizedError) {
+          throw new McpAuthenticationRequiredError(serverName, this.getLanguage());
+        }
 
-        const sseTransport = new SSEClientTransport(baseUrl, {
-          requestInit: {
-            headers: config.headers,
-          },
-        });
+        logger.debug(`Failed to connect to MCP server using Streamable HTTP: ${serverName}`, { message: (error as Error).message });
         logger.debug(`Connecting to MCP server using SSE: ${serverName}`);
-        await client.connect(sseTransport);
-        logger.debug(`Connected to MCP server: ${serverName}`);
+        try {
+          client = await this.createClient({
+            type: 'sse',
+            url: config.url,
+            headers,
+            authProvider: oauthProvider,
+            redirect: 'error',
+            fetch: validatedFetch,
+          });
+          logger.debug(`Connected to MCP server: ${serverName}`);
+        } catch (sseError) {
+          if (sseError instanceof AiSdkUnauthorizedError) {
+            throw new McpAuthenticationRequiredError(serverName, this.getLanguage());
+          }
+          throw sseError;
+        }
       }
     } else {
       throw new Error(`MCP server ${serverName} has invalid configuration: missing command or url`);
     }
 
-    // Get tools from this server using the SDK client
     logger.debug(`Fetching tools for MCP server: ${serverName}`);
-    const toolsResponse = (await client.listTools(undefined, {
-      timeout: MCP_CLIENT_TIMEOUT,
-    })) as unknown as { tools: McpTool[] }; // Cast back to expected structure
+    const toolsResponse = await client.listTools({
+      options: { timeout: MCP_CLIENT_TIMEOUT },
+    });
     const toolsList = toolsResponse.tools;
     logger.debug(`Found ${toolsList.length} tools for MCP server: ${serverName}`);
 
-    const clientHolder: McpConnector = {
+    const connector: McpConnector = {
       client,
       serverName,
       serverConfig: config,
+      toolDefinitions: toolsResponse,
       tools: toolsList.map((tool) => ({
-        ...tool,
         serverName,
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
       })),
     };
 
     logger.info(`MCP client initialized successfully for server: ${serverName}`);
-    return clientHolder;
+    return connector;
   }
 
   async getMcpServerTools(serverName: string, config?: McpServerConfig): Promise<McpTool[] | null> {
@@ -411,7 +733,7 @@ export class McpManager {
     let connectorPromise = this.getPooledConnector('global', serverName);
     if (!connectorPromise && config) {
       connectorPromise = this.initMcpConnector(null, null, serverName, config!);
-      this.setPooledConnector('global', serverName, connectorPromise);
+      this.setPooledConnector('global', serverName, connectorPromise, config);
     }
     if (connectorPromise) {
       try {
@@ -424,6 +746,76 @@ export class McpManager {
     }
     logger.warn(`No MCP client promise found for server: ${serverName}`);
     return null;
+  }
+
+  async getOAuthStatus(config: McpServerConfig): Promise<McpOAuthStatusData> {
+    if (!config.url) {
+      return { status: McpOAuthStatus.NotRequired };
+    }
+    return this.oauthManager.getStatus(config.url);
+  }
+
+  async startOAuth(serverName: string, config: McpServerConfig): Promise<string> {
+    if (!config.url) {
+      throw new Error(`MCP server '${serverName}' does not use a remote URL`);
+    }
+
+    let authorizationUrl = await this.oauthManager.startAuthorization(config.url);
+    if (!authorizationUrl) {
+      try {
+        await this.reloadSingleServer(serverName, config);
+      } catch (error) {
+        if (!(error instanceof McpAuthenticationRequiredError)) {
+          throw error;
+        }
+      }
+      authorizationUrl = await this.oauthManager.startAuthorization(config.url);
+    }
+    if (!authorizationUrl) {
+      throw new Error(`MCP server '${serverName}' did not provide an OAuth authorization URL`);
+    }
+    return authorizationUrl;
+  }
+
+  async completeOAuth(code: string, state: string): Promise<void> {
+    const serverUrl = await this.oauthManager.completeAuthorization(code, state);
+    await this.invalidateConnectorsForUrl(serverUrl);
+  }
+
+  async cancelOAuth(state: string): Promise<void> {
+    await this.oauthManager.cancelAuthorization(state);
+  }
+
+  async disconnectOAuth(config: McpServerConfig): Promise<void> {
+    if (!config.url) {
+      return;
+    }
+    await this.oauthManager.disconnect(config.url);
+    await this.invalidateConnectorsForUrl(config.url);
+  }
+
+  private async invalidateConnectorsForUrl(serverUrl: string): Promise<void> {
+    const normalizedUrl = new URL(serverUrl).toString();
+    const matchingKeys = Array.from(this.connectorServerUrls.entries())
+      .filter(([, connectorUrl]) => connectorUrl === normalizedUrl)
+      .map(([poolKey]) => poolKey);
+
+    for (const poolKey of matchingKeys) {
+      const connectorPromise = this.mcpConnectors.get(poolKey);
+      if (connectorPromise) {
+        try {
+          const connector = await connectorPromise;
+          await connector.client.close();
+          delete this.toolsCache.servers[connector.serverName];
+        } catch {
+          const serverName = poolKey.slice(poolKey.indexOf(':') + 1);
+          delete this.toolsCache.servers[serverName];
+        }
+      }
+      this.mcpConnectors.delete(poolKey);
+      this.connectorServerUrls.delete(poolKey);
+    }
+    await this.saveToolsCache();
   }
 
   private compareServerConfig(config: McpServerConfig, otherConfig: McpServerConfig) {
@@ -476,7 +868,6 @@ export class McpManager {
     logger.debug(`Updated cache for server: ${serverName}`);
   }
 
-  // Pool methods
   private getPoolKey(scope: string, serverName: string): string {
     return `${scope}:${serverName}`;
   }
@@ -485,8 +876,14 @@ export class McpManager {
     return this.mcpConnectors.get(this.getPoolKey(scope, serverName));
   }
 
-  private setPooledConnector(scope: string, serverName: string, connector: Promise<McpConnector>): void {
-    this.mcpConnectors.set(this.getPoolKey(scope, serverName), connector);
+  private setPooledConnector(scope: string, serverName: string, connector: Promise<McpConnector>, config: McpServerConfig): void {
+    const poolKey = this.getPoolKey(scope, serverName);
+    this.mcpConnectors.set(poolKey, connector);
+    if (config.url) {
+      this.connectorServerUrls.set(poolKey, new URL(config.url).toString());
+    } else {
+      this.connectorServerUrls.delete(poolKey);
+    }
   }
 
   private async closeAllPooledConnectors(): Promise<void> {
@@ -506,6 +903,7 @@ export class McpManager {
     }
     await Promise.all(closePromises);
     this.mcpConnectors.clear();
+    this.connectorServerUrls.clear();
     logger.debug('All pooled connectors closed');
   }
 
@@ -532,12 +930,13 @@ export class McpManager {
         logger.error(`Error closing connector for server ${serverName}:`, error);
       }
       this.mcpConnectors.delete(poolKey);
+      this.connectorServerUrls.delete(poolKey);
     }
 
     delete this.toolsCache.servers[serverName];
 
     const newConnectorPromise = this.initMcpConnector(null, null, serverName, config);
-    this.setPooledConnector(scope, serverName, newConnectorPromise);
+    this.setPooledConnector(scope, serverName, newConnectorPromise, config);
 
     try {
       const connector = await newConnectorPromise;

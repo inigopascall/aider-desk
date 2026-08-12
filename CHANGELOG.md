@@ -2,9 +2,24 @@
 
 ## [Unreleased]
 
+- optimized task state determination when 'proceed (y/n)' is present
+- added support for showing untracked files in Updated Files and add to git action
+- added CodeBlock and ExpandableMessageBlock components to extension UI components API
+
+## [0.78.0]
+
 - correctly loading input history for all the opened projects not just active one
 - renamed worktree rebase button label to better describe the action
 - improved conflict detection during worktree merge and rebase operations
+- preventing auto-scroll pause on touch scroll up
+- preventing duplicate project/task initialization and improve socket connection handling when connecting from browser
+- added missing context files to subagent runs
+- added OAuth authentication support for MCP servers
+- improved OS detection for browser compatibility
+- added getMcpServers method to Extension API
+- added file-based MCP server configuration
+- moved MCP Servers configuration into separate Settings tab
+- removed unnecesary log message when file is git added outside or repo or ignored
 
 ## [0.77.0]
 

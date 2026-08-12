@@ -18,6 +18,7 @@ export const AIDER_DESK_BIN_DIR = path.join(AIDER_DESK_DATA_DIR, 'bin');
 export const UV_EXECUTABLE = process.platform === 'win32' ? path.join(AIDER_DESK_BIN_DIR, 'uv.exe') : path.join(AIDER_DESK_BIN_DIR, 'uv');
 export const RIPGREP_BINARY_PATH = process.platform === 'win32' ? path.join(AIDER_DESK_BIN_DIR, 'rg.exe') : path.join(AIDER_DESK_BIN_DIR, 'rg');
 export const SERVER_PORT = process.env.AIDER_DESK_PORT ? parseInt(process.env.AIDER_DESK_PORT) : 24337;
+export const MCP_OAUTH_CALLBACK_PATH = '/api/mcp/oauth/callback';
 export const PID_FILES_DIR = path.join(AIDER_DESK_DATA_DIR, 'aider-processes');
 // constants for project directory files
 export const AIDER_DESK_DIR = process.env.AIDER_DESK_DIR || '.aider-desk';
@@ -35,6 +36,7 @@ export const AIDER_DESK_BUILTIN_PROMPTS_DIR = path.join(RESOURCES_DIR, 'prompts'
 export const AIDER_DESK_BUILTIN_SKILLS_DIR = path.join(RESOURCES_DIR, 'skills');
 export const AIDER_DESK_GLOBAL_PROMPTS_DIR = path.join(AIDER_DESK_HOME_DIR, 'prompts');
 export const AIDER_DESK_AGENTS_DIR = path.join(AIDER_DESK_DIR, 'agents');
+export const AIDER_DESK_MCP_SERVERS_FILE = 'mcp-servers.json';
 export const AIDER_DESK_TMP_DIR = path.join(AIDER_DESK_DIR, 'tmp');
 export const AIDER_DESK_WATCH_FILES_LOCK = path.join(AIDER_DESK_DIR, 'watch-files.lock');
 export const WORKTREE_BRANCH_PREFIX = 'aider-desk/task/';

@@ -20,8 +20,6 @@ import { z } from 'zod';
 
 import { ContextFile, ContextMemoryMode, ContextMessage, PromptContext, UsageReportData } from './context';
 
-import type { JSONSchema7Definition } from '@ai-sdk/provider';
-
 // Worktree schema definition
 export const WorktreeSchema = z.object({
   path: z.string(),
@@ -390,6 +388,7 @@ export interface UpdatedFile {
   commitHash?: string;
   commitMessage?: string;
   hasConflicts?: boolean;
+  isUntracked?: boolean;
 }
 
 export interface UpdatedFilesUpdatedData {
@@ -835,7 +834,6 @@ export interface SettingsData {
   };
   preferredModels: string[];
 
-  mcpServers: Record<string, McpServerConfig>;
   llmProviders: {
     openai?: OpenAiProvider;
     anthropic?: AnthropicProvider;
@@ -899,6 +897,11 @@ export interface ProvidersUpdatedData {
 
 export interface AgentProfilesUpdatedData {
   profiles: AgentProfile[];
+}
+
+export interface McpServersData {
+  global: Record<string, McpServerConfig>;
+  projectServers: Record<string, Record<string, McpServerConfig>>;
 }
 
 export interface VoiceSession {
@@ -975,9 +978,9 @@ export interface GenericTool {
   description: string;
 }
 
-export interface McpToolInputSchema {
+export interface McpToolInputSchema extends Record<string, unknown> {
   type: 'object';
-  properties: Record<string, JSONSchema7Definition>;
+  properties?: Record<string, unknown>;
 }
 
 export interface McpTool {
@@ -993,6 +996,17 @@ export interface McpServerConfig {
   env?: Readonly<Record<string, string>>;
   url?: string;
   headers?: Readonly<Record<string, string>>;
+}
+
+export enum McpOAuthStatus {
+  NotRequired = 'not-required',
+  AuthenticationRequired = 'authentication-required',
+  Authorizing = 'authorizing',
+  Authenticated = 'authenticated',
+}
+
+export interface McpOAuthStatusData {
+  status: McpOAuthStatus;
 }
 
 export interface VersionsInfo {

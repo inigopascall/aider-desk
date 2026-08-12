@@ -74,7 +74,9 @@ src/
       agent.ts
       compaction.ts
       index.ts
+      mcp-config-manager.ts
       mcp-manager.ts
+      mcp-oauth-manager.ts
       optimizer.ts
       smart-compaction.ts
       subagent.ts
@@ -203,6 +205,7 @@ src/
         v19-to-v20.ts
         v2-to-v3.ts
         v20-to-v21.ts
+        v21-to-v22.ts
         v3-to-v4.ts
         v4-to-v5.ts
         v5-to-v6.ts
@@ -234,6 +237,7 @@ src/
       file-system.ts
       file-watch.ts
       http.ts
+      i18n.ts
       index.ts
       mutex.ts
       open-url.ts
@@ -534,11 +538,17 @@ src/
             BashToolItem.tsx
             GenericToolGroupItem.tsx
             GenericToolItem.tsx
-            McpServerForm.tsx
-            McpServerItem.tsx
-            McpToolItem.tsx
             SortableAgentProfileItem.tsx
             SystemPromptEditor.tsx
+          mcp/
+            McpOAuthControls.tsx
+            McpServerForm.tsx
+            McpServerItem.tsx
+            McpServerSidebarItem.tsx
+            McpServerToolsPanel.tsx
+            McpSettings.tsx
+            McpToolCard.tsx
+            McpToolItem.tsx
           AboutSettings.tsx
           AiderSettings.tsx
           ExtensionCard.tsx
@@ -606,6 +616,7 @@ src/
         DiffsWorkerPoolContext.tsx
         ExtensionApiContext.tsx
         ExtensionsContext.tsx
+        McpServersContext.tsx
         ModelProviderContext.tsx
         ProjectSettingsContext.tsx
         ReadonlyApiContext.tsx
@@ -2250,8 +2261,6 @@ import {
   ContextToolMessage,
   ContextUserMessage,
   DefaultTaskState,
-  McpTool,
-  McpToolInputSchema,
   Mode,
   ModelCallSettings,
   PromptContext,
@@ -2265,7 +2274,6 @@ import {
   type FinishReason,
   generateText,
   InvalidToolInputError,
-  jsonSchema,
   type ModelMessage,
   NoSuchToolError,
   Output,
@@ -2273,15 +2281,12 @@ import {
   type StepResult,
   streamText,
   type TelemetryOptions,
-  type Tool,
   type ToolExecutionOptions,
   type ToolSet,
   type TypedToolResult,
   wrapLanguageModel,
 } from 'ai';
-import { delay, extractProviderModel, extractServerNameToolName, extractTextContent } from '@common/utils';
-import { LlmProviderName } from '@common/agent';
-import { Client as McpSdkClient } from '@modelcontextprotocol/sdk/client/index.js';
+import { extractProviderModel, extractServerNameToolName, extractTextContent } from '@common/utils';
 // @ts-expect-error istextorbinary is not typed properly
 import { isBinary } from 'istextorbinary';
 import { fileTypeFromBuffer } from 'file-type';
@@ -2301,15 +2306,15 @@ import { createAiderToolset } from './tools/aider';
 import { createHelpersToolset } from './tools/helpers';
 import { createMemoryToolset } from './tools/memory';
 import { createSkillsToolset } from './tools/skills';
-import { MCP_CLIENT_TIMEOUT, McpConnector, McpManager } from './mcp-manager';
+import { McpManager } from './mcp-manager';
 import { ApprovalManager } from './tools/approval-manager';
-import { estimateMessageTokens, extractPromptContextFromToolResult, findLastUserMessage, isNetworkError, readFileContent, truncateToolResult } from './utils';
+import { estimateMessageTokens, extractPromptContextFromToolResult, findLastUserMessage, isNetworkError, readFileContent } from './utils';
 import { extractReasoningMiddleware } from './middlewares/extract-reasoning-middleware';
 import { CompactionLevel, generateCompactedSummary, getReloadableMessages, getSubagentOldResultIds, smartCompactMessages } from './compaction';
 ⋮----
 import type { TextPart } from '@ai-sdk/provider-utils';
 import type { z } from 'zod';
-import type { JSONSchema7Definition, LanguageModelV4 } from '@ai-sdk/provider';
+import type { LanguageModelV4 } from '@ai-sdk/provider';
 ⋮----
 import { MemoryManager } from '@/memory/memory-manager';
 import { PromptsManager } from '@/prompts';
@@ -2323,6 +2328,7 @@ import { TelemetryManager } from '@/telemetry/telemetry-manager';
 import { ResponseMessage } from '@/messages';
 import { createSubagentsToolset } from '@/agent/tools/subagents';
 import { AgentProfileManager } from '@/agent/agent-profile-manager';
+import { McpConfigManager } from '@/agent/mcp-config-manager';
 import { ExtensionManager } from '@/extensions/extension-manager';
 ⋮----
 export class Agent
@@ -2373,24 +2379,13 @@ private async getAvailableTools(
     profile: AgentProfile,
     provider: ProviderProfile,
     model: string,
-    mcpConnectors: McpConnector[] = [],
     messages?: ContextMessage[],
     resultMessages?: ContextMessage[],
     abortSignal?: AbortSignal,
     promptContext?: PromptContext,
 ): Promise<ToolSet>
 ⋮----
-// Build the toolSet directly from enabled clients and tools
-⋮----
-// Skip if serverName is not in the profile's enabledServers
-⋮----
-// Process tools for this enabled server
-⋮----
-// Check approval state first from the profile
-⋮----
-// Skip tools marked as 'Never' approved
-⋮----
-return; // Do not add the tool if it's never approved
+// MCP tools
 ⋮----
 // Add search parent task tool for subtasks
 ⋮----
@@ -2403,65 +2398,6 @@ return; // Do not add the tool if it's never approved
 private wrapToolsWithHooks(task: Task, profile: AgentProfile, toolSet: ToolSet, abortSignal?: AbortSignal, promptContext?: PromptContext): ToolSet
 ⋮----
 // Use modified input from extension if provided
-⋮----
-private convertMpcToolToAiSdkTool(
-    providerName: LlmProviderName,
-    serverName: string,
-    task: Task,
-    profile: AgentProfile,
-    mcpClient: McpSdkClient,
-    toolDef: McpTool,
-    approvalManager: ApprovalManager,
-    promptContext?: PromptContext,
-): Tool
-⋮----
-const execute = async (args:
-⋮----
-// --- Tool Approval Logic ---
-⋮----
-// --- End Tool Approval Logic ---
-⋮----
-// Enforce minimum time between tool calls
-⋮----
-// Truncate large text content in the response
-⋮----
-// Update last tool call time
-⋮----
-// Update last tool call time even if there's an error
-⋮----
-// Return an error message string to the agent
-⋮----
-/**
-   * Recursively strips unsupported JSON Schema 2019-09 keywords that are not
-   * recognized by some MCP servers.
-   */
-private stripUnsupportedSchemaKeywords(schema: Record<string, unknown>): Record<string, unknown>
-⋮----
-// JSON Schema 2019-09 keywords to remove
-⋮----
-// Recursive helper to process schema objects
-const processObject = (obj: Record<string, unknown>): Record<string, unknown> =>
-⋮----
-// Skip unsupported keywords
-⋮----
-// Recursively process objects
-⋮----
-// Process arrays (e.g., anyOf, oneOf, allOf, enum items)
-⋮----
-// Process nested objects (e.g., properties, items, additionalProperties)
-⋮----
-private fixInputSchema(provider: LlmProviderName, inputSchema: McpToolInputSchema): McpToolInputSchema
-⋮----
-// Deep clone to avoid modifying the original schema
-⋮----
-// First, strip JSON Schema 2019-09 keywords that are not supported
-⋮----
-// Gemini requires that when any_of/one_of/all_of is present,
-// it must be the ONLY field in the property
-⋮----
-// gemini does not like "default" in the schema
-⋮----
-// gemini requires at least one property in the schema
 ⋮----
 async runAgent(
     task: Task,
@@ -2489,8 +2425,6 @@ async runAgent(
 // re-activate them itself)
 ⋮----
 // Normalize messages for provider-specific requirements
-⋮----
-// Lazily initialize MCP clients for the current task
 ⋮----
 // repairToolCall function that attempts to repair tool calls
 const repairToolCall = async (
@@ -2701,20 +2635,110 @@ File: src/main/agent/index.ts
 
 
 ================
+File: src/main/agent/mcp-config-manager.ts
+================
+import { FSWatcher, watch } from 'chokidar';
+import { debounce } from 'lodash';
+import { fileExists } from '@common/utils';
+⋮----
+import type { McpServerConfig, SettingsData } from '@common/types';
+import type { Store } from '@/store';
+⋮----
+import { AIDER_DESK_DIR, AIDER_DESK_HOME_DIR, AIDER_DESK_MCP_SERVERS_FILE } from '@/constants';
+import logger from '@/logger';
+import { EventManager } from '@/events';
+import { shouldUsePolling } from '@/utils/file-watch';
+⋮----
+const getGlobalMcpServersPath = (): string
+const getProjectMcpServersPath = (projectDir: string): string
+⋮----
+interface McpServersFileContent {
+  mcpServers: Record<string, McpServerConfig>;
+}
+⋮----
+export class McpConfigManager
+⋮----
+private fileWatchers: Map<string, FSWatcher> = new Map(); // filePath -> watcher
+⋮----
+constructor(
+⋮----
+public async init(): Promise<void>
+⋮----
+public async initializeForProject(projectDir: string): Promise<void>
+⋮----
+public removeProject(projectDir: string): void
+⋮----
+public getGlobalServers(): Record<string, McpServerConfig>
+⋮----
+public getProjectServers(projectDir: string): Record<string, McpServerConfig>
+⋮----
+public getMergedServers(projectDir?: string | null): Record<string, McpServerConfig>
+⋮----
+public getState():
+⋮----
+public sendMcpServersUpdated(): void
+⋮----
+public async addServer(projectDir: string | undefined, name: string, config: McpServerConfig): Promise<void>
+⋮----
+public async updateServer(projectDir: string | undefined, oldName: string, name: string, config: McpServerConfig): Promise<void>
+⋮----
+public async removeServer(projectDir: string | undefined, name: string): Promise<void>
+⋮----
+public async replaceServers(projectDir: string | undefined, servers: Record<string, McpServerConfig>): Promise<void>
+⋮----
+private async saveServers(projectDir: string | undefined, servers: Record<string, McpServerConfig>): Promise<void>
+⋮----
+private async ensureFileExists(filePath: string): Promise<void>
+⋮----
+private async loadServersFromFile(filePath: string): Promise<Record<string, McpServerConfig>>
+⋮----
+private async writeServersToFile(filePath: string, servers: Record<string, McpServerConfig>): Promise<void>
+⋮----
+private async setupWatcherForFile(filePath: string): Promise<void>
+⋮----
+const reloadFunction = ()
+⋮----
+private async reloadFile(filePath: string): Promise<void>
+⋮----
+async settingsChanged(oldSettings: SettingsData, newSettings: SettingsData): Promise<void>
+⋮----
+async dispose(): Promise<void>
+
+================
 File: src/main/agent/mcp-manager.ts
 ================
 import path from 'path';
 import fs from 'fs/promises';
 ⋮----
 import { v4 as uuidv4 } from 'uuid';
-import { McpServerConfig, McpTool } from '@common/types';
-import { Client as McpSdkClient } from '@modelcontextprotocol/sdk/client/index.js';
+import { createMCPClient, UnauthorizedError as AiSdkUnauthorizedError, type CallToolResult, type ListToolsResult, type MCPClient } from '@ai-sdk/mcp';
+import { type JSONValue } from '@ai-sdk/provider';
+import { UnauthorizedError as McpSdkUnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { type Tool, type ToolExecutionOptions, type ToolSet } from 'ai';
+import {
+  AgentProfile,
+  McpOAuthStatus,
+  McpServerConfig,
+  McpTool,
+  McpToolInputSchema,
+  PromptContext,
+  ToolApprovalState,
+  type McpOAuthStatusData,
+} from '@common/types';
+import { LlmProviderName } from '@common/agent';
+import { delay } from '@common/utils';
+import { TOOL_GROUP_NAME_SEPARATOR } from '@common/tools';
+⋮----
+import { ApprovalManager } from './tools/approval-manager';
+import { McpOAuthManager } from './mcp-oauth-manager';
+import { truncateToolResult } from './utils';
 ⋮----
 import logger from '@/logger';
 import { AIDER_DESK_CACHE_DIR } from '@/constants';
+import { translate } from '@/utils/i18n';
+import { Task } from '@/task';
 ⋮----
 export interface McpToolsCacheEntry {
   tools: McpTool[];
@@ -2726,32 +2750,65 @@ export interface McpToolsCache {
   servers: Record<string, McpToolsCacheEntry>;
 }
 ⋮----
-// increasing timeout for MCP client requests
+export class McpAuthenticationRequiredError extends Error
 ⋮----
-export interface McpConnector {
-  client: McpSdkClient;
+constructor(serverName: string, language?: string)
+⋮----
+interface McpConnector {
+  client: MCPClient;
   serverName: string;
   tools: McpTool[];
+  toolDefinitions: ListToolsResult;
   serverConfig: McpServerConfig;
 }
 ⋮----
+type McpClientTransport = Parameters<typeof createMCPClient>[0]['transport'];
+⋮----
 export class McpManager
+⋮----
+constructor(
 ⋮----
 async init()
 ⋮----
-async initMcpConnectors(
+async createToolset(
+    task: Task,
+    profile: AgentProfile,
+    providerName: LlmProviderName,
+    mcpServers: Record<string, McpServerConfig>,
+    approvalManager: ApprovalManager,
+    promptContext?: PromptContext,
+): Promise<ToolSet>
+⋮----
+private wrapMcpTool(
+    serverName: string,
+    toolName: string,
+    task: Task,
+    profile: AgentProfile,
+    toolDef: Tool,
+    approvalManager: ApprovalManager,
+    lastToolCallTimeRef: { value: number },
+    promptContext?: PromptContext,
+): Tool
+⋮----
+const execute = async (args: unknown, options: ToolExecutionOptions<unknown>) =>
+⋮----
+private createMcpErrorResult(message: string): CallToolResult
+⋮----
+private isMcpCallToolResult(value: unknown): value is CallToolResult
+⋮----
+private stripUnsupportedSchemaKeywords(schema: Record<string, unknown>): Record<string, unknown>
+⋮----
+const processObject = (obj: Record<string, unknown>): Record<string, unknown> =>
+⋮----
+private fixInputSchema(provider: LlmProviderName, inputSchema: McpToolInputSchema): McpToolInputSchema
+⋮----
+private async initMcpConnectors(
     mcpServers: Record<string, McpServerConfig>,
     projectDir: string | null,
     taskDir: string | null,
     forceReload = false,
     enabledServers?: string[],
 ): Promise<McpConnector[]>
-⋮----
-// close old connector
-⋮----
-// Wait for initialization and update cache
-⋮----
-// Save cache to disk after initialization
 ⋮----
 // Ensure index is within bounds for serverNames, though it should be if Object.values and Object.keys maintain order
 ⋮----
@@ -2765,17 +2822,11 @@ private async initMcpConnector(
     scope: string = 'global',
 ): Promise<McpConnector>
 ⋮----
-oldConnector = null; // Clear the old client reference
-⋮----
 async close(): Promise<void>
 ⋮----
 private interpolateServerConfig(serverConfig: McpServerConfig, projectDir: string | null, taskDir: string | null): McpServerConfig
 ⋮----
 const interpolateValue = (value: string): string =>
-⋮----
-// Replace ${projectDir} with the project root directory
-⋮----
-// Replace ${taskDir} with the task directory (worktree dir or project root)
 ⋮----
 private hasInterpolation(value: string, pattern: string): boolean
 ⋮----
@@ -2783,15 +2834,13 @@ private configHasInterpolation(serverConfig: McpServerConfig, pattern: string): 
 ⋮----
 private calculateServerScope(serverConfig: McpServerConfig, projectDir: string | null, taskDir: string | null, serverName: string): string
 ⋮----
-// No interpolation: scope = ${taskDir || projectDir || 'global'}
-⋮----
 // Has ${projectDir} only: scope = ${projectDir || 'global'}
 ⋮----
 // Has both ${projectDir} and ${taskDir}: scope = ${projectDir}:${taskDir}
 ⋮----
-private async createMcpConnector(serverName: string, config: McpServerConfig, projectDir: string | null, taskDir: string | null): Promise<McpConnector>
+private createClient(transport: McpClientTransport): Promise<MCPClient>
 ⋮----
-// Handle npx command on Windows
+private async createMcpConnector(serverName: string, config: McpServerConfig, projectDir: string | null, taskDir: string | null): Promise<McpConnector>
 ⋮----
 // If command is 'docker', ensure '--init' is present after 'run'
 // so the container properly handles SIGINT and SIGTERM
@@ -2801,19 +2850,19 @@ private async createMcpConnector(serverName: string, config: McpServerConfig, pr
 // Verify it's likely the actual 'run' subcommand
 // e.g., 'run' is the first arg, or it follows 'container'
 ⋮----
-// Check if '--init' already exists anywhere in the arguments
-// (Docker might tolerate duplicates, but it's cleaner not to add it if present)
-⋮----
-// Insert '--init' immediately after the 'run' subcommand
-⋮----
-// Log a warning if we couldn't confidently find the 'run' command
-// This might happen with unusual docker commands defined in the config
-⋮----
-// Get tools from this server using the SDK client
-⋮----
-})) as unknown as { tools: McpTool[] }; // Cast back to expected structure
-⋮----
 async getMcpServerTools(serverName: string, config?: McpServerConfig): Promise<McpTool[] | null>
+⋮----
+async getOAuthStatus(config: McpServerConfig): Promise<McpOAuthStatusData>
+⋮----
+async startOAuth(serverName: string, config: McpServerConfig): Promise<string>
+⋮----
+async completeOAuth(code: string, state: string): Promise<void>
+⋮----
+async cancelOAuth(state: string): Promise<void>
+⋮----
+async disconnectOAuth(config: McpServerConfig): Promise<void>
+⋮----
+private async invalidateConnectorsForUrl(serverUrl: string): Promise<void>
 ⋮----
 private compareServerConfig(config: McpServerConfig, otherConfig: McpServerConfig)
 ⋮----
@@ -2825,18 +2874,110 @@ getCachedTools(serverName: string): McpTool[] | null
 ⋮----
 updateToolsCache(serverName: string, tools: McpTool[]): void
 ⋮----
-// Pool methods
 private getPoolKey(scope: string, serverName: string): string
 ⋮----
 private getPooledConnector(scope: string, serverName: string): Promise<McpConnector> | undefined
 ⋮----
-private setPooledConnector(scope: string, serverName: string, connector: Promise<McpConnector>): void
+private setPooledConnector(scope: string, serverName: string, connector: Promise<McpConnector>, config: McpServerConfig): void
 ⋮----
 private async closeAllPooledConnectors(): Promise<void>
 ⋮----
 async reloadAllServers(mcpServers: Record<string, McpServerConfig>, force: boolean): Promise<void>
 ⋮----
 async reloadSingleServer(serverName: string, config: McpServerConfig): Promise<McpTool[]>
+
+================
+File: src/main/agent/mcp-oauth-manager.ts
+================
+import fs from 'fs/promises';
+import path from 'path';
+import { randomBytes } from 'crypto';
+⋮----
+import {
+  auth,
+  type OAuthAuthorizationServerInformation,
+  type OAuthClientInformation,
+  type OAuthClientMetadata,
+  type OAuthClientProvider,
+  type OAuthTokens,
+} from '@ai-sdk/mcp';
+import { McpOAuthStatus, type McpOAuthStatusData } from '@common/types';
+⋮----
+import type {
+  OAuthClientProvider as McpSdkOAuthClientProvider,
+  OAuthDiscoveryState as McpSdkOAuthDiscoveryState,
+} from '@modelcontextprotocol/sdk/client/auth.js';
+⋮----
+import { AIDER_DESK_DATA_DIR, MCP_OAUTH_CALLBACK_PATH, SERVER_PORT } from '@/constants';
+import { isElectron } from '@/app';
+import logger from '@/logger';
+⋮----
+type McpOAuthRecord = {
+  serverUrl: string;
+  oauthRequired: boolean;
+  tokens?: OAuthTokens;
+  clientInformation?: OAuthClientInformation;
+  authorizationServerInformation?: OAuthAuthorizationServerInformation;
+  discoveryState?: McpSdkOAuthDiscoveryState;
+  codeVerifier?: string;
+  state?: string;
+  authorizationUrl?: string;
+  authorizationStartedAt?: number;
+};
+⋮----
+type PlainStoreData = {
+  version: number;
+  records: Record<string, McpOAuthRecord>;
+};
+⋮----
+type EncryptedStoreData = {
+  version: number;
+  encrypted: string;
+};
+⋮----
+type StoreData = PlainStoreData | EncryptedStoreData;
+⋮----
+const normalizeServerUrl = (serverUrl: string): string =>
+⋮----
+const isLoopbackHostname = (hostname: string): boolean
+⋮----
+export class McpOAuthManager
+⋮----
+constructor(private readonly storeFilePath = MCP_OAUTH_STORE_FILE)
+⋮----
+init(): Promise<void>
+⋮----
+async getProvider(serverUrl: string): Promise<OAuthClientProvider>
+⋮----
+async getMcpSdkProvider(serverUrl: string): Promise<McpSdkOAuthClientProvider>
+⋮----
+createValidatedFetch(serverUrl: string): typeof fetch
+⋮----
+async getStatus(serverUrl: string): Promise<McpOAuthStatusData>
+⋮----
+async startAuthorization(serverUrl: string): Promise<string | null>
+⋮----
+async completeAuthorization(code: string, state: string): Promise<string>
+⋮----
+async cancelAuthorization(state: string): Promise<void>
+⋮----
+async disconnect(serverUrl: string): Promise<void>
+⋮----
+async clearPendingAuthorization(serverUrl: string): Promise<void>
+⋮----
+private async createAndSaveState(serverUrl: string): Promise<string>
+⋮----
+private validateOAuthUrl(serverUrl: string | URL, candidateUrl: string | URL): void
+⋮----
+private get redirectUrl(): string
+⋮----
+private ensureRecord(serverUrl: string): McpOAuthRecord
+⋮----
+private async load(): Promise<void>
+⋮----
+private save(): Promise<void>
+⋮----
+private async getSafeStorage()
 
 ================
 File: src/main/agent/optimizer.ts
@@ -3589,6 +3730,7 @@ import {
   ProjectSettings,
   AgentProfile,
   AgentProfilesUpdatedData,
+  McpServersData,
   WorktreeIntegrationStatus,
   WorktreeIntegrationStatusUpdatedData,
   TaskCreatedData,
@@ -3709,6 +3851,9 @@ sendProjectSettingsUpdated(baseDir: string, settings: ProjectSettings): void
 // Agent profile events
 sendAgentProfilesUpdated(profiles: AgentProfile[]): void
 ⋮----
+// MCP servers events
+sendMcpServersUpdated(data: McpServersData): void
+⋮----
 // Task lifecycle events
 sendTaskCreated(task: TaskData, activate?: boolean): void
 ⋮----
@@ -3795,7 +3940,8 @@ import { ProjectContextImpl } from './project-context';
 import { TaskContextImpl } from './task-context';
 ⋮----
 import type { ElectronApp, ExtensionContext, MemoryContext, ProjectContext, TaskContext } from '@common/extensions';
-import type { Model, ProviderProfile, SettingsData } from '@common/types';
+import type { McpServerConfig, Model, ProviderProfile, SettingsData } from '@common/types';
+import type { McpConfigManager } from '@/agent/mcp-config-manager';
 import type { EventManager } from '@/events';
 import type { MemoryManager } from '@/memory/memory-manager';
 import type { ModelManager } from '@/models';
@@ -3818,6 +3964,7 @@ constructor(
     private readonly memoryManager?: MemoryManager,
     private readonly project?: Project,
     private readonly task?: Task,
+    private readonly mcpConfigManager?: McpConfigManager,
 )
 ⋮----
 log(message: string, type: 'info' | 'error' | 'warn' | 'debug' = 'info'): void
@@ -3833,6 +3980,8 @@ getProjectContext(): ProjectContext
 async getModelConfigs(): Promise<Model[]>
 ⋮----
 getProviders(): ProviderProfile[]
+⋮----
+async getMcpServers(projectDir?: string): Promise<Record<string, McpServerConfig>>
 ⋮----
 async getSetting(key: string): Promise<unknown>
 ⋮----
@@ -4089,6 +4238,7 @@ import type {
 } from '@common/extensions';
 import type { AgentProfile } from '@common/types';
 import type { Store } from '@/store';
+import type { McpConfigManager } from '@/agent/mcp-config-manager';
 import type { ModelManager } from '@/models';
 import type { EventManager } from '@/events';
 import type { MemoryManager } from '@/memory/memory-manager';
@@ -4191,6 +4341,7 @@ constructor(
     private readonly eventManager: EventManager,
     private readonly telemetryManager: TelemetryManager,
     private readonly memoryManager: MemoryManager,
+    private readonly mcpConfigManager?: McpConfigManager,
     private readonly registry: ExtensionRegistry = new ExtensionRegistry(),
 )
 ⋮----
@@ -6984,7 +7135,7 @@ import { normalizeBaseDir } from '@common/utils';
 import { AgentProfile, ProjectSettings, SettingsData, ModeDefinition } from '@common/types';
 ⋮----
 import { TelemetryManager } from '@/telemetry';
-import { AgentProfileManager, McpManager } from '@/agent';
+import { AgentProfileManager, McpConfigManager, McpManager } from '@/agent';
 import { DataManager } from '@/data-manager';
 import logger from '@/logger';
 import { Project } from '@/project';
@@ -7002,6 +7153,7 @@ export class ProjectManager
 constructor(
     private readonly store: Store,
     private readonly mcpManager: McpManager,
+    private readonly mcpConfigManager: McpConfigManager,
     private readonly telemetryManager: TelemetryManager,
     private readonly dataManager: DataManager,
     private readonly eventManager: EventManager,
@@ -7054,7 +7206,7 @@ import { AgentProfile, CreateTaskParams, DefaultTaskState, ModeDefinition, Proje
 import { fileExists } from '@common/utils';
 import { v4 as uuidv4 } from 'uuid';
 ⋮----
-import { AgentProfileManager, McpManager } from '@/agent';
+import { AgentProfileManager, McpConfigManager, McpManager } from '@/agent';
 import { Connector } from '@/connector';
 import { DataManager } from '@/data-manager';
 import logger from '@/logger';
@@ -7079,6 +7231,7 @@ constructor(
     public readonly baseDir: string,
     private readonly store: Store,
     private readonly mcpManager: McpManager,
+    private readonly mcpConfigManager: McpConfigManager,
     private readonly telemetryManager: TelemetryManager,
     private readonly dataManager: DataManager,
     private readonly eventManager: EventManager,
@@ -7090,6 +7243,8 @@ constructor(
     private readonly extensionManager: ExtensionManager,
     private readonly pythonInstaller: PythonDependenciesInstaller,
 )
+⋮----
+public isStarted(): boolean
 ⋮----
 public start(): Promise<void>
 ⋮----
@@ -7651,6 +7806,16 @@ registerRoutes(router: Router): void
 // Reload MCP servers
 ⋮----
 // Reload single MCP server
+⋮----
+// GET /mcp/servers
+⋮----
+// POST /mcp/server/add
+⋮----
+// POST /mcp/server/update
+⋮----
+// POST /mcp/server/remove
+⋮----
+// POST /mcp/servers/replace
 
 ================
 File: src/main/server/rest-api/memory-api.ts
@@ -8235,7 +8400,7 @@ import {
   SkillsApi,
   ReadonlyApi,
 } from '@/server/rest-api';
-import { AUTH_PASSWORD, AUTH_USERNAME, READONLY_MODE, SERVER_PORT } from '@/constants';
+import { AUTH_PASSWORD, AUTH_USERNAME, MCP_OAUTH_CALLBACK_PATH, READONLY_MODE, SERVER_PORT } from '@/constants';
 import logger from '@/logger';
 import { ProjectManager } from '@/project';
 import { EventsHandler } from '@/events-handler';
@@ -8260,7 +8425,7 @@ constructor(
 ⋮----
 private serverGuardMiddleware(req: Request, res: Response, next: NextFunction): void
 ⋮----
-// Always allow health check regardless of server.enabled setting
+// Always allow health check and OAuth callback regardless of server.enabled setting
 ⋮----
 // In headless mode, always allow requests regardless of server.enabled setting
 ⋮----
@@ -8511,6 +8676,24 @@ import { ProviderProfile } from '@common/types';
 export const migrateProvidersV20toV21 = (providers: ProviderProfile[]): ProviderProfile[] =>
 
 ================
+File: src/main/store/migrations/v21-to-v22.ts
+================
+import fs from 'fs/promises';
+import path from 'path';
+⋮----
+import { McpServerConfig, SettingsData } from '@common/types';
+import { fileExists } from '@common/utils';
+⋮----
+import { AIDER_DESK_HOME_DIR, AIDER_DESK_MCP_SERVERS_FILE } from '@/constants';
+import logger from '@/logger';
+⋮----
+export const migrateSettingsV21toV22 = async (settings: SettingsData): Promise<SettingsData> =>
+⋮----
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+⋮----
+// keeping mcpServers in settings for now, just in case user needs to revert the version
+
+================
 File: src/main/store/migrations/v3-to-v4.ts
 ================
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -8627,6 +8810,7 @@ import { migrateSettingsV17toV18 } from '@/store/migrations/v17-to-v18';
 import { migrateSettingsV18toV19 } from '@/store/migrations/v18-to-v19';
 import { migrateSettingsV19toV20 } from '@/store/migrations/v19-to-v20';
 import { migrateProvidersV20toV21 } from '@/store/migrations/v20-to-v21';
+import { migrateSettingsV21toV22 } from '@/store/migrations/v21-to-v22';
 ⋮----
 const compareBaseDirs = (baseDir1: string, baseDir2: string): boolean =>
 ⋮----
@@ -9204,7 +9388,7 @@ import {
   AIDER_DESK_TODOS_FILE,
   WORKTREE_BRANCH_PREFIX,
 } from '@/constants';
-import { Agent, AgentProfileManager, McpManager } from '@/agent';
+import { Agent, AgentProfileManager, McpConfigManager, McpManager } from '@/agent';
 import { findEnabledSubagent, runSubagentTask } from '@/agent/subagent';
 import { Connector } from '@/connector';
 import { DataManager } from '@/data-manager';
@@ -9237,6 +9421,7 @@ constructor(
     public readonly taskId: string,
     private readonly store: Store,
     private readonly mcpManager: McpManager,
+    private readonly mcpConfigManager: McpConfigManager,
     private readonly customCommandManager: CustomCommandManager,
     private readonly agentProfileManager: AgentProfileManager,
     private readonly telemetryManager: TelemetryManager,
@@ -9531,7 +9716,7 @@ public async dropFile(filePath: string)
 ⋮----
 public sendDropFile(filePath: string, readOnly?: boolean, noUpdate?: boolean): void
 ⋮----
-public async addToGit(absolutePath: string, promptContext?: PromptContext): Promise<void>
+public async addToGit(absolutePath: string): Promise<void>
 ⋮----
 // Check if the project is a git repository before attempting to add
 ⋮----
@@ -10034,6 +10219,8 @@ private async executeConflictResolution(directoryPath: string, directoryName: st
 ⋮----
 // Clean up abort controller
 ⋮----
+private isConflictError(error: unknown): boolean
+⋮----
 public async resolveConflictsWithAgent(): Promise<void>
 ⋮----
 // Check worktree first
@@ -10166,7 +10353,7 @@ captureProjectClosed(closedProjectsCount: number)
 ⋮----
 captureRunPrompt(mode?: Mode)
 ⋮----
-captureAgentRun(profile: AgentProfile, task?: TaskData)
+captureAgentRun(profile: AgentProfile, task?: TaskData, totalMcpServersCount = 0)
 ⋮----
 captureCustomCommand(commandName: string, argsCount: number, mode: Mode)
 ⋮----
@@ -10445,6 +10632,20 @@ export const shouldUsePolling = (watchPath: string, mode: FileWatchMode = FileWa
 File: src/main/utils/http.ts
 ================
 export const fetchWithTimeout = async (url: string, timeoutMs: number = DEFAULT_FETCH_TIMEOUT_MS): Promise<Response> =>
+
+================
+File: src/main/utils/i18n.ts
+================
+import en from '@common/locales/en.json';
+import ko from '@common/locales/ko.json';
+import ru from '@common/locales/ru.json';
+import zh from '@common/locales/zh.json';
+⋮----
+const getNested = (obj: Record<string, unknown>, key: string): unknown =>
+⋮----
+const interpolate = (template: string, params?: Record<string, string>): string =>
+⋮----
+export const translate = (language: string | undefined, key: string, params?: Record<string, string>): string =>
 
 ================
 File: src/main/utils/index.ts
@@ -11480,7 +11681,17 @@ async mergeWorktreeToMainWithUncommitted(
 ⋮----
 // Return merge state for potential revert
 ⋮----
-// Recovery: try to restore stashes
+// Recovery: revert main repo to pre-merge state before restoring stashes
+⋮----
+// Abort any in-progress merge (in case merge itself failed)
+⋮----
+// Ignore - no merge in progress
+⋮----
+// Hard reset main to undo merge commit and clean conflict markers from failed stash apply
+⋮----
+// Restore worktree stash
+⋮----
+// Restore main's original uncommitted changes on the clean working tree
 ⋮----
 /**
    * Check if worktree has uncommitted changes or unmerged commits
@@ -11677,7 +11888,9 @@ async applyUncommittedChangesToMain(
 ⋮----
 // 6. Clean up stash
 ⋮----
-// Recovery: try to restore stash to worktree
+// Recovery: clean up main repo from failed stash apply
+⋮----
+// Restore stash to worktree
 ⋮----
 /**
    * Revert a merge operation using the stored MergeState
@@ -11758,7 +11971,9 @@ import {
   FileEdit,
   InstalledExtension,
   ExtensionToolInfo,
+  McpOAuthStatusData,
   McpServerConfig,
+  McpServersData,
   McpTool,
   MemoryEntry,
   Mode,
@@ -11791,7 +12006,7 @@ import { isBinary } from 'istextorbinary';
 import type { ModeDefinition, ExtensionConfigComponent, ExtensionOperationResult, ExtensionUIComponent } from '@common/types';
 import type { WindowManager } from '@/window-manager';
 ⋮----
-import { McpManager, AgentProfileManager } from '@/agent';
+import { McpManager, McpConfigManager, AgentProfileManager } from '@/agent';
 import { MemoryManager } from '@/memory/memory-manager';
 import { ModelManager } from '@/models';
 import { Project, ProjectManager } from '@/project';
@@ -11937,11 +12152,31 @@ updateEditFormats(baseDir: string, updatedFormats: Record<string, EditFormat>): 
 ⋮----
 // Update just the current model's edit format while preserving others
 ⋮----
-async loadMcpServerTools(serverName: string, config?: McpServerConfig): Promise<McpTool[] | string | null>
+async loadMcpServerTools(serverName: string, config?: McpServerConfig, projectDir?: string): Promise<McpTool[] | string | null>
 ⋮----
-async reloadMcpServers(mcpServers: Record<string, McpServerConfig>, force = false): Promise<void>
+async reloadMcpServers(projectDir?: string, force = false): Promise<void>
 ⋮----
 async reloadMcpServer(serverName: string, config: McpServerConfig): Promise<McpTool[]>
+⋮----
+async getMcpOAuthStatus(serverName: string, config?: McpServerConfig, projectDir?: string): Promise<McpOAuthStatusData>
+⋮----
+async startMcpOAuth(serverName: string, config?: McpServerConfig, projectDir?: string): Promise<string>
+⋮----
+async disconnectMcpOAuth(serverName: string, config?: McpServerConfig, projectDir?: string): Promise<void>
+⋮----
+async completeMcpOAuth(code: string, state: string): Promise<void>
+⋮----
+async cancelMcpOAuth(state: string): Promise<void>
+⋮----
+async getMcpServers(): Promise<McpServersData>
+⋮----
+async addMcpServer(name: string, config: McpServerConfig, projectDir?: string): Promise<void>
+⋮----
+async updateMcpServer(oldName: string, name: string, config: McpServerConfig, projectDir?: string): Promise<void>
+⋮----
+async removeMcpServer(name: string, projectDir?: string): Promise<void>
+⋮----
+async replaceMcpServers(servers: Record<string, McpServerConfig>, projectDir?: string): Promise<void>
 ⋮----
 async createTerminal(baseDir: string, taskId: string, cols?: number, rows?: number): Promise<string>
 ⋮----
@@ -12068,6 +12303,8 @@ getSystemLogs(fromId?: number, limit?: number, levels?: SystemLogLevel[]): Syste
 clearSystemLogs(): void
 ⋮----
 async openPath(path: string): Promise<boolean>
+⋮----
+async openUrlExternally(url: string): Promise<void>
 ⋮----
 async openUrlInWindow(url: string, title?: string): Promise<void>
 ⋮----
@@ -12298,6 +12535,8 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
 ⋮----
 // Voice handlers
 ⋮----
+// MCP server config handlers (file-based, global + per-project)
+⋮----
 // Extension handlers
 ⋮----
 // Extension config handlers (per-extension settings)
@@ -12347,7 +12586,7 @@ import { createServer } from 'http';
 ⋮----
 import type { WindowManager } from '@/window-manager';
 ⋮----
-import { AgentProfileManager, McpManager } from '@/agent';
+import { AgentProfileManager, McpConfigManager, McpManager } from '@/agent';
 import { CloudflareTunnelManager, ServerController } from '@/server';
 import { ConnectorManager } from '@/connector';
 import { ProjectManager } from '@/project';
@@ -12388,6 +12627,8 @@ export const initManagers = async (store: Store, windowManager?: WindowManager):
 // Initialize MCP manager
 ⋮----
 // Initialize event manager with window manager
+⋮----
+// Initialize MCP config manager (file-based global + per-project server configuration)
 ⋮----
 // Initialize event-based logging (adds transport to logger)
 ⋮----
@@ -12996,6 +13237,7 @@ import {
   InputHistoryData,
   LogData,
   McpServerConfig,
+  McpServersData,
   MessageRemovedData,
   ModalOverlayUrlData,
   ModelsData,
@@ -13111,12 +13353,14 @@ File: src/renderer/public/sw.js
 // Claim clients immediately
 ⋮----
 // Pass through all fetch requests without caching
+// Skip socket.io requests to avoid interfering with long-polling transport
 
 ================
 File: src/renderer/src/api/browser-api.ts
 ================
 import {
   AgentProfilesUpdatedData,
+  McpServersData,
   AutocompletionData,
   ClearTaskData,
   CloudflareTunnelStatus,
@@ -13134,6 +13378,7 @@ import {
   SystemLogData,
   SystemLogLevel,
   SystemLogsResponse,
+  McpOAuthStatusData,
   McpServerConfig,
   McpTool,
   MessageRemovedData,
@@ -13226,6 +13471,7 @@ type EventDataMap = {
   'project-settings-updated': { baseDir: string; settings: ProjectSettings };
   'worktree-integration-status-updated': WorktreeIntegrationStatusUpdatedData;
   'agent-profiles-updated': AgentProfilesUpdatedData;
+  'mcp-servers-updated': McpServersData;
   'updated-files-updated': UpdatedFilesUpdatedData;
   'skills-updated': SkillsUpdatedData;
   notification: NotificationData;
@@ -13270,9 +13516,11 @@ constructor()
 ⋮----
 private ensureSocketConnected(): Promise<void>
 ⋮----
+const cleanup = () =>
+⋮----
 const onConnect = () =>
 ⋮----
-const cleanup = () =>
+const onDisconnect = () =>
 ⋮----
 private addListener<T extends keyof EventDataMap>(eventType: T, callback: EventCallback<EventDataMap[T]>, baseDir?: string, taskId?: string): () => void
 ⋮----
@@ -13355,9 +13603,17 @@ addTodo(baseDir: string, taskId: string, name: string): Promise<TodoItem[]>
 updateTodo(baseDir: string, taskId: string, name: string, updates: Partial<TodoItem>): Promise<TodoItem[]>
 deleteTodo(baseDir: string, taskId: string, name: string): Promise<TodoItem[]>
 clearAllTodos(baseDir: string, taskId: string): Promise<TodoItem[]>
-loadMcpServerTools(serverName: string, config?: McpServerConfig): Promise<McpTool[] | null>
-reloadMcpServers(mcpServers: Record<string, McpServerConfig>, force = false): Promise<void>
+loadMcpServerTools(serverName: string, config?: McpServerConfig, projectDir?: string): Promise<McpTool[] | null>
+reloadMcpServers(projectDir?: string, force = false): Promise<void>
 reloadMcpServer(serverName: string, config: McpServerConfig): Promise<McpTool[]>
+getMcpOAuthStatus(serverName: string, config?: McpServerConfig, projectDir?: string): Promise<McpOAuthStatusData>
+async startMcpOAuth(serverName: string, config?: McpServerConfig, projectDir?: string): Promise<string>
+disconnectMcpOAuth(serverName: string, config?: McpServerConfig, projectDir?: string): Promise<void>
+getMcpServers(): Promise<McpServersData>
+addMcpServer(name: string, config: McpServerConfig, projectDir?: string): Promise<McpServersData>
+updateMcpServer(oldName: string, name: string, config: McpServerConfig, projectDir?: string): Promise<McpServersData>
+removeMcpServer(name: string, projectDir?: string): Promise<McpServersData>
+replaceMcpServers(servers: Record<string, McpServerConfig>, projectDir?: string): Promise<McpServersData>
 createNewTask(baseDir: string, params?: CreateTaskParams): Promise<TaskData>
 updateTask(baseDir: string, id: string, updates: Partial<TaskData>): Promise<boolean>
 deleteTask(baseDir: string, id: string): Promise<boolean>
@@ -13443,6 +13699,8 @@ addProviderModelsUpdatedListener(callback: (data: ProviderModelsData) => void): 
 addProvidersUpdatedListener(callback: (data: ProvidersUpdatedData) => void): () => void
 ⋮----
 addAgentProfilesUpdatedListener(callback: (data: AgentProfilesUpdatedData) => void): () => void
+⋮----
+addMcpServersUpdatedListener(callback: (data: McpServersData) => void): () => void
 ⋮----
 addProjectSettingsUpdatedListener(baseDir: string, callback: (data:
 ⋮----
@@ -13542,6 +13800,8 @@ async openPath(): Promise<boolean>
 ⋮----
 async openUrlInWindow(_url: string, _title?: string): Promise<void>
 ⋮----
+async openUrlExternally(url: string): Promise<void>
+⋮----
 // Agent profile operations
 getAllAgentProfiles(baseDir?: string): Promise<AgentProfile[]>
 ⋮----
@@ -13604,6 +13864,8 @@ addAiderConnectorStatusListener(
 ): () => void
 ⋮----
 async getAiderConnectorStatus(): Promise<AiderConnectorStatus>
+⋮----
+destroy(): void
 
 ================
 File: src/renderer/src/api/readonly-browser-api.ts
@@ -13677,7 +13939,7 @@ import { useClickOutside } from '@/hooks/useClickOutside';
 import { IconButton } from '@/components/common/IconButton';
 import { Accordion } from '@/components/common/Accordion';
 import { Tooltip } from '@/components/ui/Tooltip';
-import { useSettingsStore } from '@/stores/settingsStore';
+import { useMcpServers } from '@/contexts/McpServersContext';
 import { useProjectSettings } from '@/contexts/ProjectSettingsContext';
 import { useApi } from '@/contexts/ApiContext';
 import { useAgents } from '@/contexts/AgentsContext';
@@ -13711,7 +13973,7 @@ File: src/renderer/src/components/AgentSelector/McpServerSelectorItem.tsx
 ================
 import { useEffect, useState } from 'react';
 import { CgSpinner } from 'react-icons/cg';
-import { ToolApprovalState } from '@common/types';
+import { McpServerConfig, ToolApprovalState } from '@common/types';
 import { TOOL_GROUP_NAME_SEPARATOR } from '@common/tools';
 import { useTranslation } from 'react-i18next';
 ⋮----
@@ -13721,6 +13983,8 @@ import { useApi } from '@/contexts/ApiContext';
 ⋮----
 type Props = {
   serverName: string;
+  config?: McpServerConfig;
+  projectDir?: string;
   disabled: boolean;
   toolApprovals: Record<string, ToolApprovalState>;
   onToggle: (serverName: string) => void;
@@ -17451,6 +17715,8 @@ type Props = {
   onRemoveUpToMessage?: (message: Message) => void;
 };
 ⋮----
+const isMoreThanThresholdFromBottom = () =>
+⋮----
 const handleWheel = (e: WheelEvent) =>
 ⋮----
 const handleTouchStart = (e: TouchEvent) =>
@@ -18645,15 +18911,15 @@ label=
 ================
 File: src/renderer/src/components/ModelLibrary/providers/ZaiPlanAdvancedSettings.tsx
 ================
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ZaiPlanProvider } from '@common/agent';
-import { SettingsData, McpServerConfig } from '@common/types';
+import { McpServerConfig } from '@common/types';
 import { FaCheck, FaPlus, FaInfoCircle, FaExternalLinkAlt } from 'react-icons/fa';
 ⋮----
 import { ZaiPlanThinkingSetting } from './ZaiPlanThinkingSetting';
 ⋮----
-import { useSaveSettings, useSettingsStore } from '@/stores/settingsStore';
+import { useMcpServers } from '@/contexts/McpServersContext';
 import { Button } from '@/components/common/Button';
 import { Tooltip } from '@/components/ui/Tooltip';
 ⋮----
@@ -20106,6 +20372,8 @@ const initProject = async () =>
 ⋮----
 // Start project
 ⋮----
+// Load input history (may have been emitted before listener was registered)
+⋮----
 // Load tasks
 ⋮----
 // Handle startup mode
@@ -21331,8 +21599,7 @@ File: src/renderer/src/components/settings/agent/sections/ProfileToolsSection.ts
 ================
 import { AgentProfile, ExtensionToolInfo, GenericTool, McpServerConfig, ToolApprovalState } from '@common/types';
 import { useTranslation } from 'react-i18next';
-import { FaPencilAlt, FaPlus, FaSyncAlt } from 'react-icons/fa';
-import { clsx } from 'clsx';
+import { FaPlug } from 'react-icons/fa';
 import {
   AIDER_TOOL_ADD_CONTEXT_FILES,
   AIDER_TOOL_DESCRIPTIONS,
@@ -21374,8 +21641,7 @@ import {
   SKILLS_TOOL_GROUP_NAME,
 } from '@common/tools';
 ⋮----
-import { McpServer } from '../McpServerForm';
-import { McpServerItem } from '../McpServerItem';
+import { McpServerItem } from '../../mcp/McpServerItem';
 import { GenericToolGroupItem } from '../GenericToolGroupItem';
 ⋮----
 import { Button } from '@/components/common/Button';
@@ -21384,21 +21650,13 @@ type Props = {
   profile: AgentProfile;
   mcpServers: Record<string, McpServerConfig>;
   extensionToolsInfo: ExtensionToolInfo[];
-  mcpServersReloadTrigger: number;
   onSettingChange: <K extends keyof AgentProfile>(field: K, value: AgentProfile[K]) => void;
   onApprovalChange: (toolId: string, approval: ToolApprovalState) => void;
   onToggleServerEnabled: (serverKey: string, checked: boolean) => void;
-  onMcpServerRemove: (serverName: string) => void;
-  onMcpServerEdit: (server: McpServer) => void;
-  onAddMcpServer: () => void;
-  onEditMcpServersConfig: () => void;
-  onReloadMcpServers: () => void;
+  onOpenMcpServers?: () => void;
 };
 ⋮----
 const handleExtEnabledChange = (enabled: boolean) =>
-⋮----
-onRemove=
-onEdit=
 
 ================
 File: src/renderer/src/components/settings/agent/AgentProfileItem.tsx
@@ -21442,7 +21700,7 @@ type AgentRulesProps = {
 ================
 File: src/renderer/src/components/settings/agent/AgentSettings.tsx
 ================
-import { AgentProfile, ExtensionToolInfo, McpServerConfig, Model, ProjectData, SettingsData, ToolApprovalState } from '@common/types';
+import { AgentProfile, ExtensionToolInfo, McpServersData, Model, ProjectData, SettingsData, ToolApprovalState } from '@common/types';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { FaChevronLeft, FaChevronRight, FaPaste, FaPlus } from 'react-icons/fa';
@@ -21452,7 +21710,6 @@ import { closestCenter, DndContext, type DragEndEvent, KeyboardSensor, PointerSe
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useTranslation } from 'react-i18next';
 ⋮----
-import { McpServer, McpServerForm } from './McpServerForm';
 import { SortableAgentProfileItem } from './SortableAgentProfileItem';
 import { ProfileGeneralSection } from './sections/ProfileGeneralSection';
 import { ProfilePromptsSection } from './sections/ProfilePromptsSection';
@@ -21460,6 +21717,7 @@ import { ProfileToolsSection } from './sections/ProfileToolsSection';
 import { ProfileSubagentsSection } from './sections/ProfileSubagentsSection';
 ⋮----
 import { useApi } from '@/contexts/ApiContext';
+import { useMcpServers } from '@/contexts/McpServersContext';
 import { getPathBasename } from '@/utils/path-utils';
 import { IconButton } from '@/components/common/IconButton';
 import { Button } from '@/components/common/Button';
@@ -21484,11 +21742,15 @@ type Props = {
   initialProfileId?: string;
   openProjects?: ProjectData[];
   selectedProfileContext?: 'global' | string;
+  mcpServersData?: McpServersData;
+  onOpenMcpServers?: (context?: string) => void;
 };
 ⋮----
 // Profile context state for project-level profiles
 ⋮----
 // Sync internal profileContext with selectedProfileContext prop
+⋮----
+// eslint-disable-next-line react-hooks/set-state-in-effect
 ⋮----
 // Update contextIndex to match the selected context
 ⋮----
@@ -21497,6 +21759,8 @@ type Props = {
 // Handle initial profile ID - set context and select profile
 ⋮----
 // Set the profile context based on the initial profile's projectDir
+⋮----
+// eslint-disable-next-line react-hooks/set-state-in-effect
 ⋮----
 // Update contextIndex to match the target context
 ⋮----
@@ -21515,6 +21779,8 @@ const navigateContext = (direction: 'prev' | 'next') =>
 const getContextDisplayName = () =>
 ⋮----
 // Update filtered profiles when context changes
+⋮----
+// eslint-disable-next-line react-hooks/set-state-in-effect
 ⋮----
 const handleDragEnd = (event: DragEndEvent) =>
 ⋮----
@@ -21564,26 +21830,6 @@ const handleModelChange = (model: Model | null) =>
 ⋮----
 const handleToggleServerEnabled = (serverKey: string, checked: boolean) =>
 ⋮----
-const handleMcpServersReload = async () =>
-⋮----
-// eslint-disable-next-line no-console
-⋮----
-const handleMcpServerRemove = (serverName: string) =>
-⋮----
-const handleServersConfigSave = (servers: Record<string, McpServerConfig>) =>
-⋮----
-// Add new servers to the existing ones
-⋮----
-// If editing and the server name did not change, preserve the order
-⋮----
-// Replace the server at the same position
-⋮----
-// fallback: just replace as before
-⋮----
-// Remove the old server and add the updated one(s)
-⋮----
-// Replace all servers with the new set
-⋮----
 const handleToolApprovalChange = (toolId: string, approval: ToolApprovalState) =>
 ⋮----
 const handleTabChange = (tabId: string) =>
@@ -21601,8 +21847,6 @@ onDelete=
 {/* Profile Header */}
 ⋮----
 {/* Tab Content */}
-⋮----
-onEditMcpServersConfig=
 
 ================
 File: src/renderer/src/components/settings/agent/BashToolItem.tsx
@@ -21676,106 +21920,6 @@ const handleApprovalChange = (value: string) =>
 {/* Conditionally render the approval select only if onApprovalChange is provided */}
 
 ================
-File: src/renderer/src/components/settings/agent/McpServerForm.tsx
-================
-import { McpServerConfig } from '@common/types';
-import { useState, useMemo, ChangeEvent } from 'react';
-import { z } from 'zod/v3';
-import { useTranslation } from 'react-i18next';
-import { MdInfoOutline } from 'react-icons/md';
-⋮----
-import { TextArea } from '@/components/common/TextArea';
-import { Button } from '@/components/common/Button';
-import { Tooltip } from '@/components/ui/Tooltip';
-⋮----
-export type McpServer = {
-  name: string;
-  config: McpServerConfig;
-};
-⋮----
-type Props = {
-  onSave: (servers: Record<string, McpServerConfig>) => void;
-  onCancel: () => void;
-  servers?: McpServer[];
-};
-⋮----
-// If multiple servers, merge them into a single object
-⋮----
-// Try to parse as JSON, or as a "bare" object (without enclosing {})
-const parseConfig = (text: string) =>
-⋮----
-// Try as full JSON first
-⋮----
-// Try as "bare" object: wrap in braces and parse
-⋮----
-const handleAddServer = () =>
-⋮----
-// Accept both { mcpServers: {...} } and just { ... }
-⋮----
-const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) =>
-⋮----
-placeholder=
-
-================
-File: src/renderer/src/components/settings/agent/McpServerItem.tsx
-================
-import { McpServerConfig, McpTool, ToolApprovalState } from '@common/types';
-import { extractIpcErrorMessage } from '@common/utils';
-import { useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { FaPencilAlt, FaTrash } from 'react-icons/fa';
-import { TOOL_GROUP_NAME_SEPARATOR } from '@common/tools';
-⋮----
-import { McpToolItem } from './McpToolItem';
-⋮----
-import { Accordion } from '@/components/common/Accordion';
-import { IconButton } from '@/components/common/IconButton';
-import { Checkbox } from '@/components/common/Checkbox';
-import { useApi } from '@/contexts/ApiContext';
-import { Tooltip } from '@/components/ui/Tooltip';
-⋮----
-type Props = {
-  serverName: string;
-  config: McpServerConfig;
-  onRemove?: () => void;
-  onEdit?: () => void;
-  toolApprovals: Record<string, ToolApprovalState>;
-  onApprovalChange: (toolId: string, approval: ToolApprovalState) => void;
-  reloadTrigger?: number;
-  enabled?: boolean;
-  onEnabledChange?: (enabled: boolean) => void;
-};
-⋮----
-const loadTools = async () =>
-⋮----
-// eslint-disable-next-line no-console
-⋮----
-<Accordion title=
-
-================
-File: src/renderer/src/components/settings/agent/McpToolItem.tsx
-================
-import { useTranslation } from 'react-i18next';
-import { McpTool, ToolApprovalState } from '@common/types';
-import { TOOL_GROUP_NAME_SEPARATOR } from '@common/tools';
-⋮----
-import { Select } from '@/components/common/Select';
-import { InfoIcon } from '@/components/common/InfoIcon';
-⋮----
-type Props = {
-  tool: McpTool;
-  serverName: string;
-  toolApprovals?: Record<string, ToolApprovalState>;
-  onApprovalChange?: (toolId: string, approval: ToolApprovalState) => void;
-};
-⋮----
-// Default to 'Always' if approvals are not being managed in this context
-⋮----
-const handleApprovalChange = (value: string) =>
-⋮----
-{/* Conditionally render the approval select only if onApprovalChange is provided */}
-
-================
 File: src/renderer/src/components/settings/agent/SortableAgentProfileItem.tsx
 ================
 import { useSortable } from '@dnd-kit/sortable';
@@ -21821,6 +21965,273 @@ export const SystemPromptEditor = (
 const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) =>
 ⋮----
 const handleInsertPlaceholder = (placeholderName: SystemPromptPlaceholder) =>
+
+================
+File: src/renderer/src/components/settings/mcp/McpOAuthControls.tsx
+================
+import { McpOAuthStatus, type McpServerConfig } from '@common/types';
+import { clsx } from 'clsx';
+import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+⋮----
+import { Button } from '@/components/common/Button';
+import { useApi } from '@/contexts/ApiContext';
+⋮----
+type Props = {
+  serverName: string;
+  config: McpServerConfig;
+  refreshTrigger: number;
+  onAuthenticated: () => void;
+  onDisconnected: () => void;
+  onStatusChange: (status: McpOAuthStatus) => void;
+  borderless?: boolean;
+};
+⋮----
+const loadStatus = async () =>
+⋮----
+const handleConnect = async () =>
+⋮----
+const handleDisconnect = async () =>
+⋮----
+<div className=
+
+================
+File: src/renderer/src/components/settings/mcp/McpServerForm.tsx
+================
+import { McpServerConfig } from '@common/types';
+import { useState, useMemo, ChangeEvent } from 'react';
+import { z } from 'zod/v3';
+import { useTranslation } from 'react-i18next';
+import { MdInfoOutline } from 'react-icons/md';
+⋮----
+import { TextArea } from '@/components/common/TextArea';
+import { Button } from '@/components/common/Button';
+import { Tooltip } from '@/components/ui/Tooltip';
+⋮----
+export type McpServer = {
+  name: string;
+  config: McpServerConfig;
+};
+⋮----
+type Props = {
+  onSave: (servers: Record<string, McpServerConfig>) => void;
+  onCancel: () => void;
+  servers?: McpServer[];
+};
+⋮----
+// If multiple servers, merge them into a single object
+⋮----
+// Try to parse as JSON, or as a "bare" object (without enclosing {})
+const parseConfig = (text: string) =>
+⋮----
+// Try as full JSON first
+⋮----
+// Try as "bare" object: wrap in braces and parse
+⋮----
+const handleAddServer = () =>
+⋮----
+// Accept both { mcpServers: {...} } and just { ... }
+⋮----
+const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) =>
+⋮----
+placeholder=
+
+================
+File: src/renderer/src/components/settings/mcp/McpServerItem.tsx
+================
+import { McpOAuthStatus, McpServerConfig, McpTool, ToolApprovalState } from '@common/types';
+import { extractIpcErrorMessage } from '@common/utils';
+import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { FaPencilAlt, FaTrash } from 'react-icons/fa';
+import { TOOL_GROUP_NAME_SEPARATOR } from '@common/tools';
+⋮----
+import { McpToolItem } from './McpToolItem';
+import { McpOAuthControls } from './McpOAuthControls';
+⋮----
+import { Accordion } from '@/components/common/Accordion';
+import { IconButton } from '@/components/common/IconButton';
+import { Checkbox } from '@/components/common/Checkbox';
+import { useApi } from '@/contexts/ApiContext';
+import { Tooltip } from '@/components/ui/Tooltip';
+⋮----
+type Props = {
+  serverName: string;
+  config: McpServerConfig;
+  onRemove?: () => void;
+  onEdit?: () => void;
+  toolApprovals?: Record<string, ToolApprovalState>;
+  onApprovalChange?: (toolId: string, approval: ToolApprovalState) => void;
+  reloadTrigger?: number;
+  enabled?: boolean;
+  onEnabledChange?: (enabled: boolean) => void;
+  projectDir?: string;
+};
+⋮----
+// eslint-disable-next-line no-console
+⋮----
+<Accordion title=
+
+================
+File: src/renderer/src/components/settings/mcp/McpServerSidebarItem.tsx
+================
+import { BiPencil, BiRefresh, BiTrash } from 'react-icons/bi';
+import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
+⋮----
+import { VerticalDotsMenu, type MenuOption } from '@/components/common/VerticalDotsMenu';
+import { Tooltip } from '@/components/ui/Tooltip';
+⋮----
+type Props = {
+  serverName: string;
+  isSelected: boolean;
+  error?: string | null;
+  onClick: (name: string) => void;
+  onRefresh: (name: string) => void;
+  onEdit: (name: string) => void;
+  onRemove: (name: string) => void;
+};
+⋮----
+onClick=
+
+================
+File: src/renderer/src/components/settings/mcp/McpServerToolsPanel.tsx
+================
+import { McpOAuthStatus, McpServerConfig, McpTool } from '@common/types';
+import { clsx } from 'clsx';
+import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { FaPencilAlt, FaSyncAlt, FaTrash } from 'react-icons/fa';
+⋮----
+import { McpOAuthControls } from './McpOAuthControls';
+import { McpToolCard } from './McpToolCard';
+⋮----
+import { IconButton } from '@/components/common/IconButton';
+⋮----
+type Props = {
+  serverName: string;
+  config: McpServerConfig;
+  tools: McpTool[] | null;
+  loading: boolean;
+  error: string | null;
+  onReload: () => void;
+  onEdit: () => void;
+  onRemove: () => void;
+};
+⋮----
+// A late tools-load failure with an auth error means OAuth discovery has completed in the main
+// process; re-fetch the OAuth status so the Connect control appears without reselecting the server.
+⋮----
+// eslint-disable-next-line react-hooks/set-state-in-effect
+⋮----
+{/* Server header */}
+⋮----
+icon=
+⋮----
+{/* Tools content */}
+
+================
+File: src/renderer/src/components/settings/mcp/McpSettings.tsx
+================
+import { Dispatch, SetStateAction, useCallback, useEffect, useMemo, useState } from 'react';
+import { McpServerConfig, McpServersData, McpTool, ProjectData } from '@common/types';
+import { extractIpcErrorMessage } from '@common/utils';
+import { useTranslation } from 'react-i18next';
+import { FaChevronLeft, FaChevronRight, FaPencilAlt, FaPlus, FaSyncAlt } from 'react-icons/fa';
+⋮----
+import { McpServer, McpServerForm } from './McpServerForm';
+import { McpServerSidebarItem } from './McpServerSidebarItem';
+import { McpServerToolsPanel } from './McpServerToolsPanel';
+⋮----
+import { useMcpServers } from '@/contexts/McpServersContext';
+import { useApi } from '@/contexts/ApiContext';
+import { getPathBasename } from '@/utils/path-utils';
+import { Button } from '@/components/common/Button';
+import { IconButton } from '@/components/common/IconButton';
+⋮----
+type ServerToolsState = {
+  tools: McpTool[] | null;
+  loading: boolean;
+  error: string | null;
+};
+⋮----
+type Props = {
+  mcpServers?: McpServersData;
+  setMcpServers?: Dispatch<SetStateAction<McpServersData>>;
+  openProjects?: ProjectData[];
+  selectedMcpContext?: string;
+};
+⋮----
+// eslint-disable-next-line react-hooks/set-state-in-effect
+⋮----
+const navigateContext = (direction: 'prev' | 'next') =>
+⋮----
+const getContextDisplayName = () =>
+⋮----
+// Fall back to the first server when the selection is invalid or missing
+⋮----
+// Load tools for all servers in the current context to reflect their status
+⋮----
+const handleReload = () =>
+⋮----
+const handleRemove = (name: string) =>
+⋮----
+const handleSave = (savedServers: Record<string, McpServerConfig>) =>
+⋮----
+const handleCancel = () =>
+⋮----
+{/* Left List Pane */}
+⋮----
+{/* Context switcher */}
+⋮----
+onClick=
+⋮----
+{/* Server list */}
+⋮----
+onEdit=
+⋮----
+{/* Sidebar actions */}
+⋮----
+<Button onClick=
+⋮----
+{/* Right Details Pane */}
+⋮----
+onRemove=
+
+================
+File: src/renderer/src/components/settings/mcp/McpToolCard.tsx
+================
+import { useTranslation } from 'react-i18next';
+import { McpTool } from '@common/types';
+⋮----
+type Props = {
+  tool: McpTool;
+};
+⋮----
+export const McpToolCard = (
+
+================
+File: src/renderer/src/components/settings/mcp/McpToolItem.tsx
+================
+import { useTranslation } from 'react-i18next';
+import { McpTool, ToolApprovalState } from '@common/types';
+import { TOOL_GROUP_NAME_SEPARATOR } from '@common/tools';
+⋮----
+import { Select } from '@/components/common/Select';
+import { InfoIcon } from '@/components/common/InfoIcon';
+⋮----
+type Props = {
+  tool: McpTool;
+  serverName: string;
+  toolApprovals?: Record<string, ToolApprovalState>;
+  onApprovalChange?: (toolId: string, approval: ToolApprovalState) => void;
+};
+⋮----
+// Default to 'Always' if approvals are not being managed in this context
+⋮----
+const handleApprovalChange = (value: string) =>
+⋮----
+{/* Conditionally render the approval select only if onApprovalChange is provided */}
 
 ================
 File: src/renderer/src/components/settings/AboutSettings.tsx
@@ -22453,7 +22864,7 @@ File: src/renderer/src/components/settings/SettingsDialog.tsx
 ================
 File: src/renderer/src/components/settings/SettingsPage.tsx
 ================
-import { ProjectData, ProviderProfile, SettingsData } from '@common/types';
+import { McpServersData, ProjectData, ProviderProfile, SettingsData } from '@common/types';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { isEqual } from 'lodash';
 import { useTranslation } from 'react-i18next';
@@ -22465,6 +22876,7 @@ import { useAgents } from '@/contexts/AgentsContext';
 import { ModalOverlayLayout } from '@/components/common/ModalOverlayLayout';
 import { useApi } from '@/contexts/ApiContext';
 import { Button } from '@/components/common/Button';
+import { showErrorNotification, showSuccessNotification } from '@/utils/notifications';
 ⋮----
 type Props = {
   onClose: () => void;
@@ -22478,9 +22890,15 @@ const loadProviders = async () =>
 ⋮----
 // eslint-disable-next-line no-console
 ⋮----
-// Updated to use settings.mcpServers directly
+const loadMcpServers = async () =>
 ⋮----
-const handleSave = async () =>
+// eslint-disable-next-line no-console
+⋮----
+const performSave = async (): Promise<boolean> =>
+⋮----
+// eslint-disable-next-line no-console
+⋮----
+// Save MCP server changes
 ⋮----
 // eslint-disable-next-line no-console
 ⋮----
@@ -22499,6 +22917,10 @@ const handleSave = async () =>
 // Update profile order if needed
 ⋮----
 // eslint-disable-next-line no-console
+⋮----
+// eslint-disable-next-line no-console
+⋮----
+const handleSave = () =>
 ⋮----
 const handleLanguageChange = (language: string) =>
 ⋮----
@@ -24206,7 +24628,7 @@ export const useAgents = (): AgentsContextType =>
 ================
 File: src/renderer/src/contexts/ApiContext.tsx
 ================
-import { createContext, useMemo, ReactNode, useContext } from 'react';
+import { createContext, useEffect, useMemo, ReactNode, useContext } from 'react';
 import { ApplicationAPI } from '@common/api';
 import { HotkeysProvider } from 'react-hotkeys-hook';
 ⋮----
@@ -24354,6 +24776,35 @@ type ExtensionsHookResult = {
 };
 ⋮----
 export const useExtensions = (): ExtensionsHookResult =>
+
+================
+File: src/renderer/src/contexts/McpServersContext.tsx
+================
+import { createContext, useContext, useEffect, useMemo, useCallback, useState, ReactNode } from 'react';
+import { McpServerConfig } from '@common/types';
+⋮----
+import { useApi } from '@/contexts/ApiContext';
+⋮----
+export interface McpServersContextType {
+  globalServers: Record<string, McpServerConfig>;
+  projectServers: Record<string, Record<string, McpServerConfig>>;
+  loading: boolean;
+  error: string | null;
+  getScopedServers: (projectDir?: string) => Record<string, McpServerConfig>;
+  getMergedServers: (projectDir?: string) => Record<string, McpServerConfig>;
+  refreshServers: () => Promise<void>;
+  addServer: (name: string, config: McpServerConfig, projectDir?: string) => Promise<void>;
+  updateServer: (oldName: string, name: string, config: McpServerConfig, projectDir?: string) => Promise<void>;
+  removeServer: (name: string, projectDir?: string) => Promise<void>;
+  replaceServers: (servers: Record<string, McpServerConfig>, projectDir?: string) => Promise<void>;
+  reloadServers: (projectDir?: string, force?: boolean) => Promise<void>;
+}
+⋮----
+interface McpServersProviderProps {
+  children: ReactNode;
+}
+⋮----
+export const useMcpServers = (): McpServersContextType =>
 
 ================
 File: src/renderer/src/contexts/ModelProviderContext.tsx
@@ -26060,11 +26511,23 @@ export const ReadonlyApp = (
 ================
 File: src/renderer/src/pages/Settings.tsx
 ================
-import { AgentProfile, Font, ProjectData, ProviderProfile, SettingsData, Theme } from '@common/types';
-import { ReactNode, useRef, useState } from 'react';
+import { AgentProfile, Font, McpServersData, ProjectData, ProviderProfile, SettingsData, Theme } from '@common/types';
+import { Dispatch, ReactNode, SetStateAction, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { FaBrain, FaChevronDown, FaChevronRight, FaCog, FaInfoCircle, FaKeyboard, FaMicrophone, FaPuzzlePiece, FaRobot, FaServer } from 'react-icons/fa';
+import {
+  FaBrain,
+  FaChevronDown,
+  FaChevronRight,
+  FaCog,
+  FaInfoCircle,
+  FaKeyboard,
+  FaMicrophone,
+  FaPlug,
+  FaPuzzlePiece,
+  FaRobot,
+  FaServer,
+} from 'react-icons/fa';
 import { MdTerminal } from 'react-icons/md';
 import { LuClipboardList } from 'react-icons/lu';
 ⋮----
@@ -26073,6 +26536,7 @@ import { useApi } from '@/contexts/ApiContext';
 import { AiderSettings } from '@/components/settings/AiderSettings';
 import { GeneralSettings } from '@/components/settings/GeneralSettings';
 import { AgentSettings } from '@/components/settings/agent/AgentSettings';
+import { McpSettings } from '@/components/settings/mcp/McpSettings';
 import { AboutSettings } from '@/components/settings/AboutSettings';
 import { NetworkSettings } from '@/components/settings/NetworkSettings';
 import { MemorySettings } from '@/components/settings/MemorySettings';
@@ -26081,7 +26545,7 @@ import { HotkeysSettings } from '@/components/settings/HotkeysSettings';
 import { TaskSettings } from '@/components/settings/TaskSettings';
 import { ExtensionsSettings } from '@/components/settings/ExtensionsSettings';
 ⋮----
-type PageId = 'general' | 'aider' | 'agents' | 'tasks' | 'memory' | 'voice' | 'hotkeys' | 'network' | 'extensions' | 'about';
+type PageId = 'general' | 'aider' | 'agents' | 'mcpServers' | 'tasks' | 'memory' | 'voice' | 'hotkeys' | 'network' | 'extensions' | 'about';
 ⋮----
 interface SidebarItem {
   id: string;
@@ -26103,6 +26567,8 @@ type Props = {
   initialOptions?: Record<string, unknown>;
   agentProfiles?: AgentProfile[];
   setAgentProfiles?: (profiles: AgentProfile[]) => void;
+  mcpServers: McpServersData;
+  setMcpServers: Dispatch<SetStateAction<McpServersData>>;
   openProjects?: ProjectData[];
   providers?: ProviderProfile[];
   setProviders?: (providers: ProviderProfile[]) => void;
@@ -26121,6 +26587,8 @@ export const Settings = ({
   initialOptions,
   agentProfiles,
   setAgentProfiles,
+  mcpServers,
+  setMcpServers,
   openProjects,
   providers,
   setProviders,
@@ -26131,11 +26599,15 @@ const scrollToSection = (sectionId: string) =>
 ⋮----
 const handleItemClick = (item: SidebarItem) =>
 ⋮----
+const handleOpenMcpServers = (context?: string) =>
+⋮----
 const handleChildClick = (pageId: PageId, sectionId: string) =>
 ⋮----
 // Handle agent context selection
 ⋮----
 // Extract project baseDir from sectionId (format: agent-{baseDir})
+⋮----
+// Extract project baseDir from sectionId (format: mcpServers-{baseDir})
 ⋮----
 // Extract project baseDir from sectionId (format: extension-{baseDir})
 ⋮----
@@ -28966,6 +29438,7 @@ import { TooltipProvider } from '@/components/ui/Tooltip';
 import { ApiProvider, useApi } from '@/contexts/ApiContext';
 import { ModelProviderProvider } from '@/contexts/ModelProviderContext';
 import { AgentsProvider } from '@/contexts/AgentsContext';
+import { McpServersProvider } from '@/contexts/McpServersContext';
 import { ModalOverlayUrlViewer } from '@/components/common/ModalOverlayUrlViewer';
 import { UpdatedFilesDiff } from '@/pages/UpdatedFilesDiff';
 import { ExtensionsProvider } from '@/contexts/ExtensionsContext';
@@ -29439,7 +29912,7 @@ File: package.json
 ================
 {
   "name": "aider-desk",
-  "version": "0.77.0-dev",
+  "version": "0.78.0-dev",
   "description": "Aider desktop application wrapper",
   "main": "./out/main/index.js",
   "author": "Hotovo",
@@ -29497,11 +29970,12 @@ File: package.json
     "@ai-sdk/google": "4.0.19",
     "@ai-sdk/google-vertex": "5.0.23",
     "@ai-sdk/groq": "4.0.12",
+    "@ai-sdk/mcp": "2.0.28",
     "@ai-sdk/mistral": "4.0.13",
     "@ai-sdk/openai": "4.0.16",
     "@ai-sdk/openai-compatible": "3.0.13",
     "@ai-sdk/otel": "1.0.32",
-    "@ai-sdk/provider": "4.0.3",
+    "@ai-sdk/provider": "4.0.6",
     "@aiderdesk/extensions": "workspace:*",
     "@aws-crypto/sha256-js": "^5.2.0",
     "@aws-sdk/client-bedrock": "^3.1059.0",
@@ -29682,8 +30156,8 @@ File: package.json
     "vitest": "^4.1.8"
   },
   "overrides": {
-    "@ai-sdk/provider": "4.0.3",
-    "@ai-sdk/provider-utils": "5.0.10",
+    "@ai-sdk/provider": "4.0.6",
+    "@ai-sdk/provider-utils": "5.0.24",
     "@huggingface/transformers": {
       "sharp": "npm:empty-npm-package@1.0.0"
     },

@@ -467,12 +467,15 @@
   },
   "settings": {
     "title": "设置",
+    "savedSuccessfully": "设置保存成功",
+    "saveError": "设置保存失败",
     "tabs": {
       "general": "通用",
       "providers": "模型提供者",
       "aider": "Aider",
       "agents": "代理",
       "workflows": "工作流",
+      "mcpServers": "MCP 服务器",
       "hotkeys": "快捷键",
       "extensions": "扩展",
       "server": "服务器",
@@ -707,6 +710,7 @@
       "rules": "自定义指令",
       "rulesInfo": "您可以使用自定义指令为特定的 MCP 服务器添加特定指令，或控制代理的流程。",
       "noServersConfigured": "未配置 MCP 服务器。",
+      "configureMcpServers": "配置 MCP 服务器",
       "computationalResources": "代理每次运行的最大迭代次数。有助于控制计算资源。",
       "rateLimiting": "设置工具调用之间的最小时间以防止速率限制(例如对于 Brave 或其他 API 受限的服务)。",
       "temperatureTooltip": "控制响应的随机性。较低的值（0.0-0.3）使响应更专注和确定性，较高的值（0.7-1.0）使响应更有创意和变化性。当未设置时，使用模型的默认温度。",
@@ -1116,6 +1120,7 @@
     "useGitEnabled": "Git 已启用 - 点击使用文件系统",
     "useGitDisabled": "文件系统已启用 - 点击使用 Git",
     "revertFile": "恢复更改",
+    "addFileToGit": "添加文件到 Git",
     "fileHasConflicts": "文件存在合并冲突",
     "confirmRevertTitle": "恢复文件更改？",
     "confirmRevertMessage": "这将丢弃此文件的所有更改。此操作无法撤销。",
@@ -1208,13 +1213,28 @@
     "includeRepoMap": "包含仓库地图",
     "includeRepoMapTooltip": "在代理的上下文中包含仓库地图。这有助于代理理解项目结构，但可能会增加token使用量。",
     "servers": "MCP服务器",
+    "selectServer": "从列表中选择一个 MCP 服务器以查看其工具",
+    "reloadServer": "重新加载服务器",
+    "reload": "重新加载",
     "configureServers": "配置服务器",
     "approval": {
       "never": "从不",
       "always": "总是",
       "ask": "询问"
     },
-    "tools": "工具"
+    "tools": "工具",
+    "oauth": {
+      "connect": "连接",
+      "reopen": "重新打开",
+      "connected": "已通过 OAuth 连接",
+      "disconnect": "断开连接",
+      "authorizing": "请在打开的浏览器窗口中完成身份验证。",
+      "authenticationRequired": "需要 OAuth 身份验证。",
+      "authenticationRequiredMessage": "MCP 服务器 '{{serverName}}' 需要 OAuth 身份验证。请在 设置 → MCP 服务器 中连接。",
+      "windowTitle": "MCP 身份验证",
+      "connectError": "无法启动 MCP 身份验证。",
+      "disconnectError": "无法断开 MCP 身份验证。"
+    }
   },
   "todo": {
     "title": "任务",

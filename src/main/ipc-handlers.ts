@@ -295,16 +295,53 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
     return await eventsHandler.loadTask(baseDir, taskId);
   });
 
-  ipcMain.handle('load-mcp-server-tools', async (_, serverName: string, config?: McpServerConfig) => {
-    return await eventsHandler.loadMcpServerTools(serverName, config);
+  ipcMain.handle('load-mcp-server-tools', async (_, serverName: string, config?: McpServerConfig, projectDir?: string) => {
+    return await eventsHandler.loadMcpServerTools(serverName, config, projectDir);
   });
 
-  ipcMain.handle('reload-mcp-servers', async (_, mcpServers: Record<string, McpServerConfig>, force = false) => {
-    await eventsHandler.reloadMcpServers(mcpServers, force);
+  ipcMain.handle('reload-mcp-servers', async (_, projectDir?: string, force = false) => {
+    await eventsHandler.reloadMcpServers(projectDir, force);
   });
 
   ipcMain.handle('reload-mcp-server', async (_, serverName: string, config: McpServerConfig) => {
     return await eventsHandler.reloadMcpServer(serverName, config);
+  });
+
+  ipcMain.handle('get-mcp-oauth-status', async (_, serverName: string, config?: McpServerConfig, projectDir?: string) => {
+    return await eventsHandler.getMcpOAuthStatus(serverName, config, projectDir);
+  });
+
+  ipcMain.handle('start-mcp-oauth', async (_, serverName: string, config?: McpServerConfig, projectDir?: string) => {
+    return await eventsHandler.startMcpOAuth(serverName, config, projectDir);
+  });
+
+  ipcMain.handle('disconnect-mcp-oauth', async (_, serverName: string, config?: McpServerConfig, projectDir?: string) => {
+    await eventsHandler.disconnectMcpOAuth(serverName, config, projectDir);
+  });
+
+  // MCP server config handlers (file-based, global + per-project)
+  ipcMain.handle('get-mcp-servers', async () => {
+    return await eventsHandler.getMcpServers();
+  });
+
+  ipcMain.handle('add-mcp-server', async (_, name: string, config: McpServerConfig, projectDir?: string) => {
+    await eventsHandler.addMcpServer(name, config, projectDir);
+    return await eventsHandler.getMcpServers();
+  });
+
+  ipcMain.handle('update-mcp-server', async (_, oldName: string, name: string, config: McpServerConfig, projectDir?: string) => {
+    await eventsHandler.updateMcpServer(oldName, name, config, projectDir);
+    return await eventsHandler.getMcpServers();
+  });
+
+  ipcMain.handle('remove-mcp-server', async (_, name: string, projectDir?: string) => {
+    await eventsHandler.removeMcpServer(name, projectDir);
+    return await eventsHandler.getMcpServers();
+  });
+
+  ipcMain.handle('replace-mcp-servers', async (_, servers: Record<string, McpServerConfig>, projectDir?: string) => {
+    await eventsHandler.replaceMcpServers(servers, projectDir);
+    return await eventsHandler.getMcpServers();
   });
 
   // Extension handlers
@@ -452,6 +489,10 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
     return eventsHandler.openUrlInWindow(url, title);
   });
 
+  ipcMain.handle('open-url-externally', async (_, url: string) => {
+    return eventsHandler.openUrlExternally(url);
+  });
+
   ipcMain.handle('get-commands', async (_, baseDir: string) => {
     return eventsHandler.getCommands(baseDir);
   });
@@ -518,6 +559,10 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
 
   ipcMain.handle('revert-last-merge', async (_, baseDir: string, taskId: string) => {
     await eventsHandler.revertLastMerge(baseDir, taskId);
+  });
+
+  ipcMain.handle('add-file-to-git', async (_, baseDir: string, taskId: string, filePath: string) => {
+    await eventsHandler.addFileToGit(baseDir, taskId, filePath);
   });
 
   ipcMain.handle('restore-file', async (_, baseDir: string, taskId: string, filePath: string) => {
@@ -645,6 +690,26 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
 
   ipcMain.handle('update-agent-profiles-order', async (_, agentProfiles: AgentProfile[]) => {
     return await eventsHandler.updateAgentProfilesOrder(agentProfiles);
+  });
+
+  ipcMain.handle('get-agent-profile-sync-status', async (_, profileId: string) => {
+    return await eventsHandler.getAgentProfileSyncStatus(profileId);
+  });
+
+  ipcMain.handle('sync-agent-profile-md-to-config', async (_, profileId: string) => {
+    return await eventsHandler.syncAgentProfileMdToConfig(profileId);
+  });
+
+  ipcMain.handle('sync-agent-profile-config-to-md', async (_, profileId: string) => {
+    return await eventsHandler.syncAgentProfileConfigToMd(profileId);
+  });
+
+  ipcMain.handle('auto-sync-agent-profile', async (_, profileId: string) => {
+    return await eventsHandler.autoSyncAgentProfile(profileId);
+  });
+
+  ipcMain.handle('auto-sync-all-agent-profiles', async () => {
+    return await eventsHandler.autoSyncAllAgentProfiles();
   });
 
   // Memory handlers
