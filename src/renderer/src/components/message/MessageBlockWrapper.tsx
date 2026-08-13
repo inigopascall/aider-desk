@@ -26,6 +26,7 @@ type Props = {
   onInterrupt?: () => void;
   onForkFromMessage?: (message: Message) => void;
   onRemoveUpToMessage?: (message: Message) => void;
+  activityMessageId?: string;
 };
 
 const MessageBlockWrapperInner = ({
@@ -44,6 +45,7 @@ const MessageBlockWrapperInner = ({
   onInterrupt,
   onForkFromMessage,
   onRemoveUpToMessage,
+  activityMessageId,
 }: Props) => {
   const additionalProps = useMemo(
     () => ({
@@ -76,6 +78,7 @@ const MessageBlockWrapperInner = ({
         onInterrupt={onInterrupt}
         onFork={onForkFromMessage}
         onRemoveUpTo={onRemoveUpToMessage}
+        activityMessageId={activityMessageId}
       />
     );
   } else if (isAssistantGroupMessage(message)) {
@@ -89,6 +92,7 @@ const MessageBlockWrapperInner = ({
         remove={inProgress ? undefined : removeMessage}
         onFork={onForkFromMessage}
         onRemoveUpTo={onRemoveUpToMessage}
+        activityMessageId={activityMessageId}
       />
     );
   } else {
@@ -111,6 +115,7 @@ const MessageBlockWrapperInner = ({
         onInterrupt={onInterrupt}
         onFork={onForkFromMessage ? () => onForkFromMessage(message) : undefined}
         onRemoveUpTo={onRemoveUpToMessage ? () => onRemoveUpToMessage(message) : undefined}
+        activityMessageId={activityMessageId}
       />
     );
   }
@@ -134,7 +139,8 @@ const arePropsEqual = (prevProps: Props, nextProps: Props): boolean => {
     prevProps.renderMarkdown !== nextProps.renderMarkdown ||
     prevProps.compact !== nextProps.compact ||
     prevProps.hideMessageBar !== nextProps.hideMessageBar ||
-    prevProps.inProgress !== nextProps.inProgress
+    prevProps.inProgress !== nextProps.inProgress ||
+    prevProps.activityMessageId !== nextProps.activityMessageId
   ) {
     return false;
   }

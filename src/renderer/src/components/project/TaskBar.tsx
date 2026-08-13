@@ -24,7 +24,6 @@ import { useResponsive } from '@/hooks/useResponsive';
 import { useModelProviders } from '@/contexts/ModelProviderContext';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
 import { useAiderConnectorStatus } from '@/hooks/useAiderConnectorStatus';
-import { TaskActivityIndicator } from '@/components/common/TaskActivityIndicator';
 
 export type TaskBarRef = {
   openMainModelSelector: (model?: string) => void;
@@ -472,7 +471,7 @@ export const TaskBar = React.forwardRef<TaskBarRef, Props>(
           {showLabel && <span className="text-2xs font-semibold text-text-primary uppercase whitespace-nowrap">{t('projectBar.aider')}:</span>}
           {isAiderBusy ? (
             <div className="flex items-center space-x-2 flex-shrink-0 text-2xs text-text-secondary">
-              <TaskActivityIndicator active />
+              <CgTerminal className="w-3.5 h-3.5 text-text-secondary flex-shrink-0" />
               <span>{aiderConnectorMessage}</span>
               <Tooltip content={t('aiderConnector.restart')}>
                 <button onClick={onRestartAiderConnector} className="p-0.5 hover:bg-bg-tertiary rounded-md">
@@ -655,7 +654,6 @@ export const TaskBar = React.forwardRef<TaskBarRef, Props>(
             )}
           </div>
           <div className="flex items-center space-x-1 mr-2">
-            <TaskActivityIndicator active={task.state === DefaultTaskState.InProgress} className="right-16 top-1/2 -translate-y-1/2" />
             <ExtensionComponentWrapper placement="task-top-bar-right" />
             <TaskWorkingMode
               task={task}

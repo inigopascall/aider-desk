@@ -23,7 +23,6 @@ import { Tooltip } from '@/components/ui/Tooltip';
 import { Checkbox } from '@/components/common/Checkbox';
 import { Toggle } from '@/components/common/Toggle';
 import { getTaskStateLabel, getStateTextClass } from '@/components/common/TaskStateChip';
-import { TaskActivityIndicator } from '@/components/common/TaskActivityIndicator';
 
 export const COLLAPSED_WIDTH = 44;
 export const EXPANDED_WIDTH = 256;
@@ -864,8 +863,8 @@ const TaskSidebarComponent = ({
               className="h-full"
             >
               {loading ? (
-                <div className="flex items-center justify-center h-full">
-                  <TaskActivityIndicator active className="relative" />
+                <div className="flex items-center justify-center h-full text-xs text-text-muted">
+                  Loading…
                 </div>
               ) : tasks.length === 0 ? (
                 <div className="flex items-center justify-center h-full p-4">
@@ -1115,6 +1114,7 @@ const arePropsEqual = (prevProps: Props, nextProps: Props): boolean => {
       prevTask.updatedAt !== nextTask.updatedAt ||
       prevTask.createdAt !== nextTask.createdAt ||
       prevTask.pinned !== nextTask.pinned ||
+      prevTask.state !== nextTask.state ||
       prevTask.parentId !== nextTask.parentId ||
       prevTask.metadata !== nextTask.metadata
     ) {

@@ -236,7 +236,7 @@ body.snapshot-mode-active *::after {
 }
 
 /* Performance mode: stop continuously-animating regions (pulses) from driving
-   the compositor during agent/subagent runs. Spinners are intentionally kept. */
+   the compositor during agent/subagent runs. */
 body.performance-mode .animate-pulse,
 body.performance-mode .animate-pulse::before,
 body.performance-mode .animate-pulse::after {

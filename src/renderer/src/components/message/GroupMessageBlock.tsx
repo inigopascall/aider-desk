@@ -37,6 +37,7 @@ type Props = {
   onInterrupt?: (interruptId?: string) => void;
   onFork?: (message: Message) => void;
   onRemoveUpTo?: (message: Message) => void;
+  activityMessageId?: string;
 };
 
 const GroupMessageBlockComponent = ({
@@ -52,6 +53,7 @@ const GroupMessageBlockComponent = ({
   onInterrupt,
   onFork,
   onRemoveUpTo,
+  activityMessageId,
 }: Props) => {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
@@ -219,6 +221,7 @@ const GroupMessageBlockComponent = ({
               onInterrupt={onInterrupt}
               onForkFromMessage={onFork}
               onRemoveUpToMessage={onRemoveUpTo}
+              activityMessageId={activityMessageId}
             />
           ))}
         </div>
@@ -277,6 +280,7 @@ const arePropsEqual = (prevProps: Props, nextProps: Props): boolean => {
     prevProps.baseDir !== nextProps.baseDir ||
     prevProps.allFiles.length !== nextProps.allFiles.length ||
     prevProps.renderMarkdown !== nextProps.renderMarkdown ||
+    prevProps.activityMessageId !== nextProps.activityMessageId ||
     (prevProps.removeGroup !== nextProps.removeGroup && (prevProps.removeGroup === undefined) !== (nextProps.removeGroup === undefined)) ||
     (prevProps.redo !== nextProps.redo && (prevProps.redo === undefined) !== (nextProps.redo === undefined)) ||
     (prevProps.editUserMessage !== nextProps.editUserMessage && (prevProps.editUserMessage === undefined) !== (nextProps.editUserMessage === undefined)) ||

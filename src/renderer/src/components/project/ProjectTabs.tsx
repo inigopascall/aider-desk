@@ -3,7 +3,6 @@ import { CSS } from '@dnd-kit/utilities';
 import { MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Tab, TabGroup, TabList, Listbox, ListboxButton, ListboxOption, ListboxOptions, Transition } from '@headlessui/react';
 import { clsx } from 'clsx';
-import { CgSpinner } from 'react-icons/cg';
 import { MdAdd, MdChevronLeft, MdChevronRight } from 'react-icons/md';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, arrayMove, useSortable, horizontalListSortingStrategy } from '@dnd-kit/sortable';
@@ -17,6 +16,7 @@ import { useProjectProcessingState } from '@/stores/projectStore';
 import { useResponsive } from '@/hooks/useResponsive';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
 import { getProjectTabClassName, ProjectTabContent } from '@/components/project/ProjectTabContent';
+import { TaskActivityIndicator } from '@/components/common/TaskActivityIndicator';
 import { useApi } from '@/contexts/ApiContext';
 
 type Props = {
@@ -238,7 +238,11 @@ const MobileTabItem = ({ project }: MobileTabItemProps) => {
         <>
           <div className="flex items-center gap-2">
             <span className="block truncate">{project.baseDir.split(/[\\/]/).pop()}</span>
-            {isProcessing && <CgSpinner className="h-3 w-3 animate-spin text-text-primary flex-shrink-0" />}
+            {isProcessing && (
+              <span className="h-3 w-3 flex-shrink-0 flex items-center justify-center">
+                <TaskActivityIndicator active className="relative" />
+              </span>
+            )}
           </div>
           {selected && (
             <span className="absolute inset-y-0 left-0 flex items-center pl-2 text-text-tertiary">

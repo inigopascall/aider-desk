@@ -2,7 +2,7 @@ import { forwardRef, memo, useEffect, useImperativeHandle, useMemo, useRef } fro
 import { toPng } from 'html-to-image';
 import { MdKeyboardDoubleArrowDown } from 'react-icons/md';
 import { useTranslation } from 'react-i18next';
-import { GroupMessage, isUserMessage, Message, MessageViewMode } from '@common/types';
+import { GroupMessage, isLoadingMessage, isUserMessage, Message, MessageViewMode } from '@common/types';
 
 import { MessageBlockWrapper } from './MessageBlockWrapper';
 
@@ -147,6 +147,7 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
               onInterrupt={onInterrupt}
               onForkFromMessage={onForkFromMessage}
               onRemoveUpToMessage={onRemoveUpToMessage}
+              activityMessageId={activityMessageId}
             />
           ))}
           <div ref={messagesEndRef} />

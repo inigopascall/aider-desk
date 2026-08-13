@@ -1,7 +1,8 @@
 import { MouseEvent } from 'react';
-import { CgSpinner } from 'react-icons/cg';
 import { MdClose } from 'react-icons/md';
 import { clsx } from 'clsx';
+
+import { TaskActivityIndicator } from '@/components/common/TaskActivityIndicator';
 
 export const getProjectTabClassName = (selected: boolean): string =>
   clsx(
@@ -40,7 +41,9 @@ export const ProjectTabContent = ({ baseDir, isActive, isProcessing = false, onC
           onClick={handleClose}
         >
           {isProcessing ? (
-            <CgSpinner className="h-3.5 w-3.5 animate-spin text-text-primary" />
+            <span className="h-3.5 w-3.5 flex items-center justify-center">
+              <TaskActivityIndicator active className="relative" />
+            </span>
           ) : (
             <MdClose className="h-3.5 w-3.5 opacity-60 group-hover:opacity-100 transition-opacity duration-200" />
           )}
