@@ -112,27 +112,31 @@ export const MessageBar = ({
   };
 
   return (
-    <div className={twMerge('mt-3 pt-3 h-[30px] flex items-center justify-end gap-3 border-t border-border-dark-light px-1 relative', className)}>
-      <ExtensionComponentWrapper placement="task-message-bar" additionalProps={additionalProps} />
-      {usageReport && <UsageInfo usageReport={usageReport} className="mt-[4px]" />}
-      {showActivityIndicator && (
-        <span className="absolute left-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
-          <span className="h-4 w-4 flex-shrink-0 flex items-center justify-center">
-            <TaskActivityIndicator active className="relative" />
+    <div className={twMerge('mt-3 pt-3 h-[30px] flex items-center gap-3 border-t border-border-dark-light px-1 relative', className)}>
+      <div className="flex min-w-0 flex-1 items-center justify-start gap-3">
+        {showActivityIndicator && (
+          <span className="flex items-center gap-0.5">
+            <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center">
+              <TaskActivityIndicator active className="relative" />
+            </span>
+            <span className="whitespace-nowrap text-2xs text-text-muted-light">Streaming...</span>
           </span>
-          <span className="text-2xs text-text-muted-light whitespace-nowrap">Streaming...</span>
-        </span>
-      )}
-      {content && <CopyMessageButton content={content} className="transition-colors text-text-dark hover:text-text-primary" alwaysShow={true} />}
-      {(remove || redo || edit || onFork || onRemoveUpTo) && (
-        <div ref={buttonRef}>
-          <IconButton
-            icon={<FaEllipsisVertical className="w-4 h-4" />}
-            onClick={handleToggleMenu}
-            className="transition-colors text-text-dark hover:text-text-primary"
-          />
-        </div>
-      )}
+        )}
+        <ExtensionComponentWrapper placement="task-message-bar" additionalProps={additionalProps} />
+        {usageReport && <UsageInfo usageReport={usageReport} className="mt-[4px]" />}
+      </div>
+      <div className="flex flex-shrink-0 items-center gap-3">
+        {content && <CopyMessageButton content={content} className="transition-colors text-text-dark hover:text-text-primary" alwaysShow={true} />}
+        {(remove || redo || edit || onFork || onRemoveUpTo) && (
+          <div ref={buttonRef}>
+            <IconButton
+              icon={<FaEllipsisVertical className="w-4 h-4" />}
+              onClick={handleToggleMenu}
+              className="transition-colors text-text-dark hover:text-text-primary"
+            />
+          </div>
+        )}
+      </div>
       {isMenuOpen &&
         menuPosition &&
         (remove || redo || edit || onFork || onRemoveUpTo) &&
