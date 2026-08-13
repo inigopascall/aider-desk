@@ -113,7 +113,7 @@ export const MessageBar = ({
 
   return (
     <div className={twMerge('mt-3 pt-3 h-[30px] flex items-center gap-3 border-t border-border-dark-light px-1 relative', className)}>
-      <div className="flex min-w-0 flex-1 items-center justify-start gap-3">
+      <div className="flex min-w-0 flex-1 items-center justify-start">
         {showActivityIndicator && (
           <span className="flex items-center gap-0.5">
             <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center">
@@ -122,10 +122,10 @@ export const MessageBar = ({
             <span className="whitespace-nowrap text-2xs text-text-muted-light">Streaming...</span>
           </span>
         )}
-        <ExtensionComponentWrapper placement="task-message-bar" additionalProps={additionalProps} />
-        {usageReport && <UsageInfo usageReport={usageReport} className="mt-[4px]" />}
       </div>
       <div className="flex flex-shrink-0 items-center gap-3">
+        <ExtensionComponentWrapper placement="task-message-bar" additionalProps={additionalProps} />
+        {usageReport && <UsageInfo usageReport={usageReport} className="mt-[4px]" />}
         {content && <CopyMessageButton content={content} className="transition-colors text-text-dark hover:text-text-primary" alwaysShow={true} />}
         {(remove || redo || edit || onFork || onRemoveUpTo) && (
           <div ref={buttonRef}>
