@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react';
 import { clsx } from 'clsx';
 
+const BLINK_INTERVAL_MS = 500;
+
+const isBlinkVisible = () => Math.floor(Date.now() / BLINK_INTERVAL_MS) % 2 === 0;
+
 type Props = {
   active: boolean;
   className?: string;
 };
 
 export const TaskActivityIndicator = ({ active, className }: Props) => {
-  const [visible, setVisible] = useState(active);
+  const [visible, setVisible] = useState(() => active && isBlinkVisible());
 
   useEffect(() => {
     if (!active) {
@@ -15,10 +19,12 @@ export const TaskActivityIndicator = ({ active, className }: Props) => {
       return;
     }
 
-    setVisible(true);
-    const intervalId = window.setInterval(() => {
-      setVisible((current) => !current);
-    }, 500);
+    const updateVisibility = () => {
+      setVisible(isBlinkVisible());
+    };
+
+    updateVisibility();
+    const intervalId = window.setInterval(updateVisibility, BLINK_INTERVAL_MS);
 
     return () => {
       window.clearInterval(intervalId);
