@@ -60,21 +60,15 @@ const GroupMessageBlockComponent = ({
 
   const messageViewMode = useSettingsStore((state) => state.settings?.messageViewMode);
   const isCompactMode = messageViewMode === MessageViewMode.Compact;
-  const performanceMode = useSettingsStore((state) => state.settings?.performanceMode ?? true);
 
   const processedChildren = useMemo(() => {
     return isCompactMode ? groupAssistantMessages(message.children) : message.children;
   }, [message.children, isCompactMode]);
 
   const previewMessage = useMemo(() => {
-    // Skip the animated subagent preview entirely in performance mode to avoid
-    // unnecessary re-renders and compositor churn during agent runs.
-    if (performanceMode) {
-      return undefined;
-    }
     const messages = message.children.filter((msg) => isResponseMessage(msg) || isToolMessage(msg) || isUserMessage(msg)).reverse();
     return messages[0];
-  }, [message.children, performanceMode]);
+  }, [message.children]);
 
   const aggregateUsage = (messages: Message[]): UsageReportData | undefined => {
     const messagesWithUsage: (ResponseMessage | ToolMessage)[] = [];
@@ -226,7 +220,6 @@ const GroupMessageBlockComponent = ({
           ))}
         </div>
       </Accordion>
-      {!performanceMode && (
       <AnimatePresence>
         {!message.group.finished && !isOpen && previewMessage && (
           <motion.div
@@ -259,7 +252,6 @@ const GroupMessageBlockComponent = ({
           </motion.div>
         )}
       </AnimatePresence>
-      )}
       <div className="px-3 pb-3">
         <MessageBar
           className="mt-0"

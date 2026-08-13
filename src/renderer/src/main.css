@@ -227,12 +227,14 @@ code {
   font-style: italic;
 }
 
-/* Replace CSS-based task activity indicators with React-timer-driven dots. */
-body.disable-css-streaming-animations .animate-spin,
-body.disable-css-streaming-animations .animate-spin::before,
-body.disable-css-streaming-animations .animate-spin::after,
-body.disable-css-streaming-animations .animate-pulse,
-body.disable-css-streaming-animations .animate-pulse::before,
-body.disable-css-streaming-animations .animate-pulse::after {
+/* Global CSS motion kill switch.
+ * When the body class is present, every CSS animation and transition on
+ * every element is forced off, so the only remaining motion is the
+ * React-timer-driven red dot (TaskActivityIndicator) used where task
+ * activity must remain visible. */
+body.disable-css-streaming-animations *,
+body.disable-css-streaming-animations *::before,
+body.disable-css-streaming-animations *::after {
   animation: none !important;
+  transition: none !important;
 }

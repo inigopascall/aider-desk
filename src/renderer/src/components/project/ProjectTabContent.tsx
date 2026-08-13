@@ -1,8 +1,10 @@
 import { MouseEvent } from 'react';
 import { MdClose } from 'react-icons/md';
+import { CgSpinner } from 'react-icons/cg';
 import { clsx } from 'clsx';
 
 import { TaskActivityIndicator } from '@/components/common/TaskActivityIndicator';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 export const getProjectTabClassName = (selected: boolean): string =>
   clsx(
@@ -28,6 +30,8 @@ export const ProjectTabContent = ({ baseDir, isActive, isProcessing = false, onC
     }
   };
 
+  const disableCssStreamingAnimations = useSettingsStore((state) => state.settings?.disableCssStreamingAnimations ?? true);
+
   return (
     <>
       {baseDir.split(/[\\/]/).pop()}
@@ -42,7 +46,11 @@ export const ProjectTabContent = ({ baseDir, isActive, isProcessing = false, onC
         >
           {isProcessing ? (
             <span className="h-3.5 w-3.5 flex items-center justify-center">
-              <TaskActivityIndicator active className="relative" />
+              {disableCssStreamingAnimations ? (
+                <TaskActivityIndicator active className="relative" />
+              ) : (
+                <CgSpinner className="h-3.5 w-3.5 animate-spin text-text-primary" />
+              )}
             </span>
           ) : (
             <MdClose className="h-3.5 w-3.5 opacity-60 group-hover:opacity-100 transition-opacity duration-200" />

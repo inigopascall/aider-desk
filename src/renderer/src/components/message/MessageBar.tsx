@@ -16,6 +16,7 @@ import { TaskActivityIndicator } from '@/components/common/TaskActivityIndicator
 import { useClickOutside } from '@/hooks/useClickOutside';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
 import { includeMessageProperty } from '@/components/message/utils';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 type MenuPosition = {
   top?: number;
@@ -54,6 +55,7 @@ export const MessageBar = ({
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLDivElement>(null);
+  const disableCssStreamingAnimations = useSettingsStore((state) => state.settings?.disableCssStreamingAnimations ?? true);
   const additionalProps = {
     message: message && includeMessageProperty(message) ? message : null,
   };
@@ -114,7 +116,7 @@ export const MessageBar = ({
   return (
     <div className={twMerge('mt-3 pt-3 h-[30px] flex items-center gap-3 border-t border-border-dark-light px-1 relative', className)}>
       <div className="flex min-w-0 flex-1 items-center justify-start">
-        {showActivityIndicator && (
+        {showActivityIndicator && disableCssStreamingAnimations && (
           <span className="flex items-center gap-0.5">
             <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center">
               <TaskActivityIndicator active className="relative" />

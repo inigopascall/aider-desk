@@ -4,6 +4,7 @@ import { MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Tab, TabGroup, TabList, Listbox, ListboxButton, ListboxOption, ListboxOptions, Transition } from '@headlessui/react';
 import { clsx } from 'clsx';
 import { MdAdd, MdChevronLeft, MdChevronRight } from 'react-icons/md';
+import { CgSpinner } from 'react-icons/cg';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, arrayMove, useSortable, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { useTranslation } from 'react-i18next';
@@ -18,6 +19,7 @@ import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComp
 import { getProjectTabClassName, ProjectTabContent } from '@/components/project/ProjectTabContent';
 import { TaskActivityIndicator } from '@/components/common/TaskActivityIndicator';
 import { useApi } from '@/contexts/ApiContext';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 type Props = {
   openProjects: ProjectData[];
@@ -222,6 +224,7 @@ type MobileTabItemProps = {
 
 const MobileTabItem = ({ project }: MobileTabItemProps) => {
   const isProcessing = useProjectProcessingState(project.baseDir);
+  const disableCssStreamingAnimations = useSettingsStore((state) => state.settings?.disableCssStreamingAnimations ?? true);
 
   return (
     <ListboxOption
@@ -240,7 +243,11 @@ const MobileTabItem = ({ project }: MobileTabItemProps) => {
             <span className="block truncate">{project.baseDir.split(/[\\/]/).pop()}</span>
             {isProcessing && (
               <span className="h-3 w-3 flex-shrink-0 flex items-center justify-center">
-                <TaskActivityIndicator active className="relative" />
+                {disableCssStreamingAnimations ? (
+                  <TaskActivityIndicator active className="relative" />
+                ) : (
+                  <CgSpinner className="h-3 w-3 animate-spin text-text-primary" />
+                )}
               </span>
             )}
           </div>

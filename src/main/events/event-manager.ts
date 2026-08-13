@@ -207,10 +207,6 @@ const COALESCE_STRATEGIES: Record<string, CoalesceStrategy> = {
     key: (d) => taskKey(d),
     merge: latest,
   },
-  'task-updated': {
-    key: (d) => `${d.baseDir}|${d.id}`,
-    merge: latest,
-  },
 };
 
 export class EventManager {

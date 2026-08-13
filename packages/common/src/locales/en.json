@@ -986,8 +986,8 @@
       "viewModeCompact": "Compact",
       "fullMessageRendering": "Use full message rendering (Legacy)",
       "fullMessageRenderingTooltip": "Renders all messages in the DOM without virtualization. May impact performance with large conversation histories.",
-      "disableCssStreamingAnimations": "Disable CSS streaming animations",
-      "disableCssStreamingAnimationsTooltip": "Uses lightweight blinking red activity indicators instead of CSS spinners and pulses while tasks are processing."
+      "disableCssStreamingAnimations": "Disable CSS animations",
+      "disableCssAnimationsTooltip": "Disables all CSS animations and transitions throughout the interface. Uses React-timer blinking red dots where task activity must remain visible."
     },
     "promptField": {
       "agentModeOnly": "This command is only available in agent mode",

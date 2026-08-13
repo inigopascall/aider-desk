@@ -301,7 +301,7 @@ export const GeneralSettings = ({ settings, setSettings, onLanguageChange, onZoo
                     })
                   }
                 />
-                <InfoIcon tooltip={t('settings.messages.disableCssStreamingAnimationsTooltip')} />
+                <InfoIcon tooltip={t('settings.messages.disableCssAnimationsTooltip')} />
               </div>
             </div>
           </div>

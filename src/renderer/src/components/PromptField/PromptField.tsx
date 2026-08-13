@@ -18,6 +18,7 @@ import { useDebounce } from '@reactuses/core';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useTranslation } from 'react-i18next';
 import { BiSend } from 'react-icons/bi';
+import { CgSpinner } from 'react-icons/cg';
 import { MdSave, MdStop, MdMic, MdMicOff, MdOutlineScheduleSend } from 'react-icons/md';
 import { AiOutlineClose } from 'react-icons/ai';
 import { LuChevronsLeftRight, LuChevronsRightLeft } from 'react-icons/lu';
@@ -40,6 +41,8 @@ import { Tooltip } from '@/components/ui/Tooltip';
 import { useAudioRecorder } from '@/hooks/useAudioRecorder';
 import { AudioAnalyzer } from '@/components/PromptField/AudioAnalyzer';
 import { useResponsive } from '@/hooks/useResponsive';
+import { TaskActivityIndicator } from '@/components/common/TaskActivityIndicator';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 const External = Annotation.define<boolean>();
 
@@ -310,6 +313,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       mediaStream,
     } = useAudioRecorder();
     const [textBeforeRecording, setTextBeforeRecording] = useState('');
+    const disableCssStreamingAnimations = useSettingsStore((state) => state.settings?.disableCssStreamingAnimations ?? true);
 
     const setTextWithDispatch = useCallback(
       (newText: string) => {
@@ -1657,6 +1661,14 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
             )}
           </div>
           <div className="absolute right-3 top-1/2 -translate-y-[12px] flex items-center space-x-1 text-text-muted-light">
+            {processing && disableCssStreamingAnimations && (
+              <span className="w-4 h-4 flex items-center justify-center">
+                <TaskActivityIndicator active />
+              </span>
+            )}
+            {processing && !disableCssStreamingAnimations && (
+              <CgSpinner className="w-4 h-4 animate-spin text-text-muted-light" />
+            )}
             {processing && (
               <Tooltip content={`${t('promptField.stopResponse')} (Ctrl+C)`}>
                 <button onClick={() => interruptResponse()} className="hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-colors duration-200 ml-1">
