@@ -127,7 +127,6 @@ const MessageBlockComponent = ({
         baseDir={baseDir}
         taskId={taskId}
         onInterrupt={onInterrupt}
-        showActivityIndicator={message.id === activityMessageId}
       />
     );
   }

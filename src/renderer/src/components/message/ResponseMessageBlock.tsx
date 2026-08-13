@@ -52,12 +52,12 @@ export const ResponseMessageBlock = ({
       )}
     >
       <div className="flex items-start gap-2">
-        <div className="mt-[1px] relative w-4 h-4 flex-shrink-0">
+        <div className="mt-[1px] relative">
           <RiRobot2Line className="text-text-muted w-4 h-4" />
-          <TaskActivityIndicator active={showActivityIndicator} className="absolute -right-1 -bottom-1" />
         </div>
         <div className="flex-grow-1 w-full overflow-hidden">{parsedContent}</div>
       </div>
+      <TaskActivityIndicator active={showActivityIndicator} className="absolute left-2 bottom-2 z-10" />
       {!hideMessageBar && (
         <MessageBar
           message={message}
