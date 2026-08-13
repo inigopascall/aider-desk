@@ -1,7 +1,7 @@
 import { DefaultTaskState } from '@common/types';
-import { CgSpinner } from 'react-icons/cg';
 import { clsx } from 'clsx';
 
+import { TaskActivityIndicator } from '@/components/common/TaskActivityIndicator';
 import { useTaskQuestion } from '@/stores/taskStore';
 
 type Props = {
@@ -17,5 +17,5 @@ export const TaskStatusIcon = ({ taskId, state, isCollapsed }: Props) => {
   if (question) {
     return <span className={clsx('text-text-primary', isCollapsed ? 'text-xs' : 'text-sm')}>?</span>;
   }
-  return state === DefaultTaskState.InProgress ? <CgSpinner className={clsx('animate-spin', iconSize, 'text-text-primary')} /> : null;
+  return state === DefaultTaskState.InProgress ? <TaskActivityIndicator active /> : null;
 };

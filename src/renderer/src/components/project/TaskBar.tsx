@@ -1,4 +1,4 @@
-import { AgentProfile, AIDER_MODES, EditFormat, Mode, Model, ModelsData, RawModelInfo, TaskData } from '@common/types';
+import { AgentProfile, AIDER_MODES, DefaultTaskState, EditFormat, Mode, Model, ModelsData, RawModelInfo, TaskData } from '@common/types';
 import React, { ReactNode, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { BsCodeSlash, BsFilter, BsLayoutSidebar } from 'react-icons/bs';
 import { CgTerminal } from 'react-icons/cg';
@@ -24,6 +24,7 @@ import { useResponsive } from '@/hooks/useResponsive';
 import { useModelProviders } from '@/contexts/ModelProviderContext';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
 import { useAiderConnectorStatus } from '@/hooks/useAiderConnectorStatus';
+import { TaskActivityIndicator } from '@/components/common/TaskActivityIndicator';
 
 export type TaskBarRef = {
   openMainModelSelector: (model?: string) => void;
@@ -654,6 +655,7 @@ export const TaskBar = React.forwardRef<TaskBarRef, Props>(
             )}
           </div>
           <div className="flex items-center space-x-1 mr-2">
+            <TaskActivityIndicator active={task.state === DefaultTaskState.InProgress} />
             <ExtensionComponentWrapper placement="task-top-bar-right" />
             <TaskWorkingMode
               task={task}
