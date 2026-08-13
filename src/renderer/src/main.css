@@ -231,10 +231,16 @@ code {
  * When the body class is present, every CSS animation and transition on
  * every element is forced off, so the only remaining motion is the
  * React-timer-driven red dot (TaskActivityIndicator) used where task
- * activity must remain visible. */
-body.disable-css-streaming-animations *,
-body.disable-css-streaming-animations *::before,
-body.disable-css-streaming-animations *::after {
+ * activity must remain visible.
+ *
+ * Exception: the `react-toastify` container (`.Toastify`) and all of its
+ * descendants are excluded, because the library relies on CSS animation end
+ * events to remove toasts after their auto-close timer. Without this
+ * exception, `animation: none` leaves those notifications stuck on screen.
+ */
+body.disable-css-streaming-animations *:not(.Toastify):not(.Toastify *),
+body.disable-css-streaming-animations *:not(.Toastify):not(.Toastify *)::before,
+body.disable-css-streaming-animations *:not(.Toastify):not(.Toastify *)::after {
   animation: none !important;
   transition: none !important;
 }
