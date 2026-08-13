@@ -4,7 +4,6 @@ import { ResponseMessage } from '@common/types';
 
 import { MessageBar } from './MessageBar';
 
-import { TaskActivityIndicator } from '@/components/common/TaskActivityIndicator';
 import { useParsedContent } from '@/hooks/useParsedContent';
 
 type Props = {
@@ -57,7 +56,6 @@ export const ResponseMessageBlock = ({
         </div>
         <div className="flex-grow-1 w-full overflow-hidden">{parsedContent}</div>
       </div>
-      <TaskActivityIndicator active={showActivityIndicator} className="absolute left-2 bottom-2 z-10" />
       {!hideMessageBar && (
         <MessageBar
           message={message}
@@ -66,6 +64,7 @@ export const ResponseMessageBlock = ({
           remove={onRemove}
           onFork={onFork}
           onRemoveUpTo={onRemoveUpTo}
+          showActivityIndicator={showActivityIndicator}
         />
       )}
     </div>

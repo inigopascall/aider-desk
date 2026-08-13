@@ -11,6 +11,8 @@ import { IconButton } from '../common/IconButton';
 import { CopyMessageButton } from './CopyMessageButton';
 import { UsageInfo } from './UsageInfo';
 
+import { TaskActivityIndicator } from '@/components/common/TaskActivityIndicator';
+
 import { useClickOutside } from '@/hooks/useClickOutside';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
 import { includeMessageProperty } from '@/components/message/utils';
@@ -32,9 +34,21 @@ type Props = {
   edit?: () => void;
   onFork?: () => void;
   onRemoveUpTo?: () => void;
+  showActivityIndicator?: boolean;
 };
 
-export const MessageBar = ({ className, content, usageReport, message, remove, redo, edit, onFork, onRemoveUpTo }: Props) => {
+export const MessageBar = ({
+  className,
+  content,
+  usageReport,
+  message,
+  remove,
+  redo,
+  edit,
+  onFork,
+  onRemoveUpTo,
+  showActivityIndicator = false,
+}: Props) => {
   const { t } = useTranslation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
@@ -101,6 +115,11 @@ export const MessageBar = ({ className, content, usageReport, message, remove, r
     <div className={twMerge('mt-3 pt-3 h-[30px] flex items-center justify-end gap-3 border-t border-border-dark-light px-1 relative', className)}>
       <ExtensionComponentWrapper placement="task-message-bar" additionalProps={additionalProps} />
       {usageReport && <UsageInfo usageReport={usageReport} className="mt-[4px]" />}
+      {showActivityIndicator && (
+        <span className="h-4 w-4 flex-shrink-0 flex items-center justify-center">
+          <TaskActivityIndicator active className="relative" />
+        </span>
+      )}
       {content && <CopyMessageButton content={content} className="transition-colors text-text-dark hover:text-text-primary" alwaysShow={true} />}
       {(remove || redo || edit || onFork || onRemoveUpTo) && (
         <div ref={buttonRef}>

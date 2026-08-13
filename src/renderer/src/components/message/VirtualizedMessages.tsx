@@ -70,6 +70,10 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
     const isCompactMode = messageViewMode === MessageViewMode.Compact;
 
     const activityMessageId = useMemo(() => {
+      if (!inProgress) {
+        return undefined;
+      }
+
       let latestActivityMessageId: string | undefined;
 
       const visitMessage = (message: Message) => {
@@ -92,7 +96,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
       messages.forEach(visitMessage);
 
       return latestActivityMessageId;
-    }, [messages]);
+    }, [inProgress, messages]);
 
     const processedMessages = useMemo(() => {
       const grouped = groupMessagesByPromptContext(messages);

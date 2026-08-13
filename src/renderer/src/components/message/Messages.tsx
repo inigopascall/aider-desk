@@ -69,6 +69,10 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
     const isCompactMode = messageViewMode === MessageViewMode.Compact;
 
     const activityMessageId = useMemo(() => {
+      if (!inProgress) {
+        return undefined;
+      }
+
       let latestActivityMessageId: string | undefined;
 
       const visitMessage = (message: Message) => {
@@ -91,7 +95,7 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
       messages.forEach(visitMessage);
 
       return latestActivityMessageId;
-    }, [messages]);
+    }, [inProgress, messages]);
 
     // Group messages by promptContext.group.id, then optionally group assistant messages for compact mode
     const processedMessages = useMemo(() => {
