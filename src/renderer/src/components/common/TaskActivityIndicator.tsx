@@ -29,5 +29,5 @@ export const TaskActivityIndicator = ({ active, className }: Props) => {
     return null;
   }
 
-  return <span className={clsx('absolute block w-[15px] h-[15px] rounded-full bg-error', className)} aria-label="Task in progress" />;
+  return <span className={clsx('block w-[10px] h-[10px] rounded-full bg-error', className)} aria-label="Task in progress" />;
 };

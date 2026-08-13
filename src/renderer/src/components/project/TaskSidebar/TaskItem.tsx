@@ -358,6 +358,7 @@ export const TaskItem = memo(
                   </div>
                 )}
                 <TaskStateChip state={task.state || DefaultTaskState.Todo} className={hasChildren && !isSubtask ? '' : '-ml-0.5'} />
+                <TaskStatusIcon taskId={task.id} state={task.state} isCollapsed={false} />
                 <ExtensionComponentWrapper
                   placement="task-sidebar-item-badges"
                   renderNullOnEmpty
@@ -377,10 +378,6 @@ export const TaskItem = memo(
                 )}
               </div>
             </div>
-          </div>
-
-          <div className="flex items-center pl-2">
-            <TaskStatusIcon taskId={task.id} state={task.state} isCollapsed={false} />
           </div>
 
           {!isMultiselectMode && (

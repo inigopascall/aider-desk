@@ -12,10 +12,8 @@ type Props = {
 
 export const TaskStatusIcon = ({ taskId, state, isCollapsed }: Props) => {
   const question = useTaskQuestion(taskId);
-  const iconSize = isCollapsed ? 'w-3.5 h-3.5' : 'w-4 h-4';
-
   if (question) {
     return <span className={clsx('text-text-primary', isCollapsed ? 'text-xs' : 'text-sm')}>?</span>;
   }
-  return state === DefaultTaskState.InProgress ? <TaskActivityIndicator active className="right-10 top-1/2 -translate-y-1/2" /> : null;
+  return state === DefaultTaskState.InProgress ? <TaskActivityIndicator active className="ml-8" /> : null;
 };

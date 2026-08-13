@@ -15,8 +15,8 @@ export const LoadingMessageBlock = ({ message, baseDir, taskId, onInterrupt }: P
 
   return (
     <div className={`${baseClasses} text-text-secondary relative group flex items-center`}>
-      <span className="relative flex-grow pl-6">
-        <TaskActivityIndicator active className="left-0 top-1/2 -translate-y-1/2" />
+      <span className="flex flex-grow items-center gap-2">
+        <TaskActivityIndicator active />
         <span>{message.content}</span>
       </span>
       {message.actionIds && (
