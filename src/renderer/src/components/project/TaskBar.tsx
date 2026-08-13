@@ -471,8 +471,8 @@ export const TaskBar = React.forwardRef<TaskBarRef, Props>(
         <div className={clsx('flex flex-wrap gap-x-2 flex-shrink-0', isMobile ? 'flex-col items-start gap-y-1' : 'flex-row items-center gap-y-0.5')}>
           {showLabel && <span className="text-2xs font-semibold text-text-primary uppercase whitespace-nowrap">{t('projectBar.aider')}:</span>}
           {isAiderBusy ? (
-            <div className="flex items-center space-x-2 flex-shrink-0 text-2xs text-text-secondary animate-pulse">
-              <CgTerminal className="w-3.5 h-3.5" />
+            <div className="flex items-center space-x-2 flex-shrink-0 text-2xs text-text-secondary">
+              <TaskActivityIndicator active />
               <span>{aiderConnectorMessage}</span>
               <Tooltip content={t('aiderConnector.restart')}>
                 <button onClick={onRestartAiderConnector} className="p-0.5 hover:bg-bg-tertiary rounded-md">
