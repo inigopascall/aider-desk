@@ -50,6 +50,9 @@ import {
   SwitchToWorktreeOptions,
   WorkingMode,
   WorktreeUncommittedFiles,
+  WorkflowLogData,
+  WorkflowLogsUpdatedData,
+  WorkflowRunInfo,
 } from '@common/types';
 import { parsePartialJson } from 'ai';
 import {
@@ -108,6 +111,7 @@ import { TelemetryManager } from '@/telemetry';
 import { EventManager } from '@/events';
 import { execWithShellPath, getEnvironmentVariablesForAider, isDirectory } from '@/utils';
 import { ContextManager } from '@/task/context-manager';
+import { WorkflowEventStore } from '@/task/workflow-event-store';
 import { Project } from '@/project';
 import { AiderManager } from '@/task/aider-manager';
 import { SkillManager } from '@/skills/skill-manager';
@@ -185,6 +189,7 @@ export class Task {
   private readonly taskDataPath: string;
   private readonly taskDataLoadPromise: Promise<void>;
   private readonly contextManager: ContextManager;
+  private readonly workflowEventStore: WorkflowEventStore;
   private readonly agent: Agent;
   private readonly aiderManager: AiderManager;
   private readonly skillManager: SkillManager;
@@ -218,6 +223,7 @@ export class Task {
     };
     this.taskDataPath = path.join(this.project.baseDir, AIDER_DESK_TASKS_DIR, this.taskId, 'settings.json');
     this.contextManager = new ContextManager(this, this.taskId);
+    this.workflowEventStore = new WorkflowEventStore(this.project.baseDir, this.taskId);
     this.skillManager = new SkillManager(project.baseDir, extensionManager);
     this.agent = new Agent(
       this.store,
@@ -622,6 +628,7 @@ export class Task {
       question: this.currentQuestion,
       queuedPrompts: this.queuedPrompts,
       workingMode: this.task.workingMode || 'local',
+      workflowLogs: await this.workflowEventStore.load(),
     };
   }
 
@@ -2169,8 +2176,6 @@ export class Task {
     await this.saveTask({ state: DefaultTaskState.InProgress });
 
     try {
-      // Show the user's prompt in the thread
-      this.addUserMessage(uuidv4(), prompt);
       await runWorkflow(this, workflow, prompt);
     } finally {
       if (previousTaskState !== DefaultTaskState.InProgress) {
@@ -2780,6 +2785,109 @@ export class Task {
     };
 
     this.eventManager.sendLog(data);
+  }
+
+  /**
+   * Persists and broadcasts a durable workflow progress event.
+   * These records are task history metadata only — never sent to the model.
+   */
+  public async addWorkflowLogMessage(run: WorkflowRunInfo, level: LogLevel, message: string): Promise<void> {
+    const data: WorkflowLogData = {
+      id: uuidv4(),
+      baseDir: this.project.baseDir,
+      taskId: this.taskId,
+      runId: run.runId,
+      workflowId: run.workflowId,
+      workflowName: run.workflowName,
+      level,
+      message,
+      timestamp: Date.now(),
+      sequence: this.workflowEventStore.allocateSequence(),
+    };
+    try {
+      await this.workflowEventStore.append(data);
+    } catch (error) {
+      logger.error('Failed to persist workflow log', { taskId: this.taskId, error });
+    }
+    this.eventManager.sendWorkflowLog(data);
+    this.eventManager.sendWorkflowLogsUpdated({
+      baseDir: this.project.baseDir,
+      taskId: this.taskId,
+      logs: await this.workflowEventStore.load(),
+    });
+  }
+
+  /**
+   * Persists the workflow invocation as a real user context message and
+   * broadcasts it to the live renderer.
+   */
+  public async addWorkflowInvocationMessage(prompt: string, run: WorkflowRunInfo): Promise<void> {
+    const messageId = uuidv4();
+    const promptContext: PromptContext = {
+      id: messageId,
+      workflow: {
+        runId: run.runId,
+        workflowId: run.workflowId,
+        workflowName: run.workflowName,
+        kind: 'invocation',
+      },
+    };
+    this.contextManager.addContextMessage({
+      id: messageId,
+      role: MessageRole.User,
+      content: prompt,
+      promptContext,
+      timestamp: Date.now(),
+    });
+    this.eventManager.sendUserMessage({
+      type: 'user',
+      id: messageId,
+      baseDir: this.project.baseDir,
+      taskId: this.taskId,
+      content: prompt,
+      promptContext,
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * Persists a workflow summary/checkpoint as a normal assistant context
+   * message and broadcasts it to the live renderer as a completed response.
+   */
+  public async addWorkflowSummaryMessage(
+    run: WorkflowRunInfo,
+    content: string,
+    kind: 'checkpoint' | 'final-summary',
+    label?: string,
+  ): Promise<void> {
+    const messageId = uuidv4();
+    const promptContext: PromptContext = {
+      id: messageId,
+      workflow: {
+        runId: run.runId,
+        workflowId: run.workflowId,
+        workflowName: run.workflowName,
+        kind,
+        label,
+      },
+    };
+    const summaryMessage: ContextAssistantMessage = {
+      id: messageId,
+      role: MessageRole.Assistant,
+      content,
+      promptContext,
+      timestamp: Date.now(),
+    };
+    this.contextManager.addContextMessage(summaryMessage);
+    this.eventManager.sendResponseCompleted({
+      type: 'response-completed',
+      messageId,
+      baseDir: this.project.baseDir,
+      taskId: this.taskId,
+      content,
+      promptContext,
+      timestamp: Date.now(),
+    });
   }
 
   public getContextMessages() {

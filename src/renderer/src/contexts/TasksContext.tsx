@@ -13,6 +13,7 @@ import { useTaskCommandHandlers } from '@/hooks/useTaskCommandHandlers';
 import { useTaskDataHandlers } from '@/hooks/useTaskDataHandlers';
 import { useTaskMessageHandlers } from '@/hooks/useTaskMessageHandlers';
 import { useTaskLifecycleHandlers } from '@/hooks/useTaskLifecycleHandlers';
+import { useTaskWorkflowLogHandlers } from '@/hooks/useTaskWorkflowLogHandlers';
 import { useTaskActions } from '@/hooks/useTaskActions';
 import { useApi } from '@/contexts/ApiContext';
 import { convertTaskStateMessages } from '@/utils/task-messages';
@@ -42,6 +43,7 @@ const TaskEventSubscriber = memo(function TaskEventSubscriber({ baseDir, taskId,
   useTaskDataHandlers(baseDir, taskId);
   useTaskMessageHandlers(baseDir, taskId);
   useTaskLifecycleHandlers(baseDir, taskId);
+  useTaskWorkflowLogHandlers(baseDir, taskId);
 
   return null;
 });

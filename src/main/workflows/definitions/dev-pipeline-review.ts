@@ -166,7 +166,7 @@ export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<voi
       journey.error = error instanceof Error ? error.message : String(error);
       await ctx.log.error(`Dev Pipeline + Review aborted: ${journey.error}`);
     }
-    await emitReport(task, journey, report, 'Dev Pipeline + Review');
+    await emitReport(ctx, journey, report, 'Dev Pipeline + Review');
   }
 }
 

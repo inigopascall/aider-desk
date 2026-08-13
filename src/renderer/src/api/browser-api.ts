@@ -77,6 +77,8 @@ import {
   SkillDefinition,
   SkillsUpdatedData,
   ExtensionOperationResult,
+  WorkflowLogData,
+  WorkflowLogsUpdatedData,
 } from '@common/types';
 import { ApplicationAPI } from '@common/api';
 import { type AxiosInstance, create } from 'axios';
@@ -129,6 +131,8 @@ type EventDataMap = {
   'extension-ui-refresh': ExtensionUIRefreshData;
   'modal-overlay-url': ModalOverlayUrlData;
   'aider-connector-status': { baseDir?: string; taskId?: string; status: AiderConnectorStatus };
+  'workflow-log': WorkflowLogData;
+  'workflow-logs-updated': WorkflowLogsUpdatedData;
 };
 
 type EventCallback<T> = (data: T) => void;
@@ -215,6 +219,8 @@ export class BrowserApi implements ApplicationAPI {
       'extension-ui-refresh': new Map(),
       'modal-overlay-url': new Map(),
       'aider-connector-status': new Map(),
+      'workflow-log': new Map(),
+      'workflow-logs-updated': new Map(),
     };
     this.apiClient = create({
       baseURL: `${baseUrl}/api`,
@@ -946,6 +952,12 @@ export class BrowserApi implements ApplicationAPI {
   }
   addLogListener(baseDir: string, taskId: string, callback: (data: LogData) => void): () => void {
     return this.addListener('log', callback, baseDir, taskId);
+  }
+  addWorkflowLogListener(baseDir: string, taskId: string, callback: (data: WorkflowLogData) => void): () => void {
+    return this.addListener('workflow-log', callback, baseDir, taskId);
+  }
+  addWorkflowLogsUpdatedListener(baseDir: string, taskId: string, callback: (data: WorkflowLogsUpdatedData) => void): () => void {
+    return this.addListener('workflow-logs-updated', callback, baseDir, taskId);
   }
   addContextFilesUpdatedListener(baseDir: string, taskId: string, callback: (data: ContextFilesUpdatedData) => void): () => void {
     return this.addListener('context-files-updated', callback, baseDir, taskId);

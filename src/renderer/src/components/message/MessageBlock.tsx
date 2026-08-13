@@ -41,6 +41,7 @@ import {
   isResponseMessage,
   isToolMessage,
   isUserMessage,
+  isWorkflowLogMessage,
   LogMessage,
   Message,
   ToolMessage,
@@ -49,6 +50,7 @@ import {
 import { CommandOutputMessageBlock } from './CommandOutputMessageBlock';
 import { LoadingMessageBlock } from './LoadingMessageBlock';
 import { LogMessageBlock } from './LogMessageBlock';
+import { WorkflowLogMessageBlock } from './WorkflowLogMessageBlock';
 import { UserMessageBlock } from './UserMessageBlock';
 import { ReflectedMessageBlock } from './ReflectedMessageBlock';
 import { ResponseMessageBlock } from './ResponseMessageBlock';
@@ -129,6 +131,10 @@ const MessageBlockComponent = ({
         onInterrupt={onInterrupt}
       />
     );
+  }
+
+  if (isWorkflowLogMessage(message)) {
+    return <WorkflowLogMessageBlock baseDir={baseDir} taskId={taskId} message={message} onRemove={remove} compact={compact} onInterrupt={onInterrupt} />;
   }
 
   if (isLogMessage(message)) {

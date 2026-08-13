@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 
 import { updateTaskState, clearSession, setMessages } from '@/stores/taskStore';
-import { convertTaskStateMessages } from '@/utils/task-messages';
+import { convertTaskStateMessages, mergeWorkflowLogs } from '@/utils/task-messages';
 import { setTaskAllFiles } from '@/stores/taskFilesStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { getTaskDir } from '@/utils/task-utils';
@@ -19,9 +19,9 @@ export const useTaskActions = ({ baseDir }: UseTaskActionsParams) => {
       try {
         updateTaskState(taskId, { loading: true });
 
-        const { messages: stateMessages, files, todoItems, question, queuedPrompts } = await api.loadTask(baseDir, taskId);
+        const { messages: stateMessages, files, todoItems, question, queuedPrompts, workflowLogs } = await api.loadTask(baseDir, taskId);
 
-        const messages = convertTaskStateMessages(stateMessages);
+        const messages = mergeWorkflowLogs(convertTaskStateMessages(stateMessages), workflowLogs);
 
         setMessages(taskId, (existingMessages) => [
           ...messages,
@@ -110,8 +110,8 @@ export const useTaskActions = ({ baseDir }: UseTaskActionsParams) => {
   const refreshTask = useCallback(
     async (taskId: string) => {
       try {
-        const { messages: stateMessages, files, todoItems, question, queuedPrompts } = await api.loadTask(baseDir, taskId);
-        const messages = convertTaskStateMessages(stateMessages);
+        const { messages: stateMessages, files, todoItems, question, queuedPrompts, workflowLogs } = await api.loadTask(baseDir, taskId);
+        const messages = mergeWorkflowLogs(convertTaskStateMessages(stateMessages), workflowLogs);
 
         setMessages(taskId, () => messages);
         updateTaskState(taskId, {
