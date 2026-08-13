@@ -17,5 +17,5 @@ export const TaskStatusIcon = ({ taskId, state, isCollapsed }: Props) => {
   if (question) {
     return <span className={clsx('text-text-primary', isCollapsed ? 'text-xs' : 'text-sm')}>?</span>;
   }
-  return state === DefaultTaskState.InProgress ? <TaskActivityIndicator active /> : null;
+  return state === DefaultTaskState.InProgress ? <TaskActivityIndicator active className="right-10 top-1/2 -translate-y-1/2" /> : null;
 };

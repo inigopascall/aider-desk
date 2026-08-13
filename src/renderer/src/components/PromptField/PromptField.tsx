@@ -39,7 +39,6 @@ import { useAgents } from '@/contexts/AgentsContext';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { useAudioRecorder } from '@/hooks/useAudioRecorder';
 import { AudioAnalyzer } from '@/components/PromptField/AudioAnalyzer';
-import { TaskActivityIndicator } from '@/components/common/TaskActivityIndicator';
 import { useResponsive } from '@/hooks/useResponsive';
 
 const External = Annotation.define<boolean>();
@@ -1695,7 +1694,6 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
                 </button>
               </Tooltip>
             )}
-            <TaskActivityIndicator active={processing} />
           </div>
         </div>
         {historyMenuVisible && historyItems.length > 0 && (

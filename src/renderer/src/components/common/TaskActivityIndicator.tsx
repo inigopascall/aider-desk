@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
+import { clsx } from 'clsx';
 
 type Props = {
   active: boolean;
+  className?: string;
 };
 
-export const TaskActivityIndicator = ({ active }: Props) => {
+export const TaskActivityIndicator = ({ active, className }: Props) => {
   const [visible, setVisible] = useState(active);
 
   useEffect(() => {
@@ -27,5 +29,5 @@ export const TaskActivityIndicator = ({ active }: Props) => {
     return null;
   }
 
-  return <span className="block w-[6px] h-[6px] rounded-full bg-error-light" aria-label="Task in progress" />;
+  return <span className={clsx('absolute block w-[15px] h-[15px] rounded-full bg-error', className)} aria-label="Task in progress" />;
 };

@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { MouseEvent, DragEvent, useState, useRef, useEffect, useOptimistic, startTransition, Activity, memo, useCallback, useMemo } from 'react';
 import { HiPlus } from 'react-icons/hi';
 import { RiMenuUnfold4Line, RiMenuFold2Line } from 'react-icons/ri';
-import { CgSpinner } from 'react-icons/cg';
 import { MdOutlineSearch } from 'react-icons/md';
 import { clsx } from 'clsx';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -24,6 +23,7 @@ import { Tooltip } from '@/components/ui/Tooltip';
 import { Checkbox } from '@/components/common/Checkbox';
 import { Toggle } from '@/components/common/Toggle';
 import { getTaskStateLabel, getStateTextClass } from '@/components/common/TaskStateChip';
+import { TaskActivityIndicator } from '@/components/common/TaskActivityIndicator';
 
 export const COLLAPSED_WIDTH = 44;
 export const EXPANDED_WIDTH = 256;
@@ -865,7 +865,7 @@ const TaskSidebarComponent = ({
             >
               {loading ? (
                 <div className="flex items-center justify-center h-full">
-                  <CgSpinner className="animate-spin w-6 h-6 text-text-primary" />
+                  <TaskActivityIndicator active className="relative" />
                 </div>
               ) : tasks.length === 0 ? (
                 <div className="flex items-center justify-center h-full p-4">

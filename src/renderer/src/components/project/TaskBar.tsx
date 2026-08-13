@@ -655,7 +655,7 @@ export const TaskBar = React.forwardRef<TaskBarRef, Props>(
             )}
           </div>
           <div className="flex items-center space-x-1 mr-2">
-            <TaskActivityIndicator active={task.state === DefaultTaskState.InProgress} />
+            <TaskActivityIndicator active={task.state === DefaultTaskState.InProgress} className="right-16 top-1/2 -translate-y-1/2" />
             <ExtensionComponentWrapper placement="task-top-bar-right" />
             <TaskWorkingMode
               task={task}
