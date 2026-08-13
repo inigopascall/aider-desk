@@ -3,7 +3,16 @@ import { toPng } from 'html-to-image';
 import { MdKeyboardDoubleArrowDown } from 'react-icons/md';
 import { useTranslation } from 'react-i18next';
 import { LegendList, type LegendListRef } from '@legendapp/list/react';
-import { GroupMessage, isUserMessage, Message, MessageViewMode } from '@common/types';
+import {
+  GroupMessage,
+  isAssistantGroupMessage,
+  isGroupMessage,
+  isLoadingMessage,
+  isResponseMessage,
+  isUserMessage,
+  Message,
+  MessageViewMode,
+} from '@common/types';
 import { twMerge } from 'tailwind-merge';
 
 import { MessageBlockWrapper } from './MessageBlockWrapper';
@@ -59,6 +68,31 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
     const listRef = useRef<LegendListRef>(null);
     const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(null);
     const isCompactMode = messageViewMode === MessageViewMode.Compact;
+
+    const activityMessageId = useMemo(() => {
+      let latestActivityMessageId: string | undefined;
+
+      const visitMessage = (message: Message) => {
+        if (isGroupMessage(message)) {
+          message.children.forEach(visitMessage);
+          return;
+        }
+
+        if (isAssistantGroupMessage(message)) {
+          visitMessage(message.responseMessage);
+          message.toolMessages.forEach(visitMessage);
+          return;
+        }
+
+        if (isLoadingMessage(message) || (isResponseMessage(message) && !message.finished)) {
+          latestActivityMessageId = message.id;
+        }
+      };
+
+      messages.forEach(visitMessage);
+
+      return latestActivityMessageId;
+    }, [messages]);
 
     const processedMessages = useMemo(() => {
       const grouped = groupMessagesByPromptContext(messages);
@@ -246,6 +280,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
         onForkFromMessage,
         onRemoveUpToMessage,
         messagesLength,
+        activityMessageId,
       }),
       [
         inProgress,
@@ -259,6 +294,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
         onForkFromMessage,
         onRemoveUpToMessage,
         messagesLength,
+        activityMessageId,
       ],
     );
 
@@ -279,6 +315,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
             onInterrupt={onInterrupt}
             onForkFromMessage={onForkFromMessage}
             onRemoveUpToMessage={onRemoveUpToMessage}
+            activityMessageId={activityMessageId}
           />
         </div>
       ),
@@ -296,6 +333,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
         onForkFromMessage,
         onRemoveUpToMessage,
         messagesLength,
+        activityMessageId,
       ],
     );
 
