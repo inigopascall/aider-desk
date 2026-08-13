@@ -122,8 +122,6 @@ import { CompactionLevel, extractSummary, smartCompactMessages } from '@/agent/c
 export const INTERNAL_TASK_ID = 'internal';
 export const RESPONSE_CHUNK_FLUSH_INTERVAL_MS = 2500;
 export const TOOL_INPUT_FLUSH_INTERVAL_MS = 2500;
-/** Short flush interval used when performance mode is off, for near-live streaming. */
-export const LIVE_CHUNK_FLUSH_INTERVAL_MS = 100;
 
 export const EMPTY_TASK_DATA: TaskData = {
   id: '',
@@ -1507,10 +1505,6 @@ export class Task {
         await sendResponseChunk(message.content, message.reasoning);
 
         const messageId = message.id;
-        const settings = this.store.getSettings();
-        const responseFlushInterval = settings.performanceMode === false
-          ? LIVE_CHUNK_FLUSH_INTERVAL_MS
-          : (settings.streamFlushIntervalMs ?? RESPONSE_CHUNK_FLUSH_INTERVAL_MS);
         const interval = setInterval(async () => {
           const entry = this.responseChunkMap.get(messageId);
           if (entry && (entry.contentBuffer.length > 0 || entry.reasoningBuffer.length > 0)) {
@@ -1532,7 +1526,7 @@ export class Task {
             clearInterval(interval);
             this.responseChunkMap.delete(messageId);
           }
-        }, responseFlushInterval);
+        }, RESPONSE_CHUNK_FLUSH_INTERVAL_MS);
         logger.debug('Created interval for message', {
           baseDir: this.project.baseDir,
           taskId: this.taskId,
@@ -1631,13 +1625,9 @@ export class Task {
     }
     entry.accumulatedDelta += delta;
     if (!entry.interval) {
-      const settings = this.store.getSettings();
-      const toolInputFlushInterval = settings.performanceMode === false
-        ? LIVE_CHUNK_FLUSH_INTERVAL_MS
-        : (settings.streamFlushIntervalMs ?? TOOL_INPUT_FLUSH_INTERVAL_MS);
       entry.interval = setInterval(async () => {
         await this.flushToolInput(toolCallId, false);
-      }, toolInputFlushInterval);
+      }, TOOL_INPUT_FLUSH_INTERVAL_MS);
     }
   }
 

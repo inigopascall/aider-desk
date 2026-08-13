@@ -849,8 +849,7 @@ export interface SettingsData {
   fontSize?: number;
   renderMarkdown: boolean;
   fullMessageRendering: boolean;
-  performanceMode?: boolean;
-  streamFlushIntervalMs?: number;
+  disableCssStreamingAnimations?: boolean;
   aiderDeskAutoUpdate: boolean;
   diffViewMode?: DiffViewMode;
   messageViewMode?: MessageViewMode;

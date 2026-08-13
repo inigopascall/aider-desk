@@ -41,6 +41,7 @@ import { migrateSettingsV18toV19 } from '@/store/migrations/v18-to-v19';
 import { migrateSettingsV19toV20 } from '@/store/migrations/v19-to-v20';
 import { migrateProvidersV20toV21 } from '@/store/migrations/v20-to-v21';
 import { migrateSettingsV21toV22 } from '@/store/migrations/v21-to-v22';
+import { migrateSettingsV22toV23 } from '@/store/migrations/v22-to-v23';
 
 export const DEFAULT_SETTINGS: SettingsData = {
   language: 'en',
@@ -51,8 +52,7 @@ export const DEFAULT_SETTINGS: SettingsData = {
   font: 'Sono',
   renderMarkdown: true,
   fullMessageRendering: false,
-  performanceMode: true,
-  streamFlushIntervalMs: 2500,
+  disableCssStreamingAnimations: true,
   aiderDeskAutoUpdate: true,
   messageViewMode: MessageViewMode.Compact,
   diffViewMode: DiffViewMode.SideBySide,
@@ -140,7 +140,7 @@ interface StoreSchema {
   userId?: string;
 }
 
-const CURRENT_SETTINGS_VERSION = 22;
+const CURRENT_SETTINGS_VERSION = 23;
 
 export class Store {
   // @ts-expect-error expected to be initialized
@@ -334,6 +334,11 @@ export class Store {
       if (settingsVersion === 21) {
         settings = await migrateSettingsV21toV22(settings);
         settingsVersion = 22;
+      }
+
+      if (settingsVersion === 22) {
+        settings = migrateSettingsV22toV23(settings);
+        settingsVersion = 23;
       }
 
       this.store.set('settings', settings as SettingsData);

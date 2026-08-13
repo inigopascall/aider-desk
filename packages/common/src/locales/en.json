@@ -58,10 +58,6 @@
     "previousResult": "Previous result (SHIFT + F3)",
     "nextResult": "Next result (F3)"
   },
-  "taskControlBar": {
-    "snapshotMode": "Freeze — disconnect live updates for this task (stops all CPU/GPU work until unfrozen)",
-    "liveMode": "Unfreeze — reconnect and reload the latest task state"
-  },
   "onboarding": {
     "title": "Welcome to AiderDesk",
     "description": "Transparent, steerable AI orchestration for professional software engineers. More than a GUI for Aider — a complete orchestration layer that helps you:",
@@ -990,10 +986,8 @@
       "viewModeCompact": "Compact",
       "fullMessageRendering": "Use full message rendering (Legacy)",
       "fullMessageRenderingTooltip": "Renders all messages in the DOM without virtualization. May impact performance with large conversation histories.",
-      "performanceMode": "Performance mode",
-      "performanceModeTooltip": "Batches and merges streamed updates on the server before they are sent to the browser, and disables non-essential animations. Dramatically reduces websocket traffic and CPU/GPU load during long responses, tool chains, and subagent runs. Turn off for fully live, unbatched updates.",
-      "streamFlushInterval": "Stream flush interval (ms)",
-      "streamFlushIntervalTooltip": "How often the server merges and sends batched updates (assistant text, tool arguments, tool results, command output, token counters, task status). Higher values mean far fewer websocket messages and lower CPU usage, at the cost of choppier streaming."
+      "disableCssStreamingAnimations": "Disable CSS streaming animations",
+      "disableCssStreamingAnimationsTooltip": "Uses lightweight blinking red activity indicators instead of CSS spinners and pulses while tasks are processing."
     },
     "promptField": {
       "agentModeOnly": "This command is only available in agent mode",

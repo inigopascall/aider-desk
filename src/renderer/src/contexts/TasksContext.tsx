@@ -14,7 +14,6 @@ import { useTaskDataHandlers } from '@/hooks/useTaskDataHandlers';
 import { useTaskMessageHandlers } from '@/hooks/useTaskMessageHandlers';
 import { useTaskLifecycleHandlers } from '@/hooks/useTaskLifecycleHandlers';
 import { useTaskActions } from '@/hooks/useTaskActions';
-import { useSnapshotModeStore } from '@/stores/snapshotModeStore';
 import { useApi } from '@/contexts/ApiContext';
 import { convertTaskStateMessages } from '@/utils/task-messages';
 
@@ -60,9 +59,8 @@ const TaskEventSubscriberWrapper = memo(function TaskEventSubscriberWrapper({
 }) {
   const loaded = useTaskLoaded(taskId);
   const inProgress = state === DefaultTaskState.InProgress;
-  const isSnapshotMode = useSnapshotModeStore((s) => s.snapshotTaskIds.has(taskId));
 
-  if (!isActive && !inProgress && !loaded && !isSnapshotMode) {
+  if (!isActive && !inProgress && !loaded) {
     return null;
   }
 
@@ -102,17 +100,6 @@ export const TasksProvider = ({
 }) => {
   const taskActions = useTaskActions({ baseDir });
   const api = useApi();
-  const snapshotCount = useSnapshotModeStore((s) => s.snapshotTaskIds.size);
-
-  useEffect(() => {
-    // Diagnostic animation-only mode: retain Socket.IO and task listeners while
-    // disabling all CSS animations and transitions via the body class.
-    document.body.classList.toggle('snapshot-mode-active', snapshotCount > 0);
-
-    return () => {
-      document.body.classList.remove('snapshot-mode-active');
-    };
-  }, [snapshotCount]);
 
   const inactivityCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 

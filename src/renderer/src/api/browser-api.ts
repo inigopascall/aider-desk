@@ -83,7 +83,7 @@ import { type AxiosInstance, create } from 'axios';
 import { io, Socket } from 'socket.io-client';
 import { compareBaseDirs } from '@common/utils';
 import { v4 as uuidv4 } from 'uuid';
-import { getStreamConfig, onStreamConfigChange, type StreamConfig } from '@/api/stream-config';
+import { STREAM_CONFIG } from '@/api/stream-config';
 
 type EventDataMap = {
   'settings-updated': SettingsData;
@@ -157,8 +157,6 @@ export class BrowserApi implements ApplicationAPI {
   private subscribedEventTypes = '';
   /** Whether a subscription update is already queued via microtask. */
   private subscriptionUpdateScheduled = false;
-  /** Unsubscribe function for the stream-config change listener. */
-  private readonly streamConfigUnsubscribe: () => void;
 
   constructor() {
     const port = window.location.port === '5173' ? '24337' : window.location.port;
@@ -250,8 +248,6 @@ export class BrowserApi implements ApplicationAPI {
       // eslint-disable-next-line no-console
       console.error('Socket.IO connection error:', error);
     });
-    // Re-emit subscription whenever stream config changes (e.g. performance mode toggled)
-    this.streamConfigUnsubscribe = onStreamConfigChange(() => this.emitSubscription());
     this.socket.on('event', (eventData: { type: string; data: unknown }) => {
       const { type, data } = eventData;
       const eventType = type as keyof EventDataMap;
@@ -357,8 +353,7 @@ export class BrowserApi implements ApplicationAPI {
   private emitSubscription(force = false): void {
     const eventTypes = this.computeActiveEventTypes();
     const signature = eventTypes.join(',');
-    const streamConfig: StreamConfig = getStreamConfig();
-    const fullSignature = `${signature}|${streamConfig.streamMode}|${streamConfig.streamFlushIntervalMs}`;
+    const fullSignature = `${signature}|${STREAM_CONFIG.streamMode}|${STREAM_CONFIG.streamFlushIntervalMs}`;
     if (!force && fullSignature === this.subscribedEventTypes) {
       return;
     }
@@ -367,8 +362,8 @@ export class BrowserApi implements ApplicationAPI {
       this.socket.emit('message', {
         action: 'subscribe-events',
         eventTypes,
-        streamMode: streamConfig.streamMode,
-        streamFlushIntervalMs: streamConfig.streamFlushIntervalMs,
+        streamMode: STREAM_CONFIG.streamMode,
+        streamFlushIntervalMs: STREAM_CONFIG.streamFlushIntervalMs,
       });
     }
   }
@@ -389,11 +384,10 @@ export class BrowserApi implements ApplicationAPI {
   }
 
   /**
-   * Cleans up the socket connection and stream-config listener.
+   * Cleans up the socket connection.
    * Should be called when the BrowserApi instance is no longer needed.
    */
   destroy(): void {
-    this.streamConfigUnsubscribe();
     this.socket.disconnect();
   }
 

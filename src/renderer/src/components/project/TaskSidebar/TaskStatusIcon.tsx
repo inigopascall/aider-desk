@@ -1,8 +1,10 @@
 import { DefaultTaskState } from '@common/types';
+import { CgSpinner } from 'react-icons/cg';
 import { clsx } from 'clsx';
 
 import { TaskActivityIndicator } from '@/components/common/TaskActivityIndicator';
 import { useTaskQuestion } from '@/stores/taskStore';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 type Props = {
   taskId: string;
@@ -12,8 +14,17 @@ type Props = {
 
 export const TaskStatusIcon = ({ taskId, state, isCollapsed }: Props) => {
   const question = useTaskQuestion(taskId);
+  const disableCssStreamingAnimations = useSettingsStore((store) => store.settings?.disableCssStreamingAnimations ?? true);
   if (question) {
     return <span className={clsx('text-text-primary', isCollapsed ? 'text-xs' : 'text-sm')}>?</span>;
   }
-  return state === DefaultTaskState.InProgress ? <TaskActivityIndicator active className="ml-0.5" /> : null;
+  if (state !== DefaultTaskState.InProgress) {
+    return null;
+  }
+
+  return disableCssStreamingAnimations ? (
+    <TaskActivityIndicator active className="ml-0.5" />
+  ) : (
+    <CgSpinner className={clsx('ml-0.5 animate-spin', isCollapsed ? 'text-xs' : 'text-sm', 'text-text-primary')} />
+  );
 };

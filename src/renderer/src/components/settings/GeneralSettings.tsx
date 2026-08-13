@@ -6,7 +6,6 @@ import { Checkbox } from '../common/Checkbox';
 import { RadioButton } from '../common/RadioButton';
 import { Select, Option } from '../common/Select';
 import { Section } from '../common/Section';
-import { Slider } from '../common/Slider';
 import { InfoIcon } from '../common/InfoIcon';
 import { Input } from '../common/Input';
 
@@ -181,12 +180,6 @@ export const GeneralSettings = ({ settings, setSettings, onLanguageChange, onZoo
     });
   };
 
-  const handleStreamFlushIntervalChange = (intervalMs: number) => {
-    setSettings({
-      ...settings,
-      streamFlushIntervalMs: intervalMs,
-    });
-  };
 
   const handleCommandConfirmationChange = (command: keyof typeof settings.promptBehavior.requireCommandConfirmation, checked: boolean) => {
     setSettings({
@@ -299,34 +292,16 @@ export const GeneralSettings = ({ settings, setSettings, onLanguageChange, onZoo
               </div>
               <div className="flex items-center space-x-2">
                 <Checkbox
-                  label={t('settings.messages.performanceMode')}
-                  checked={settings.performanceMode ?? true}
+                  label={t('settings.messages.disableCssStreamingAnimations')}
+                  checked={settings.disableCssStreamingAnimations ?? true}
                   onChange={(checked) =>
                     setSettings({
                       ...settings,
-                      performanceMode: checked,
+                      disableCssStreamingAnimations: checked,
                     })
                   }
                 />
-                <InfoIcon tooltip={t('settings.messages.performanceModeTooltip')} />
-              </div>
-              <div className="ml-0.5 pt-1">
-                <Slider
-                  label={
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs">{t('settings.messages.streamFlushInterval')}</span>
-                      <InfoIcon tooltip={t('settings.messages.streamFlushIntervalTooltip')} />
-                    </div>
-                  }
-                  min={150}
-                  max={5000}
-                  step={100}
-                  value={settings.performanceMode ?? true ? (settings.streamFlushIntervalMs ?? 2500) : 2500}
-                  onChange={handleStreamFlushIntervalChange}
-                  showValue={true}
-                  disabled={!(settings.performanceMode ?? true)}
-                  className="max-w-[260px]"
-                />
+                <InfoIcon tooltip={t('settings.messages.disableCssStreamingAnimationsTooltip')} />
               </div>
             </div>
           </div>

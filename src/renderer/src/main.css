@@ -227,18 +227,12 @@ code {
   font-style: italic;
 }
 
-/* Snapshot mode: kill all animations and transitions to eliminate GPU compositing */
-body.snapshot-mode-active *,
-body.snapshot-mode-active *::before,
-body.snapshot-mode-active *::after {
-    animation: none !important;
-    transition: none !important;
-}
-
-/* Performance mode: stop continuously-animating regions (pulses) from driving
-   the compositor during agent/subagent runs. */
-body.performance-mode .animate-pulse,
-body.performance-mode .animate-pulse::before,
-body.performance-mode .animate-pulse::after {
+/* Replace CSS-based task activity indicators with React-timer-driven dots. */
+body.disable-css-streaming-animations .animate-spin,
+body.disable-css-streaming-animations .animate-spin::before,
+body.disable-css-streaming-animations .animate-spin::after,
+body.disable-css-streaming-animations .animate-pulse,
+body.disable-css-streaming-animations .animate-pulse::before,
+body.disable-css-streaming-animations .animate-pulse::after {
   animation: none !important;
 }

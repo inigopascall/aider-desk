@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { clsx } from 'clsx';
 
+import { useSettingsStore } from '@/stores/settingsStore';
+
 const BLINK_INTERVAL_MS = 500;
 
 const isBlinkVisible = () => Math.floor(Date.now() / BLINK_INTERVAL_MS) % 2 === 0;
@@ -50,18 +52,20 @@ type Props = {
 };
 
 export const TaskActivityIndicator = ({ active, className }: Props) => {
-  const [visible, setVisible] = useState(() => active && isBlinkVisible());
+  const disableCssStreamingAnimations = useSettingsStore((state) => state.settings?.disableCssStreamingAnimations ?? true);
+  const isActive = active && disableCssStreamingAnimations;
+  const [visible, setVisible] = useState(() => isActive && isBlinkVisible());
 
   useEffect(() => {
-    if (!active) {
+    if (!isActive) {
       setVisible(false);
       return;
     }
 
     return subscribe(setVisible);
-  }, [active]);
+  }, [isActive]);
 
-  if (!active || !visible) {
+  if (!isActive || !visible) {
     return null;
   }
 
