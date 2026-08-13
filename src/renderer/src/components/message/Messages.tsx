@@ -59,6 +59,20 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const isCompactMode = messageViewMode === MessageViewMode.Compact;
 
+    const activityMessageId = useMemo(() => {
+      if (!inProgress) {
+        return undefined;
+      }
+
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        if (isLoadingMessage(messages[index])) {
+          return messages[index].id;
+        }
+      }
+
+      return undefined;
+    }, [inProgress, messages]);
+
     // Group messages by promptContext.group.id, then optionally group assistant messages for compact mode
     const processedMessages = useMemo(() => {
       const grouped = groupMessagesByPromptContext(messages);
