@@ -2,7 +2,16 @@ import { forwardRef, memo, useEffect, useImperativeHandle, useMemo, useRef } fro
 import { toPng } from 'html-to-image';
 import { MdKeyboardDoubleArrowDown } from 'react-icons/md';
 import { useTranslation } from 'react-i18next';
-import { GroupMessage, isLoadingMessage, isUserMessage, Message, MessageViewMode } from '@common/types';
+import {
+  GroupMessage,
+  isAssistantGroupMessage,
+  isGroupMessage,
+  isLoadingMessage,
+  isResponseMessage,
+  isUserMessage,
+  Message,
+  MessageViewMode,
+} from '@common/types';
 
 import { MessageBlockWrapper } from './MessageBlockWrapper';
 
@@ -64,13 +73,28 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
         return undefined;
       }
 
-      for (let index = messages.length - 1; index >= 0; index -= 1) {
-        if (isLoadingMessage(messages[index])) {
-          return messages[index].id;
-        }
-      }
+      let latestActivityMessageId: string | undefined;
 
-      return undefined;
+      const visitMessage = (message: Message) => {
+        if (isGroupMessage(message)) {
+          message.children.forEach(visitMessage);
+          return;
+        }
+
+        if (isAssistantGroupMessage(message)) {
+          visitMessage(message.responseMessage);
+          message.toolMessages.forEach(visitMessage);
+          return;
+        }
+
+        if (isLoadingMessage(message) || (isResponseMessage(message) && !message.finished)) {
+          latestActivityMessageId = message.id;
+        }
+      };
+
+      messages.forEach(visitMessage);
+
+      return latestActivityMessageId;
     }, [inProgress, messages]);
 
     // Group messages by promptContext.group.id, then optionally group assistant messages for compact mode

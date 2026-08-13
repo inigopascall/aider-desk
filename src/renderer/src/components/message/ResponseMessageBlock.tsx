@@ -4,6 +4,7 @@ import { ResponseMessage } from '@common/types';
 
 import { MessageBar } from './MessageBar';
 
+import { TaskActivityIndicator } from '@/components/common/TaskActivityIndicator';
 import { useParsedContent } from '@/hooks/useParsedContent';
 
 type Props = {
@@ -14,6 +15,7 @@ type Props = {
   compact?: boolean;
   hideMessageBar?: boolean;
   showThinking?: boolean;
+  showActivityIndicator?: boolean;
   onRemove?: () => void;
   onFork?: () => void;
   onRemoveUpTo?: () => void;
@@ -27,6 +29,7 @@ export const ResponseMessageBlock = ({
   compact = false,
   hideMessageBar = false,
   showThinking = true,
+  showActivityIndicator = false,
   onRemove,
   onFork,
   onRemoveUpTo,
@@ -49,8 +52,9 @@ export const ResponseMessageBlock = ({
       )}
     >
       <div className="flex items-start gap-2">
-        <div className="mt-[1px] relative">
+        <div className="mt-[1px] relative w-4 h-4 flex-shrink-0">
           <RiRobot2Line className="text-text-muted w-4 h-4" />
+          <TaskActivityIndicator active={showActivityIndicator} className="absolute -right-1 -bottom-1" />
         </div>
         <div className="flex-grow-1 w-full overflow-hidden">{parsedContent}</div>
       </div>

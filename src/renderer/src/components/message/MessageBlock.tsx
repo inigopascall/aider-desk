@@ -174,6 +174,7 @@ const MessageBlockComponent = ({
         compact={compact}
         showThinking={showThinking}
         hideMessageBar={hideMessageBar}
+        showActivityIndicator={message.id === activityMessageId}
       />
     );
   }

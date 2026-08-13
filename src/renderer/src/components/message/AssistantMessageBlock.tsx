@@ -5,7 +5,6 @@ import { Message, UsageReportData, AssistantGroupMessage, isResponseMessage, isT
 import { MessageBar } from './MessageBar';
 import { MessageBlockWrapper } from './MessageBlockWrapper';
 
-import { TaskActivityIndicator } from '@/components/common/TaskActivityIndicator';
 import { areMessagesEqual } from './utils';
 
 import { useParsedContent } from '@/hooks/useParsedContent';
@@ -124,8 +123,7 @@ const AssistantMessageBlockComponent = ({ baseDir, taskId, message, allFiles, re
       )}
 
       {/* Single MessageBar for the entire group */}
-      <div className="flex items-center gap-3 px-3 pb-3">
-        <TaskActivityIndicator active={!responseMessage.finished} />
+      <div className="px-3 pb-3">
         <div className="min-w-0 flex-1">
           <MessageBar
             message={message}
