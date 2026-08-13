@@ -116,12 +116,12 @@ export const MessageBar = ({
       <ExtensionComponentWrapper placement="task-message-bar" additionalProps={additionalProps} />
       {usageReport && <UsageInfo usageReport={usageReport} className="mt-[4px]" />}
       {showActivityIndicator && (
-        <>
+        <span className="absolute left-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
           <span className="h-4 w-4 flex-shrink-0 flex items-center justify-center">
             <TaskActivityIndicator active className="relative" />
           </span>
           <span className="text-2xs text-text-muted-light whitespace-nowrap">Streaming...</span>
-        </>
+        </span>
       )}
       {content && <CopyMessageButton content={content} className="transition-colors text-text-dark hover:text-text-primary" alwaysShow={true} />}
       {(remove || redo || edit || onFork || onRemoveUpTo) && (
