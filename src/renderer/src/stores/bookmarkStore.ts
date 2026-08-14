@@ -1,130 +1,167 @@
-import { create } from 'zustand';
-
-// Bookmark store implementation
-// Persisted localStorage bookmarks, toggle/clear/prune actions,
-// module-level action functions, and useTaskBookmarks/useIsBookmarked hooks.
+import { useShallow } from 'zustand/react/shallow';
+import { createWithEqualityFn } from 'zustand/traditional';
+import { shallow } from 'zustand/vanilla/shallow';
+import { devtools } from 'zustand/middleware';
 
 export interface Bookmark {
+  /** Message id this bookmark points at. */
   id: string;
+  /** Snapshot of the message title at bookmark time. */
   label: string;
   createdAt: number;
 }
 
+/** messageId -> Bookmark */
+export type TaskBookmarks = Record<string, Bookmark>;
+
 interface BookmarkState {
-  bookmarks: Record<string, Bookmark>;
-  addBookmark: (id: string, label: string) => void;
-  removeBookmark: (id: string) => void;
-  toggleBookmark: (id: string, label: string) => void;
-  clearBookmarks: () => void;
-  pruneBookmarks: (validIds: Set<string>) => void;
-  isBookmarked: (id: string) => boolean;
-  getBookmark: (id: string) => Bookmark | undefined;
-  getAllBookmarks: () => Bookmark[];
+  /** taskId -> TaskBookmarks */
+  bookmarksByTask: Record<string, TaskBookmarks>;
+
+  addBookmark: (taskId: string, messageId: string, label: string) => void;
+  removeBookmark: (taskId: string, messageId: string) => void;
+  toggleBookmark: (taskId: string, messageId: string, label: string) => void;
+  clearTaskBookmarks: (taskId: string) => void;
+  pruneTaskBookmarks: (taskId: string, validMessageIds: Set<string>) => void;
 }
 
-const STORAGE_KEY = 'aider-desk-bookmarks';
+const STORAGE_KEY = 'aider-desk-bookmarks-v2';
+const EMPTY_TASK_BOOKMARKS: TaskBookmarks = {};
 
-const loadBookmarks = (): Record<string, Bookmark> => {
+const DEVTOOLS_OPTIONS = {
+  name: 'BookmarkStore',
+  enabled: import.meta.env.DEV,
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const loadBookmarks = (): Record<string, TaskBookmarks> => {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      return JSON.parse(stored);
+    if (!stored) {
+      return {};
     }
-  } catch (e) {
-    console.warn('Failed to parse bookmarks from localStorage', e);
+
+    const parsed: unknown = JSON.parse(stored);
+    if (!isRecord(parsed) || !Object.values(parsed).every(isRecord)) {
+      return {};
+    }
+
+    return parsed as Record<string, TaskBookmarks>;
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn('Failed to parse bookmarks from localStorage', error);
+    return {};
   }
-  return {};
 };
 
-const saveBookmarks = (bookmarks: Record<string, Bookmark>) => {
+const saveBookmarks = (value: Record<string, TaskBookmarks>): void => {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(bookmarks));
-  } catch (e) {
-    console.warn('Failed to save bookmarks to localStorage', e);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn('Failed to save bookmarks to localStorage', error);
   }
 };
 
-export const useBookmarkStore = create<BookmarkState>((set, get) => ({
-  bookmarks: loadBookmarks(),
-  addBookmark: (id, label) => {
-    const bookmark: Bookmark = {
-      id,
-      label,
-      createdAt: Date.now(),
-    };
-    set((state) => {
-      const updated = { ...state.bookmarks, [id]: bookmark };
-      saveBookmarks(updated);
-      return { bookmarks: updated };
-    });
-  },
-  removeBookmark: (id) => {
-    set((state) => {
-      const updated = { ...state.bookmarks };
-      delete updated[id];
-      saveBookmarks(updated);
-      return { bookmarks: updated };
-    });
-  },
-  toggleBookmark: (id, label) => {
-    const { isBookmarked, addBookmark, removeBookmark } = get();
-    if (isBookmarked(id)) {
-      removeBookmark(id);
-    } else {
-      addBookmark(id, label);
-    }
-  },
-  clearBookmarks: () => {
-    saveBookmarks({});
-    set({ bookmarks: {} });
-  },
-  pruneBookmarks: (validIds) => {
-    set((state) => {
-      const updated: Record<string, Bookmark> = {};
-      Object.keys(state.bookmarks).forEach((key) => {
-        if (validIds.has(key)) {
-          updated[key] = state.bookmarks[key];
+export const useBookmarkStore = createWithEqualityFn<BookmarkState>()(
+  devtools(
+    (set, get) => ({
+      bookmarksByTask: loadBookmarks(),
+
+      addBookmark: (taskId, messageId, label) =>
+        set((state) => {
+          const bookmarksByTask = {
+            ...state.bookmarksByTask,
+            [taskId]: {
+              ...state.bookmarksByTask[taskId],
+              [messageId]: {
+                id: messageId,
+                label,
+                createdAt: Date.now(),
+              },
+            },
+          };
+          saveBookmarks(bookmarksByTask);
+          return { bookmarksByTask };
+        }),
+
+      removeBookmark: (taskId, messageId) =>
+        set((state) => {
+          const taskBookmarks = state.bookmarksByTask[taskId];
+          if (!taskBookmarks?.[messageId]) {
+            return state;
+          }
+
+          const { [messageId]: _, ...remainingBookmarks } = taskBookmarks;
+          const { [taskId]: __, ...otherTasks } = state.bookmarksByTask;
+          const bookmarksByTask =
+            Object.keys(remainingBookmarks).length > 0
+              ? { ...otherTasks, [taskId]: remainingBookmarks }
+              : otherTasks;
+
+          saveBookmarks(bookmarksByTask);
+          return { bookmarksByTask };
+        }),
+
+      toggleBookmark: (taskId, messageId, label) => {
+        if (get().bookmarksByTask[taskId]?.[messageId]) {
+          get().removeBookmark(taskId, messageId);
+        } else {
+          get().addBookmark(taskId, messageId, label);
         }
-      });
-      saveBookmarks(updated);
-      return { bookmarks: updated };
-    });
-  },
-  isBookmarked: (id) => {
-    return id in get().bookmarks;
-  },
-  getBookmark: (id) => {
-    return get().bookmarks[id];
-  },
-  getAllBookmarks: () => {
-    return Object.values(get().bookmarks);
-  },
-}));
+      },
 
-// Module-level action functions
-export const addBookmark = (id: string, label: string) =>
-  useBookmarkStore.getState().addBookmark(id, label);
+      clearTaskBookmarks: (taskId) =>
+        set((state) => {
+          if (!state.bookmarksByTask[taskId]) {
+            return state;
+          }
 
-export const removeBookmark = (id: string) =>
-  useBookmarkStore.getState().removeBookmark(id);
+          const { [taskId]: _, ...bookmarksByTask } = state.bookmarksByTask;
+          saveBookmarks(bookmarksByTask);
+          return { bookmarksByTask };
+        }),
 
-export const toggleBookmark = (id: string, label: string) =>
-  useBookmarkStore.getState().toggleBookmark(id, label);
+      pruneTaskBookmarks: (taskId, validMessageIds) =>
+        set((state) => {
+          const taskBookmarks = state.bookmarksByTask[taskId];
+          if (!taskBookmarks) {
+            return state;
+          }
 
-export const clearBookmarks = () =>
-  useBookmarkStore.getState().clearBookmarks();
+          const retainedBookmarks = Object.fromEntries(Object.entries(taskBookmarks).filter(([messageId]) => validMessageIds.has(messageId))) as TaskBookmarks;
+          if (Object.keys(retainedBookmarks).length === Object.keys(taskBookmarks).length) {
+            return state;
+          }
 
-export const pruneBookmarks = (validIds: Set<string>) =>
-  useBookmarkStore.getState().pruneBookmarks(validIds);
+          const { [taskId]: _, ...otherTasks } = state.bookmarksByTask;
+          const bookmarksByTask =
+            Object.keys(retainedBookmarks).length > 0
+              ? { ...otherTasks, [taskId]: retainedBookmarks }
+              : otherTasks;
 
-export const isBookmarked = (id: string) =>
-  useBookmarkStore.getState().isBookmarked(id);
+          saveBookmarks(bookmarksByTask);
+          return { bookmarksByTask };
+        }),
+    }),
+    DEVTOOLS_OPTIONS,
+  ),
+  shallow,
+);
 
-// Hooks
-export const useTaskBookmarks = () => {
-  return useBookmarkStore((state) => state.getAllBookmarks());
-};
+export const addBookmark = (taskId: string, messageId: string, label: string) => useBookmarkStore.getState().addBookmark(taskId, messageId, label);
 
-export const useIsBookmarked = (id: string) => {
-  return useBookmarkStore((state) => state.isBookmarked(id));
-};
+export const removeBookmark = (taskId: string, messageId: string) => useBookmarkStore.getState().removeBookmark(taskId, messageId);
+
+export const toggleBookmark = (taskId: string, messageId: string, label: string) => useBookmarkStore.getState().toggleBookmark(taskId, messageId, label);
+
+export const clearTaskBookmarks = (taskId: string) => useBookmarkStore.getState().clearTaskBookmarks(taskId);
+
+export const pruneTaskBookmarks = (taskId: string, validMessageIds: Set<string>) => useBookmarkStore.getState().pruneTaskBookmarks(taskId, validMessageIds);
+
+export const useIsBookmarked = (taskId: string | undefined, messageId: string): boolean =>
+  useBookmarkStore((state) => (taskId ? messageId in (state.bookmarksByTask[taskId] ?? {}) : false));
+
+export const useTaskBookmarks = (taskId: string | undefined): TaskBookmarks =>
+  useBookmarkStore(useShallow((state) => (taskId ? (state.bookmarksByTask[taskId] ?? EMPTY_TASK_BOOKMARKS) : EMPTY_TASK_BOOKMARKS)));

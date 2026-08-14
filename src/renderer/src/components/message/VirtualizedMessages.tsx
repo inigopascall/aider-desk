@@ -10,7 +10,6 @@ import { MessageBlockWrapper } from './MessageBlockWrapper';
 import { flashMessageElement } from './outline';
 
 import { IconButton } from '@/components/common/IconButton';
-import { groupAssistantMessages, groupMessagesByPromptContext } from '@/components/message/utils';
 import { useUserMessageNavigation } from '@/hooks/useUserMessageNavigation';
 import { MessagesTaskProvider } from '@/contexts/MessagesTaskContext';
 import { useProcessedMessages } from '@/hooks/useProcessedMessages';

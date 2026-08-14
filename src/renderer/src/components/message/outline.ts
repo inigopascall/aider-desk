@@ -72,7 +72,21 @@ export const extractFirstLine = (content: string): string => {
 };
 
 export const deriveToolTitle = (message: ToolMessage): string => {
-  const argumentKeys = ['filePath', 'path', 'file_path', 'command', 'pattern', 'query', 'searchTerm', 'url', 'name', 'skillName', 'taskId', 'prompt', 'description'];
+  const argumentKeys = [
+    'filePath',
+    'path',
+    'file_path',
+    'command',
+    'pattern',
+    'query',
+    'searchTerm',
+    'url',
+    'name',
+    'skillName',
+    'taskId',
+    'prompt',
+    'description',
+  ];
 
   for (const key of argumentKeys) {
     const value = message.args[key];

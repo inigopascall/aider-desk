@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { UsageReportData, Message } from '@common/types';
@@ -11,6 +11,7 @@ import { IconButton } from '../common/IconButton';
 
 import { CopyMessageButton } from './CopyMessageButton';
 import { UsageInfo } from './UsageInfo';
+import { extractFirstLine, truncateTitle } from './outline';
 
 import { TaskActivityIndicator } from '@/components/common/TaskActivityIndicator';
 
@@ -61,6 +62,7 @@ export const MessageBar = ({
   const disableCssStreamingAnimations = useSettingsStore((state) => state.settings?.disableCssStreamingAnimations ?? true);
   const taskId = useMessagesTaskId();
   const bookmarked = useIsBookmarked(taskId, message.id);
+  const bookmarkLabel = useMemo(() => truncateTitle(extractFirstLine(content ?? message.content ?? '')), [content, message.content]);
   const additionalProps = {
     message: message && includeMessageProperty(message) ? message : null,
   };
@@ -136,7 +138,7 @@ export const MessageBar = ({
         {taskId && (
           <IconButton
             icon={bookmarked ? <MdBookmark className="w-4 h-4" /> : <MdBookmarkBorder className="w-4 h-4" />}
-            onClick={() => toggleBookmark(taskId, message.id)}
+            onClick={() => taskId && toggleBookmark(taskId, message.id, bookmarkLabel)}
             className={clsx('transition-colors', bookmarked ? 'text-amber-400 hover:text-amber-300' : 'text-text-dark hover:text-text-primary')}
             tooltip={t(bookmarked ? 'messages.removeBookmark' : 'messages.bookmark')}
             aria-label={t(bookmarked ? 'messages.removeBookmark' : 'messages.bookmark')}

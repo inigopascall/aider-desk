@@ -1,8 +1,10 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { UsageReportData, ResponseMessage } from '@common/types';
 
 import { MessageBar } from '../MessageBar';
+import { MessagesTaskProvider } from '@/contexts/MessagesTaskContext';
+import { useBookmarkStore } from '@/stores/bookmarkStore';
 
 // Mock react-i18next
 vi.mock('react-i18next', () => ({
@@ -252,5 +254,33 @@ describe('MessageBar', () => {
       const { container } = render(<MessageBar message={mockMessage} content="test" remove={vi.fn()} redo={vi.fn()} edit={vi.fn()} />);
       expect(container.firstChild).toBeInTheDocument();
     });
+  });
+});
+
+describe('MessageBar bookmarks', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useBookmarkStore.setState({ bookmarksByTask: {} });
+  });
+
+  it('does not render a bookmark control without a MessagesTaskProvider', () => {
+    render(<MessageBar message={mockMessage} />);
+
+    expect(screen.queryByLabelText('messages.bookmark')).not.toBeInTheDocument();
+  });
+
+  it('toggles the task-scoped bookmark control', () => {
+    render(
+      <MessagesTaskProvider taskId="task-1">
+        <MessageBar message={{ id: 'm1', type: 'response', content: 'Hi' }} />
+      </MessagesTaskProvider>,
+    );
+
+    const bookmarkButton = screen.getByLabelText('messages.bookmark');
+    fireEvent.click(bookmarkButton);
+    expect(useBookmarkStore.getState().bookmarksByTask['task-1'].m1).toBeDefined();
+
+    fireEvent.click(screen.getByLabelText('messages.removeBookmark'));
+    expect(useBookmarkStore.getState().bookmarksByTask['task-1']).toBeUndefined();
   });
 });

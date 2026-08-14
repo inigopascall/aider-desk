@@ -1007,8 +1007,6 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                   clearLogMessages={clearLogMessages}
                   scrollToBottom={handleScrollToBottom}
                   onToggleTaskInfoPanel={handleToggleTaskInfoPanel}
-                  showThreadOutline={showThreadOutline}
-                  onToggleThreadOutline={handleToggleThreadOutline}
                   handoffConversation={handleHandoff}
                   createSubtask={handleCreateSubtask}
                   overlayContainerRef={centralColumnRef}
@@ -1031,6 +1029,8 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                   onUndoContextChange={handleUndoContextChange}
                   selectedWorkflowId={selectedWorkflowId}
                   onWorkflowChange={setSelectedWorkflowId}
+                  showThreadOutline={showThreadOutline}
+                  onToggleThreadOutline={handleToggleThreadOutline}
                 />
               </div>
               <div className="flex gap-2 justify-between flex-wrap">

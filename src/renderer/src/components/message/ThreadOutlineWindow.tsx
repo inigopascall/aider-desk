@@ -6,10 +6,10 @@ import { Message } from '@common/types';
 
 import { buildOutline, OutlineItem } from './outline';
 import { ThreadOutlineItem } from './ThreadOutlineItem';
-import { useProcessedMessages } from '@/hooks/useProcessedMessages';
-import { addBookmark, removeBookmark, useBookmarkStore, pruneBookmarks } from '@/stores/bookmarkStore';
+
 import { FloatingPanel } from '@/components/common/FloatingPanel';
-import { useMessagesTaskId } from '@/contexts/MessagesTaskContext';
+import { useProcessedMessages } from '@/hooks/useProcessedMessages';
+import { addBookmark, removeBookmark, pruneTaskBookmarks, useTaskBookmarks } from '@/stores/bookmarkStore';
 
 export type ThreadOutlineFilter = 'all' | 'bookmarks';
 
@@ -23,20 +23,17 @@ export interface ThreadOutlineWindowProps {
 
 const ThreadOutlineWindowComponent = ({ baseDir, taskId, messages, onScrollToMessage, onClose }: ThreadOutlineWindowProps) => {
   const { t } = useTranslation();
-  const messagesTaskId = useMessagesTaskId();
-  const bookmarks = useBookmarkStore((state) => state.bookmarks);
+  const bookmarks = useTaskBookmarks(taskId);
 
   const processedMessages = useProcessedMessages(messages);
 
   // Build outline using the translation function
   const { items, knownMessageIds } = useMemo(() => buildOutline(processedMessages, t), [processedMessages, t]);
 
-  // Prune stale bookmarks whenever the set of known message ids changes
+  // The store no-ops when nothing is removed, so streaming updates are harmless.
   useEffect(() => {
-    if (knownMessageIds.size > 0) {
-      pruneBookmarks(knownMessageIds);
-    }
-  }, [knownMessageIds]);
+    pruneTaskBookmarks(taskId, knownMessageIds);
+  }, [taskId, knownMessageIds]);
 
   // Derive the bookmarked set from the bookmark store
   const bookmarkedIds = useMemo(() => new Set(Object.keys(bookmarks)), [bookmarks]);
@@ -64,12 +61,12 @@ const ThreadOutlineWindowComponent = ({ baseDir, taskId, messages, onScrollToMes
       const item = items.find((i) => i.id === messageId);
       const label = item?.title ?? '';
       if (bookmarks[messageId]) {
-        removeBookmark(messageId);
+        removeBookmark(taskId, messageId);
       } else {
-        addBookmark(messageId, label);
+        addBookmark(taskId, messageId, label);
       }
     },
-    [bookmarks, items],
+    [bookmarks, items, taskId],
   );
 
   const handleFilterChange = useCallback((newFilter: ThreadOutlineFilter) => {
@@ -82,7 +79,7 @@ const ThreadOutlineWindowComponent = ({ baseDir, taskId, messages, onScrollToMes
     <FloatingPanel
       title={t('messages.outline.title')}
       onClose={onClose}
-      storageKey={`thread-outline-${messagesTaskId ?? baseDir}-${taskId}`}
+      storageKey={`thread-outline-${baseDir}-${taskId}`}
       defaultPosition={{ x: 50, y: 50 }}
       defaultSize={{ width: 360, height: 500 }}
       minWidth={200}

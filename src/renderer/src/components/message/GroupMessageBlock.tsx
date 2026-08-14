@@ -3,7 +3,6 @@ import { memo, useMemo, useState, useCallback, MouseEvent } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import {
-  LocalizedString,
   UsageReportData,
   GroupMessage,
   isResponseMessage,
@@ -159,7 +158,7 @@ const GroupMessageBlockComponent = ({
 
   const header = (
     <div className={clsx('w-full px-3 py-1 group flex items-center justify-between', !message.group.finished && 'animate-pulse')}>
-      <div className="text-xs text-left">{getGroupDisplayName(message.group.name)}</div>
+      <div className="text-xs text-left">{getGroupDisplayName(message.group.name, t)}</div>
       {!message.group.finished && message.group.interruptId && (
         <Button onClick={handleInterrupt} size="xs" variant="outline" color="danger">
           {t('common.cancel')}
