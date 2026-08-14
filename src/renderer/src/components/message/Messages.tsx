@@ -2,29 +2,24 @@ import { forwardRef, memo, useEffect, useImperativeHandle, useMemo, useRef } fro
 import { toPng } from 'html-to-image';
 import { MdKeyboardDoubleArrowDown } from 'react-icons/md';
 import { useTranslation } from 'react-i18next';
-import {
-  GroupMessage,
-  isAssistantGroupMessage,
-  isGroupMessage,
-  isLoadingMessage,
-  isResponseMessage,
-  isUserMessage,
-  Message,
-  MessageViewMode,
-} from '@common/types';
+import { GroupMessage, isAssistantGroupMessage, isGroupMessage, isLoadingMessage, isResponseMessage, isUserMessage, Message } from '@common/types';
 
 import { MessageBlockWrapper } from './MessageBlockWrapper';
+import { flashMessageElement } from './outline';
 
 import { IconButton } from '@/components/common/IconButton';
 import { groupAssistantMessages, groupMessagesByPromptContext } from '@/components/message/utils';
 import { useScrollingPaused } from '@/hooks/useScrollingPaused';
 import { useUserMessageNavigation } from '@/hooks/useUserMessageNavigation';
+import { MessagesTaskProvider } from '@/contexts/MessagesTaskContext';
+import { useProcessedMessages } from '@/hooks/useProcessedMessages';
 import { useSettingsStore } from '@/stores/settingsStore';
 
 export type MessagesRef = {
   exportToImage: () => void;
   container: HTMLDivElement | null;
   scrollToBottom: () => void;
+  scrollToMessage: (messageId: string) => void;
 };
 
 type Props = {
@@ -63,10 +58,8 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
     ref,
   ) => {
     const { t } = useTranslation();
-    const messageViewMode = useSettingsStore((state) => state.settings?.messageViewMode);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const messagesContainerRef = useRef<HTMLDivElement>(null);
-    const isCompactMode = messageViewMode === MessageViewMode.Compact;
 
     const activityMessageId = useMemo(() => {
       if (!inProgress) {
@@ -97,11 +90,7 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
       return latestActivityMessageId;
     }, [inProgress, messages]);
 
-    // Group messages by promptContext.group.id, then optionally group assistant messages for compact mode
-    const processedMessages = useMemo(() => {
-      const grouped = groupMessagesByPromptContext(messages);
-      return isCompactMode ? groupAssistantMessages(grouped) : grouped;
-    }, [messages, isCompactMode]);
+    const processedMessages = useProcessedMessages(messages);
 
     const { scrollingPaused, setScrollingPaused, scrollToBottom, eventHandlers } = useScrollingPaused({
       onAutoScroll: () => messagesEndRef.current?.scrollIntoView(),
@@ -156,56 +145,69 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
       }
     };
 
+    const scrollToMessage = (messageId: string) => {
+      setScrollingPaused(true);
+      const element = messagesContainerRef.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        flashMessageElement(element);
+      }
+    };
+
     useImperativeHandle(ref, () => ({
       exportToImage,
       container: messagesContainerRef.current,
       scrollToBottom,
+      scrollToMessage,
     }));
 
     return (
-      <div className="relative flex flex-col h-full">
-        <div
-          ref={messagesContainerRef}
-          className="flex flex-col flex-grow overflow-y-auto max-h-full p-4 pb-2 scrollbar-thin scrollbar-track-bg-primary-light scrollbar-thumb-bg-tertiary hover:scrollbar-thumb-bg-fourth space-y-2"
-          {...eventHandlers}
-        >
-          {processedMessages.map((message) => (
-            <MessageBlockWrapper
-              key={message.id}
-              baseDir={baseDir}
-              taskId={taskId}
-              message={message}
-              allFiles={allFiles}
-              renderMarkdown={renderMarkdown}
-              inProgress={inProgress}
-              removeMessage={removeMessage}
-              removeGroup={removeGroup}
-              redoUserPrompt={redoUserPrompt}
-              editUserMessage={editUserMessage}
-              onInterrupt={onInterrupt}
-              onForkFromMessage={onForkFromMessage}
-              onRemoveUpToMessage={onRemoveUpToMessage}
-              activityMessageId={activityMessageId}
-            />
-          ))}
-          <div ref={messagesEndRef} />
-        </div>
-        <div className="relative">
-          <div className="absolute left-1/2 -translate-x-1/2 bottom-0 w-[140px] z-10 flex justify-center gap-1 pt-6 pb-1 group">
-            {(hasPreviousUserMessage || hasNextUserMessage) && renderGoToPrevious()}
-            {scrollingPaused && (
-              <IconButton
-                icon={<MdKeyboardDoubleArrowDown className="h-6 w-6" />}
-                onClick={scrollToBottom}
-                tooltip={t('messages.scrollToBottom')}
-                className="bg-bg-primary-light border border-border-default shadow-lg hover:bg-bg-secondary transition-colors duration-200"
-                aria-label={t('messages.scrollToBottom')}
-              />
-            )}
-            {(hasPreviousUserMessage || hasNextUserMessage) && renderGoToNext()}
+      <MessagesTaskProvider taskId={taskId}>
+        <div className="relative flex flex-col h-full">
+          <div
+            ref={messagesContainerRef}
+            className="flex flex-col flex-grow overflow-y-auto max-h-full p-4 pb-2 scrollbar-thin scrollbar-track-bg-primary-light scrollbar-thumb-bg-tertiary hover:scrollbar-thumb-bg-fourth space-y-2"
+            {...eventHandlers}
+          >
+            {processedMessages.map((message) => (
+              <div key={message.id} data-message-id={message.id}>
+                <MessageBlockWrapper
+                  baseDir={baseDir}
+                  taskId={taskId}
+                  message={message}
+                  allFiles={allFiles}
+                  renderMarkdown={renderMarkdown}
+                  inProgress={inProgress}
+                  removeMessage={removeMessage}
+                  removeGroup={removeGroup}
+                  redoUserPrompt={redoUserPrompt}
+                  editUserMessage={editUserMessage}
+                  onInterrupt={onInterrupt}
+                  onForkFromMessage={onForkFromMessage}
+                  onRemoveUpToMessage={onRemoveUpToMessage}
+                  activityMessageId={activityMessageId}
+                />
+              </div>
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
+          <div className="relative">
+            <div className="absolute left-1/2 -translate-x-1/2 bottom-0 w-[140px] z-10 flex justify-center gap-1 pt-6 pb-1 group">
+              {(hasPreviousUserMessage || hasNextUserMessage) && renderGoToPrevious()}
+              {scrollingPaused && (
+                <IconButton
+                  icon={<MdKeyboardDoubleArrowDown className="h-6 w-6" />}
+                  onClick={scrollToBottom}
+                  tooltip={t('messages.scrollToBottom')}
+                  className="bg-bg-primary-light border border-border-default shadow-lg hover:bg-bg-secondary transition-colors duration-200"
+                  aria-label={t('messages.scrollToBottom')}
+                />
+              )}
+              {(hasPreviousUserMessage || hasNextUserMessage) && renderGoToNext()}
+            </div>
           </div>
         </div>
-      </div>
+      </MessagesTaskProvider>
     );
   },
 );

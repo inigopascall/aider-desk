@@ -17,6 +17,7 @@ import {
   useProjectStore,
 } from '@/stores/projectStore';
 import { unloadTasks } from '@/stores/taskStore';
+import { clearTaskBookmarks } from '@/stores/bookmarkStore';
 import { releaseTaskFiles } from '@/stores/taskFilesStore';
 import { getTaskDir, getSortedVisibleTasks } from '@/utils/task-utils';
 import { cleanupProjectCache } from '@/stores/extensionUIStore';
@@ -229,6 +230,7 @@ export const ProjectView = ({ projectDir, isProjectActive = false, showSettingsP
     const handleTaskDeleted = (taskData: TaskData) => {
       removeProjectTask(projectDir, taskData.id);
       releaseTaskFiles(taskData.id);
+      clearTaskBookmarks(taskData.id);
     };
 
     const handleInputHistoryUpdate = (data: InputHistoryData) => {

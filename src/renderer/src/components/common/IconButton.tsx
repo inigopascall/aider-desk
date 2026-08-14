@@ -10,10 +10,11 @@ type Props = {
   tooltipMaxWidth?: number | string;
   className?: string;
   disabled?: boolean;
+  'aria-label'?: string;
   'data-testid'?: string;
 };
 
-export const IconButton = ({ icon, onClick, tooltip, tooltipMaxWidth, className, disabled, 'data-testid': testId }: Props) => {
+export const IconButton = ({ icon, onClick, tooltip, tooltipMaxWidth, className, disabled, 'aria-label': ariaLabel, 'data-testid': testId }: Props) => {
   const combinedClassName = twMerge(
     'text-text-muted',
     'transition-opacity',
@@ -28,7 +29,7 @@ export const IconButton = ({ icon, onClick, tooltip, tooltipMaxWidth, className,
   };
 
   const content = (
-    <div onClick={disabled || !onClick ? undefined : handleClick} className={combinedClassName} data-testid={testId}>
+    <div onClick={disabled || !onClick ? undefined : handleClick} className={combinedClassName} data-testid={testId} aria-label={ariaLabel}>
       {icon}
     </div>
   );

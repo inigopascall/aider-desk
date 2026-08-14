@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { FaCog, FaInfoCircle } from 'react-icons/fa';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { MdOutlineFullscreen, MdPlaylistRemove, MdUndo } from 'react-icons/md';
-import { VscTerminal } from 'react-icons/vsc';
+import { VscListTree, VscTerminal } from 'react-icons/vsc';
 import { clsx } from 'clsx';
 
 import { AgentSelector } from '@/components/AgentSelector';
@@ -34,6 +34,8 @@ type Props = {
   onUndoContextChange?: () => void;
   selectedWorkflowId?: string | null;
   onWorkflowChange?: (id: string | null) => void;
+  showThreadOutline?: boolean;
+  onToggleThreadOutline?: () => void;
 };
 
 export const TaskControlBar = ({
@@ -54,6 +56,8 @@ export const TaskControlBar = ({
   onUndoContextChange,
   selectedWorkflowId,
   onWorkflowChange,
+  showThreadOutline = false,
+  onToggleThreadOutline,
 }: Props) => {
   const { t } = useTranslation();
   const { projectSettings, saveProjectSettings } = useProjectSettings();
@@ -161,6 +165,21 @@ export const TaskControlBar = ({
                 title={t('promptField.expandEditor')}
               >
                 <MdOutlineFullscreen className="w-4 h-4 text-text-secondary" />
+              </Button>
+            </Tooltip>
+          )}
+          {onToggleThreadOutline && (
+            <Tooltip content={t('messages.outline.toggle')}>
+              <Button
+                variant="text"
+                color="tertiary"
+                size="xs"
+                onClick={onToggleThreadOutline}
+                className={clsx('py-1.5', showThreadOutline && 'bg-bg-secondary-light')}
+                aria-label={t('messages.outline.toggle')}
+                title={t('messages.outline.toggle')}
+              >
+                <VscListTree className={clsx('w-3.5 h-3.5', showThreadOutline ? 'text-text-secondary' : 'text-text-tertiary')} />
               </Button>
             </Tooltip>
           )}

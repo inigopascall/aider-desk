@@ -3,29 +3,23 @@ import { toPng } from 'html-to-image';
 import { MdKeyboardDoubleArrowDown } from 'react-icons/md';
 import { useTranslation } from 'react-i18next';
 import { LegendList, type LegendListRef } from '@legendapp/list/react';
-import {
-  GroupMessage,
-  isAssistantGroupMessage,
-  isGroupMessage,
-  isLoadingMessage,
-  isResponseMessage,
-  isUserMessage,
-  Message,
-  MessageViewMode,
-} from '@common/types';
+import { GroupMessage, isAssistantGroupMessage, isGroupMessage, isLoadingMessage, isResponseMessage, isUserMessage, Message } from '@common/types';
 import { twMerge } from 'tailwind-merge';
 
 import { MessageBlockWrapper } from './MessageBlockWrapper';
+import { flashMessageElement } from './outline';
 
 import { IconButton } from '@/components/common/IconButton';
 import { groupAssistantMessages, groupMessagesByPromptContext } from '@/components/message/utils';
 import { useUserMessageNavigation } from '@/hooks/useUserMessageNavigation';
-import { useSettingsStore } from '@/stores/settingsStore';
+import { MessagesTaskProvider } from '@/contexts/MessagesTaskContext';
+import { useProcessedMessages } from '@/hooks/useProcessedMessages';
 
 export type VirtualizedMessagesRef = {
   exportToImage: () => void;
   container: HTMLDivElement | null;
   scrollToBottom: () => void;
+  scrollToMessage: (messageId: string) => void;
 };
 
 type Props = {
@@ -64,10 +58,8 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
     ref,
   ) => {
     const { t } = useTranslation();
-    const messageViewMode = useSettingsStore((state) => state.settings?.messageViewMode);
     const listRef = useRef<LegendListRef>(null);
     const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(null);
-    const isCompactMode = messageViewMode === MessageViewMode.Compact;
 
     const activityMessageId = useMemo(() => {
       if (!inProgress) {
@@ -98,10 +90,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
       return latestActivityMessageId;
     }, [inProgress, messages]);
 
-    const processedMessages = useMemo(() => {
-      const grouped = groupMessagesByPromptContext(messages);
-      return isCompactMode ? groupAssistantMessages(grouped) : grouped;
-    }, [messages, isCompactMode]);
+    const processedMessages = useProcessedMessages(messages);
 
     const [messagesLength, setMessagesLength] = useState(processedMessages.length);
     if (messagesLength !== processedMessages.length) {
@@ -225,6 +214,27 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
       void listRef.current?.scrollToEnd({ animated: false });
     }, [updateScrollingPaused]);
 
+    const scrollToMessage = useCallback(
+      (messageId: string) => {
+        const index = processedMessages.findIndex((message) => message.id === messageId);
+        if (index === -1) {
+          return;
+        }
+
+        isProgrammaticScrollRef.current = true;
+        updateScrollingPaused(true);
+        void listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0 });
+
+        window.setTimeout(() => {
+          const element = listRef.current?.getScrollableNode()?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`);
+          if (element) {
+            flashMessageElement(element);
+          }
+        }, 250);
+      },
+      [processedMessages, updateScrollingPaused],
+    );
+
     const userMessageIds = useMemo(() => {
       return processedMessages.filter(isUserMessage).map((message) => message.id);
     }, [processedMessages]);
@@ -269,6 +279,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
       exportToImage,
       container: scrollContainer,
       scrollToBottom,
+      scrollToMessage,
     }));
 
     const extraData = useMemo(
@@ -304,7 +315,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
 
     const renderItem = useCallback(
       ({ item, index }) => (
-        <div className={twMerge('py-1', index === messagesLength - 1 && 'pb-4', index === 0 && 'pt-4')}>
+        <div data-message-id={item.id} className={twMerge('py-1', index === messagesLength - 1 && 'pb-4', index === 0 && 'pt-4')}>
           <MessageBlockWrapper
             baseDir={baseDir}
             taskId={taskId}
@@ -342,35 +353,37 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
     );
 
     return (
-      <div className="relative h-full">
-        <LegendList
-          key={taskId}
-          ref={handleListRef}
-          data={processedMessages}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          extraData={extraData}
-          estimatedItemSize={100}
-          onScroll={handleScrollState}
-          initialScrollAtEnd
-          alwaysRender={{ keys: userMessageIds }}
-          drawDistance={250}
-          className="absolute inset-0 scrollbar-thin scrollbar-track-bg-primary-light scrollbar-thumb-bg-tertiary hover:scrollbar-thumb-bg-fourth px-4"
-        />
-        <div className="absolute left-1/2 -translate-x-1/2 bottom-0 w-[140px] z-10 flex justify-center gap-1 pt-6 pb-1 group">
-          {(hasPreviousUserMessage || hasNextUserMessage) && renderGoToPrevious()}
-          {scrollingPaused && (
-            <IconButton
-              icon={<MdKeyboardDoubleArrowDown className="h-6 w-6" />}
-              onClick={scrollToBottom}
-              tooltip={t('messages.scrollToBottom')}
-              className="bg-bg-primary-light border border-border-default shadow-lg hover:bg-bg-secondary transition-colors duration-200"
-              aria-label={t('messages.scrollToBottom')}
-            />
-          )}
-          {(hasPreviousUserMessage || hasNextUserMessage) && renderGoToNext()}
+      <MessagesTaskProvider taskId={taskId}>
+        <div className="relative h-full">
+          <LegendList
+            key={taskId}
+            ref={handleListRef}
+            data={processedMessages}
+            keyExtractor={(item) => item.id}
+            renderItem={renderItem}
+            extraData={extraData}
+            estimatedItemSize={100}
+            onScroll={handleScrollState}
+            initialScrollAtEnd
+            alwaysRender={{ keys: userMessageIds }}
+            drawDistance={250}
+            className="absolute inset-0 scrollbar-thin scrollbar-track-bg-primary-light scrollbar-thumb-bg-tertiary hover:scrollbar-thumb-bg-fourth px-4"
+          />
+          <div className="absolute left-1/2 -translate-x-1/2 bottom-0 w-[140px] z-10 flex justify-center gap-1 pt-6 pb-1 group">
+            {(hasPreviousUserMessage || hasNextUserMessage) && renderGoToPrevious()}
+            {scrollingPaused && (
+              <IconButton
+                icon={<MdKeyboardDoubleArrowDown className="h-6 w-6" />}
+                onClick={scrollToBottom}
+                tooltip={t('messages.scrollToBottom')}
+                className="bg-bg-primary-light border border-border-default shadow-lg hover:bg-bg-secondary transition-colors duration-200"
+                aria-label={t('messages.scrollToBottom')}
+              />
+            )}
+            {(hasPreviousUserMessage || hasNextUserMessage) && renderGoToNext()}
+          </div>
         </div>
-      </div>
+      </MessagesTaskProvider>
     );
   },
 );

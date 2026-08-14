@@ -19,6 +19,7 @@ import { MessageBlock } from './MessageBlock';
 import { MessageBlockWrapper } from './MessageBlockWrapper';
 import { MessageBar } from './MessageBar';
 import { areMessagesEqual, groupAssistantMessages } from './utils';
+import { getGroupDisplayName } from './outline';
 
 import { Accordion } from '@/components/common/Accordion';
 import { Button } from '@/components/common/Button';
@@ -115,17 +116,6 @@ const GroupMessageBlockComponent = ({
     return lastResponse?.content;
   }, [message.children]);
 
-  const getGroupDisplayName = (name?: string | LocalizedString) => {
-    if (!name) {
-      return t('messages.group');
-    }
-
-    if (typeof name === 'string') {
-      return t(name || 'messages.group');
-    }
-
-    // name is LocalizedString
-    return t(name.key, name.params || {});
   };
 
   const handleInterrupt = (e: MouseEvent<HTMLButtonElement>) => {

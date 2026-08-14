@@ -1081,7 +1081,18 @@
     "unarchive": "Unarchive",
     "confirmDelete": "Confirm Delete",
     "remove": "Remove message",
-    "deleteUpToHere": "Delete up to here"
+    "deleteUpToHere": "Delete up to here",
+    "bookmark": "Bookmark",
+    "removeBookmark": "Remove bookmark",
+    "outline": {
+      "title": "Thread Outline",
+      "toggle": "Thread outline",
+      "filterAll": "All",
+      "filterBookmarks": "Bookmarks",
+      "empty": "No messages in this thread yet.",
+      "emptyBookmarks": "No bookmarks yet. Use the bookmark action on any message.",
+      "untitled": "(no text)"
+    }
   },
   "errors": {
     "frozenTitle": "AIDER FROZEN?",

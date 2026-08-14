@@ -58,6 +58,7 @@ import { showErrorNotification } from '@/utils/notifications';
 import { useSearchText } from '@/hooks/useSearchText';
 import { TaskStateActions } from '@/components/message/TaskStateActions';
 import { TaskInfoPanel } from '@/components/message/TaskInfoPanel';
+import { ThreadOutlineWindow } from '@/components/message/ThreadOutlineWindow';
 
 type AddFileDialogOptions = {
   readOnly: boolean;
@@ -148,6 +149,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
     const [searchContainer, setSearchContainer] = useState<HTMLElement | null>(null);
     const [terminalVisible, setTerminalVisible] = useState(false);
     const [showTaskInfoPanel, setShowTaskInfoPanel] = useState(false);
+    const [showThreadOutline, setShowThreadOutline] = useState(false);
     const [showSidebar, setShowSidebar] = useState(isMobile);
     const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
     const { width: sidebarWidth, setWidth: setSidebarWidth } = useSidebarWidth(projectDir, task.id);
@@ -281,6 +283,10 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
     const handleScrollToBottom = useCallback(() => {
       messagesRef.current?.scrollToBottom();
     }, [messagesRef]);
+
+    const handleScrollToMessage = useCallback((messageId: string) => {
+      messagesRef.current?.scrollToMessage(messageId);
+    }, []);
 
     const handleAddFiles = useCallback(
       (filePaths: string[], readOnly = false) => {
@@ -694,6 +700,10 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
       setShowTaskInfoPanel((prev) => !prev);
     }, []);
 
+    const handleToggleThreadOutline = useCallback(() => {
+      setShowThreadOutline((prev) => !prev);
+    }, []);
+
     const handleTerminalViewResize = useCallback(() => {
       terminalViewRef.current?.resize();
     }, [terminalViewRef]);
@@ -849,6 +859,15 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                 onClearAllTodos={handleClearAllTodos}
               />
             )}
+            {showThreadOutline && (
+              <ThreadOutlineWindow
+                baseDir={projectDir}
+                taskId={task.id}
+                messages={displayedMessages}
+                onScrollToMessage={handleScrollToMessage}
+                onClose={() => setShowThreadOutline(false)}
+              />
+            )}
             <ExtensionComponentWrapper placement="task-messages-top" />
             <div className="overflow-hidden flex-grow relative">
               {displayedMessages.length === 0 && !loading && !messagesPending && !inProgress ? (
@@ -988,6 +1007,8 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                   clearLogMessages={clearLogMessages}
                   scrollToBottom={handleScrollToBottom}
                   onToggleTaskInfoPanel={handleToggleTaskInfoPanel}
+                  showThreadOutline={showThreadOutline}
+                  onToggleThreadOutline={handleToggleThreadOutline}
                   handoffConversation={handleHandoff}
                   createSubtask={handleCreateSubtask}
                   overlayContainerRef={centralColumnRef}

@@ -2,9 +2,10 @@ import { useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { UsageReportData, Message } from '@common/types';
-import { MdCallSplit, MdDeleteForever, MdDeleteSweep, MdEdit, MdRedo } from 'react-icons/md';
+import { MdBookmark, MdBookmarkBorder, MdCallSplit, MdDeleteForever, MdDeleteSweep, MdEdit, MdRedo } from 'react-icons/md';
 import { FaEllipsisVertical } from 'react-icons/fa6';
 import { twMerge } from 'tailwind-merge';
+import { clsx } from 'clsx';
 
 import { IconButton } from '../common/IconButton';
 
@@ -16,6 +17,8 @@ import { TaskActivityIndicator } from '@/components/common/TaskActivityIndicator
 import { useClickOutside } from '@/hooks/useClickOutside';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
 import { includeMessageProperty } from '@/components/message/utils';
+import { useMessagesTaskId } from '@/contexts/MessagesTaskContext';
+import { toggleBookmark, useIsBookmarked } from '@/stores/bookmarkStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 
 type MenuPosition = {
@@ -56,6 +59,8 @@ export const MessageBar = ({
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLDivElement>(null);
   const disableCssStreamingAnimations = useSettingsStore((state) => state.settings?.disableCssStreamingAnimations ?? true);
+  const taskId = useMessagesTaskId();
+  const bookmarked = useIsBookmarked(taskId, message.id);
   const additionalProps = {
     message: message && includeMessageProperty(message) ? message : null,
   };
@@ -128,6 +133,15 @@ export const MessageBar = ({
       <div className="flex flex-shrink-0 items-center gap-3">
         <ExtensionComponentWrapper placement="task-message-bar" additionalProps={additionalProps} />
         {usageReport && <UsageInfo usageReport={usageReport} className="mt-[4px]" />}
+        {taskId && (
+          <IconButton
+            icon={bookmarked ? <MdBookmark className="w-4 h-4" /> : <MdBookmarkBorder className="w-4 h-4" />}
+            onClick={() => toggleBookmark(taskId, message.id)}
+            className={clsx('transition-colors', bookmarked ? 'text-amber-400 hover:text-amber-300' : 'text-text-dark hover:text-text-primary')}
+            tooltip={t(bookmarked ? 'messages.removeBookmark' : 'messages.bookmark')}
+            aria-label={t(bookmarked ? 'messages.removeBookmark' : 'messages.bookmark')}
+          />
+        )}
         {content && <CopyMessageButton content={content} className="transition-colors text-text-dark hover:text-text-primary" alwaysShow={true} />}
         {(remove || redo || edit || onFork || onRemoveUpTo) && (
           <div ref={buttonRef}>
