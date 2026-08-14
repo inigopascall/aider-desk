@@ -122,12 +122,13 @@ export async function emitCheckpoint(ctx: WorkflowRunContext, journey: Journey, 
 }
 
 export async function reconfigureContext(
-  task: Task,
+  ctx: WorkflowRunContext,
   journey: Journey,
   label: string,
   addPaths: string[],
   removePaths: string[] = [],
 ): Promise<{ added: string[]; removed: string[]; skipped: string[] }> {
+  const task = ctx.task;
   const added: string[] = [];
   const removed: string[] = [];
   const skipped: string[] = [];
@@ -290,7 +291,7 @@ export async function runEvidenceStage(ctx: WorkflowRunContext, journey: Journey
     );
 
     const change = await reconfigureContext(
-      ctx.task,
+      ctx,
       journey,
       `INVESTIGATOR — round ${iteration}`,
       investigation.add,
@@ -359,7 +360,7 @@ export async function resolvePlanUnknowns(
   if (research) journey.unknownsResearchResolved = true;
   if (codebase) {
     journey.unknownsCodebaseResolved = true;
-    await reconfigureContext(ctx.task, journey, `${label} — codebase unknowns`, codebase.add, codebase.remove);
+    await reconfigureContext(ctx, journey, `${label} — codebase unknowns`, codebase.add, codebase.remove);
   }
   return research;
 }
@@ -467,7 +468,7 @@ export async function runEditLoop(
     );
 
     const editedPaths = results.map((result) => result.path);
-    await reconfigureContext(ctx.task, journey, `${commitLabel} — pass ${pass} outputs`, editedPaths);
+    await reconfigureContext(ctx, journey, `${commitLabel} — pass ${pass} outputs`, editedPaths);
 
     const commitMessage = `[${commitLabel} pass ${pass}] ${journey.planTitle.slice(0, 60)}`;
     await git.add('-A');
