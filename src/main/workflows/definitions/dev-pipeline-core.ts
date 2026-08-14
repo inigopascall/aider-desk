@@ -258,7 +258,7 @@ export async function runEvidenceStage(ctx: WorkflowRunContext, journey: Journey
     if (response.verdict === 'YES') {
       if (response.irrelevantFiles.length > 0) {
         const change = await reconfigureContext(
-          ctx.task,
+          ctx,
           journey,
           `DIGESTER — irrelevant files (round ${iteration})`,
           [],
