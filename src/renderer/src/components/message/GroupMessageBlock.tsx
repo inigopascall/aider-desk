@@ -116,8 +116,6 @@ const GroupMessageBlockComponent = ({
     return lastResponse?.content;
   }, [message.children]);
 
-  };
-
   const handleInterrupt = (e: MouseEvent<HTMLButtonElement>) => {
     if (onInterrupt && message.group.interruptId) {
       e.stopPropagation();
