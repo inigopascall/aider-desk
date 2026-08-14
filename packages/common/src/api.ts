@@ -79,6 +79,8 @@ import {
   SkillDefinition,
   SkillsUpdatedData,
   ExtensionOperationResult,
+  WorkflowLogData,
+  WorkflowLogsUpdatedData,
 } from '@common/types';
 
 export type ExtensionDisplayAPI = Pick<
@@ -347,6 +349,8 @@ export interface ApplicationAPI {
   getSystemLogs: (fromId?: number, limit?: number, levels?: SystemLogLevel[]) => Promise<SystemLogsResponse>;
   clearSystemLogs: () => Promise<void>;
   addSystemLogListener: (callback: (data: SystemLogData) => void) => () => void;
+  addWorkflowLogListener: (baseDir: string, taskId: string, callback: (data: WorkflowLogData) => void) => () => void;
+  addWorkflowLogsUpdatedListener: (baseDir: string, taskId: string, callback: (data: WorkflowLogsUpdatedData) => void) => () => void;
 
   // Aider connector status (Python install + per-task connector lifecycle)
   addAiderConnectorStatusListener: (
