@@ -33,7 +33,7 @@ import { POWER_TOOL_FILE_READ, POWER_TOOL_GROUP_NAME, TOOL_GROUP_NAME_SEPARATOR 
 import { fileTypeFromBuffer } from 'file-type';
 import { v4 as uuidv4 } from 'uuid';
 
-import type { ContextFile } from '@common/types';
+import type { ContextAssistantMessage, ContextFile } from '@common/types';
 
 // Re-export types that are needed
 import { AIDER_DESK_PROJECT_RULES_DIR } from '@/constants';
