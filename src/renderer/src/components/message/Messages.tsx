@@ -7,13 +7,10 @@ import { GroupMessage, isAssistantGroupMessage, isGroupMessage, isLoadingMessage
 import { MessageBlockWrapper } from './MessageBlockWrapper';
 import { flashMessageElement } from './outline';
 
-import { IconButton } from '@/components/common/IconButton';
-import { groupAssistantMessages, groupMessagesByPromptContext } from '@/components/message/utils';
 import { useScrollingPaused } from '@/hooks/useScrollingPaused';
 import { useUserMessageNavigation } from '@/hooks/useUserMessageNavigation';
 import { MessagesTaskProvider } from '@/contexts/MessagesTaskContext';
 import { useProcessedMessages } from '@/hooks/useProcessedMessages';
-import { useSettingsStore } from '@/stores/settingsStore';
 
 export type MessagesRef = {
   exportToImage: () => void;

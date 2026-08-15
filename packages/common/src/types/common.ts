@@ -1130,6 +1130,7 @@ export const TaskDataSchema = z.object({
   weakModelLocked: z.boolean().optional(),
   handoff: z.boolean().optional(),
   lastAgentProviderMetadata: z.unknown().optional(),
+  lastAgentProviderMetadataModel: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   workflowModelSetIds: z.record(z.string(), z.string()).optional(),
 });

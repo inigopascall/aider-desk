@@ -333,6 +333,9 @@ export const extractProviderModel = (modelId: string): [string, string] => {
   return [providerId, modelParts.join('/')];
 };
 
+/** Inverse of `extractProviderModel`: builds a `${providerId}/${modelId}` string. */
+export const buildProviderModelId = (providerId: string, modelId: string): string => `${providerId}/${modelId}`;
+
 export const isUuid = (id: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
 export const parseCommandArgs = (input: string): string[] => {

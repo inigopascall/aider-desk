@@ -139,6 +139,7 @@ export const EMPTY_TASK_DATA: TaskData = {
   weakModelLocked: false,
   parentId: null,
   lastAgentProviderMetadata: undefined,
+  lastAgentProviderMetadataModel: undefined,
 };
 
 const getTaskFinishedNotificationText = (task: TaskData) => {
@@ -1085,6 +1086,7 @@ export class Task {
               ]
             : response.content,
           usageReport: response.usageReport,
+          model: response.usageReport?.model,
           reflectedMessage: response.reflectedMessage,
           editedFiles: response.editedFiles,
           commitHash: response.commitHash,
@@ -3096,6 +3098,7 @@ export class Task {
         state: DefaultTaskState.Todo,
         metadata: undefined,
         lastAgentProviderMetadata: null,
+        lastAgentProviderMetadataModel: undefined,
       });
     }
 

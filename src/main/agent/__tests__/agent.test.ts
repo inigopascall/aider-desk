@@ -824,3 +824,128 @@ describe('Agent - getContextFilesAsToolCallMessages', () => {
     });
   });
 });
+
+describe('Agent - prepareMessages sanitisation', () => {
+  let agent: Agent;
+  let mockTask: ReturnType<typeof createMockTask>;
+  let mockProfile: ReturnType<typeof createMockAgentProfile>;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+
+    mockTask = createMockTask();
+    mockProfile = createMockAgentProfile({
+      includeRepoMap: false,
+      includeContextFiles: false,
+    });
+
+    const mockStore = { getSettings: vi.fn(() => ({})) };
+    const mockAgentProfileManager = { getProjectProfiles: vi.fn(() => []) };
+    const mockMcpManager = { getConnectors: vi.fn(() => []) };
+    const mockMcpConfigManager = { getMergedServers: vi.fn(() => ({})) };
+    const mockModelManager = {
+      createLlm: vi.fn(),
+      getProviderOptions: vi.fn(() => ({})),
+      getProviderParameters: vi.fn(() => ({})),
+      getCacheControl: vi.fn(() => ({})),
+      getModelSettings: vi.fn(() => undefined),
+      getProviderTools: vi.fn(() => Promise.resolve({})),
+      isStreamingDisabled: vi.fn(() => false),
+      isToolCallStreamingDisabled: vi.fn(() => false),
+    };
+    const mockTelemetryManager = { captureAgentRun: vi.fn() };
+    const mockMemoryManager = {};
+    const mockPromptsManager = {};
+    const mockExtensionManager = {
+      isInitialized: vi.fn(() => false),
+      createExtensionToolset: vi.fn(() => ({})),
+    };
+
+    agent = new AgentClass(
+      mockStore as any,
+      mockAgentProfileManager as any,
+      mockMcpManager as any,
+      mockMcpConfigManager as any,
+      mockModelManager as any,
+      mockTelemetryManager as any,
+      mockMemoryManager as any,
+      mockPromptsManager as any,
+      mockExtensionManager as any,
+    );
+  });
+
+  it('strips providerOptions when target model differs from message model', async () => {
+    const history: ContextAssistantMessage[] = [
+      {
+        id: '1',
+        role: 'assistant',
+        model: 'openrouter/model-a',
+        content: [makeTextPart('hello', { openai: { itemId: 'rs_1' } })],
+        providerOptions: { openai: { batchId: 'b1' } },
+      } as ContextAssistantMessage,
+    ];
+
+    const result = await agent['prepareMessages'](mockTask, mockProfile, history, [], 'openrouter/model-b');
+    const r = result[0] as any;
+    expect(r.providerOptions).toBeUndefined();
+    expect(r.content[0].providerOptions).toBeUndefined();
+    expect(r.content[0].text).toBe('hello');
+  });
+
+  it('preserves providerOptions when target model matches message model', async () => {
+    const history: ContextAssistantMessage[] = [
+      {
+        id: '1',
+        role: 'assistant',
+        model: 'openrouter/model-a',
+        content: [makeTextPart('hello', { openai: { itemId: 'rs_1' } })],
+        providerOptions: { openai: { batchId: 'b1' } },
+      } as ContextAssistantMessage,
+    ];
+
+    const result = await agent['prepareMessages'](mockTask, mockProfile, history, [], 'openrouter/model-a');
+    const r = result[0] as any;
+    expect(r.providerOptions).toBeDefined();
+    expect(r.content[0].providerOptions).toBeDefined();
+  });
+
+  it('returns input unchanged when no targetModelId is provided', async () => {
+    const history: ContextAssistantMessage[] = [
+      {
+        id: '1',
+        role: 'assistant',
+        content: [makeTextPart('hello')],
+      } as ContextAssistantMessage,
+    ];
+
+    const result = await agent['prepareMessages'](mockTask, mockProfile, history, []);
+    expect(result[0]).toBe(history[0] as any);
+  });
+
+  it('does not mutate the input history array', async () => {
+    const history: ContextAssistantMessage[] = [
+      {
+        id: '1',
+        role: 'assistant',
+        model: 'openrouter/model-a',
+        content: [makeTextPart('hello', { openai: { itemId: 'rs_1' } })],
+        providerOptions: { openai: { batchId: 'b1' } },
+      } as ContextAssistantMessage,
+    ];
+
+    await agent['prepareMessages'](mockTask, mockProfile, history, [], 'openrouter/model-b');
+    expect((history[0] as any).providerOptions).toBeDefined();
+    expect((history[0].content[0] as any).providerOptions).toBeDefined();
+  });
+});
+
+/**
+ * Helper to create a text part with optional providerOptions for test fixtures.
+ */
+function makeTextPart(text: string, providerOptions?: Record<string, unknown>) {
+  return {
+    type: 'text' as const,
+    text,
+    ...(providerOptions ? { providerOptions } : {}),
+  };
+}

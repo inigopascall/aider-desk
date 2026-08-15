@@ -36,7 +36,7 @@ import {
   type TypedToolResult,
   wrapLanguageModel,
 } from 'ai';
-import { extractProviderModel, extractServerNameToolName, extractTextContent } from '@common/utils';
+import { extractProviderModel, extractServerNameToolName, extractTextContent, buildProviderModelId } from '@common/utils';
 // @ts-expect-error istextorbinary is not typed properly
 import { isBinary } from 'istextorbinary';
 import { fileTypeFromBuffer } from 'file-type';
@@ -61,6 +61,7 @@ import { ApprovalManager } from './tools/approval-manager';
 import { estimateMessageTokens, extractPromptContextFromToolResult, findLastUserMessage, isNetworkError, readFileContent } from './utils';
 import { extractReasoningMiddleware } from './middlewares/extract-reasoning-middleware';
 import { CompactionLevel, generateCompactedSummary, getReloadableMessages, getSubagentOldResultIds, smartCompactMessages } from './compaction';
+import { sanitizeMessagesForModel } from './message-sanitizer';
 
 import type { TextPart } from '@ai-sdk/provider-utils';
 import type { z } from 'zod';
@@ -674,6 +675,7 @@ export class Agent {
 
     // Store resolved provider for use in retry logic
     const resolvedProvider = provider;
+    const targetModelId = buildProviderModelId(provider.id, modelName);
 
     this.telemetryManager.captureAgentRun(profile, task.task, Object.keys(this.mcpConfigManager.getMergedServers(task.getProjectDir())).length);
 
@@ -705,7 +707,7 @@ export class Agent {
     const providerOptions = this.modelManager.getProviderOptions(provider, modelName, modelCallSettings?.reasoning);
 
     const firstUserMessage = contextMessages.length > 0 ? contextMessages[0] : null;
-    let messages = await this.prepareMessages(task, profile, contextMessages, contextFiles);
+    let messages = await this.prepareMessages(task, profile, contextMessages, contextFiles, targetModelId);
     const initialUserRequestMessageIndex = firstUserMessage
       ? messages.findIndex((message) => message.role === 'user' && message.content === firstUserMessage.content)
       : messages.length;
@@ -750,6 +752,17 @@ export class Agent {
         modelName: modelName,
       });
 
+      const resumableProviderMetadata =
+        task.task.lastAgentProviderMetadataModel === targetModelId ? task.task.lastAgentProviderMetadata : undefined;
+
+      if (task.task.lastAgentProviderMetadata && !resumableProviderMetadata) {
+        logger.info('Skipping stored provider metadata: produced by a different model', {
+          taskId: task.taskId,
+          storedModel: task.task.lastAgentProviderMetadataModel,
+          targetModelId,
+        });
+      }
+
       const model = await this.modelManager.createLlm(
         provider,
         modelName,
@@ -757,7 +770,7 @@ export class Agent {
         task.getProjectDir(),
         toolSet,
         systemPrompt,
-        task.task.lastAgentProviderMetadata,
+        resumableProviderMetadata,
       );
       logger.debug('LLM model created successfully', {
         model: typeof model !== 'string' ? model.modelId : model,
@@ -870,8 +883,9 @@ export class Agent {
       const getBaseModelCallParams = async () => {
         const getOptimizedMessages = async () => {
           const originalMessages = messages as ContextMessage[];
+          const outboundMessages = sanitizeMessagesForModel(messages, targetModelId);
           const optimized = await optimizeMessages(
-            messages,
+            outboundMessages,
             cacheControl,
             task,
             profile,
@@ -1519,7 +1533,7 @@ export class Agent {
     return messages;
   }
 
-  private async prepareMessages(task: Task, profile: AgentProfile, contextMessages: ContextMessage[], contextFiles: ContextFile[]): Promise<ModelMessage[]> {
+  private async prepareMessages(task: Task, profile: AgentProfile, contextMessages: ContextMessage[], contextFiles: ContextFile[], targetModelId?: string): Promise<ModelMessage[]> {
     const messages: ModelMessage[] = [];
 
     // Add repo map if enabled
@@ -1550,7 +1564,7 @@ export class Agent {
       messages.push(...(contextMessages as ModelMessage[]));
     }
 
-    return messages;
+    return targetModelId ? sanitizeMessagesForModel(messages, targetModelId) : messages;
   }
 
   async generateText(
@@ -1596,11 +1610,13 @@ export class Agent {
       content: prompt,
     });
 
+    const outboundGenMessages = sanitizeMessagesForModel(messages as ModelMessage[], buildProviderModelId(provider.id, modelName));
+
     try {
       const result = await generateText({
         model,
         instructions: systemPrompt,
-        messages: await optimizeMessages(messages as ModelMessage[], cacheControl),
+        messages: await optimizeMessages(outboundGenMessages, cacheControl),
         abortSignal: effectiveAbortSignal,
         providerOptions,
         ...providerParameters,
@@ -1667,12 +1683,14 @@ export class Agent {
       content: prompt,
     });
 
+    const outboundObjMessages = sanitizeMessagesForModel(messages as ModelMessage[], buildProviderModelId(provider.id, modelName));
+
     try {
       const result = await generateText({
         model,
         output: Output.object({ schema }),
         instructions: systemPrompt,
-        messages: await optimizeMessages(messages as ModelMessage[], cacheControl),
+        messages: await optimizeMessages(outboundObjMessages, cacheControl),
         abortSignal: effectiveAbortSignal,
         providerOptions,
         ...providerParameters,
@@ -1704,7 +1722,7 @@ export class Agent {
         return 0;
       }
 
-      const messages = await this.prepareMessages(task, profile, await task.getContextMessages(), await task.getContextFiles());
+      const messages = await this.prepareMessages(task, profile, await task.getContextMessages(), await task.getContextFiles(), buildProviderModelId(provider.id, profile.model));
       const toolSet = await this.getAvailableTools(task, 'agent', profile, provider, profile.model);
       const systemPrompt = await this.promptsManager.getSystemPrompt(this.store.getSettings(), task, profile);
 
@@ -1797,7 +1815,10 @@ export class Agent {
     const usageReport: UsageReportData = this.modelManager.getUsageReport(task, provider, model, usage, providerMetadata);
 
     if (providerMetadata) {
-      await task.updateTask({ lastAgentProviderMetadata: providerMetadata });
+      await task.updateTask({
+        lastAgentProviderMetadata: providerMetadata,
+        lastAgentProviderMetadataModel: buildProviderModelId(provider.id, model),
+      });
     }
 
     const hasAssistantMessage = content.some((part) => (part.type === 'text' || part.type === 'reasoning') && part.text?.trim());
@@ -1889,11 +1910,14 @@ export class Agent {
 
     const lastToolMessage = response.messages.findLast((m) => m.role === 'tool');
 
+    const currentModelId = buildProviderModelId(provider.id, model);
+
     response.messages.forEach((message) => {
       if (message.role === 'assistant') {
         messages.push({
           ...message,
           id: currentResponseId,
+          model: currentModelId,
           usageReport: hasAssistantMessage ? usageReport : undefined,
           promptContext,
           timestamp: Date.now(),
@@ -1991,6 +2015,8 @@ export class Agent {
       thresholdDescription,
     });
 
+    const compactionTargetModelId = buildProviderModelId(provider.id, model);
+
     if (totalTokens > effectiveThreshold) {
       logger.info(
         `Token usage ${totalTokens} exceeds effective threshold of ${effectiveThreshold} (${thresholdDescription}). Compacting conversation with type: ${contextCompactionType}.`,
@@ -2009,7 +2035,7 @@ export class Agent {
           resultMessages.length = 0;
 
           resultMessages.push(...compactedMessages);
-          messages.push(...(await this.prepareMessages(task, profile, compactedMessages, contextFiles)));
+          messages.push(...(await this.prepareMessages(task, profile, compactedMessages, contextFiles, compactionTargetModelId)));
 
           task.sendTaskMessageRemoved(oldResultIds);
           task.reloadGroupMessages(getReloadableMessages(compactedMessages));
@@ -2036,7 +2062,7 @@ export class Agent {
           resultMessages.length = 0;
 
           resultMessages.push(...finalMessages);
-          messages.push(...(await this.prepareMessages(task, profile, finalMessages, contextFiles)));
+          messages.push(...(await this.prepareMessages(task, profile, finalMessages, contextFiles, compactionTargetModelId)));
 
           task.sendTaskMessageRemoved(oldResultIds);
           task.reloadGroupMessages(getReloadableMessages(finalMessages));
@@ -2058,7 +2084,7 @@ export class Agent {
         messages.length = 0;
         resultMessages.length = 0;
 
-        messages.push(...(await this.prepareMessages(task, profile, await task.getContextMessages(), contextFiles)));
+        messages.push(...(await this.prepareMessages(task, profile, await task.getContextMessages(), contextFiles, compactionTargetModelId)));
         const continuationText = `Based on your compacted summary of our previous conversation, please continue our work with my request:\n\n${extractTextContent(userRequestMessage.content)}`;
         const originalImageParts = Array.isArray(userRequestMessage.content) ? userRequestMessage.content.filter((part) => part.type === 'file') : [];
 
@@ -2077,7 +2103,7 @@ export class Agent {
         resultMessages.length = 0;
 
         contextMessages.push(...compactedMessages);
-        messages.push(...(await this.prepareMessages(task, profile, compactedMessages, contextFiles)));
+        messages.push(...(await this.prepareMessages(task, profile, compactedMessages, contextFiles, compactionTargetModelId)));
       } else if (contextCompactionType === ContextCompactionType.Handoff) {
         // Perform handoff
         await task.handoffConversation(

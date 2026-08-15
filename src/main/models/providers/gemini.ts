@@ -1,4 +1,5 @@
 import { ContextUserMessage, Model, ModelInfo, ProviderProfile, SettingsData, UsageReportData, VoiceSession, Reasoning } from '@common/types';
+import { buildProviderModelId } from '@common/utils';
 import { DEFAULT_VOICE_SYSTEM_INSTRUCTIONS, GeminiProvider, GeminiVoiceModel, isGeminiProvider, LlmProvider } from '@common/agent';
 import { createGoogle, google, type GoogleLanguageModelOptions } from '@ai-sdk/google';
 import { Modality } from '@google/genai';
@@ -142,7 +143,7 @@ const getGeminiUsageReport = (task: Task, provider: ProviderProfile, model: Mode
   const messageCost = calculateCost(model, sentTokens, receivedTokens, cacheReadTokens);
 
   return {
-    model: `${provider.id}/${model.id}`,
+    model: buildProviderModelId(provider.id, model.id),
     sentTokens,
     receivedTokens,
     cacheReadTokens,

@@ -1,4 +1,5 @@
 import { Model, ModelInfo, ProviderProfile, UsageReportData } from '@common/types';
+import { buildProviderModelId } from '@common/utils';
 
 import type { LanguageModelUsage } from 'ai';
 
@@ -53,7 +54,7 @@ export const getDefaultUsageReport = (task: Task, provider: ProviderProfile, mod
   const messageCost = calculateCost(model, sentTokens, receivedTokens, cacheReadTokens, cacheWriteTokens);
 
   return {
-    model: `${provider.id}/${model.id}`,
+    model: buildProviderModelId(provider.id, model.id),
     sentTokens,
     receivedTokens,
     cacheReadTokens,

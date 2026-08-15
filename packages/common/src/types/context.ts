@@ -63,9 +63,15 @@ export type ToolResultOutput =
     };
 
 // Content part interfaces
+/**
+ * A text content part. Persisted parts may additionally carry provider-scoped
+ * continuation state produced by the AI SDK. This state is model-bound and
+ * safe to replay only when the target model is the same model that produced it.
+ */
 export interface TextPart {
   type: 'text';
   text: string;
+  providerOptions?: ProviderOptions;
 }
 
 export interface ImagePart {
@@ -74,30 +80,54 @@ export interface ImagePart {
   mediaType?: string;
 }
 
+/**
+ * A file content part. Persisted parts may additionally carry provider-scoped
+ * continuation state produced by the AI SDK. This state is model-bound and
+ * safe to replay only when the target model is the same model that produced it.
+ */
 export interface FilePart {
   type: 'file';
   data: DataContent | URL;
   filename?: string;
   mediaType: string;
+  providerOptions?: ProviderOptions;
 }
 
+/**
+ * A reasoning content part. Persisted parts may additionally carry provider-scoped
+ * continuation state produced by the AI SDK. This state is model-bound and
+ * safe to replay only when the target model is the same model that produced it.
+ */
 export interface ReasoningPart {
   type: 'reasoning';
   text: string;
+  providerOptions?: ProviderOptions;
 }
 
+/**
+ * A tool-call content part. Persisted parts may additionally carry provider-scoped
+ * continuation state produced by the AI SDK. This state is model-bound and
+ * safe to replay only when the target model is the same model that produced it.
+ */
 export interface ToolCallPart {
   type: 'tool-call';
   toolCallId: string;
   toolName: string;
   input: unknown;
+  providerOptions?: ProviderOptions;
 }
 
+/**
+ * A tool-result content part. Persisted parts may additionally carry provider-scoped
+ * continuation state produced by the AI SDK. This state is model-bound and
+ * safe to replay only when the target model is the same model that produced it.
+ */
 export interface ToolResultPart {
   type: 'tool-result';
   toolCallId: string;
   toolName: string;
   output: ToolResultOutput;
+  providerOptions?: ProviderOptions;
 }
 
 // Content types
@@ -154,6 +184,8 @@ interface BaseContextMessage {
   timestamp?: number;
   usageReport?: UsageReportData;
   promptContext?: PromptContext;
+  /** Provider-scoped continuation state (model-bound, stripped on model switch). */
+  providerOptions?: ProviderOptions;
 }
 
 // User message with usage report
@@ -171,6 +203,13 @@ export interface ContextAssistantMessage extends BaseContextMessage {
   commitHash?: string;
   commitMessage?: string;
   diff?: string;
+  /**
+   * Provider/model that produced this message, in `${providerId}/${modelId}` form.
+   * Used to decide whether model-bound provider payloads (encrypted/signed reasoning,
+   * item ids, thought signatures) may be replayed. Absent on messages persisted
+   * before this field existed.
+   */
+  model?: string;
 }
 
 // Tool message with usage report
