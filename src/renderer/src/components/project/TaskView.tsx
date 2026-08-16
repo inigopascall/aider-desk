@@ -58,7 +58,6 @@ import { showErrorNotification } from '@/utils/notifications';
 import { useSearchText } from '@/hooks/useSearchText';
 import { TaskStateActions } from '@/components/message/TaskStateActions';
 import { TaskInfoPanel } from '@/components/message/TaskInfoPanel';
-import { ThreadOutlineWindow } from '@/components/message/ThreadOutlineWindow';
 
 type AddFileDialogOptions = {
   readOnly: boolean;
@@ -149,7 +148,6 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
     const [searchContainer, setSearchContainer] = useState<HTMLElement | null>(null);
     const [terminalVisible, setTerminalVisible] = useState(false);
     const [showTaskInfoPanel, setShowTaskInfoPanel] = useState(false);
-    const [showThreadOutline, setShowThreadOutline] = useState(false);
     const [showSidebar, setShowSidebar] = useState(isMobile);
     const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
     const { width: sidebarWidth, setWidth: setSidebarWidth } = useSidebarWidth(projectDir, task.id);
@@ -700,10 +698,6 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
       setShowTaskInfoPanel((prev) => !prev);
     }, []);
 
-    const handleToggleThreadOutline = useCallback(() => {
-      setShowThreadOutline((prev) => !prev);
-    }, []);
-
     const handleTerminalViewResize = useCallback(() => {
       terminalViewRef.current?.resize();
     }, [terminalViewRef]);
@@ -857,15 +851,6 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                 onDeleteTodo={handleDeleteTodo}
                 onHandoffTodo={handleHandoff}
                 onClearAllTodos={handleClearAllTodos}
-              />
-            )}
-            {showThreadOutline && (
-              <ThreadOutlineWindow
-                baseDir={projectDir}
-                taskId={task.id}
-                messages={displayedMessages}
-                onScrollToMessage={handleScrollToMessage}
-                onClose={() => setShowThreadOutline(false)}
               />
             )}
             <ExtensionComponentWrapper placement="task-messages-top" />
@@ -1029,8 +1014,6 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                   onUndoContextChange={handleUndoContextChange}
                   selectedWorkflowId={selectedWorkflowId}
                   onWorkflowChange={setSelectedWorkflowId}
-                  showThreadOutline={showThreadOutline}
-                  onToggleThreadOutline={handleToggleThreadOutline}
                 />
               </div>
               <div className="flex gap-2 justify-between flex-wrap">
@@ -1086,6 +1069,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                     refreshAllFiles={handleRefreshAllFiles}
                     refreshContextFiles={handleRefreshContextFiles}
                     onToggleFilesSidebarCollapse={handleToggleFilesSidebarCollapse}
+                    onScrollToMessage={handleScrollToMessage}
                   />
                 </div>
               </ResizableBox>
@@ -1124,6 +1108,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
             updateTask={updateTask}
             refreshAllFiles={(useGit) => refreshAllFiles(task.id, useGit)}
             refreshContextFiles={handleRefreshContextFiles}
+            onScrollToMessage={handleScrollToMessage}
           />
         )}
       </div>

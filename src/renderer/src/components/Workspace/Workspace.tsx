@@ -15,6 +15,7 @@ import { UpdatedFilesSection } from './UpdatedFilesSection';
 import { ProjectFilesSection } from './ProjectFilesSection';
 import { RulesSection } from './RulesSection';
 import { SkillsSection } from './SkillsSection';
+import { ThreadOutlineSection } from './ThreadOutlineSection';
 import { normalizePath } from './types';
 
 import type { SectionType, TreeItem } from './types';
@@ -26,7 +27,7 @@ import { useProjectSettings } from '@/contexts/ProjectSettingsContext';
 
 import './Workspace.css';
 
-const ALL_SECTIONS: SectionType[] = ['context', 'updated', 'project', 'rules', 'skills'];
+const ALL_SECTIONS: SectionType[] = ['context', 'updated', 'project', 'rules', 'skills', 'outline'];
 
 type SortableSectionWrapperProps = {
   id: SectionType;
@@ -74,6 +75,7 @@ type Props = {
   mode: Mode;
   onToggleFilesSidebarCollapse?: () => void;
   taskName?: string;
+  onScrollToMessage?: (messageId: string) => void;
 };
 
 export const Workspace = ({
@@ -88,6 +90,7 @@ export const Workspace = ({
   mode,
   onToggleFilesSidebarCollapse,
   taskName,
+  onScrollToMessage,
 }: Props) => {
   const { t } = useTranslation();
   const os = useOS();
@@ -262,12 +265,14 @@ export const Workspace = ({
   const handleToggleProject = useCallback(() => setActiveSection('project'), [setActiveSection]);
   const handleToggleRules = useCallback(() => setActiveSection('rules'), [setActiveSection]);
   const handleToggleSkills = useCallback(() => setActiveSection('skills'), [setActiveSection]);
+  const handleToggleOutline = useCallback(() => setActiveSection('outline'), [setActiveSection]);
 
   const handleToggleContextHidden = useCallback(() => handleToggleSectionHidden('context'), [handleToggleSectionHidden]);
   const handleToggleUpdatedHidden = useCallback(() => handleToggleSectionHidden('updated'), [handleToggleSectionHidden]);
   const handleToggleProjectHidden = useCallback(() => handleToggleSectionHidden('project'), [handleToggleSectionHidden]);
   const handleToggleRulesHidden = useCallback(() => handleToggleSectionHidden('rules'), [handleToggleSectionHidden]);
   const handleToggleSkillsHidden = useCallback(() => handleToggleSectionHidden('skills'), [handleToggleSectionHidden]);
+  const handleToggleOutlineHidden = useCallback(() => handleToggleSectionHidden('outline'), [handleToggleSectionHidden]);
 
   const handleEnterEditMode = useCallback(() => {
     setEditMode(true);
@@ -379,6 +384,22 @@ export const Workspace = ({
             editMode={editMode}
             isHidden={sectionProps.isHidden('skills')}
             onToggleHidden={handleToggleSkillsHidden}
+            showBorderTop={section !== orderedSections[0]}
+          />
+        );
+      case 'outline':
+        return (
+          <ThreadOutlineSection
+            baseDir={baseDir}
+            taskId={taskId}
+            isOpen={activeSection === 'outline' && !editMode}
+            totalStats={totalStats}
+            visitedSections={visitedSections}
+            onToggle={handleToggleOutline}
+            onScrollToMessage={onScrollToMessage}
+            editMode={editMode}
+            isHidden={sectionProps.isHidden('outline')}
+            onToggleHidden={handleToggleOutlineHidden}
             showBorderTop={section !== orderedSections[0]}
           />
         );
