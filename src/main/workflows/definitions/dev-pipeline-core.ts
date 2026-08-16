@@ -183,10 +183,18 @@ export async function reconfigureContext(
   return { added, removed, skipped };
 }
 
-export async function collectDiffStats(git: SimpleGit, fromRef: string, toRef?: string): Promise<Map<string, { insertions: number; deletions: number }>> {
+export async function collectDiffStats(
+  git: SimpleGit,
+  fromRef: string,
+  toRef: string | undefined,
+  onRetry?: (attempt: number, message: string) => void,
+): Promise<Map<string, { insertions: number; deletions: number }>> {
   const stats = new Map<string, { insertions: number; deletions: number }>();
   try {
-    const summary = await git.diffSummary(toRef ? [fromRef, toRef] : [fromRef]);
+    const summary = await withGitRetry(
+      () => git.diffSummary(toRef ? [fromRef, toRef] : [fromRef]),
+      { name: 'diff statistics', onRetry },
+    );
     for (const file of summary.files) {
       const insertions = 'insertions' in file ? file.insertions : 0;
       const deletions = 'deletions' in file ? file.deletions : 0;
@@ -509,7 +517,7 @@ export async function runEditLoop(
       ? await withGitRetry(() => git.raw(['diff', '--name-only', '-z', passBase, 'HEAD']), { name: 'changed paths', onRetry: bumpGitRetry })
       : await withGitRetry(() => git.raw(['diff', '--name-only', '-z', passBase]), { name: 'working-tree changed paths', onRetry: bumpGitRetry });
     const changedPaths = parseChangedPaths(changedRaw);
-    const statsMap = await collectDiffStats(git, passBase, commitSucceeded ? 'HEAD' : undefined);
+    const statsMap = await collectDiffStats(git, passBase, commitSucceeded ? 'HEAD' : undefined, bumpGitRetry);
     const rows = buildEditRows(results, changedPaths, statsMap);
     const gate = evaluateEditGate(results, changedPaths);
     for (const row of rows) { const entry = journey.fileStats[row.path] ?? { insertions: 0, deletions: 0, passes: 0 }; entry.insertions += row.insertions; entry.deletions += row.deletions; entry.passes++; journey.fileStats[row.path] = entry; }
