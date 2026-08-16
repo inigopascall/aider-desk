@@ -14,7 +14,7 @@ import {
   runPlanningStage,
 } from './dev-pipeline-core';
 import { createJourney, type ReportState } from '../journey';
-import { formatReviewRound } from '../reporting';
+import { formatReviewRound, truncate } from '../reporting';
 import { parseReviewerResponse, parseVerifierResponse } from '../parsers';
 import { WorkflowCancelled, WorkflowError } from '../dispatch';
 import { buildPrompt } from '../prompt-formatting';
@@ -27,6 +27,7 @@ const REVIEW_AGENTS = {
 
 const MAX_REVIEW_ROUNDS = 2;
 const MAX_VERIFIER_DIFF_CHARS = 60_000;
+const MAX_REVIEW_PLAN_CHARS = 6_000;
 
 export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<void> {
   const { task, modelSet, conversationText } = ctx;
@@ -34,7 +35,9 @@ export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<voi
   const report: ReportState = { status: 'aborted' };
 
   try {
-    const { git, baselineCommit } = await prepareRepository(task);
+    const { git, baselineCommit, warnings } = await prepareRepository(task);
+    journey.gitWarnings.push(...warnings);
+    for (const warning of warnings) await ctx.log.warning(warning);
     const researchFindings = await runEvidenceStage(ctx, journey, report);
     await emitCheckpoint(ctx, journey, 'Dev Pipeline + Review', 'Evidence');
     const { planText, unknownsResearch } = await runPlanningStage(ctx, journey, report, researchFindings);
@@ -93,7 +96,7 @@ export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<voi
 
       const reviewer = await ctx.dispatch.parsed(
         REVIEW_AGENTS.reviewer,
-        `${descriptor}\n\n# CORRECTNESS_VERIFIER_FINDINGS\n${correctness?.raw ?? 'N/A'}\n\n# QUALITY_VERIFIER_FINDINGS\n${quality?.raw ?? 'N/A'}\n\nArbitrate now, per your instructions.`,
+        `${descriptor}\n\n# CORRECTNESS_VERIFIER_FINDINGS\n${correctness?.raw ?? 'UNAVAILABLE: verifier execution failed'}\n\n# QUALITY_VERIFIER_FINDINGS\n${quality?.raw ?? 'UNAVAILABLE: verifier execution failed'}\n\nArbitrate now, per your instructions.`,
         `Arbitrating review (round ${round})`,
         parseReviewerResponse,
         () => {

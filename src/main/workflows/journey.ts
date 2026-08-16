@@ -7,6 +7,7 @@ export interface EditorOutcome {
   path: string;
   outcome: EditorOutcomeStatus;
   detail?: string;
+  editorRole?: 'light' | 'heavy';
 }
 
 export interface FileChangeRow {
@@ -16,6 +17,7 @@ export interface FileChangeRow {
   editorOutcome: EditorOutcomeStatus | 'NOT INSTRUCTED';
   alignment: FileAlignment;
   detail?: string;
+  editorRole?: 'light' | 'heavy';
 }
 
 export interface ContextChangeRecord {
@@ -79,6 +81,8 @@ export interface Journey {
   reviewFindings: { round: number; findings: string }[];
   reviewerConsiderations: string | null;
   verifierFailures: string[];
+  gitRetries: number;
+  gitWarnings: string[];
   error?: string;
 }
 
@@ -115,5 +119,7 @@ export function createJourney(modelSet: WorkflowModelSet | undefined, conversati
     reviewFindings: [],
     reviewerConsiderations: null,
     verifierFailures: [],
+    gitRetries: 0,
+    gitWarnings: [],
   };
 }

@@ -18,7 +18,9 @@ export async function runDevPipeline(ctx: WorkflowRunContext): Promise<void> {
   const report: ReportState = { status: 'aborted' };
 
   try {
-    const { git } = await prepareRepository(task);
+    const { git, warnings } = await prepareRepository(task);
+    journey.gitWarnings.push(...warnings);
+    for (const warning of warnings) await ctx.log.warning(warning);
     const researchFindings = await runEvidenceStage(ctx, journey, report);
     await emitCheckpoint(ctx, journey, 'Dev Pipeline', 'Evidence');
     const { planText, unknownsResearch } = await runPlanningStage(ctx, journey, report, researchFindings);

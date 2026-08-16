@@ -222,7 +222,7 @@ export function formatEditSummary(
         row.path,
         String(row.insertions),
         String(row.deletions),
-        `${OUTCOME_GLYPH[row.editorOutcome]} ${row.editorOutcome}`,
+        `${OUTCOME_GLYPH[row.editorOutcome]} ${row.editorOutcome}${row.editorRole === 'heavy' ? ' (heavy)' : ''}`,
         ALIGNMENT_GLYPH[row.alignment],
       ]),
     ),
@@ -320,6 +320,8 @@ export function formatJourneyReport(journey: Journey, report: ReportState, workf
     ['CONFIRMER fast-path skips', String(journey.confirmerSkips)],
   ];
 
+  if (journey.gitRetries > 0) summaryRows.push(['Git retries', String(journey.gitRetries)]);
+
   if (journey.reviewRounds > 0) {
     summaryRows.push(['Review rounds', String(journey.reviewRounds)]);
   }
@@ -394,6 +396,7 @@ export function formatJourneyReport(journey: Journey, report: ReportState, workf
         )
       : null,
     journey.ambiguities ? section('### ❓ Ambiguities', journey.ambiguities) : null,
+    journey.gitWarnings.length > 0 ? section('### ⚠️ Git warnings', journey.gitWarnings.map((w) => `- ${w}`).join('\n')) : null,
     journey.error ? section('### ❌ Error', journey.error) : null,
   ];
 

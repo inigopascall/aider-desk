@@ -45,6 +45,7 @@ import {
 } from '../parsers';
 
 import { buildPrompt, PromptSection } from '../prompt-formatting';
+import { withGitRetry } from '../git-utils';
 
 export const AGENTS = {
   digester: 'DIGESTER',
@@ -52,7 +53,8 @@ export const AGENTS = {
   researcher: 'RESEARCHER',
   planner: 'GRAND-PLANNER',
   decompositor: 'DECOMPOSITOR',
-  editor: 'EDITOR',
+  editor: 'EDITOR-LIGHT',
+  heavyEditor: 'EDITOR-HEAVY',
   confirmer: 'CONFIRMER',
 } as const;
 
@@ -60,6 +62,9 @@ export const MAX_EVIDENCE_ITERATIONS = 3;
 export const MAX_CONFIRM_PASSES = 3;
 export const MAX_DIFF_CHARS = 80_000;
 export const MAX_RESEARCH_DOC_CHARS = 30_000;
+export const HEAVY_NEW_CHAR_THRESHOLD = 10_000;
+export const HEAVY_NEW_LINE_THRESHOLD = 250;
+export const HEAVY_EDIT_CHAR_THRESHOLD = 6_000;
 
 export function normalizePath(p: string): string {
   return p.replace(/\\/g, '/');
@@ -72,6 +77,13 @@ export function parseChangedPaths(raw: string): string[] {
     .filter(Boolean)
     .map((entry) => (entry.startsWith('./') ? entry.slice(2) : entry))
     .map(normalizePath);
+}
+
+export function selectEditorRole(edit: FileEditInstruction, escalatedPaths: Set<string>): 'light' | 'heavy' {
+  if (escalatedPaths.has(normalizePath(edit.path))) return 'heavy';
+  if (edit.type === 'NEW' && (edit.instructions.length > HEAVY_NEW_CHAR_THRESHOLD || edit.instructions.split(/\r?\n/).length > HEAVY_NEW_LINE_THRESHOLD)) return 'heavy';
+  if (edit.type === 'EDIT' && edit.instructions.length > HEAVY_EDIT_CHAR_THRESHOLD) return 'heavy';
+  return 'light';
 }
 
 export function evaluateEditGate(results: EditorOutcome[], changedPaths: string[]): { passed: boolean; reason: string } {
@@ -91,23 +103,25 @@ export function evaluateEditGate(results: EditorOutcome[], changedPaths: string[
   return { passed: true, reason: '' };
 }
 
-export async function prepareRepository(task: Task): Promise<{ git: SimpleGit; baselineCommit: string }> {
+export async function prepareRepository(task: Task): Promise<{ git: SimpleGit; baselineCommit: string; warnings: string[] }> {
   const git = simpleGit(task.getTaskDir());
   if (!(await git.checkIsRepo())) {
     throw new WorkflowError('The task directory is not a git repository. The Dev Pipeline requires git.');
   }
-
-  const status = await git.status();
+  const warnings: string[] = [];
+  const status = await withGitRetry(() => git.status(), { name: 'status' });
   if (!status.isClean()) {
-    await git.add('-A');
-    await git.raw(['commit', '--no-verify', '-m', '[dev-pipeline] pre-edit snapshot']);
+    try {
+      await withGitRetry(async () => { await git.add('-A'); await git.raw(['commit', '--no-verify', '-m', '[dev-pipeline] pre-edit snapshot']); }, { name: 'pre-edit snapshot commit' });
+    } catch (error) {
+      warnings.push(`Pre-edit snapshot commit failed after retries: ${error instanceof Error ? error.message : String(error)}. Baseline may include pre-existing uncommitted changes.`);
+    }
   }
-
-  return { git, baselineCommit: (await git.revparse(['HEAD'])).trim() };
+  return { git, baselineCommit: (await withGitRetry(() => git.revparse(['HEAD']), { name: 'baseline commit' })).trim(), warnings };
 }
 
 export async function getCumulativeDiff(git: SimpleGit, fromCommit: string, maxChars: number): Promise<string> {
-  let diff = await git.raw(['diff', fromCommit, 'HEAD']);
+  let diff = await withGitRetry(() => git.raw(['diff', fromCommit]), { name: 'cumulative diff' });
   if (diff.length > maxChars) diff = diff.slice(0, maxChars) + '\n…[diff truncated]';
   return diff;
 }
@@ -169,10 +183,10 @@ export async function reconfigureContext(
   return { added, removed, skipped };
 }
 
-export async function collectDiffStats(git: SimpleGit): Promise<Map<string, { insertions: number; deletions: number }>> {
+export async function collectDiffStats(git: SimpleGit, fromRef: string, toRef?: string): Promise<Map<string, { insertions: number; deletions: number }>> {
   const stats = new Map<string, { insertions: number; deletions: number }>();
   try {
-    const summary = await git.diffSummary(['HEAD~1', 'HEAD']);
+    const summary = await git.diffSummary(toRef ? [fromRef, toRef] : [fromRef]);
     for (const file of summary.files) {
       const insertions = 'insertions' in file ? file.insertions : 0;
       const deletions = 'deletions' in file ? file.deletions : 0;
@@ -201,6 +215,7 @@ export function buildEditRows(
       insertions: stat.insertions,
       deletions: stat.deletions,
       editorOutcome: result.outcome,
+      editorRole: result.editorRole,
       alignment: changed.has(filePath) ? 'ok' : 'missing',
       detail: result.detail,
     });
@@ -229,9 +244,9 @@ export async function runEvidenceStage(ctx: WorkflowRunContext, journey: Journey
 
   for (let iteration = 1; iteration <= MAX_EVIDENCE_ITERATIONS; iteration++) {
     const digesterPrompt = buildPrompt([
-      { title: 'CONVERSATION HISTORY', body: ctx.conversationText || 'No prior conversation.' },
+      { title: 'CONVERSATION HISTORY', body: ctx.conversationText },
       { title: 'USER REQUEST', body: ctx.initialPrompt },
-      { title: 'RESEARCH FINDINGS GATHERED SO FAR', body: findings.join('\n\n---\n\n') || 'None yet.' },
+      { title: 'RESEARCH FINDINGS GATHERED SO FAR', body: findings.join('\n\n---\n\n') },
       { title: 'ITERATION', body: `This is evidence-gathering iteration ${iteration} of ${MAX_EVIDENCE_ITERATIONS}.` },
     ]);
 
@@ -274,7 +289,7 @@ export async function runEvidenceStage(ctx: WorkflowRunContext, journey: Journey
     await emitInfo(ctx.log, formatEvidenceInsufficient(iteration, MAX_EVIDENCE_ITERATIONS, !!response.researchBrief));
 
     const investigatorPrompt = buildPrompt([
-      { title: 'CONVERSATION HISTORY', body: ctx.conversationText || 'No prior conversation.' },
+      { title: 'CONVERSATION HISTORY', body: ctx.conversationText },
       { title: 'USER REQUEST', body: ctx.initialPrompt },
       { title: 'INVESTIGATION BRIEF', body: response.investigationBrief },
       { title: 'REMINDER', body: 'Respond with exactly the required file sections.' },
@@ -302,7 +317,7 @@ export async function runEvidenceStage(ctx: WorkflowRunContext, journey: Journey
 
     if (response.researchBrief) {
       const researcherPrompt = buildPrompt([
-        { title: 'CONVERSATION HISTORY', body: ctx.conversationText || 'No prior conversation.' },
+        { title: 'CONVERSATION HISTORY', body: ctx.conversationText },
         { title: 'USER REQUEST', body: ctx.initialPrompt },
         { title: 'RESEARCH BRIEF', body: response.researchBrief },
       ]);
@@ -333,7 +348,7 @@ export async function resolvePlanUnknowns(
     ? ctx.dispatch.agent(
         AGENTS.researcher,
         buildPrompt([
-          { title: 'CONVERSATION HISTORY', body: ctx.conversationText || 'No prior conversation.' },
+          { title: 'CONVERSATION HISTORY', body: ctx.conversationText },
           { title: 'USER REQUEST', body: ctx.initialPrompt },
           { title: 'RESEARCH UNKNOWNS', body: researchUnknowns },
         ]),
@@ -344,7 +359,7 @@ export async function resolvePlanUnknowns(
     ? ctx.dispatch.parsed(
         AGENTS.investigator,
         buildPrompt([
-          { title: 'CONVERSATION HISTORY', body: ctx.conversationText || 'No prior conversation.' },
+          { title: 'CONVERSATION HISTORY', body: ctx.conversationText },
           { title: 'USER REQUEST', body: ctx.initialPrompt },
           { title: 'CODEBASE UNKNOWNS', body: codebaseUnknowns },
         ]),
@@ -373,9 +388,9 @@ export async function runPlanningStage(
 ): Promise<{ planText: string; unknownsResearch: string | null }> {
   report.abortStage = 'planning';
   const plannerPrompt = buildPrompt([
-    { title: 'CONVERSATION HISTORY', body: ctx.conversationText || 'No prior conversation.' },
+    { title: 'CONVERSATION HISTORY', body: ctx.conversationText },
     { title: 'USER REQUEST', body: ctx.initialPrompt },
-    { title: 'RESEARCH FINDINGS', body: researchFindings.join('\n\n---\n\n') || 'None yet.' },
+    { title: 'RESEARCH FINDINGS', body: researchFindings.join('\n\n---\n\n') },
     { title: 'INSTRUCTION', body: 'Produce the Implementation Plan now, per your instructions.' },
   ]);
 
@@ -400,7 +415,7 @@ export async function runDecompositionStage(
 ): Promise<FileEditInstruction[]> {
   const label = stageLabel ?? (isRectification ? 'Rectification plan decomposed' : 'Implementation plan decomposed');
   const decomposerSections: PromptSection[] = [
-    { title: 'CONVERSATION HISTORY', body: ctx.conversationText || 'No prior conversation.' },
+    { title: 'CONVERSATION HISTORY', body: ctx.conversationText },
     { title: 'USER REQUEST', body: ctx.initialPrompt },
     { title: isRectification ? 'RECTIFICATION PLAN' : 'IMPLEMENTATION PLAN', body: `${planText}\n\n(verbatim — treat as strict instructions)` },
   ];
