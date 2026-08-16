@@ -52,13 +52,22 @@ export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<voi
     for (let round = 1; round <= MAX_REVIEW_ROUNDS; round++) {
       journey.reviewRounds = round;
       const diff = await getCumulativeDiff(git, baselineCommit, MAX_VERIFIER_DIFF_CHARS);
-      const descriptor = buildPrompt([
-        { title: 'REVIEW CONTEXT', body: 'The following work was carried out by an automated development pipeline and now requires review.' },
-        { title: 'CONVERSATION HISTORY', body: ctx.conversationText || 'No prior conversation.' },
+      const changedFilesSummary = Object.entries(journey.fileStats)
+        .map(([filePath, stats]) => `${filePath}: +${stats.insertions} -${stats.deletions} (${stats.passes} ${stats.passes === 1 ? 'pass' : 'passes'})`)
+        .join('\n');
+      const descriptorSections = [
+        { title: 'REVIEW CONTEXT', body: 'The user request and resulting code are authoritative. The implementation plan is non-authoritative provenance only and must not override the user request or the code.' },
+        { title: 'CONVERSATION HISTORY', body: conversationText },
         { title: 'USER REQUEST', body: ctx.initialPrompt },
-        { title: 'IMPLEMENTATION PLAN TITLE', body: journey.planTitle },
+      ];
+      if (planText.trim()) {
+        descriptorSections.push({ title: 'IMPLEMENTATION PLAN (NON-AUTHORITATIVE)', body: 'The following plan is included only as provenance and is not authoritative.\n\n' + truncate(planText, MAX_REVIEW_PLAN_CHARS) });
+      }
+      descriptorSections.push(
+        { title: 'CHANGED FILES', body: changedFilesSummary || 'None' },
         { title: 'CUMULATIVE GIT DIFF', body: ['```diff', diff, '```'].join('\n') },
-      ]);
+      );
+      const descriptor = buildPrompt(descriptorSections);
 
       const verify = async (agent: string, lens: string) => {
         try {

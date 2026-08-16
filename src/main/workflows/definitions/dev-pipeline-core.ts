@@ -462,133 +462,74 @@ export async function runEditLoop(
   report.abortStage = `editing (${commitLabel})`;
   let currentEdits = edits;
   let verdict: 'ALIGNED' | 'DEFICIENT' = 'DEFICIENT';
+  const escalatedPaths = new Set<string>();
+  const bumpGitRetry = (attempt: number, message: string) => {
+    journey.gitRetries++;
+    void ctx.log.warning(`Git retry ${attempt}: ${message}`);
+  };
 
   for (let localPass = 1; localPass <= MAX_CONFIRM_PASSES; localPass++) {
     const pass = journey.passes.length + 1;
-
-    const results = await Promise.all(
-      currentEdits.map(async (edit) => {
+    const passBase = (await withGitRetry(() => git.revparse(['HEAD']), { name: 'pass baseline', onRetry: bumpGitRetry })).trim();
+    const results: EditorOutcome[] = new Array(currentEdits.length);
+    const groups = new Map<string, number[]>();
+    currentEdits.forEach((edit, index) => {
+      const key = normalizePath(edit.path);
+      groups.set(key, [...(groups.get(key) ?? []), index]);
+    });
+    await Promise.all([...groups.values()].map(async (indexes) => {
+      for (const index of indexes) {
+        const edit = currentEdits[index];
+        const heavy = selectEditorRole(edit, escalatedPaths) === 'heavy';
         try {
           const raw = await ctx.dispatch.agent(
-            AGENTS.editor,
+            heavy ? AGENTS.heavyEditor : AGENTS.editor,
             `Apply the following edit to exactly one file:\n\n${serializeFileEdits([edit])}`,
-            `Editing ${edit.path}`,
+            `Editing ${edit.path}${heavy ? ' (heavy editor)' : ''}`,
           );
-          return { path: edit.path, ...parseEditorResponse(raw) };
+          results[index] = { path: edit.path, ...parseEditorResponse(raw), editorRole: heavy ? 'heavy' : 'light' };
         } catch (error) {
           if (error instanceof WorkflowCancelled) throw error;
-          return { path: edit.path, outcome: 'FAILED' as const, detail: String(error) };
+          results[index] = { path: edit.path, outcome: 'FAILED', detail: String(error), editorRole: heavy ? 'heavy' : 'light' };
         }
-      }),
-    );
+      }
+    }));
 
     const editedPaths = results.map((result) => result.path);
-    await reconfigureContext(ctx, journey, `${commitLabel} — pass ${pass} outputs`, editedPaths);
-
     const commitMessage = `[${commitLabel} pass ${pass}] ${journey.planTitle.slice(0, 60)}`;
-    await git.add('-A');
-    await git.raw(['commit', '--no-verify', '--allow-empty', '-m', commitMessage]);
-
-    const changedPaths = parseChangedPaths(await git.raw(['diff', '--name-only', '-z', 'HEAD~1', 'HEAD']));
-    const statsMap = await collectDiffStats(git);
+    let commitSucceeded = true;
+    try {
+      await withGitRetry(async () => { await git.add('-A'); await git.raw(['commit', '--no-verify', '--allow-empty', '-m', commitMessage]); }, { name: 'pass checkpoint commit', onRetry: bumpGitRetry });
+    } catch (error) {
+      commitSucceeded = false;
+      const warning = `Checkpoint commit deferred after retries: ${error instanceof Error ? error.message : String(error)}`;
+      journey.gitWarnings.push(warning); await ctx.log.warning(warning);
+    }
+    const changedRaw = commitSucceeded
+      ? await withGitRetry(() => git.raw(['diff', '--name-only', '-z', passBase, 'HEAD']), { name: 'changed paths', onRetry: bumpGitRetry })
+      : await withGitRetry(() => git.raw(['diff', '--name-only', '-z', passBase]), { name: 'working-tree changed paths', onRetry: bumpGitRetry });
+    const changedPaths = parseChangedPaths(changedRaw);
+    const statsMap = await collectDiffStats(git, passBase, commitSucceeded ? 'HEAD' : undefined);
     const rows = buildEditRows(results, changedPaths, statsMap);
     const gate = evaluateEditGate(results, changedPaths);
-
-    for (const row of rows) {
-      const entry = journey.fileStats[row.path] ?? { insertions: 0, deletions: 0, passes: 0 };
-      entry.insertions += row.insertions;
-      entry.deletions += row.deletions;
-      entry.passes += 1;
-      journey.fileStats[row.path] = entry;
-    }
-
-    await emitInfo(ctx.log, formatEditSummary(commitLabel, pass, rows, gate.passed, gate.reason));
-    if (!gate.passed) await emitInfo(ctx.log, formatDeficiencyNotice(gate.reason));
-
+    for (const row of rows) { const entry = journey.fileStats[row.path] ?? { insertions: 0, deletions: 0, passes: 0 }; entry.insertions += row.insertions; entry.deletions += row.deletions; entry.passes++; journey.fileStats[row.path] = entry; }
+    await reconfigureContext(ctx, journey, `${commitLabel} — pass ${pass} outputs`, [...new Set([...editedPaths, ...changedPaths])]);
     const verificationResults: EditVerificationResult[] = [];
-    for (const edit of currentEdits) {
-      const filePath = path.resolve(ctx.task.getTaskDir(), edit.path);
-      let fileContent: string | null = null;
-      try {
-        fileContent = await fs.readFile(filePath, 'utf-8');
-      } catch {
-        // Missing files are represented by null for deterministic verification.
-      }
-      const fileStats = statsMap.get(normalizePath(edit.path)) ?? { insertions: 0, deletions: 0 };
-      verificationResults.push(verifyEditAlignment(edit, fileContent, fileStats));
-    }
-
-    const verificationMessage = formatVerificationFlags(verificationResults);
-    if (verificationMessage) await emitInfo(ctx.log, verificationMessage);
-
-    let diff = await git.raw(['diff', 'HEAD~1', 'HEAD']);
-    if (diff.length > MAX_DIFF_CHARS) diff = diff.slice(0, MAX_DIFF_CHARS) + '\n…[diff truncated]';
-
-    const editorResultsSummary = results
-      .map((r) => `${r.path}: ${r.outcome}${r.detail ? ` — ${r.detail}` : ''}`)
-      .join('\n');
-    const suspiciousEdits = verificationResults.filter((v) => v.suspicious);
-    const suspiciousSummary = suspiciousEdits.length > 0
-      ? suspiciousEdits.map((v) => `${v.path}: ${v.reasons.join('; ')}`).join('\n')
-      : 'None';
-
-    const confirmerPrompt = buildPrompt([
+    for (const edit of currentEdits) { let content: string | null = null; try { content = await fs.readFile(path.resolve(ctx.task.getTaskDir(), edit.path), 'utf-8'); } catch {} verificationResults.push(verifyEditAlignment(edit, content, statsMap.get(normalizePath(edit.path)) ?? { insertions: 0, deletions: 0 })); }
+    const diff = await withGitRetry(() => commitSucceeded ? git.raw(['diff', passBase, 'HEAD']) : git.raw(['diff', passBase]), { name: 'confirmer diff', onRetry: bumpGitRetry });
+    const suspicious = verificationResults.filter((v) => v.suspicious);
+    const confirmer = await ctx.dispatch.parsed(AGENTS.confirmer, buildPrompt([
       { title: 'FILE EDITS THAT WERE SUPPOSED TO BE APPLIED', body: serializeFileEdits(currentEdits) },
-      { title: 'GIT DIFF', body: ['```diff', diff, '```'].join('\n') },
-      { title: 'EDITOR RESULTS', body: editorResultsSummary },
-      { title: 'SUSPICIOUS EDITS FLAGGED BY SCRIPT VERIFICATION', body: suspiciousSummary },
-      {
-        title: 'VERIFICATION INSTRUCTIONS',
-        body: [
-          'You must verify that every instructed edit is present and correct in the diff/files.',
-          '',
-          'Critical rules:',
-          "- If an editor reported FAILED for a file, you CANNOT return ALIGNED unless you have read that file and confirmed the edit was actually applied correctly despite the editor's report.",
-          '- If an edit was flagged as suspicious by the script verification, you MUST read that file and verify the instruction was applied correctly. You CANNOT return ALIGNED for a suspicious edit without explicitly verifying it.',
-          "- If an editor reported UNKNOWN, treat it the same as FAILED: you MUST NOT return ALIGNED for that file unless you have read the file and confirmed the edit was applied correctly.",
-          '',
-          'Verify alignment now.',
-        ].join('\n'),
-      },
-    ]);
-
-    const confirmation = await ctx.dispatch.parsed(
-      AGENTS.confirmer,
-      confirmerPrompt,
-      `Confirming edits (pass ${pass})`,
-      parseConfirmerResponse,
-      () => {
-        journey.formatRetries++;
-      },
-    );
-
-    let passVerdict = confirmation.verdict;
-    let nextEdits: FileEditInstruction[] | null = null;
-    if (confirmation.verdict === 'DEFICIENT') nextEdits = confirmation.edits;
-
-    await emitInfo(ctx.log, formatConfirmerVerdict(pass, confirmation.verdict, nextEdits?.length ?? 0));
-
-    const record: EditPassRecord = {
-      pass,
-      stage: commitLabel,
-      editCount: currentEdits.length,
-      done: results.filter((result) => result.outcome === 'DONE').length,
-      failed: results.filter((result) => result.outcome === 'FAILED').map((result) => result.path),
-      unknown: results.filter((result) => result.outcome === 'UNKNOWN').map((result) => result.path),
-      verdict: passVerdict,
-      commit: commitMessage,
-      rows,
-    };
-    journey.passes.push(record);
-
-    if (passVerdict === 'ALIGNED') {
-      verdict = 'ALIGNED';
-      break;
-    }
-
-    currentEdits = nextEdits ?? [];
+      { title: 'GIT DIFF', body: ['```diff', diff.slice(0, MAX_DIFF_CHARS), '```'].join('\n') },
+      { title: 'EDITOR RESULTS', body: results.map((r) => `${r.path}: ${r.outcome}${r.detail ? ` — ${r.detail}` : ''}`).join('\n') },
+      { title: 'SUSPICIOUS EDITS FLAGGED BY SCRIPT VERIFICATION', body: suspicious.length ? suspicious.map((v) => `${v.path}: ${v.reasons.join('; ')}`).join('\n') : 'None' },
+    ]), `Confirming edits (pass ${pass})`, parseConfirmerResponse, () => { journey.formatRetries++; });
+    for (const result of results) if (result.outcome !== 'DONE') escalatedPaths.add(normalizePath(result.path));
+    for (const result of verificationResults) if (result.suspicious) escalatedPaths.add(normalizePath(result.path));
+    journey.passes.push({ pass, stage: commitLabel, editCount: currentEdits.length, done: results.filter((r) => r.outcome === 'DONE').length, failed: results.filter((r) => r.outcome === 'FAILED').map((r) => r.path), unknown: results.filter((r) => r.outcome === 'UNKNOWN').map((r) => r.path), verdict: confirmer.verdict, commit: commitSucceeded ? commitMessage : 'DEFERRED (commit failed — see git warnings)', rows });
+    if (confirmer.verdict === 'ALIGNED') { verdict = 'ALIGNED'; break; }
+    currentEdits = confirmer.edits;
   }
-
   return verdict;
 }
 
