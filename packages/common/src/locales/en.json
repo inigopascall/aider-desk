@@ -1085,7 +1085,7 @@
     "bookmark": "Bookmark",
     "removeBookmark": "Remove bookmark",
     "outline": {
-      "title": "Thread Outline",
+      "title": "Conversation",
       "filterAll": "All",
       "filterBookmarks": "Bookmarks",
       "empty": "No messages in this thread yet.",

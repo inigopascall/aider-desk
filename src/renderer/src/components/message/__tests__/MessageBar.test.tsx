@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { UsageReportData, ResponseMessage } from '@common/types';
+import { GroupMessage, UsageReportData, ResponseMessage } from '@common/types';
 
 import { MessageBar } from '../MessageBar';
 import { MessagesTaskProvider } from '@/contexts/MessagesTaskContext';
@@ -282,5 +282,43 @@ describe('MessageBar bookmarks', () => {
 
     fireEvent.click(screen.getByLabelText('messages.removeBookmark'));
     expect(useBookmarkStore.getState().bookmarksByTask['task-1']).toBeUndefined();
+  });
+
+  it('does not render a bookmark control for a message nested in a sub-agent group', () => {
+    const nestedMessage: ResponseMessage = {
+      id: 'nested-response',
+      type: 'response',
+      content: 'Nested response',
+      promptContext: {
+        id: 'subagent-context',
+        group: { id: 'subagent-group' },
+      },
+    };
+
+    render(
+      <MessagesTaskProvider taskId="task-1">
+        <MessageBar message={nestedMessage} />
+      </MessagesTaskProvider>,
+    );
+
+    expect(screen.queryByLabelText('messages.bookmark')).not.toBeInTheDocument();
+  });
+
+  it('does not render a bookmark control for a sub-agent group row', () => {
+    const groupMessage: GroupMessage = {
+      id: 'subagent-group',
+      type: 'group',
+      content: '',
+      group: { id: 'subagent-group' },
+      children: [],
+    };
+
+    render(
+      <MessagesTaskProvider taskId="task-1">
+        <MessageBar message={groupMessage} />
+      </MessagesTaskProvider>,
+    );
+
+    expect(screen.queryByLabelText('messages.bookmark')).not.toBeInTheDocument();
   });
 });

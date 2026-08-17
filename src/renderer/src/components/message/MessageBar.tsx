@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { UsageReportData, Message } from '@common/types';
+import { UsageReportData, Message, isGroupMessage } from '@common/types';
 import { MdBookmark, MdBookmarkBorder, MdCallSplit, MdDeleteForever, MdDeleteSweep, MdEdit, MdRedo } from 'react-icons/md';
 import { FaEllipsisVertical } from 'react-icons/fa6';
 import { twMerge } from 'tailwind-merge';
@@ -61,7 +61,9 @@ export const MessageBar = ({
   const buttonRef = useRef<HTMLDivElement>(null);
   const disableCssStreamingAnimations = useSettingsStore((state) => state.settings?.disableCssStreamingAnimations ?? true);
   const taskId = useMessagesTaskId();
-  const bookmarked = useIsBookmarked(taskId, message.id);
+  const bookmarkable = !isGroupMessage(message) && !message.promptContext?.group;
+  const bookmarkTaskId = bookmarkable ? taskId : undefined;
+  const bookmarked = useIsBookmarked(bookmarkTaskId, message.id);
   const bookmarkLabel = useMemo(() => truncateTitle(extractFirstLine(content ?? message.content ?? '')), [content, message.content]);
   const additionalProps = {
     message: message && includeMessageProperty(message) ? message : null,
@@ -135,10 +137,10 @@ export const MessageBar = ({
       <div className="flex flex-shrink-0 items-center gap-3">
         <ExtensionComponentWrapper placement="task-message-bar" additionalProps={additionalProps} />
         {usageReport && <UsageInfo usageReport={usageReport} className="mt-[4px]" />}
-        {taskId && (
+        {bookmarkTaskId && (
           <IconButton
             icon={bookmarked ? <MdBookmark className="w-4 h-4" /> : <MdBookmarkBorder className="w-4 h-4" />}
-            onClick={() => taskId && toggleBookmark(taskId, message.id, bookmarkLabel)}
+            onClick={() => toggleBookmark(bookmarkTaskId, message.id, bookmarkLabel)}
             className={clsx('transition-colors', bookmarked ? 'text-amber-400 hover:text-amber-300' : 'text-text-dark hover:text-text-primary')}
             tooltip={t(bookmarked ? 'messages.removeBookmark' : 'messages.bookmark')}
             aria-label={t(bookmarked ? 'messages.removeBookmark' : 'messages.bookmark')}

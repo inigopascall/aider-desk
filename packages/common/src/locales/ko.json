@@ -1046,7 +1046,15 @@
     "unarchive": "보관 해제",
     "confirmDelete": "삭제 확인",
     "remove": "메시지 제거",
-    "deleteUpToHere": "여기까지 삭제"
+    "deleteUpToHere": "여기까지 삭제",
+    "outline": {
+      "title": "대화",
+      "filterAll": "전체",
+      "filterBookmarks": "북마크",
+      "empty": "이 대화에 아직 메시지가 없습니다.",
+      "emptyBookmarks": "북마크된 메시지가 없습니다.",
+      "untitled": "제목 없음"
+    }
   },
   "errors": {
     "frozenTitle": "AIDER가 멈췄나요?",

@@ -1058,7 +1058,10 @@
     "unarchive": "Разархивировать",
     "confirmDelete": "Подтвердить удаление",
     "remove": "Удалить сообщение",
-    "deleteUpToHere": "Удалить до этого места"
+    "deleteUpToHere": "Удалить до этого места",
+    "outline": {
+      "title": "Разговор"
+    }
   },
   "errors": {
     "frozenTitle": "AIDER ЗАМРОЗЛ?",

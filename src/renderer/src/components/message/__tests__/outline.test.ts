@@ -56,8 +56,8 @@ describe('outline helpers', () => {
     const outline = buildOutline(messages, t);
 
     expect(outline.items).toHaveLength(3);
-    expect(outline.items.every((item) => item.depth === 0 && item.scrollTargetId === item.id)).toBe(true);
-    expect(outline.knownMessageIds).toEqual(new Set(['user-1', 'response-1', 'tool-1']));
+    expect(outline.items.every((item) => item.depth === 0 && item.scrollTargetId === item.id && item.bookmarkable)).toBe(true);
+    expect(outline.bookmarkableMessageIds).toEqual(new Set(['user-1', 'response-1', 'tool-1']));
   });
 
   it('maps assistant-group children to the assistant group scroll target', () => {
@@ -74,11 +74,12 @@ describe('outline helpers', () => {
     const outline = buildOutline(messages, t);
 
     expect(outline.items).toHaveLength(2);
-    expect(outline.items[0]).toMatchObject({ id: 'assistant-group-1', depth: 0 });
-    expect(outline.items[1]).toMatchObject({ id: 'tool-1', depth: 1, scrollTargetId: 'assistant-group-1' });
+    expect(outline.items[0]).toMatchObject({ id: 'assistant-group-1', depth: 0, bookmarkable: true });
+    expect(outline.items[1]).toMatchObject({ id: 'tool-1', depth: 1, scrollTargetId: 'assistant-group-1', bookmarkable: false });
+    expect(outline.bookmarkableMessageIds).toEqual(new Set(['assistant-group-1']));
   });
 
-  it('maps group children to the group scroll target', () => {
+  it('represents a sub-agent group as one non-bookmarkable row and excludes its children', () => {
     const messages = [
       {
         id: 'group-1',
@@ -94,8 +95,14 @@ describe('outline helpers', () => {
 
     const outline = buildOutline(messages, t);
 
-    expect(outline.items[0]).toMatchObject({ id: 'group-1', depth: 0, title: 'messages.groupName' });
-    expect(outline.items.slice(1).every((item) => item.depth === 1 && item.scrollTargetId === 'group-1')).toBe(true);
+    expect(outline.items).toEqual([
+      expect.objectContaining({ id: 'group-1', depth: 0, title: 'messages.groupName', bookmarkable: false }),
+    ]);
+    expect(outline.items.map((item) => item.id)).not.toContain('user-1');
+    expect(outline.items.map((item) => item.id)).not.toContain('response-1');
+    expect(outline.bookmarkableMessageIds.has('group-1')).toBe(false);
+    expect(outline.bookmarkableMessageIds.has('user-1')).toBe(false);
+    expect(outline.bookmarkableMessageIds.has('response-1')).toBe(false);
   });
 
   it('uses the translated untitled fallback for empty content', () => {

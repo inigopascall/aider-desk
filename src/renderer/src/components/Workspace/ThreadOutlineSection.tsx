@@ -34,20 +34,23 @@ export const ThreadOutlineSection = ({ baseDir, taskId, isOpen, totalStats, visi
   const messages = useTaskMessages(taskId);
   const deferredMessages = useDeferredValue(messages);
   const processedMessages = useProcessedMessages(deferredMessages);
-  const { items, knownMessageIds } = useMemo(() => buildOutline(processedMessages, t), [processedMessages, t]);
+  const { items, bookmarkableMessageIds } = useMemo(() => buildOutline(processedMessages, t), [processedMessages, t]);
   const bookmarks = useTaskBookmarks(taskId);
   const bookmarkedIds = useMemo(() => new Set(Object.keys(bookmarks)), [bookmarks]);
-  const bookmarkedCount = useMemo(() => items.reduce((n, i) => n + (bookmarkedIds.has(i.id) ? 1 : 0), 0), [items, bookmarkedIds]);
+  const bookmarkedCount = useMemo(() => items.reduce((n, item) => n + (item.bookmarkable && bookmarkedIds.has(item.id) ? 1 : 0), 0), [items, bookmarkedIds]);
   useEffect(() => {
-    if (items.length > 0) pruneTaskBookmarks(taskId, knownMessageIds);
-  }, [taskId, items.length, knownMessageIds]);
+    if (items.length > 0) pruneTaskBookmarks(taskId, bookmarkableMessageIds);
+  }, [taskId, items.length, bookmarkableMessageIds]);
   const [storedFilter, setFilter] = useLocalStorage<ThreadOutlineFilter>(`workspace-outline-filter-${baseDir}`, 'all');
   const filter = storedFilter ?? 'all';
-  const filteredItems = useMemo(() => filter === 'bookmarks' ? items.filter((item) => bookmarkedIds.has(item.id)) : items, [items, filter, bookmarkedIds]);
+  const filteredItems = useMemo(() => filter === 'bookmarks' ? items.filter((item) => item.bookmarkable && bookmarkedIds.has(item.id)) : items, [items, filter, bookmarkedIds]);
   const handleSelect = useCallback((item: OutlineItem) => onScrollToMessage?.(item.scrollTargetId), [onScrollToMessage]);
   const handleToggleBookmark = useCallback((messageId: string) => {
-    const label = items.find((i) => i.id === messageId)?.title ?? '';
-    toggleBookmark(taskId, messageId, label);
+    const item = items.find((candidate) => candidate.id === messageId);
+    if (!item?.bookmarkable) {
+      return;
+    }
+    toggleBookmark(taskId, messageId, item.title);
   }, [items, taskId]);
   const actions = useMemo(() => (
     <Tooltip content={filter === 'bookmarks' ? t('messages.outline.filterAll') : t('messages.outline.filterBookmarks')}>
@@ -61,7 +64,7 @@ export const ThreadOutlineSection = ({ baseDir, taskId, isOpen, totalStats, visi
     <SectionHeader section="outline" title={t('messages.outline.title')} count={bookmarkedCount} totalCount={items.length} isOpen={isOpen} totalStats={totalStats} onToggle={onToggle} actions={actions} editMode={editMode} isHidden={isHidden} onToggleHidden={onToggleHidden} />
     {isOpen && (
       <motion.div className="flex-grow w-full overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-bg-tertiary scrollbar-track-bg-primary-light scrollbar-rounded py-1 bg-bg-primary-light-strong relative" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
-        {hasContent ? filteredItems.map((item) => <ThreadOutlineItem key={item.id} item={item} bookmarked={bookmarkedIds.has(item.id)} onSelect={handleSelect} onToggleBookmark={handleToggleBookmark} />) : <div className="absolute inset-0 flex items-center justify-center text-center text-text-muted text-2xs">{t(filter === 'bookmarks' ? 'messages.outline.emptyBookmarks' : 'messages.outline.empty')}</div>}
+        {hasContent ? filteredItems.map((item) => <ThreadOutlineItem key={item.id} item={item} bookmarked={item.bookmarkable && bookmarkedIds.has(item.id)} bookmarkable={item.bookmarkable} onSelect={handleSelect} onToggleBookmark={handleToggleBookmark} />) : <div className="absolute inset-0 flex items-center justify-center text-center text-text-muted text-2xs">{t(filter === 'bookmarks' ? 'messages.outline.emptyBookmarks' : 'messages.outline.empty')}</div>}
       </motion.div>
     )}
   </motion.div>;

@@ -12,6 +12,7 @@ import { IconButton } from '@/components/common/IconButton';
 type Props = {
   item: OutlineItem;
   bookmarked: boolean;
+  bookmarkable: boolean;
   onSelect: (item: OutlineItem) => void;
   onToggleBookmark: (messageId: string) => void;
 };
@@ -34,12 +35,12 @@ const getIcon = (kind: OutlineItem['kind']) => {
   }
 };
 
-const ThreadOutlineItemComponent = ({ item, bookmarked, onSelect, onToggleBookmark }: Props) => {
+const ThreadOutlineItemComponent = ({ item, bookmarked, bookmarkable, onSelect, onToggleBookmark }: Props) => {
   return (
     <div
       className={clsx(
-        'group/item flex h-7 items-center gap-1 border-l-2 px-1 text-2xs',
-        bookmarked ? 'border-l-amber-400 bg-bg-secondary-light/40' : 'border-l-transparent',
+        'group/item flex h-7 items-center gap-1 px-1 text-2xs',
+        bookmarked && 'bg-bg-secondary-light/40',
       )}
       style={{ paddingLeft: item.depth * 12 }}
     >
@@ -51,11 +52,13 @@ const ThreadOutlineItemComponent = ({ item, bookmarked, onSelect, onToggleBookma
       >
         {item.title}
       </span>
-      <IconButton
-        icon={bookmarked ? <MdBookmark className="w-3.5 h-3.5" /> : <MdBookmarkBorder className="w-3.5 h-3.5" />}
-        onClick={() => onToggleBookmark(item.id)}
-        className={clsx('flex-shrink-0 transition-opacity', bookmarked ? 'text-amber-400' : 'opacity-0 group-hover/item:opacity-100')}
-      />
+      {bookmarkable && (
+        <IconButton
+          icon={bookmarked ? <MdBookmark className="w-3.5 h-3.5" /> : <MdBookmarkBorder className="w-3.5 h-3.5" />}
+          onClick={() => onToggleBookmark(item.id)}
+          className={clsx('flex-shrink-0 transition-opacity', bookmarked ? 'text-amber-400' : 'opacity-0 group-hover/item:opacity-100')}
+        />
+      )}
     </div>
   );
 };

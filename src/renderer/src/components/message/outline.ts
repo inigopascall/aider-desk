@@ -24,12 +24,14 @@ export interface OutlineItem {
   title: string;
   /** 0 = top-level row, 1 = child inside a group / assistant group. */
   depth: number;
+  /** Whether this row represents a genuine top-level conversation message that may be bookmarked. */
+  bookmarkable: boolean;
 }
 
 export interface Outline {
   items: OutlineItem[];
-  /** Every id represented in the outline — used for stale-bookmark pruning. */
-  knownMessageIds: Set<string>;
+  /** IDs of genuine top-level conversation messages eligible for bookmarks and stale-bookmark pruning. */
+  bookmarkableMessageIds: Set<string>;
 }
 
 type TranslateFn = (key: string, params?: Record<string, unknown>) => string;
@@ -118,63 +120,65 @@ export const flashMessageElement = (element: HTMLElement) => {
 
 export const buildOutline = (processedMessages: Message[], t: TranslateFn): Outline => {
   const items: OutlineItem[] = [];
-  const knownMessageIds = new Set<string>();
+  const bookmarkableMessageIds = new Set<string>();
 
-  const addItem = (id: string, scrollTargetId: string, kind: OutlineItemKind, title: string, depth: number) => {
+  const addItem = (id: string, scrollTargetId: string, kind: OutlineItemKind, title: string, depth: number, bookmarkable: boolean) => {
     items.push({
       id,
       scrollTargetId,
       kind,
       title: truncateTitle(title || t('messages.outline.untitled')),
       depth,
+      bookmarkable,
     });
-    knownMessageIds.add(id);
+    if (bookmarkable) {
+      bookmarkableMessageIds.add(id);
+    }
   };
 
   const responseTitle = (message: { content: string; reasoning?: string }) =>
     extractFirstLine(message.content) || extractFirstLine(message.reasoning ?? '') || t('messages.outline.untitled');
 
-  const addMessage = (message: Message, scrollTargetId = message.id, depth = 0) => {
+  const addMessage = (message: Message, scrollTargetId = message.id, depth = 0, bookmarkable = depth === 0) => {
     if (isUserMessage(message)) {
-      addItem(message.id, scrollTargetId, 'user', extractFirstLine(message.content) || t('messages.outline.untitled'), depth);
+      addItem(message.id, scrollTargetId, 'user', extractFirstLine(message.content) || t('messages.outline.untitled'), depth, bookmarkable);
       return;
     }
 
     if (isResponseMessage(message)) {
-      addItem(message.id, scrollTargetId, 'response', responseTitle(message), depth);
+      addItem(message.id, scrollTargetId, 'response', responseTitle(message), depth, bookmarkable);
       return;
     }
 
     if (isToolMessage(message)) {
-      addItem(message.id, scrollTargetId, 'tool', deriveToolTitle(message), depth);
+      addItem(message.id, scrollTargetId, 'tool', deriveToolTitle(message), depth, bookmarkable);
       return;
     }
 
     if (isWorkflowLogMessage(message)) {
-      addItem(message.id, scrollTargetId, 'workflow-log', `${message.workflowName}: ${extractFirstLine(message.content)}`, depth);
+      addItem(message.id, scrollTargetId, 'workflow-log', `${message.workflowName}: ${extractFirstLine(message.content)}`, depth, bookmarkable);
       return;
     }
 
     if (isReflectedMessage(message)) {
-      addItem(message.id, scrollTargetId, 'reflected', t('reflectedMessage.title'), depth);
+      addItem(message.id, scrollTargetId, 'reflected', t('reflectedMessage.title'), depth, bookmarkable);
       return;
     }
 
     if (isAssistantGroupMessage(message)) {
       const assistantGroup = message as AssistantGroupMessage;
-      addItem(assistantGroup.id, scrollTargetId, 'assistant-group', responseTitle(assistantGroup.responseMessage), depth);
-      assistantGroup.toolMessages.forEach((toolMessage) => addMessage(toolMessage, assistantGroup.id, 1));
+      addItem(assistantGroup.id, scrollTargetId, 'assistant-group', responseTitle(assistantGroup.responseMessage), depth, bookmarkable);
+      assistantGroup.toolMessages.forEach((toolMessage) => addMessage(toolMessage, assistantGroup.id, 1, false));
       return;
     }
 
     if (isGroupMessage(message)) {
       const group = message as { id: string; group: Group; children: Message[] };
-      addItem(group.id, scrollTargetId, 'group', getGroupDisplayName(group.group.name, t), depth);
-      group.children.forEach((child) => addMessage(child, group.id, 1));
+      addItem(group.id, scrollTargetId, 'group', getGroupDisplayName(group.group.name, t), depth, false);
     }
   };
 
   processedMessages.forEach((message) => addMessage(message));
 
-  return { items, knownMessageIds };
+  return { items, bookmarkableMessageIds };
 };
