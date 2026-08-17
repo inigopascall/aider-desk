@@ -2,11 +2,13 @@ import { CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { AiOutlineClose } from 'react-icons/ai';
+import { BiReset } from 'react-icons/bi';
 import { CgSpinner } from 'react-icons/cg';
 import { PromptSidecarFilename } from '@common/types';
 
 import { MilkdownEditor, type MilkdownEditorRef } from '@/components/PromptField/MilkdownEditor';
 import { SystemPromptEditor } from '@/components/settings/agent/SystemPromptEditor';
+import { BaseDialog } from '@/components/common/BaseDialog';
 import { Button } from '@/components/common/Button';
 import { IconButton } from '@/components/common/IconButton';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -40,7 +42,9 @@ export const PromptSidecarEditorOverlay = ({ profileId, profileName, filename, t
   // Bumped on each raw → rendered switch so Milkdown remounts and reseeds
   // its defaultValueCtx with the current raw text.
   const [remountCounter, setRemountCounter] = useState(0);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const milkdownRef = useRef<MilkdownEditorRef>(null);
+  const milkdownReadyRef = useRef(false);
 
   // Load the sidecar content once on mount.
   useEffect(() => {
@@ -76,8 +80,14 @@ export const PromptSidecarEditorOverlay = ({ profileId, profileName, filename, t
   }, [content]);
 
   const switchToRendered = useCallback(() => {
+    milkdownReadyRef.current = false;
     setShowRendered(true);
     setRemountCounter((c) => c + 1);
+  }, []);
+
+  const handleMilkdownReady = useCallback(() => {
+    milkdownReadyRef.current = true;
+    milkdownRef.current?.focus();
   }, []);
 
   const handleSave = useCallback(async () => {
@@ -93,32 +103,50 @@ export const PromptSidecarEditorOverlay = ({ profileId, profileName, filename, t
     }
   }, [api, profileId, filename, content, showRendered, onClose, t]);
 
-  const attemptClose = useCallback(() => {
-    if (dirty && !window.confirm(t('settings.agent.promptSidecar.unsavedConfirm', { defaultValue: 'Discard unsaved changes?' }))) {
-      return;
-    }
+  const requestDiscard = useCallback(() => {
+    setShowDiscardConfirm(true);
+  }, []);
+
+  const confirmDiscard = useCallback(() => {
+    setShowDiscardConfirm(false);
     onClose();
-  }, [dirty, onClose, t]);
+  }, [onClose]);
+
+  const cancelDiscard = useCallback(() => {
+    setShowDiscardConfirm(false);
+  }, []);
 
   // Capture-phase document listener so Escape and Ctrl+Enter pre-empt
   // ProseMirror/textarea keymaps while the overlay is mounted.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && e.ctrlKey) {
+        if (showDiscardConfirm) {
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
         void handleSave();
       } else if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        attemptClose();
+        if (showDiscardConfirm) {
+          setShowDiscardConfirm(false);
+          return;
+        }
+        if (dirty) {
+          setShowDiscardConfirm(true);
+        } else {
+          onClose();
+        }
       }
     };
     document.addEventListener('keydown', handleKeyDown, true);
     return () => document.removeEventListener('keydown', handleKeyDown, true);
-  }, [handleSave, attemptClose]);
+  }, [handleSave, dirty, showDiscardConfirm, onClose]);
 
   return createPortal(
+    <>
     <div className="fixed inset-0 z-50 flex flex-col bg-bg-secondary shadow-2xl">
       <div className="flex items-center justify-between px-4 py-2 border-b border-border-dark-light flex-shrink-0">
         <span className="text-sm text-text-primary">
@@ -151,10 +179,25 @@ export const PromptSidecarEditorOverlay = ({ profileId, profileName, filename, t
               )}
             </button>
           </Tooltip>
-          <Button variant="contained" color="primary" size="sm" onClick={() => void handleSave()} disabled={loading}>
+          <Button
+            variant="contained"
+            color="primary"
+            size="sm"
+            onClick={() => void handleSave()}
+            disabled={loading || !dirty}
+            className="bg-success hover:bg-success-light text-white disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             {t('common.save', { defaultValue: 'Save' })}
           </Button>
-          <IconButton icon={<AiOutlineClose className="w-5 h-5" />} onClick={attemptClose} tooltip={t('promptField.closeEditor')} />
+          {dirty ? (
+            <IconButton
+              icon={<BiReset className="w-5 h-5" />}
+              onClick={requestDiscard}
+              tooltip={t('settings.agent.promptSidecar.discardTooltip', { defaultValue: 'Discard changes and close' })}
+            />
+          ) : (
+            <IconButton icon={<AiOutlineClose className="w-5 h-5" />} onClick={onClose} tooltip={t('promptField.closeEditor')} />
+          )}
         </div>
       </div>
       <div className="flex-grow overflow-y-auto scrollbar-thin scrollbar-track-bg-secondary scrollbar-thumb-bg-fourth">
@@ -164,7 +207,7 @@ export const PromptSidecarEditorOverlay = ({ profileId, profileName, filename, t
           </div>
         ) : (
           <div
-            className="w-full mx-auto flex flex-col px-6 py-6 pb-16 min-h-full milkdown-prompt-editor"
+            className="w-full sm:max-w-[70%] mx-auto flex flex-col px-6 py-6 pb-16 min-h-full milkdown-prompt-editor"
             style={{ '--prompt-editor-font-size': '16px' } as CSSProperties}
           >
             {showRendered ? (
@@ -176,10 +219,13 @@ export const PromptSidecarEditorOverlay = ({ profileId, profileName, filename, t
                 ref={milkdownRef}
                 initialValue={content}
                 onChange={(md) => {
+                  if (!milkdownReadyRef.current) {
+                    return;
+                  }
                   setContent(sanitizeMilkdownMarkdown(md));
                   setDirty(true);
                 }}
-                onReady={() => milkdownRef.current?.focus()}
+                onReady={handleMilkdownReady}
               />
             ) : (
               <SystemPromptEditor
@@ -194,7 +240,32 @@ export const PromptSidecarEditorOverlay = ({ profileId, profileName, filename, t
           </div>
         )}
       </div>
-    </div>,
+    </div>
+    {showDiscardConfirm && (
+      <BaseDialog
+        title={t('settings.agent.promptSidecar.discardTitle', { defaultValue: 'Discard changes to {{filename}}?', filename })}
+        onClose={cancelDiscard}
+        width={420}
+        closeOnEscape={false}
+        footer={
+          <>
+            <Button onClick={cancelDiscard} variant="text">
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={confirmDiscard} autoFocus variant="contained" color="danger">
+              {t('settings.agent.promptSidecar.discardConfirm', { defaultValue: 'Discard' })}
+            </Button>
+          </>
+        }
+      >
+        <div className="text-xs text-text-secondary">
+          {t('settings.agent.promptSidecar.discardBody', {
+            defaultValue: 'These changes have not been saved. Discarding will lose them permanently.',
+          })}
+        </div>
+      </BaseDialog>
+    )}
+    </>,
     document.body,
   );
 };
