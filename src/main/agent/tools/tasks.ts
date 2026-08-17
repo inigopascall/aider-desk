@@ -16,7 +16,8 @@ import {
   TOOL_GROUP_NAME_SEPARATOR,
 } from '@common/tools';
 import { AgentProfile, AutonomyMode, DefaultTaskState, PromptContext, SettingsData, TaskData, ToolApprovalState } from '@common/types';
-import { fileExists, isUuid } from '@common/utils';
+import { isUuid } from '@common/utils';
+import { fileExists } from '@common/node-utils';
 
 import { ApprovalManager } from './approval-manager';
 

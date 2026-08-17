@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GroupMessage, UsageReportData, ResponseMessage } from '@common/types';
+import { TooltipProvider } from '@/components/ui/Tooltip';
 
 import { MessageBar } from '../MessageBar';
 import { MessagesTaskProvider } from '@/contexts/MessagesTaskContext';
@@ -271,9 +272,11 @@ describe('MessageBar bookmarks', () => {
 
   it('toggles the task-scoped bookmark control', () => {
     render(
-      <MessagesTaskProvider taskId="task-1">
-        <MessageBar message={{ id: 'm1', type: 'response', content: 'Hi' }} />
-      </MessagesTaskProvider>,
+      <TooltipProvider>
+        <MessagesTaskProvider taskId="task-1">
+          <MessageBar message={{ id: 'm1', type: 'response', content: 'Hi' }} />
+        </MessagesTaskProvider>
+      </TooltipProvider>,
     );
 
     const bookmarkButton = screen.getByLabelText('messages.bookmark');

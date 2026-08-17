@@ -68,8 +68,8 @@ export const extractFirstLine = (content: string): string => {
   return line
     .replace(/^#{1,6}\s+/, '')
     .replace(/^[-*>]\s+/, '')
-    .replace(/^`+|`+$/g, '')
     .replace(/\*\*|__/g, '')
+    .replace(/^`+|`+$/g, '')
     .trim();
 };
 

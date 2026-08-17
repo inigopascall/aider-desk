@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 
 import { AgentProfile, CreateTaskParams, DefaultTaskState, ModeDefinition, ProjectSettings, SettingsData, TaskData } from '@common/types';
-import { fileExists } from '@common/utils';
+import { fileExists } from '@common/node-utils';
 import { v4 as uuidv4 } from 'uuid';
 
 import { AgentProfileManager, McpConfigManager, McpManager } from '@/agent';

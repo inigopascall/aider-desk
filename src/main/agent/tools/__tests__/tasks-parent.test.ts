@@ -11,14 +11,10 @@ vi.mock('@/utils/probe', () => ({
   search: vi.fn(),
 }));
 
-// Mock fileExists from @common/utils to avoid fs.stat calls
-vi.mock('@common/utils', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@common/utils')>();
-  return {
-    ...actual,
-    fileExists: vi.fn().mockResolvedValue(true),
-  };
-});
+// Mock fileExists from @common/node-utils to avoid fs.stat calls
+vi.mock('@common/node-utils', () => ({
+  fileExists: vi.fn().mockResolvedValue(true),
+}));
 
 describe('Tasks Tools - search_parent_task', () => {
   let createSearchParentTaskTool: any;
@@ -37,7 +33,7 @@ describe('Tasks Tools - search_parent_task', () => {
 
     // Get the mocked functions
     const { search } = await import('@/utils/probe');
-    const { fileExists } = await import('@common/utils');
+    const { fileExists } = await import('@common/node-utils');
     mockSearch = vi.mocked(search);
     mockFileExists = vi.mocked(fileExists);
     mockSearch.mockReset();

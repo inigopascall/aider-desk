@@ -3,7 +3,7 @@ import * as path from 'path';
 
 import { FSWatcher, watch } from 'chokidar';
 import { debounce } from 'lodash';
-import { fileExists } from '@common/utils';
+import { fileExists } from '@common/node-utils';
 
 import type { McpServerConfig, SettingsData } from '@common/types';
 import type { Store } from '@/store';
