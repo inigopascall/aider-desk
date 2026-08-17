@@ -117,9 +117,10 @@ export type WorkflowModelSets = Record<string, WorkflowModelSet[]>;
 export const DEFAULT_WORKFLOW_MODEL_SET_ID = 'default';
 
 export const WORKFLOW_AGENT_ROLES: Record<string, string[]> = {
-  'three-agent-relay': ['EDITOR-PRIMARY', 'CONFIRMER', 'REVIEWER-RECTIFIER'],
-  'dev-pipeline': ['DIGESTER', 'INVESTIGATOR', 'RESEARCHER', 'GRAND-PLANNER', 'DECOMPOSITOR', 'EDITOR-LIGHT', 'EDITOR-HEAVY', 'CONFIRMER'],
+  'three-agent-relay': ['EDITOR-LIGHT', 'CONFIRMER', 'REVIEWER-RECTIFIER'],
+  'dev-pipeline': ['SUMMARIZER', 'DIGESTER', 'INVESTIGATOR', 'RESEARCHER', 'GRAND-PLANNER', 'DECOMPOSITOR', 'EDITOR-LIGHT', 'EDITOR-HEAVY', 'CONFIRMER'],
   'dev-pipeline-review': [
+    'SUMMARIZER',
     'DIGESTER',
     'INVESTIGATOR',
     'RESEARCHER',

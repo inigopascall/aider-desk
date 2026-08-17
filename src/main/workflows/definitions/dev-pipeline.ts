@@ -5,6 +5,7 @@ import {
   emitCheckpoint,
   emitReport,
   prepareRepository,
+  resolveConversationDigest,
   runDecompositionStage,
   runEditLoop,
   runEvidenceStage,
@@ -21,13 +22,15 @@ export async function runDevPipeline(ctx: WorkflowRunContext): Promise<void> {
     const { git, warnings } = await prepareRepository(task);
     journey.gitWarnings.push(...warnings);
     for (const warning of warnings) await ctx.log.warning(warning);
-    const researchFindings = await runEvidenceStage(ctx, journey, report);
-    await emitCheckpoint(ctx, journey, 'Dev Pipeline', 'Evidence');
-    const { planText, unknownsResearch } = await runPlanningStage(ctx, journey, report, researchFindings);
-    await emitCheckpoint(ctx, journey, 'Dev Pipeline', 'Plan');
-    const edits = await runDecompositionStage(ctx, journey, report, planText, unknownsResearch, false);
-    const verdict = await runEditLoop(ctx, journey, report, git, edits, 'dev-pipeline');
-    await emitCheckpoint(ctx, journey, 'Dev Pipeline', 'Edit Loop');
+    const digest = await resolveConversationDigest(ctx, journey);
+    const effCtx = { ...ctx, conversationText: digest };
+    const researchFindings = await runEvidenceStage(effCtx, journey, report);
+    await emitCheckpoint(effCtx, journey, 'Dev Pipeline', 'Evidence');
+    const { planText, unknownsResearch } = await runPlanningStage(effCtx, journey, report, researchFindings);
+    await emitCheckpoint(effCtx, journey, 'Dev Pipeline', 'Plan');
+    const edits = await runDecompositionStage(effCtx, journey, report, planText, unknownsResearch, false);
+    const verdict = await runEditLoop(effCtx, journey, report, git, edits, 'dev-pipeline');
+    await emitCheckpoint(effCtx, journey, 'Dev Pipeline', 'Edit Loop');
 
     report.status = verdict === 'ALIGNED' ? 'aligned' : 'deficient';
     await emitReport(ctx, journey, report, 'Dev Pipeline');

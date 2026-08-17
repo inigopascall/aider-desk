@@ -63,10 +63,7 @@ export interface Journey {
   filesSkipped: string[];
   contextChanges: ContextChangeRecord[];
   researchDocs: number;
-  digesterVerdicts: string[];
   planTitle: string;
-  unknownsResearchResolved: boolean;
-  unknownsCodebaseResolved: boolean;
   ambiguities: string | null;
   passes: EditPassRecord[];
   fileStats: Record<string, { insertions: number; deletions: number; passes: number }>;
@@ -76,9 +73,14 @@ export interface Journey {
   modelSetName: string;
   modelOverrides: Record<string, string>;
   conversationChars: number;
+  conversationSummarized: boolean;
+  summaryChars: number;
+  editorTimeouts: number;
+  reviewerFailure: string | null;
+  outstandingRectification: string | null;
   reviewRounds: number;
   reviewTable: ReviewRoundRow[];
-  reviewFindings: { round: number; findings: string }[];
+  reviewFindings: { round: number; findings: string; correctnessAreas?: string; qualityAreas?: string }[];
   reviewerConsiderations: string | null;
   verifierFailures: string[];
   gitRetries: number;
@@ -101,10 +103,7 @@ export function createJourney(modelSet: WorkflowModelSet | undefined, conversati
     filesSkipped: [],
     contextChanges: [],
     researchDocs: 0,
-    digesterVerdicts: [],
     planTitle: '',
-    unknownsResearchResolved: false,
-    unknownsCodebaseResolved: false,
     ambiguities: null,
     passes: [],
     fileStats: {},
@@ -114,6 +113,11 @@ export function createJourney(modelSet: WorkflowModelSet | undefined, conversati
     modelSetName: modelSet?.name ?? '',
     modelOverrides: modelSet?.models ?? {},
     conversationChars: conversationText.length,
+    conversationSummarized: false,
+    summaryChars: 0,
+    editorTimeouts: 0,
+    reviewerFailure: null,
+    outstandingRectification: null,
     reviewRounds: 0,
     reviewTable: [],
     reviewFindings: [],

@@ -30,6 +30,20 @@ export class WorkflowCancelled extends Error {
 }
 
 /**
+ * Raised when a workflow subagent run exceeds its configured hard timeout.
+ * Subclassing `WorkflowError` keeps every existing catch working unchanged.
+ */
+export class WorkflowTimeout extends WorkflowError {
+  constructor(subagentId: string, timeoutMs: number) {
+    super(`Workflow agent '${subagentId}' timed out after ${Math.round(timeoutMs / 1000)}s.`);
+    this.name = 'WorkflowTimeout';
+  }
+}
+
+/** Default hard timeout applied to every workflow subagent dispatch. */
+export const DEFAULT_DISPATCH_TIMEOUT_MS = 15 * 60_000;
+
+/**
  * Resolves a workflow agent by its slug/name from the Workflow Agents tier.
  * Throws a `WorkflowError` when the agent is not found.
  */
@@ -49,23 +63,37 @@ export function resolveWorkflowAgent(task: Task, subagentId: string): AgentProfi
  */
 export function createWorkflowDispatcher(task: Task, modelSet?: WorkflowModelSet): WorkflowDispatcher {
   const dispatcher: WorkflowDispatcher = {
-    agent: async (subagentId, prompt, description) => {
+    agent: async (subagentId, prompt, description, options) => {
       const base = resolveWorkflowAgent(task, subagentId);
       const target = applyModelSetToProfile(base, subagentId, modelSet);
-      const { status, outputText } = await task.dispatchSubagent(target, prompt, description);
-      if (status === 'cancelled') throw new WorkflowCancelled();
-      if (status === 'error') throw new WorkflowError(`Workflow agent '${subagentId}' failed to complete its run.`);
-      return outputText;
+      const timeoutMs = options?.timeoutMs ?? DEFAULT_DISPATCH_TIMEOUT_MS;
+      const controller = new AbortController();
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, timeoutMs);
+      try {
+        const { status, outputText } = await task.dispatchSubagent(target, prompt, description, controller.signal);
+        if (status === 'cancelled') {
+          if (timedOut) throw new WorkflowTimeout(subagentId, timeoutMs);
+          throw new WorkflowCancelled();
+        }
+        if (status === 'error') throw new WorkflowError(`Workflow agent '${subagentId}' failed to complete its run.`);
+        return outputText;
+      } finally {
+        clearTimeout(timer);
+      }
     },
 
-    parsed: async (subagentId, prompt, description, parse, onRetry, maxAttempts = 3) => {
+    parsed: async (subagentId, prompt, description, parse, onRetry, maxAttempts = 3, options) => {
       let lastError = '';
       let lastRaw = '';
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         let raw: string;
         if (attempt === 1) {
-          raw = await dispatcher.agent(subagentId, prompt, description);
+          raw = await dispatcher.agent(subagentId, prompt, description, options);
         } else {
           const footer = [
             `⚠ FORMAT ERROR — RETRY ATTEMPT ${attempt}`,
@@ -74,7 +102,7 @@ export function createWorkflowDispatcher(task: Task, modelSet?: WorkflowModelSet
             lastRaw.slice(0, 4000),
             'Respond again now, strictly and exactly in the required output format. Output nothing else.',
           ].join('\n');
-          raw = await dispatcher.agent(subagentId, `${prompt}\n\n${footer}`, description);
+          raw = await dispatcher.agent(subagentId, `${prompt}\n\n${footer}`, description, options);
         }
 
         try {

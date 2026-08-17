@@ -2191,6 +2191,7 @@ export class Task {
     targetSubagent: AgentProfile,
     prompt: string,
     description?: string,
+    abortSignal?: AbortSignal,
   ): Promise<{ status: 'success' | 'cancelled' | 'error'; outputText: string }> {
     const toolCallId = uuidv4();
     const fullToolName = `${SUBAGENTS_TOOL_GROUP_NAME}${TOOL_GROUP_NAME_SEPARATOR}${SUBAGENTS_TOOL_RUN_TASK}`;
@@ -2201,6 +2202,7 @@ export class Task {
       targetSubagent,
       prompt,
       description,
+      abortSignal,
       onStarted: (promptContext) => {
         this.addToolMessage(toolCallId, SUBAGENTS_TOOL_GROUP_NAME, SUBAGENTS_TOOL_RUN_TASK, toolInput, undefined, undefined, promptContext);
         this.addLogMessage('loading', undefined, false, promptContext);

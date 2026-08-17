@@ -24,11 +24,11 @@ export class ParseError extends Error {
  * re-emitted by the CONFIRMER for corrective passes).
  */
 export interface FileEditInstruction {
-  /** Project-relative path of the file to create or edit. */
+  /** Project-relative path of the file to create, edit, or delete. */
   path: string;
-  /** `NEW` = write the full file content; `EDIT` = apply precise edit steps. */
-  type: 'NEW' | 'EDIT';
-  /** Full file content (NEW) or ordered, executor-ready edit commands (EDIT). */
+  /** `NEW` = write the full file content; `EDIT` = apply precise edit steps; `DELETE` = remove the file. */
+  type: 'NEW' | 'EDIT' | 'DELETE';
+  /** Full file content (NEW) or ordered, executor-ready edit commands (EDIT). Empty for DELETE. */
   instructions: string;
 }
 
@@ -253,6 +253,7 @@ export interface ReviewerReport {
   findings: string;
   considerations: string | null;
   rectificationPlan: string | null;
+  rectificationEdits: FileEditInstruction[] | null;
   raw: string;
 }
 
@@ -262,16 +263,19 @@ export function parseReviewerResponse(text: string): ReviewerReport {
   const findingsMarker = findMarker(t, '=== FINDINGS ===');
   const considerationsMarker = findMarker(t, '=== CONSIDERATIONS ===');
   const planMarker = findMarker(t, '=== RECTIFICATION PLAN ===');
+  const editsMarker = findMarker(t, '=== RECTIFICATION EDITS ===');
 
   if (!findingsMarker) {
     throw new ParseError('response must contain a non-empty === FINDINGS === section');
   }
-  if (!planMarker) {
-    throw new ParseError('response must contain === RECTIFICATION PLAN ===');
+  if (!planMarker && !editsMarker) {
+    throw new ParseError('response must contain === RECTIFICATION PLAN === or === RECTIFICATION EDITS ===');
   }
 
+  // The FINDINGS section runs to the earliest of the CONSIDERATIONS, PLAN, or
+  // EDITS markers — the EDITS marker is a boundary exactly like the PLAN marker.
   const findingsEnd =
-    [considerationsMarker, planMarker]
+    [considerationsMarker, planMarker, editsMarker]
       .filter((marker): marker is { start: number; end: number } => !!marker && marker.start >= findingsMarker.end)
       .sort((a, b) => a.start - b.start)[0]?.start ?? t.length;
   const findings = t.slice(findingsMarker.end, findingsEnd).trim();
@@ -280,19 +284,52 @@ export function parseReviewerResponse(text: string): ReviewerReport {
     throw new ParseError('response must contain a non-empty === FINDINGS === section');
   }
 
-  const considerationsEnd = planMarker.start >= (considerationsMarker?.end ?? 0) ? planMarker.start : t.length;
+  const considerationsEnd =
+    [planMarker, editsMarker]
+      .filter((marker): marker is { start: number; end: number } => !!marker && marker.start >= (considerationsMarker?.end ?? 0))
+      .sort((a, b) => a.start - b.start)[0]?.start ?? t.length;
   const considerationsText = considerationsMarker ? t.slice(considerationsMarker.end, considerationsEnd).trim() : '';
   const considerations =
     considerationsText.length === 0 || ['NONE', 'N/A'].includes(considerationsText.toUpperCase()) ? null : considerationsText;
 
-  const planText = t.slice(planMarker.end).trim();
-  const rectificationPlan =
-    planText.length === 0 || ['NONE', 'N/A'].includes(planText.toUpperCase()) ? null : planText;
+  // Rectification plan: content between the PLAN marker and the next marker
+  // (EDITS or end of text). A literal NONE maps to null.
+  let rectificationPlan: string | null = null;
+  if (planMarker) {
+    const planEnd = editsMarker && editsMarker.start >= planMarker.end ? editsMarker.start : t.length;
+    const planText = t.slice(planMarker.end, planEnd).trim();
+    if (planText.length > 0 && !['NONE', 'N/A'].includes(planText.toUpperCase())) {
+      rectificationPlan = planText;
+    }
+  }
+
+  // Rectification edits: parse FILE EDIT blocks from the EDITS section.
+  // A literal NONE maps to null; a present section yielding zero blocks is a
+  // contract violation (feeds the dispatch retry loop).
+  let rectificationEdits: FileEditInstruction[] | null = null;
+  if (editsMarker) {
+    const editsText = t.slice(editsMarker.end).trim();
+    if (editsText.length === 0 || editsText.toUpperCase() === 'NONE') {
+      rectificationEdits = null;
+    } else {
+      const { edits } = parseFileEditBlocks(editsText);
+      if (edits.length === 0) {
+        throw new ParseError('=== RECTIFICATION EDITS === present but contains no FILE EDIT blocks');
+      }
+      rectificationEdits = edits;
+    }
+  }
+
+  // When both modes carry content, direct edits win over the plan.
+  if (rectificationPlan && rectificationEdits) {
+    rectificationPlan = null;
+  }
 
   return {
     findings,
     considerations,
     rectificationPlan,
+    rectificationEdits,
     raw,
   };
 }
@@ -343,9 +380,11 @@ export function parsePlanUnknowns(planText: string): {
 /**
  * Parses a single `=== FILE EDIT ===` block into a `FileEditInstruction`.
  * The block must contain, in order: a non-empty `PATH:` line, a `TYPE:` line
- * whose value is `NEW` or `EDIT`, an `INSTRUCTIONS:` marker, and then the
- * instruction content up to `=== END FILE EDIT ===` (or the end of the
- * block). Any violation throws a `ParseError` naming the offending block.
+ * whose value is `NEW`, `EDIT`, or `DELETE`, an `INSTRUCTIONS:` marker, and
+ * then the instruction content up to `=== END FILE EDIT ===` (or the end of
+ * the block). For `DELETE` the instructions body is expected to be empty but
+ * the marker is still required. Any violation throws a `ParseError` naming
+ * the offending block.
  */
 function parseFileEditBlock(block: string, index: number): FileEditInstruction {
   const lines = block.split('\n');
@@ -368,8 +407,8 @@ function parseFileEditBlock(block: string, index: number): FileEditInstruction {
     throw new ParseError(`FILE EDIT block ${index + 1}: missing TYPE line`);
   }
   const typeRaw = lines[typeLineIdx].replace(/^\s*TYPE\s*:\s*/i, '').trim().toUpperCase();
-  if (typeRaw !== 'NEW' && typeRaw !== 'EDIT') {
-    throw new ParseError(`FILE EDIT block ${index + 1}: TYPE must be NEW or EDIT (got '${typeRaw}')`);
+  if (typeRaw !== 'NEW' && typeRaw !== 'EDIT' && typeRaw !== 'DELETE') {
+    throw new ParseError(`FILE EDIT block ${index + 1}: TYPE must be NEW, EDIT or DELETE (got '${typeRaw}')`);
   }
 
   const instrIdx = lines.findIndex((l, i) => i > typeLineIdx && /^\s*INSTRUCTIONS\s*:/i.test(l));
@@ -379,13 +418,14 @@ function parseFileEditBlock(block: string, index: number): FileEditInstruction {
 
   // Content is whatever follows the INSTRUCTIONS colon (same line or below),
   // up to the `=== END FILE EDIT ===` terminator or the end of the block.
+  // For DELETE the body is expected to be empty but the marker is still required.
   const afterColon = lines[instrIdx].replace(/^\s*INSTRUCTIONS\s*:\s*/i, '');
   const restLines = lines.slice(instrIdx + 1);
   const endIdx = restLines.findIndex((l) => /^\s*=== END FILE EDIT ===\s*$/i.test(l));
   const body = endIdx === -1 ? restLines : restLines.slice(0, endIdx);
   const instructions = [afterColon, ...body].join('\n').trim();
 
-  return { path, type: typeRaw as 'NEW' | 'EDIT', instructions };
+  return { path, type: typeRaw as 'NEW' | 'EDIT' | 'DELETE', instructions };
 }
 
 /**
@@ -513,7 +553,7 @@ export function serializeFileEdits(edits: FileEditInstruction[]): string {
 
 export interface EditVerificationResult {
   path: string;
-  type: 'NEW' | 'EDIT';
+  type: 'NEW' | 'EDIT' | 'DELETE';
   suspicious: boolean;
   reasons: string[];
 }
@@ -533,12 +573,39 @@ function extractReplacementCodeBlocks(text: string): string[] {
 }
 
 /**
+ * Scans text for `SEARCH:`/`REPLACE:`/`INSERT:` fenced code blocks and pairs
+ * each `SEARCH` with its immediately following `REPLACE`. An `INSERT` block
+ * breaks any pending search (it is a standalone command, not a replacement).
+ * Used by the deterministic alignment checks to verify that content slated
+ * for removal is actually gone from the post-edit file.
+ */
+export function extractSearchReplacePairs(text: string): Array<{ search: string; replace: string }> {
+  const pairs: Array<{ search: string; replace: string }> = [];
+  const re = /(?:^|\n)\s*(SEARCH|REPLACE|INSERT)\s*:\s*\n\s*```[a-zA-Z0-9_-]*\n([\s\S]*?)\n```/gi;
+  let match: RegExpExecArray | null;
+  let pendingSearch: string | null = null;
+  while ((match = re.exec(text)) !== null) {
+    const label = match[1].toUpperCase();
+    const content = match[2];
+    if (label === 'SEARCH') {
+      pendingSearch = content;
+    } else if (label === 'REPLACE' && pendingSearch !== null) {
+      pairs.push({ search: pendingSearch, replace: content });
+      pendingSearch = null;
+    } else if (label === 'INSERT') {
+      pendingSearch = null;
+    }
+  }
+  return pairs;
+}
+
+/**
  * Normalizes text for fuzzy presence comparison by removing all whitespace.
  * This makes the check forgiving of indentation, line-ending, and formatting
  * differences while still being specific enough to avoid false positives on
  * code blocks of reasonable length (20+ non-whitespace characters).
  */
-function normalizeForCompare(text: string): string {
+export function normalizeForCompare(text: string): string {
   return text.replace(/\s+/g, '');
 }
 
@@ -546,13 +613,26 @@ function normalizeForCompare(text: string): string {
  * Deterministic, script-level verification that a file edit instruction was
  * likely applied correctly. This flags suspicious edits for the CONFIRMER to
  * inspect closely without replacing agent-based verification.
+ *
+ * `addedLines` (when provided) is the whitespace-normalized set of added diff
+ * lines for this file, used to confirm that replacement content actually
+ * shows up in the applied diff.
  */
 export function verifyEditAlignment(
   edit: FileEditInstruction,
   fileContent: string | null,
   diffStats: { insertions: number; deletions: number },
+  addedLines?: Set<string>,
 ): EditVerificationResult {
   const reasons: string[] = [];
+
+  if (edit.type === 'DELETE') {
+    if (fileContent !== null) {
+      reasons.push('file still exists after deletion');
+      return { path: edit.path, type: 'DELETE', suspicious: true, reasons };
+    }
+    return { path: edit.path, type: 'DELETE', suspicious: false, reasons: [] };
+  }
 
   if (edit.type === 'NEW') {
     if (fileContent === null) {
@@ -571,6 +651,13 @@ export function verifyEditAlignment(
         reasons.push(`file content size mismatch: expected ~${expectedNorm.length} non-whitespace chars, got ~${actualNorm.length}`);
       }
     }
+    if (edit.path.toLowerCase().endsWith('.json')) {
+      try {
+        JSON.parse(fileContent);
+      } catch {
+        reasons.push('post-edit JSON file does not parse');
+      }
+    }
     return { path: edit.path, type: 'NEW', suspicious: reasons.length > 0, reasons };
   }
 
@@ -579,17 +666,39 @@ export function verifyEditAlignment(
     return { path: edit.path, type: 'EDIT', suspicious: true, reasons };
   }
 
+  if (edit.path.toLowerCase().endsWith('.json')) {
+    try {
+      JSON.parse(fileContent);
+    } catch {
+      reasons.push('post-edit JSON file does not parse');
+    }
+  }
+
   if (diffStats.insertions === 0 && diffStats.deletions === 0) {
     reasons.push('diff shows no changes to this file');
     return { path: edit.path, type: 'EDIT', suspicious: true, reasons };
   }
 
-  const replacementBlocks = extractReplacementCodeBlocks(edit.instructions);
-  if (replacementBlocks.length === 0) {
-    return { path: edit.path, type: 'EDIT', suspicious: false, reasons: [] };
+  const fileNorm = normalizeForCompare(fileContent);
+
+  // Deletion-pair check: content slated for removal (a SEARCH block whose
+  // REPLACE does not retain it) must be gone from the post-edit file.
+  for (const pair of extractSearchReplacePairs(edit.instructions)) {
+    const searchNorm = normalizeForCompare(pair.search);
+    const replaceNorm = normalizeForCompare(pair.replace);
+    if (searchNorm.length < 20) continue;
+    if (replaceNorm.includes(searchNorm)) continue;
+    if (fileNorm.includes(searchNorm)) {
+      reasons.push('content slated for removal is still present');
+      break;
+    }
   }
 
-  const fileNorm = normalizeForCompare(fileContent);
+  const replacementBlocks = extractReplacementCodeBlocks(edit.instructions);
+  if (replacementBlocks.length === 0) {
+    return { path: edit.path, type: 'EDIT', suspicious: reasons.length > 0, reasons };
+  }
+
   let missingBlocks = 0;
   let checkedBlocks = 0;
   for (const block of replacementBlocks) {
@@ -603,6 +712,25 @@ export function verifyEditAlignment(
     reasons.push(`none of ${checkedBlocks} expected code blocks found in post-edit file`);
   } else if (missingBlocks > 0 && missingBlocks > checkedBlocks / 2) {
     reasons.push(`${missingBlocks} of ${checkedBlocks} expected code blocks not found in post-edit file`);
+  }
+
+  // Added-lines attribution: replacement content must appear in the diff's
+  // added lines. Flags only on total absence to avoid false alarms.
+  if (addedLines) {
+    let absentBlocks = 0;
+    let checkedAddedBlocks = 0;
+    for (const block of replacementBlocks) {
+      const blockLines = block
+        .split('\n')
+        .map((line) => normalizeForCompare(line))
+        .filter((line) => line.length >= 10);
+      if (blockLines.length === 0) continue;
+      checkedAddedBlocks++;
+      if (!blockLines.some((line) => addedLines.has(line))) absentBlocks++;
+    }
+    if (checkedAddedBlocks > 0 && absentBlocks === checkedAddedBlocks) {
+      reasons.push(`none of ${checkedAddedBlocks} expected code blocks appear in the diff's added lines`);
+    }
   }
 
   const totalExpectedLines = replacementBlocks.reduce((sum, block) => sum + block.split('\n').length, 0);

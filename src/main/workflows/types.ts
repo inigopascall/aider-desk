@@ -8,8 +8,13 @@ export interface WorkflowStepContext {
   conversationText: string;
 }
 
+export interface WorkflowDispatchOptions {
+  /** Hard timeout for the subagent run; on expiry the run is aborted and a WorkflowTimeout is thrown. */
+  timeoutMs?: number;
+}
+
 export interface WorkflowDispatcher {
-  agent(subagentId: string, prompt: string, description: string): Promise<string>;
+  agent(subagentId: string, prompt: string, description: string, options?: WorkflowDispatchOptions): Promise<string>;
   parsed<T>(
     subagentId: string,
     prompt: string,
@@ -17,6 +22,7 @@ export interface WorkflowDispatcher {
     parse: (raw: string) => T,
     onRetry?: (attempt: number, error: string) => void,
     maxAttempts?: number,
+    options?: WorkflowDispatchOptions,
   ): Promise<T>;
 }
 

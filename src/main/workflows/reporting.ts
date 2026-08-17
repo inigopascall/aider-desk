@@ -187,7 +187,7 @@ export function formatPlanUnknowns(
 
 export function formatEditTargets(
   label: string,
-  edits: Array<{ path: string; type: 'NEW' | 'EDIT' }>,
+  edits: Array<{ path: string; type: 'NEW' | 'EDIT' | 'DELETE' }>,
   ambiguities: string | null,
 ): string {
   const plural = edits.length === 1 ? '' : 's';
@@ -197,7 +197,7 @@ export function formatEditTargets(
     markdownTable(
       ['File', 'Type'],
       ['left', 'left'],
-      edits.map((edit) => [edit.path, edit.type === 'NEW' ? '🆕 NEW' : '✏️ EDIT']),
+      edits.map((edit) => [edit.path, edit.type === 'NEW' ? '🆕 NEW' : edit.type === 'DELETE' ? '🗑️ DELETE' : '✏️ EDIT']),
     ),
     ambiguities
       ? `**Ambiguities resolved by the decompositor**\n\n${truncate(ambiguities, 1200)}`
@@ -322,6 +322,17 @@ export function formatJourneyReport(journey: Journey, report: ReportState, workf
 
   if (journey.gitRetries > 0) summaryRows.push(['Git retries', String(journey.gitRetries)]);
 
+  if (journey.conversationSummarized) {
+    summaryRows.push([
+      'Conversation',
+      `${journey.conversationChars.toLocaleString()} chars → summarized (${journey.summaryChars.toLocaleString()} chars)`,
+    ]);
+  }
+
+  if (journey.editorTimeouts > 0) {
+    summaryRows.push(['Editor timeouts', String(journey.editorTimeouts)]);
+  }
+
   if (journey.reviewRounds > 0) {
     summaryRows.push(['Review rounds', String(journey.reviewRounds)]);
   }
@@ -387,9 +398,19 @@ export function formatJourneyReport(journey: Journey, report: ReportState, workf
             ]),
           ),
           ...journey.reviewFindings.map((finding) =>
-            section(`#### Review round ${finding.round} — arbiter findings`, finding.findings),
+            section(
+              `#### Review round ${finding.round} — arbiter findings`,
+              finding.findings,
+              finding.correctnessAreas || finding.qualityAreas
+                ? `_Verifier areas sound — correctness: ${finding.correctnessAreas ?? '—'} · quality: ${finding.qualityAreas ?? '—'}_`
+                : null,
+            ),
           ),
           journey.reviewerConsiderations ? section('#### Reviewer considerations', journey.reviewerConsiderations) : null,
+          journey.reviewerFailure ? section('#### ⚠️ Review incomplete', journey.reviewerFailure) : null,
+          journey.outstandingRectification
+            ? section('### 🚧 Outstanding rectification (final round — recorded, not executed)', truncate(journey.outstandingRectification, 4000))
+            : null,
           journey.verifierFailures.length > 0
             ? section('#### Verifier failures', journey.verifierFailures.map((failure) => `- ${failure}`).join('\n'))
             : null,

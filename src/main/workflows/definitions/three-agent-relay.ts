@@ -8,7 +8,7 @@ export const threeAgentRelay: WorkflowDefinition = {
   agents: WORKFLOW_AGENT_ROLES['three-agent-relay'],
   steps: [
     {
-      subagentId: 'EDITOR-PRIMARY',
+      subagentId: 'EDITOR-LIGHT',
       description: 'Relay step 1',
       buildPrompt: ({ initialPrompt }) => initialPrompt,
     },
