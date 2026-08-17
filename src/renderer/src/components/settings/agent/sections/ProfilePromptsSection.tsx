@@ -2,21 +2,24 @@ import { AgentProfile } from '@common/types';
 import { useTranslation } from 'react-i18next';
 
 import { AgentRules } from '../AgentRules';
-import { SystemPromptEditor } from '../SystemPromptEditor';
+import { PromptSidecarField } from '../PromptSidecarField';
 
 import { InfoIcon } from '@/components/common/InfoIcon';
 
 type Props = {
   profile: AgentProfile;
-  onSettingChange: <K extends keyof AgentProfile>(field: K, value: AgentProfile[K]) => void;
 };
 
-export const ProfilePromptsSection = ({ profile, onSettingChange }: Props) => {
+export const ProfilePromptsSection = ({ profile }: Props) => {
   const { t } = useTranslation();
 
   return (
     <div className="space-y-4">
-      <SystemPromptEditor
+      <PromptSidecarField
+        profileId={profile.id}
+        profileName={profile.name}
+        filename="systemPrompt.md"
+        title={t('settings.agent.systemPrompt')}
         label={
           <div className="flex items-center">
             <span>{t('settings.agent.systemPrompt')}</span>
@@ -24,14 +27,12 @@ export const ProfilePromptsSection = ({ profile, onSettingChange }: Props) => {
           </div>
         }
         value={profile.systemPrompt ?? ''}
-        onChange={(value) => onSettingChange('systemPrompt', value)}
-        placeholder={t('settings.agent.systemPromptPlaceholder')}
         info={t('settings.agent.systemPromptInfo')}
       />
 
       <div className="border-t border-border-default-dark pt-4">
         <div className="text-sm font-medium text-text-primary mb-3">{t('settings.agent.rules')}</div>
-        <AgentRules profile={profile} handleProfileSettingChange={onSettingChange} />
+        <AgentRules profile={profile} />
       </div>
     </div>
   );

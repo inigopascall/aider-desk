@@ -765,11 +765,8 @@ const api: ApplicationAPI = {
   updateAgentProfile: (profile, baseDir) => ipcRenderer.invoke('update-agent-profile', profile, baseDir),
   deleteAgentProfile: (profileId, baseDir) => ipcRenderer.invoke('delete-agent-profile', profileId, baseDir),
   updateAgentProfilesOrder: (agentProfiles) => ipcRenderer.invoke('update-agent-profiles-order', agentProfiles),
-  getAgentProfileSyncStatus: (profileId) => ipcRenderer.invoke('get-agent-profile-sync-status', profileId),
-  syncAgentProfileMdToConfig: (profileId) => ipcRenderer.invoke('sync-agent-profile-md-to-config', profileId),
-  syncAgentProfileConfigToMd: (profileId) => ipcRenderer.invoke('sync-agent-profile-config-to-md', profileId),
-  autoSyncAgentProfile: (profileId) => ipcRenderer.invoke('auto-sync-agent-profile', profileId),
-  autoSyncAllAgentProfiles: () => ipcRenderer.invoke('auto-sync-all-agent-profiles'),
+  getAgentPromptSidecar: (profileId, filename) => ipcRenderer.invoke('get-agent-prompt-sidecar', profileId, filename),
+  saveAgentPromptSidecar: (profileId, filename, content) => ipcRenderer.invoke('save-agent-prompt-sidecar', profileId, filename, content),
 
   // Memory operations
   listAllMemories: () => ipcRenderer.invoke('list-all-memories'),

@@ -3,11 +3,10 @@ import { AgentProfile, ContextMemoryMode, InvocationMode } from '@common/types';
 import { useTranslation } from 'react-i18next';
 import Sketch from '@uiw/react-color-sketch';
 
-import { SystemPromptEditor } from '../SystemPromptEditor';
+import { PromptSidecarField } from '../PromptSidecarField';
 
 import { Checkbox } from '@/components/common/Checkbox';
 import { Select } from '@/components/common/Select';
-import { TextArea } from '@/components/common/TextArea';
 import { InfoIcon } from '@/components/common/InfoIcon';
 
 type Props = {
@@ -151,20 +150,23 @@ export const ProfileSubagentsSection = ({ profile, availableSubagents, onSetting
               />
             </div>
 
-            <SystemPromptEditor
+            <PromptSidecarField
+              profileId={profile.id}
+              profileName={profile.name}
+              filename="subagent.systemPrompt.md"
+              title={t('settings.agent.subagent.systemPrompt')}
               label={<label className="text-xs font-medium text-text-primary">{t('settings.agent.subagent.systemPrompt')}</label>}
-              value={profile.subagent.systemPrompt}
-              onChange={(value) => onSettingChange('subagent', { ...profile.subagent, systemPrompt: value })}
-              placeholder={t('settings.agent.subagent.systemPromptPlaceholder')}
+              value={profile.subagent.systemPrompt ?? ''}
             />
 
             {profile.subagent.invocationMode === InvocationMode.Automatic && (
-              <TextArea
+              <PromptSidecarField
+                profileId={profile.id}
+                profileName={profile.name}
+                filename="subagent.description.md"
+                title={t('settings.agent.subagent.description')}
                 label={<label className="text-xs font-medium text-text-primary">{t('settings.agent.subagent.description')}</label>}
-                className="min-h-[100px]"
-                value={profile.subagent.description}
-                onChange={(e) => onSettingChange('subagent', { ...profile.subagent, description: e.target.value })}
-                placeholder={t('settings.agent.subagent.descriptionPlaceholder')}
+                value={profile.subagent.description ?? ''}
               />
             )}
             <div className="text-2xs text-text-muted-light">

@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 
+import { PROMPT_SIDECAR_FILES } from '@common/types';
+
 import { BaseApi } from './base-api';
 
 import { EventsHandler } from '@/events-handler';
@@ -24,8 +26,15 @@ const UpdateAgentProfilesOrderSchema = z.object({
   agentProfiles: z.array(z.any()), // AgentProfile array
 });
 
-const SyncAgentProfileSchema = z.object({
-  profileId: z.string().min(1, 'Profile ID is required'),
+const PromptSidecarQuerySchema = z.object({
+  profileId: z.string().min(1),
+  filename: z.enum(PROMPT_SIDECAR_FILES),
+});
+
+const SavePromptSidecarSchema = z.object({
+  profileId: z.string().min(1),
+  filename: z.enum(PROMPT_SIDECAR_FILES),
+  content: z.string(),
 });
 
 export class AgentApi extends BaseApi {
@@ -83,56 +92,23 @@ export class AgentApi extends BaseApi {
       }),
     );
 
-    // GET /agent-profile/sync-status
+    // GET /agent-profile/prompt-sidecar
     router.get(
-      '/agent-profile/sync-status',
+      '/agent-profile/prompt-sidecar',
       this.handleRequest(async (req, res) => {
-        const profileId = req.query.profileId as string;
-        if (!profileId) {
-          res.status(400).json({ error: 'profileId is required' });
-          return;
-        }
-        const status = await this.eventsHandler.getAgentProfileSyncStatus(profileId);
-        res.json(status);
+        const { profileId, filename } = PromptSidecarQuerySchema.parse(req.query);
+        const content = await this.eventsHandler.getAgentPromptSidecar(profileId, filename);
+        res.json({ content });
       }),
     );
 
-    // POST /agent-profile/sync-md-to-config
+    // POST /agent-profile/prompt-sidecar
     router.post(
-      '/agent-profile/sync-md-to-config',
+      '/agent-profile/prompt-sidecar',
       this.handleRequest(async (req, res) => {
-        const { profileId } = SyncAgentProfileSchema.parse(req.body);
-        const profiles = await this.eventsHandler.syncAgentProfileMdToConfig(profileId);
-        res.json(profiles);
-      }),
-    );
-
-    // POST /agent-profile/sync-config-to-md
-    router.post(
-      '/agent-profile/sync-config-to-md',
-      this.handleRequest(async (req, res) => {
-        const { profileId } = SyncAgentProfileSchema.parse(req.body);
-        await this.eventsHandler.syncAgentProfileConfigToMd(profileId);
+        const { profileId, filename, content } = SavePromptSidecarSchema.parse(req.body);
+        await this.eventsHandler.saveAgentPromptSidecar(profileId, filename, content);
         res.json({ success: true });
-      }),
-    );
-
-    // POST /agent-profile/auto-sync
-    router.post(
-      '/agent-profile/auto-sync',
-      this.handleRequest(async (req, res) => {
-        const { profileId } = SyncAgentProfileSchema.parse(req.body);
-        const result = await this.eventsHandler.autoSyncAgentProfile(profileId);
-        res.json(result);
-      }),
-    );
-
-    // POST /agent-profiles/auto-sync-all
-    router.post(
-      '/agent-profiles/auto-sync-all',
-      this.handleRequest(async (_, res) => {
-        const results = await this.eventsHandler.autoSyncAllAgentProfiles();
-        res.json(results);
       }),
     );
   }

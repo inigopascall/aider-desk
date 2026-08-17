@@ -630,6 +630,21 @@ export interface SubagentConfig {
   description: string;
 }
 
+/**
+ * The four markdown sidecar files that canonically store agent prompt content.
+ * Each agent directory contains one sidecar per prompt field; the loader
+ * hydrates these into the in-memory AgentProfile at read time.
+ */
+export const PROMPT_SIDECAR_FILES = [
+  'customInstructions.md',
+  'systemPrompt.md',
+  'subagent.systemPrompt.md',
+  'subagent.description.md',
+] as const;
+
+/** A validated filename from the prompt sidecar whitelist. */
+export type PromptSidecarFilename = (typeof PROMPT_SIDECAR_FILES)[number];
+
 export interface BashToolSettings {
   allowedPattern: string;
   deniedPattern: string;

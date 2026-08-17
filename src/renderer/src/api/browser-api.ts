@@ -1388,24 +1388,13 @@ export class BrowserApi implements ApplicationAPI {
     });
   }
 
-  getAgentProfileSyncStatus(profileId: string): Promise<{ mdNewer: string[]; configNewer: string[]; inSync: boolean }> {
-    return this.get('/agent-profile/sync-status', { profileId });
+  async getAgentPromptSidecar(profileId: string, filename: string): Promise<string> {
+    const { content } = await this.get<{ content: string }>('/agent-profile/prompt-sidecar', { profileId, filename });
+    return content;
   }
 
-  syncAgentProfileMdToConfig(profileId: string): Promise<AgentProfile[]> {
-    return this.post('/agent-profile/sync-md-to-config', { profileId });
-  }
-
-  syncAgentProfileConfigToMd(profileId: string): Promise<void> {
-    return this.post('/agent-profile/sync-config-to-md', { profileId });
-  }
-
-  autoSyncAgentProfile(profileId: string): Promise<{ direction: string; files: string[] }> {
-    return this.post('/agent-profile/auto-sync', { profileId });
-  }
-
-  autoSyncAllAgentProfiles(): Promise<Array<{ profileId: string; profileName: string; result: { direction: string; files: string[] } | null }>> {
-    return this.post('/agent-profiles/auto-sync-all', {});
+  saveAgentPromptSidecar(profileId: string, filename: string, content: string): Promise<void> {
+    return this.post('/agent-profile/prompt-sidecar', { profileId, filename, content });
   }
 
   addNotificationListener(baseDir: string, callback: (data: NotificationData) => void): () => void {

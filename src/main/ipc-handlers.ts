@@ -692,24 +692,12 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
     return await eventsHandler.updateAgentProfilesOrder(agentProfiles);
   });
 
-  ipcMain.handle('get-agent-profile-sync-status', async (_, profileId: string) => {
-    return await eventsHandler.getAgentProfileSyncStatus(profileId);
+  ipcMain.handle('get-agent-prompt-sidecar', async (_, profileId: string, filename: string) => {
+    return await eventsHandler.getAgentPromptSidecar(profileId, filename);
   });
 
-  ipcMain.handle('sync-agent-profile-md-to-config', async (_, profileId: string) => {
-    return await eventsHandler.syncAgentProfileMdToConfig(profileId);
-  });
-
-  ipcMain.handle('sync-agent-profile-config-to-md', async (_, profileId: string) => {
-    return await eventsHandler.syncAgentProfileConfigToMd(profileId);
-  });
-
-  ipcMain.handle('auto-sync-agent-profile', async (_, profileId: string) => {
-    return await eventsHandler.autoSyncAgentProfile(profileId);
-  });
-
-  ipcMain.handle('auto-sync-all-agent-profiles', async () => {
-    return await eventsHandler.autoSyncAllAgentProfiles();
+  ipcMain.handle('save-agent-prompt-sidecar', async (_, profileId: string, filename: string, content: string) => {
+    await eventsHandler.saveAgentPromptSidecar(profileId, filename, content);
   });
 
   // Memory handlers

@@ -816,7 +816,15 @@
       "resetProfileTitle": "Reset '{{name}}' to Defaults?",
       "resetProfileConfirm": "This will restore '{{name}}' to its original default settings. Any custom modifications will be lost.",
       "restoreProfile": "Restore",
-      "restoreProfileTooltip": "Restore this default profile"
+      "restoreProfileTooltip": "Restore this default profile",
+      "promptSidecar": {
+        "expand": "Open in full-screen editor",
+        "empty": "(empty)",
+        "managedIn": "Managed in {{filename}} — edit via the expand button or any external editor.",
+        "saved": "Saved {{filename}}",
+        "loadError": "Could not load {{filename}}. If this profile is new, save it first.",
+        "unsavedConfirm": "Discard unsaved changes?"
+      }
     },
     "aider": {
       "options": "Options",

@@ -37,6 +37,7 @@ import {
   ProjectData,
   ProjectSettings,
   ProjectStartedData,
+  PromptSidecarFilename,
   ProviderModelsData,
   ProviderProfile,
   ProvidersUpdatedData,
@@ -325,11 +326,8 @@ export interface ApplicationAPI {
   updateAgentProfile: (profile: AgentProfile, baseDir?: string) => Promise<AgentProfile[]>;
   deleteAgentProfile: (profileId: string, baseDir?: string) => Promise<AgentProfile[]>;
   updateAgentProfilesOrder: (agentProfiles: AgentProfile[]) => Promise<void>;
-  getAgentProfileSyncStatus: (profileId: string) => Promise<{ mdNewer: string[]; configNewer: string[]; inSync: boolean }>;
-  syncAgentProfileMdToConfig: (profileId: string) => Promise<AgentProfile[]>;
-  syncAgentProfileConfigToMd: (profileId: string) => Promise<void>;
-  autoSyncAgentProfile: (profileId: string) => Promise<{ direction: string; files: string[] }>;
-  autoSyncAllAgentProfiles: () => Promise<Array<{ profileId: string; profileName: string; result: { direction: string; files: string[] } | null }>>;
+  getAgentPromptSidecar: (profileId: string, filename: PromptSidecarFilename) => Promise<string>;
+  saveAgentPromptSidecar: (profileId: string, filename: PromptSidecarFilename, content: string) => Promise<void>;
 
   // Memory operations
   listAllMemories: () => Promise<MemoryEntry[]>;

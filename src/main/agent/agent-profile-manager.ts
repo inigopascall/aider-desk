@@ -5,9 +5,8 @@ import { FSWatcher, watch } from 'chokidar';
 import { debounce } from 'lodash';
 import { DEFAULT_AGENT_PROFILE, DEFAULT_AGENT_PROFILES } from '@common/agent';
 import { fileExists } from '@common/node-utils';
+import { PROMPT_SIDECAR_FILES, type AgentProfile, type PromptSidecarFilename, type SettingsData } from '@common/types';
 import { v4 as uuidv4 } from 'uuid';
-
-import type { AgentProfile, SettingsData } from '@common/types';
 import type { Store } from '@/store';
 
 import { Project } from '@/project';
@@ -68,6 +67,42 @@ const getAllRuleFilesForProfile = async (profile: AgentProfile, dirName: string)
   }
 
   return ruleFiles;
+};
+
+/**
+ * Maps each prompt sidecar filename to getter/setter accessors on an
+ * AgentProfile, so hydration, migration and sidecar saves all share one
+ * canonical field-mapping. sanitizeAgentProfile guarantees `subagent`
+ * exists before any setter runs.
+ */
+const PROMPT_SIDECAR_ACCESSORS: Record<
+  PromptSidecarFilename,
+  { get: (p: AgentProfile) => string; set: (p: AgentProfile, v: string) => void }
+> = {
+  'customInstructions.md': {
+    get: (p) => p.customInstructions ?? '',
+    set: (p, v) => {
+      p.customInstructions = v;
+    },
+  },
+  'systemPrompt.md': {
+    get: (p) => p.systemPrompt ?? '',
+    set: (p, v) => {
+      p.systemPrompt = v;
+    },
+  },
+  'subagent.systemPrompt.md': {
+    get: (p) => p.subagent?.systemPrompt ?? '',
+    set: (p, v) => {
+      p.subagent.systemPrompt = v;
+    },
+  },
+  'subagent.description.md': {
+    get: (p) => p.subagent?.description ?? '',
+    set: (p, v) => {
+      p.subagent.description = v;
+    },
+  },
 };
 
 interface AgentProfileContext {
@@ -198,6 +233,9 @@ export class AgentProfileManager {
       } catch {
         // Config file doesn't exist, create it
         await fs.mkdir(profileDir, { recursive: true });
+        // Seed the markdown sidecars first — the stripped config.json no longer
+        // carries the default subagent prompts/descriptions.
+        await this.writePromptSidecars(profileDir, defaultProfile);
         await this.saveProfileToFile(defaultProfile, configPath);
         logger.debug(`Created default agent profile: ${defaultProfile.id} in directory: ${dirName}`);
       }
@@ -466,6 +504,30 @@ export class AgentProfileManager {
       // Discover and load rule files for this profile
       profile.ruleFiles = await getAllRuleFilesForProfile(profile, dirName);
 
+      // Hydrate prompt fields from markdown sidecars (canonical source).
+      // If a sidecar is missing but the legacy JSON field has content, migrate it
+      // once by creating the sidecar (create-only; never overwrites an existing file).
+      const agentDir = path.dirname(filePath);
+      for (const filename of PROMPT_SIDECAR_FILES) {
+        const accessor = PROMPT_SIDECAR_ACCESSORS[filename];
+        const mdPath = path.join(agentDir, filename);
+        try {
+          if (await fileExists(mdPath)) {
+            accessor.set(profile, await fs.readFile(mdPath, 'utf-8'));
+          } else {
+            const legacyValue = accessor.get(profile);
+            if (legacyValue.trim()) {
+              // 'wx' flag: fail if the file appears concurrently — migration must never overwrite.
+              await fs.writeFile(mdPath, legacyValue, { encoding: 'utf-8', flag: 'wx' });
+              logger.info(`Migrated legacy prompt field from config.json to sidecar: ${mdPath}`);
+            }
+          }
+        } catch (err) {
+          // Never let a sidecar problem kill the profile; keep the JSON/sanitized value.
+          logger.warn(`Failed to read/migrate prompt sidecar ${mdPath}: ${err}`);
+        }
+      }
+
       logger.info(`Loaded agent profile: ${profile.name} with ${profile.ruleFiles.length} rule files`);
       return profile;
     } catch (err) {
@@ -474,11 +536,25 @@ export class AgentProfileManager {
     }
   }
 
+  /**
+   * Writes all four prompt sidecars for a profile directory from the profile's
+   * in-memory prompt fields. Used when creating profiles and seeding defaults,
+   * where the sidecars are the canonical source and config.json is stripped.
+   */
+  private async writePromptSidecars(profileDir: string, profile: AgentProfile): Promise<void> {
+    for (const filename of PROMPT_SIDECAR_FILES) {
+      await fs.writeFile(path.join(profileDir, filename), PROMPT_SIDECAR_ACCESSORS[filename].get(profile), 'utf-8');
+    }
+  }
+
   private async saveProfileToFile(profile: AgentProfile, filePath: string): Promise<void> {
     try {
       await fs.mkdir(path.dirname(filePath), { recursive: true });
-      // Create a copy of the profile without ruleFiles since they are dynamically discovered
-      const { ruleFiles: _ruleFiles, ...profileToSave } = profile;
+      // Omit dynamically-discovered ruleFiles and all markdown-canonical prompt fields:
+      // config.json must never store the four prompt fields (they live in sidecars).
+      const { ruleFiles: _ruleFiles, customInstructions: _ci, systemPrompt: _sp, ...rest } = profile;
+      const { systemPrompt: _ssp, description: _sd, ...subagentRest } = profile.subagent ?? ({} as AgentProfile['subagent']);
+      const profileToSave = { ...rest, subagent: subagentRest };
       await fs.writeFile(filePath, JSON.stringify(profileToSave, null, 2), 'utf-8');
     } catch (err) {
       logger.error(`Failed to save agent profile to ${filePath}: ${err}`);
@@ -589,11 +665,8 @@ export class AgentProfileManager {
 
     await fs.mkdir(profileDir, { recursive: true });
 
-    // Create markdown sidecar files (empty or with default content)
-    await fs.writeFile(path.join(profileDir, 'customInstructions.md'), profile.customInstructions || '', 'utf-8');
-    await fs.writeFile(path.join(profileDir, 'systemPrompt.md'), profile.systemPrompt || '', 'utf-8');
-    await fs.writeFile(path.join(profileDir, 'subagent.systemPrompt.md'), profile.subagent?.systemPrompt || '', 'utf-8');
-    await fs.writeFile(path.join(profileDir, 'subagent.description.md'), profile.subagent?.description || '', 'utf-8');
+    // Create markdown sidecar files (canonical prompt store) before saving config.json
+    await this.writePromptSidecars(profileDir, profile);
 
     await this.saveProfileToFile(profile, configPath);
 
@@ -611,6 +684,21 @@ export class AgentProfileManager {
     if (!existingContext) {
       throw new Error(`Agent profile with id ${profile.id} not found`);
     }
+
+    // Prompt fields are read-only in the UI and canonical in the markdown
+    // sidecars; guard against stale renderer copies regressing the in-memory
+    // prompt state. saveProfileToFile strips these fields from config.json.
+    const existing = existingContext.agentProfile;
+    profile = {
+      ...profile,
+      customInstructions: existing.customInstructions,
+      systemPrompt: existing.systemPrompt,
+      subagent: {
+        ...profile.subagent,
+        systemPrompt: existing.subagent?.systemPrompt ?? '',
+        description: existing.subagent?.description ?? '',
+      },
+    };
 
     const agentsDir = getAgentsDirForProfile(existingContext.agentProfile);
     const configPath = path.join(agentsDir, existingContext.dirName, 'config.json');
@@ -821,157 +909,48 @@ export class AgentProfileManager {
     logger.debug(`Merged ${projectRuleFiles.length} project-level rule files into global profile: ${agentDirName}`);
   }
 
-  // ── Markdown ↔ Config sync methods ──
+  // ── Prompt sidecar file access (markdown is the canonical prompt store) ──
 
-  private readonly MD_SIDECAR_FILES = [
-    'customInstructions.md',
-    'systemPrompt.md',
-    'subagent.systemPrompt.md',
-    'subagent.description.md',
-  ] as const;
-
-  public async syncMdToConfig(profileId: string): Promise<AgentProfile | null> {
+  /**
+   * Resolves a profile's sidecar path, validating that the requested filename
+   * is on the prompt sidecar whitelist and that the profile exists.
+   */
+  private resolveSidecarPath(profileId: string, filename: string): { mdPath: string; context: AgentProfileContext; filename: PromptSidecarFilename } {
+    if (!(PROMPT_SIDECAR_FILES as readonly string[]).includes(filename)) {
+      throw new Error(`Invalid prompt sidecar filename: ${filename}`);
+    }
     const context = this.profiles.get(profileId);
     if (!context) {
       throw new Error(`Agent profile with id ${profileId} not found`);
     }
-
     const agentsDir = getAgentsDirForProfile(context.agentProfile);
-    const agentDir = path.join(agentsDir, context.dirName);
-    const configPath = path.join(agentDir, 'config.json');
+    return { mdPath: path.join(agentsDir, context.dirName, filename), context, filename: filename as PromptSidecarFilename };
+  }
 
-    // Read current config and create a mutable copy
-    const profile: AgentProfile = JSON.parse(JSON.stringify(context.agentProfile));
-
-    // Read and overlay each markdown file
-    for (const filename of this.MD_SIDECAR_FILES) {
-      const mdPath = path.join(agentDir, filename);
-      if (await fileExists(mdPath)) {
-        const content = await fs.readFile(mdPath, 'utf-8');
-        if (filename === 'customInstructions.md') {
-          profile.customInstructions = content;
-        } else if (filename === 'systemPrompt.md') {
-          profile.systemPrompt = content;
-        } else if (filename === 'subagent.systemPrompt.md') {
-          profile.subagent = { ...profile.subagent, systemPrompt: content };
-        } else if (filename === 'subagent.description.md') {
-          profile.subagent = { ...profile.subagent, description: content };
-        }
-      }
+  /** Reads the raw markdown content of a prompt sidecar (empty string if missing). */
+  public async getPromptSidecar(profileId: string, filename: string): Promise<string> {
+    const { mdPath } = this.resolveSidecarPath(profileId, filename);
+    if (!(await fileExists(mdPath))) {
+      return '';
     }
+    return fs.readFile(mdPath, 'utf-8');
+  }
 
-    // Save updated config
-    await this.saveProfileToFile(profile, configPath);
-
-    // Update in-memory
-    context.agentProfile = profile;
+  /**
+   * Atomically writes a prompt sidecar file and updates the in-memory hydrated
+   * profile. The write triggers the existing directory watcher → debounced
+   * reload, which re-reads the identical content (idempotent — loading never
+   * writes), so there is no feedback loop.
+   */
+  public async savePromptSidecar(profileId: string, filename: string, content: string): Promise<void> {
+    const { mdPath, context, filename: validated } = this.resolveSidecarPath(profileId, filename);
+    // Atomic write: temp file in the same directory, then rename over the target.
+    const tmpPath = `${mdPath}.tmp`;
+    await fs.writeFile(tmpPath, content, 'utf-8');
+    await fs.rename(tmpPath, mdPath);
+    // Update the in-memory hydrated profile immediately and broadcast.
+    PROMPT_SIDECAR_ACCESSORS[validated].set(context.agentProfile, content);
     this.sendAgentProfilesUpdated();
-
-    return profile;
-  }
-
-  public async syncConfigToMd(profileId: string): Promise<void> {
-    const context = this.profiles.get(profileId);
-    if (!context) {
-      throw new Error(`Agent profile with id ${profileId} not found`);
-    }
-
-    const agentsDir = getAgentsDirForProfile(context.agentProfile);
-    const agentDir = path.join(agentsDir, context.dirName);
-    const profile = context.agentProfile;
-
-    // Write each markdown file from config
-    await fs.writeFile(path.join(agentDir, 'customInstructions.md'), profile.customInstructions || '', 'utf-8');
-    await fs.writeFile(path.join(agentDir, 'systemPrompt.md'), profile.systemPrompt || '', 'utf-8');
-    await fs.writeFile(path.join(agentDir, 'subagent.systemPrompt.md'), profile.subagent?.systemPrompt || '', 'utf-8');
-    await fs.writeFile(path.join(agentDir, 'subagent.description.md'), profile.subagent?.description || '', 'utf-8');
-  }
-
-  public async autoSyncProfile(profileId: string): Promise<{ direction: 'md-to-config' | 'config-to-md' | 'in-sync'; files: string[] }> {
-    const context = this.profiles.get(profileId);
-    if (!context) {
-      throw new Error(`Agent profile with id ${profileId} not found`);
-    }
-
-    const agentsDir = getAgentsDirForProfile(context.agentProfile);
-    const agentDir = path.join(agentsDir, context.dirName);
-    const configPath = path.join(agentDir, 'config.json');
-
-    // Get config.json mtime
-    const configStat = await fs.stat(configPath);
-    const configMtime = configStat.mtimeMs;
-
-    const newerMdFiles: string[] = [];
-    const olderMdFiles: string[] = [];
-
-    for (const filename of this.MD_SIDECAR_FILES) {
-      const mdPath = path.join(agentDir, filename);
-      if (await fileExists(mdPath)) {
-        const mdStat = await fs.stat(mdPath);
-        if (mdStat.mtimeMs > configMtime) {
-          newerMdFiles.push(filename);
-        } else if (mdStat.mtimeMs < configMtime) {
-          olderMdFiles.push(filename);
-        }
-      }
-    }
-
-    if (newerMdFiles.length > 0) {
-      await this.syncMdToConfig(profileId);
-      return { direction: 'md-to-config', files: newerMdFiles };
-    } else if (olderMdFiles.length > 0) {
-      await this.syncConfigToMd(profileId);
-      return { direction: 'config-to-md', files: olderMdFiles };
-    }
-
-    return { direction: 'in-sync', files: [] };
-  }
-
-  public async autoSyncAllProfiles(): Promise<Array<{ profileId: string; profileName: string; result: { direction: string; files: string[] } | null }>> {
-    const results: Array<{ profileId: string; profileName: string; result: { direction: string; files: string[] } | null }> = [];
-
-    for (const [profileId, context] of this.profiles.entries()) {
-      try {
-        const result = await this.autoSyncProfile(profileId);
-        results.push({ profileId, profileName: context.agentProfile.name, result });
-      } catch (err) {
-        logger.error(`Failed to auto-sync profile ${profileId}: ${err}`);
-        results.push({ profileId, profileName: context.agentProfile.name, result: null });
-      }
-    }
-
-    return results;
-  }
-
-  public async getSyncStatus(profileId: string): Promise<{ mdNewer: string[]; configNewer: string[]; inSync: boolean }> {
-    const context = this.profiles.get(profileId);
-    if (!context) {
-      throw new Error(`Agent profile with id ${profileId} not found`);
-    }
-
-    const agentsDir = getAgentsDirForProfile(context.agentProfile);
-    const agentDir = path.join(agentsDir, context.dirName);
-    const configPath = path.join(agentDir, 'config.json');
-
-    const configStat = await fs.stat(configPath);
-    const configMtime = configStat.mtimeMs;
-
-    const mdNewer: string[] = [];
-    const configNewer: string[] = [];
-
-    for (const filename of this.MD_SIDECAR_FILES) {
-      const mdPath = path.join(agentDir, filename);
-      if (await fileExists(mdPath)) {
-        const mdStat = await fs.stat(mdPath);
-        if (mdStat.mtimeMs > configMtime) {
-          mdNewer.push(filename);
-        } else if (mdStat.mtimeMs < configMtime) {
-          configNewer.push(filename);
-        }
-      }
-    }
-
-    return { mdNewer, configNewer, inSync: mdNewer.length === 0 && configNewer.length === 0 };
   }
 
   async dispose(): Promise<void> {

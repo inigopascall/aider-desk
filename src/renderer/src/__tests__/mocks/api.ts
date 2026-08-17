@@ -273,6 +273,8 @@ export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedOb
     updateAgentProfile: vi.fn((): Promise<AgentProfile[]> => Promise.resolve([])),
     deleteAgentProfile: vi.fn((): Promise<AgentProfile[]> => Promise.resolve([])),
     updateAgentProfilesOrder: vi.fn((): Promise<void> => Promise.resolve()),
+    getAgentPromptSidecar: vi.fn((): Promise<string> => Promise.resolve('')),
+    saveAgentPromptSidecar: vi.fn((): Promise<void> => Promise.resolve()),
 
     // Extension operations
     getInstalledExtensions: vi.fn((): Promise<InstalledExtension[]> => Promise.resolve([])),

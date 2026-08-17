@@ -34,6 +34,7 @@ import { useTaskQueuedPrompts } from '@/stores/taskStore';
 import { useMarkdownEditorOverlayStore } from '@/stores/markdownEditorStore';
 import { InputHistoryMenu } from '@/components/PromptField/InputHistoryMenu';
 import { showErrorNotification } from '@/utils/notifications';
+import { sanitizeMilkdownMarkdown } from '@/utils/markdown';
 import { useCommands } from '@/hooks/useCommands';
 import { useApi } from '@/contexts/ApiContext';
 import { useAgents } from '@/contexts/AgentsContext';
@@ -96,17 +97,6 @@ const isPathLike = (input: string): boolean => {
   const firstWord = input.split(' ')[0];
   return (firstWord.match(/\//g) || []).length >= 2;
 };
-
-// The Milkdown serializer can emit <br /> for line breaks. We never want HTML
-// in the prompt text, so collapse all <br> variants back to real newlines.
-// It also unnecessarily escapes plain punctuation (e.g. `\...?`) during
-// serialization; normalize those back so the prompt text stays clean.
-// Backslashes used for code, paths, commands, or other intentional Markdown
-// escapes are preserved — only the targeted punctuation escapes are collapsed.
-const sanitizeMilkdownMarkdown = (markdown: string): string =>
-  markdown
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/\\([.?!,:;])/g, '$1');
 
 const THEME = githubDarkInit({
   settings: {

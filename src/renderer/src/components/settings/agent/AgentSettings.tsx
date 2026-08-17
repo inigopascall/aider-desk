@@ -603,7 +603,7 @@ export const AgentSettings = ({
                 {activeTab === ProfileTab.General && (
                   <ProfileGeneralSection profile={selectedProfile} settings={settings} onSettingChange={handleProfileSettingChange} />
                 )}
-                {activeTab === ProfileTab.Prompts && <ProfilePromptsSection profile={selectedProfile} onSettingChange={handleProfileSettingChange} />}
+                {activeTab === ProfileTab.Prompts && <ProfilePromptsSection profile={selectedProfile} />}
                 {activeTab === ProfileTab.Tools && (
                   <ProfileToolsSection
                     profile={selectedProfile}
