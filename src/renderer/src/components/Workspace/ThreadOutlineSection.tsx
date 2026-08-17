@@ -59,9 +59,11 @@ export const ThreadOutlineSection = ({ baseDir, taskId, isOpen, totalStats, visi
   const hasContent = visitedSections.has('outline') && filteredItems.length > 0;
   return <motion.div className={clsx('flex flex-col overflow-hidden min-h-[40px]', showBorderTop && 'border-t border-border-dark-light')} initial={false} animate={editMode ? { flexGrow: 0, flexShrink: 0 } : { flexGrow: isOpen ? 1 : 0, flexShrink: isOpen ? 1 : 0 }} transition={{ duration: 0.3, ease: 'easeIn' }}>
     <SectionHeader section="outline" title={t('messages.outline.title')} count={bookmarkedCount} totalCount={items.length} isOpen={isOpen} totalStats={totalStats} onToggle={onToggle} actions={actions} editMode={editMode} isHidden={isHidden} onToggleHidden={onToggleHidden} />
-    <Activity mode={isOpen ? 'visible' : 'hidden'}><motion.div className="flex-grow w-full overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-bg-tertiary scrollbar-track-bg-primary-light scrollbar-rounded py-1 bg-bg-primary-light-strong relative" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
-      {hasContent ? filteredItems.map((item) => <ThreadOutlineItem key={item.id} item={item} bookmarked={bookmarkedIds.has(item.id)} onSelect={handleSelect} onToggleBookmark={handleToggleBookmark} />) : <div className="absolute inset-0 flex items-center justify-center text-center text-text-muted text-2xs">{t(filter === 'bookmarks' ? 'messages.outline.emptyBookmarks' : 'messages.outline.empty')}</div>}
-    </motion.div></Activity>
+    {isOpen && (
+      <motion.div className="flex-grow w-full overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-bg-tertiary scrollbar-track-bg-primary-light scrollbar-rounded py-1 bg-bg-primary-light-strong relative" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+        {hasContent ? filteredItems.map((item) => <ThreadOutlineItem key={item.id} item={item} bookmarked={bookmarkedIds.has(item.id)} onSelect={handleSelect} onToggleBookmark={handleToggleBookmark} />) : <div className="absolute inset-0 flex items-center justify-center text-center text-text-muted text-2xs">{t(filter === 'bookmarks' ? 'messages.outline.emptyBookmarks' : 'messages.outline.empty')}</div>}
+      </motion.div>
+    )}
   </motion.div>;
 };
 
