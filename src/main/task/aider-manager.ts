@@ -5,7 +5,7 @@ import fs from 'fs/promises';
 import path from 'path';
 
 import { EditFormat, ModelsData } from '@common/types';
-import { fileExists } from '@common/utils';
+import { fileExists } from '@common/node-utils';
 import treeKill from 'tree-kill';
 import { DEFAULT_AIDER_MAIN_MODEL } from '@common/agent';
 

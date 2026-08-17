@@ -60,10 +60,10 @@ import {
   extractProviderModel,
   extractServerNameToolName,
   extractTextContent,
-  fileExists,
   parseCommandArgs,
   parseUsageReport,
 } from '@common/utils';
+import { fileExists } from '@common/node-utils';
 import {
   COMPACT_CONVERSATION_AGENT_PROFILE,
   CONFLICT_RESOLUTION_PROFILE,

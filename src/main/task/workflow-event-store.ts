@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 
 import type { WorkflowLogData } from '@common/types';
-import { fileExists } from '@common/utils';
+import { fileExists } from '@common/node-utils';
 
 import { AIDER_DESK_TASKS_DIR, AIDER_DESK_WORKFLOW_EVENTS_FILE } from '@/constants';
 import logger from '@/logger';

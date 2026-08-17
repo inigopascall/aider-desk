@@ -389,14 +389,6 @@ export class BrowserApi implements ApplicationAPI {
     });
   }
 
-  /**
-   * Cleans up the socket connection.
-   * Should be called when the BrowserApi instance is no longer needed.
-   */
-  destroy(): void {
-    this.socket.disconnect();
-  }
-
   private async post<B, R>(endpoint: string, body: B): Promise<R> {
     const response = await this.apiClient.post<R>(endpoint, body);
     return response.data;

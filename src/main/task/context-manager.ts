@@ -17,7 +17,8 @@ import {
   UsageReportData,
   UserMessageData,
 } from '@common/types';
-import { extractServerNameToolName, extractTextContent, fileExists, isMessageEmpty, isTextContent } from '@common/utils';
+import { extractServerNameToolName, extractTextContent, isMessageEmpty, isTextContent } from '@common/utils';
+import { fileExists } from '@common/node-utils';
 import { AIDER_TOOL_GROUP_NAME, AIDER_TOOL_RUN_PROMPT, SUBAGENTS_TOOL_GROUP_NAME, SUBAGENTS_TOOL_RUN_TASK } from '@common/tools';
 
 import logger from '@/logger';

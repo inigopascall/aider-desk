@@ -4,7 +4,7 @@ import * as path from 'path';
 import { FSWatcher, watch } from 'chokidar';
 import { debounce } from 'lodash';
 import { DEFAULT_AGENT_PROFILE, DEFAULT_AGENT_PROFILES } from '@common/agent';
-import { fileExists } from '@common/utils';
+import { fileExists } from '@common/node-utils';
 import { v4 as uuidv4 } from 'uuid';
 
 import type { AgentProfile, SettingsData } from '@common/types';

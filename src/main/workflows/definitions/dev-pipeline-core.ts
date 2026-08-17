@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { simpleGit, SimpleGit } from 'simple-git';
 
-import { fileExists } from '@common/utils';
+import { fileExists } from '@common/node-utils';
 
 import { Task } from '@/task';
 import { WorkflowCancelled, WorkflowError } from '../dispatch';

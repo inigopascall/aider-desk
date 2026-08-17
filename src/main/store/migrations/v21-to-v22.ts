@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 
 import { McpServerConfig, SettingsData } from '@common/types';
-import { fileExists } from '@common/utils';
+import { fileExists } from '@common/node-utils';
 
 import { AIDER_DESK_HOME_DIR, AIDER_DESK_MCP_SERVERS_FILE } from '@/constants';
 import logger from '@/logger';

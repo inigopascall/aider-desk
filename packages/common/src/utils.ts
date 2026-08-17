@@ -1,5 +1,3 @@
-import fs from 'fs/promises';
-
 import { EXTENSION_TOOL_GROUP_NAME, TOOL_GROUP_NAME_SEPARATOR } from '@common/tools';
 
 import { OS, UsageReportData } from './types';
@@ -153,10 +151,6 @@ export const extractIpcErrorMessage = (error: unknown): string => {
 
   // If no IPC error format found, return the original message
   return message;
-};
-
-export const fileExists = async (fileName: string): Promise<boolean> => {
-  return (await fs.stat(fileName).catch(() => null)) !== null;
 };
 
 export const extractServerNameToolName = (toolCallName: string): [string, string] => {
