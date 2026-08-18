@@ -46,9 +46,9 @@ export function markdownTable(headers: string[], alignments: Array<'left' | 'rig
   }
 
   const delimiter = (alignment: 'left' | 'right' | 'center'): string => {
-    if (alignment === 'right') return '---:';
-    if (alignment === 'center') return ':---:';
-    return '---';
+    if (alignment === 'right') return '----:';
+    if (alignment === 'center') return ':----:';
+    return '----';
   };
 
   const renderRow = (values: string[]): string => `| ${values.map(escapeCell).join(' | ')} |`;
@@ -77,7 +77,7 @@ function titleCase(value: string): string {
 function listCell(values: string[]): string {
   if (values.length === 0) return '—';
   if (values.length > 3) return String(values.length);
-  return values.map(code).join(', ');
+  return values.map(code).join('<br>');
 }
 
 function verdictCell(verdict: string | null): string {
@@ -149,9 +149,7 @@ export function formatCheckpointReport(journey: Journey, workflowName: string, l
     journey.evidenceRows.length
       ? section('### 🧾 Evidence', markdownTable(['Round', 'Verdict', 'Added', 'Removed', 'Research'], ['right', 'left', 'left', 'left', 'center'], evidenceRows(journey.evidenceRows)))
       : null,
-    journey.contextChanges.length
-      ? section('### 📂 Context reconfiguration', markdownTable(['Stage', 'Change', 'Path'], ['left', 'center', 'left'], contextRows(journey.contextChanges)))
-      : null,
+    null,
     journey.passes.length
       ? section('### ✍️ Edit passes', markdownTable(['Pass', 'Stage', 'Edits', 'Verdict'], ['right', 'left', 'right', 'left'], journey.passes.map((pass) => [String(pass.pass), pass.stage, String(pass.editCount), pass.verdict])))
       : null,

@@ -81,8 +81,8 @@ export const MARKDOWN_COMPONENTS: Components = {
   thead: (props) => <thead className="bg-bg-secondary-light" {...props} />,
   tbody: (props) => <tbody className="bg-bg-primary-light-strong divide-y divide-border-default" {...props} />,
   tr: (props) => <tr {...props} />,
-  th: (props) => <th className="px-5 py-2 text-left text-xs font-medium text-text-secondary uppercase tracking-wider" {...props} />,
-  td: (props) => <td className="px-4 py-2 text-xs text-text-primary whitespace-nowrap" {...props} />,
+  th: (props) => <th className="px-5 py-2 text-left text-xs font-medium text-text-secondary uppercase tracking-wider break-words" {...props} />,
+  td: (props) => <td className="px-4 py-2 text-xs text-text-primary break-words" {...props} />,
 };
 
 export const parseMessageContent = (
