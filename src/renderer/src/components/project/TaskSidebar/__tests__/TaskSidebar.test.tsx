@@ -225,17 +225,22 @@ describe('TaskSidebar', () => {
 
     expect(screen.getByText('taskSidebar.changeState')).toBeInTheDocument();
     expect(screen.getByText('taskSidebar.highlightTask')).toBeInTheDocument();
-    expect(screen.getByText('taskState.todo')).toBeInTheDocument();
-    expect(screen.getByText('taskState.readyForImplementation')).toBeInTheDocument();
-    expect(screen.getByText('taskState.readyForReview')).toBeInTheDocument();
-    expect(screen.getByText('taskState.moreInfoNeeded')).toBeInTheDocument();
-    expect(screen.getByText('taskState.done')).toBeInTheDocument();
-    expect(screen.queryByText('#E74C3C')).not.toBeInTheDocument();
-    expect(screen.getByText('taskState.readyForReview')).toHaveClass('text-success-light');
-    expect(screen.getByText('taskState.moreInfoNeeded')).toHaveClass('text-error');
-    expect(screen.getByText('taskState.readyForReview')).toHaveClass('border-border-dark-light', 'bg-bg-tertiary-emphasis');
+    const getMenuStateText = (state: string) => {
+      const matches = screen.getAllByText(`taskState.${state}`);
+      return matches[matches.length - 1];
+    };
 
-    fireEvent.click(screen.getByText('taskState.done'));
+    expect(getMenuStateText('todo')).toBeInTheDocument();
+    expect(getMenuStateText('readyForImplementation')).toBeInTheDocument();
+    expect(getMenuStateText('readyForReview')).toBeInTheDocument();
+    expect(getMenuStateText('moreInfoNeeded')).toBeInTheDocument();
+    expect(getMenuStateText('done')).toBeInTheDocument();
+    expect(screen.queryByText('#E74C3C')).not.toBeInTheDocument();
+    expect(getMenuStateText('readyForReview')).toHaveClass('text-success-light');
+    expect(getMenuStateText('moreInfoNeeded')).toHaveClass('text-error');
+    expect(getMenuStateText('readyForReview')).toHaveClass('border-border-dark-light', 'bg-bg-tertiary-emphasis');
+
+    fireEvent.click(getMenuStateText('done'));
     await waitFor(() => {
       expect(updateTask).toHaveBeenCalledWith(task.id, { state: 'done' });
     });
