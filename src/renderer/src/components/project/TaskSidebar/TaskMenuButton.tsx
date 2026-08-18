@@ -118,9 +118,7 @@ export const TaskMenuButton = memo(
     );
 
     const handleMenuClick = () => {
-      if (!isMenuOpen) {
-        setIsMenuOpen(true);
-      }
+      setIsMenuOpen((open) => !open);
     };
 
     const handleEditClick = (e: MouseEvent) => {
@@ -187,32 +185,33 @@ export const TaskMenuButton = memo(
       <div className={clsx('relative flex items-center', isMenuOpen ? 'flex' : 'w-0 group-hover:w-auto')}>
         <div ref={buttonRef}>
           <button
-            className={clsx(
-              'transition-opacity p-1.5 rounded-md hover:bg-bg-tertiary text-text-muted hover:text-text-primary',
-              !isMenuOpen && 'opacity-0 group-hover:opacity-100',
-            )}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleMenuClick();
-            }}
-          >
-            <FaEllipsisVertical className="w-4 h-4" />
-            data-testid={`task-menu-trigger-${task.id}`}
-          </button>
+              className={clsx(
+                'transition-opacity p-1.5 rounded-md hover:bg-bg-tertiary text-text-muted hover:text-text-primary',
+                !isMenuOpen && 'opacity-0 group-hover:opacity-100',
+              )}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleMenuClick();
+              }}
+              data-testid={`task-menu-trigger-${task.id}`}
+            >
+              <FaEllipsisVertical className="w-4 h-4" />
+            </button>
         </div>
         {isMenuOpen &&
-          menuPosition &&
           createPortal(
             <div
               ref={menuRef}
               style={{
                 position: 'fixed',
-                top: `${menuPosition.top}px`,
-                left: `${menuPosition.left}px`,
+                top: `${menuPosition?.top ?? -9999}px`,
+                left: `${menuPosition?.left ?? -9999}px`,
+                maxHeight: 'calc(100vh - 16px)',
+                overflowY: 'auto',
               }}
               className="w-[170px] bg-bg-secondary-light border border-border-default-dark rounded shadow-lg z-[9999]"
             >
-              <ul className="display-none group-hover:display-block">
+              <ul>
                 <li
                   className="flex items-center gap-2 px-2 py-1 text-2xs text-text-primary hover:bg-bg-tertiary cursor-pointer transition-colors"
                   onClick={handleEditClick}
