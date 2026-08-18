@@ -197,4 +197,59 @@ describe('TaskSidebar', () => {
     expect(screen.getByText('Task 1')).toBeInTheDocument();
     expect(screen.queryByText('Task 2')).not.toBeInTheDocument();
   });
+
+  it('renders grouped persistent task menu actions', async () => {
+    const updateTask = vi.fn().mockResolvedValue(undefined);
+    const task = {
+      id: 'task-1',
+      name: 'Task 1',
+      createdAt: '2023-01-01T00:00:00Z',
+      updatedAt: '2023-01-01T00:00:00Z',
+      state: 'todo',
+      metadata: { existing: 'value' },
+    } as TaskData;
+
+    render(
+      <TaskSidebar
+        loading={false}
+        tasks={[task]}
+        activeTaskId={task.id}
+        onTaskSelect={vi.fn()}
+        updateTask={updateTask}
+        isCollapsed={false}
+        onToggleCollapse={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('task-menu-trigger-task-1'));
+
+    expect(screen.getByText('taskSidebar.changeState')).toBeInTheDocument();
+    expect(screen.getByText('taskSidebar.highlightTask')).toBeInTheDocument();
+    expect(screen.getByText('taskSidebar.todo')).toBeInTheDocument();
+    expect(screen.getByText('taskSidebar.readyForImplementation')).toBeInTheDocument();
+    expect(screen.getByText('taskSidebar.readyForReview')).toBeInTheDocument();
+    expect(screen.getByText('taskSidebar.moreInfoNeeded')).toBeInTheDocument();
+    expect(screen.getByText('taskSidebar.done')).toBeInTheDocument();
+    expect(screen.queryByText('#E74C3C')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('taskSidebar.done'));
+    await waitFor(() => {
+      expect(updateTask).toHaveBeenCalledWith(task.id, { state: 'done' });
+    });
+    expect(screen.getByText('taskSidebar.highlightTask')).toBeInTheDocument();
+
+    const colorCell = screen.getByTestId('task-highlight-color-#E74C3C');
+    fireEvent.click(colorCell);
+    await waitFor(() => {
+      expect(updateTask).toHaveBeenCalledWith(task.id, {
+        metadata: { existing: 'value', highlightColor: '#E74C3C' },
+      });
+    });
+    expect(screen.getByText('taskSidebar.changeState')).toBeInTheDocument();
+
+    fireEvent.mouseDown(document.body);
+    await waitFor(() => {
+      expect(screen.queryByText('taskSidebar.changeState')).not.toBeInTheDocument();
+    });
+  });
 });
