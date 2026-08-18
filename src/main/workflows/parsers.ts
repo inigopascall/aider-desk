@@ -41,12 +41,110 @@ export interface EditCommand {
  */
 const NEW_CONTENT_FENCE_RE = /^(`{4,})[a-zA-Z0-9_-]*\r?\n([\s\S]*)\r?\n\1\s*$/;
 
+/** A single structural problem found by the line-oriented command scanner. */
+interface EditCommandScanIssue {
+  /** 0-based line index (within the scanned body) where the problem starts. */
+  line: number;
+  /** Self-contained description of the problem, e.g. a label with no fence. */
+  message: string;
+}
+
+/** Result of scanning a body for `SEARCH:`/`REPLACE:`/`INSERT:` commands. */
+interface EditCommandScan {
+  /** Every command whose fenced block parsed cleanly, in order. */
+  commands: EditCommand[];
+  /** Per line of the body: whether the line belongs to a parsed command. */
+  consumed: boolean[];
+  /** Structural problems encountered; empty when the body is well-formed. */
+  issues: EditCommandScanIssue[];
+}
+
 /**
- * Matches one `SEARCH:`/`REPLACE:`/`INSERT:` command: a label line (group 1)
- * followed by a fenced code block whose opening fence (group 2) and closing
- * fence have the same length, with the block content in group 3.
+ * A label line: the bare `SEARCH:`/`REPLACE:`/`INSERT:` marker occupying the
+ * whole line (surrounding whitespace tolerated).
  */
-const EDIT_COMMAND_RE = /(?:^|\n)[ \t]*(SEARCH|REPLACE|INSERT)[ \t]*:[ \t]*\r?\n[ \t]*(`{3,})[a-zA-Z0-9_-]*\r?\n([\s\S]*?)\r?\n[ \t]*\2[ \t]*(?=\r?\n|$)/gi;
+const EDIT_COMMAND_LABEL_RE = /^[ \t]*(SEARCH|REPLACE|INSERT)[ \t]*:[ \t]*$/i;
+
+/**
+ * An opening fence: three or more backticks, an optional language tag, and
+ * nothing else on the line. The closing fence must repeat the exact backtick
+ * run with no language tag; a fence of a different length inside the block is
+ * content, never a close.
+ */
+const EDIT_OPEN_FENCE_RE = /^[ \t]*(`{3,})[a-zA-Z0-9_-]*[ \t]*$/;
+
+/**
+ * Scans a body for `SEARCH:`/`REPLACE:`/`INSERT:` commands one line at a
+ * time. Never throws: a malformed block is reported as an issue and scanning
+ * resumes after the offending label, so one broken command cannot disturb its
+ * neighbours. An empty fenced block (opening fence immediately followed by
+ * its closing fence) is legal and yields `content: ''` — the canonical way
+ * to express "delete the SEARCH content".
+ */
+function scanEditCommands(body: string): EditCommandScan {
+  const lines = body.split(/\r?\n/);
+  const consumed: boolean[] = lines.map(() => false);
+  const commands: EditCommand[] = [];
+  const issues: EditCommandScanIssue[] = [];
+
+  let i = 0;
+  while (i < lines.length) {
+    const labelMatch = lines[i].match(EDIT_COMMAND_LABEL_RE);
+    if (!labelMatch) {
+      i++;
+      continue;
+    }
+    const kind = labelMatch[1].toUpperCase() as EditCommandKind;
+
+    // The next non-blank line after the label must be the opening fence.
+    let fenceLine = i + 1;
+    while (fenceLine < lines.length && lines[fenceLine].trim().length === 0) {
+      fenceLine++;
+    }
+    const fenceMatch = fenceLine < lines.length ? lines[fenceLine].match(EDIT_OPEN_FENCE_RE) : null;
+    if (!fenceMatch) {
+      issues.push({
+        line: i,
+        message: `${kind}: command label on line ${i} is not followed by a fenced code block`,
+      });
+      // Resume scanning at the line after the label; the offending line is
+      // left unconsumed so the residue check (or a later scan pass) classifies it.
+      i++;
+      continue;
+    }
+
+    const fence = fenceMatch[1];
+    const contentLines: string[] = [];
+    let closeLine = fenceLine + 1;
+    let closed = false;
+    while (closeLine < lines.length) {
+      if (lines[closeLine].trim() === fence) {
+        closed = true;
+        break;
+      }
+      contentLines.push(lines[closeLine]);
+      closeLine++;
+    }
+
+    if (!closed) {
+      issues.push({
+        line: i,
+        message: `the fenced block opened after ${kind}: (line ${fenceLine}) is never closed`,
+      });
+      // The block swallows the remainder of the body, so scanning ends here.
+      break;
+    }
+
+    // Success: mark the label, skipped blanks, content, and both fences consumed.
+    for (let m = i; m <= closeLine; m++) {
+      consumed[m] = true;
+    }
+    commands.push({ kind, content: contentLines.join('\n') });
+    i = closeLine + 1;
+  }
+
+  return { commands, consumed, issues };
+}
 
 /**
  * A single per-file edit instruction produced by the DECOMPOSITOR (and
@@ -73,9 +171,9 @@ export interface FileEditInstruction {
  */
 function stripCodeFences(text: string): string {
   let t = text.trim();
-  const fenceMatch = t.match(/^```[a-zA-Z0-9_-]*\n([\s\S]*?)\n```$/);
+  const fenceMatch = t.match(/^(`{3,})[a-zA-Z0-9_-]*\r?\n([\s\S]*?)\r?\n\1[ \t]*$/);
   if (fenceMatch) {
-    t = fenceMatch[1].trim();
+    t = fenceMatch[2].trim();
   }
   return t;
 }
@@ -419,24 +517,20 @@ export function parsePlanUnknowns(planText: string): {
  * At least one complete command (pair or insert) is required.
  */
 export function parseEditCommands(body: string): EditCommand[] {
-  const commands: EditCommand[] = [];
-  const spans: Array<{ start: number; end: number }> = [];
-  const re = new RegExp(EDIT_COMMAND_RE.source, EDIT_COMMAND_RE.flags);
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(body)) !== null) {
-    commands.push({ kind: match[1].toUpperCase() as EditCommandKind, content: match[3] });
-    spans.push({ start: match.index, end: match.index + match[0].length });
+  const { commands, consumed, issues } = scanEditCommands(body);
+
+  // Structural problems (a label with no fence, an unclosed block) are
+  // reported precisely, before the residue and pairing checks run.
+  if (issues.length > 0) {
+    throw new ParseError(`EDIT instructions: ${issues[0].message}`);
   }
 
   // Residue check: everything not consumed by a command must be whitespace.
   // This is what rejects descriptive prose smuggled in beside the commands.
-  let residue = '';
-  let cursor = 0;
-  for (const span of spans) {
-    residue += body.slice(cursor, span.start);
-    cursor = span.end;
-  }
-  residue += body.slice(cursor);
+  const residue = body
+    .split(/\r?\n/)
+    .filter((_, index) => !consumed[index])
+    .join('\n');
   if (residue.trim().length > 0) {
     const excerpt = residue.trim().slice(0, 80);
     throw new ParseError(
@@ -715,17 +809,14 @@ export interface EditVerificationResult {
 }
 
 /**
- * Extracts fenced replacement blocks that follow an explicit REPLACE or
- * REPLACEMENT label. Search blocks and unrelated explanatory fences are ignored.
+ * Extracts the content of every `REPLACE:` fenced block, in order. Search
+ * blocks, insert blocks, and unrelated explanatory fences are ignored. Empty
+ * blocks flow through as `''` and are filtered out downstream by the
+ * block-length guards.
  */
 function extractReplacementCodeBlocks(text: string): string[] {
-  const blocks: string[] = [];
-  const re = /(?:^|\n)\s*(?:REPLACE|REPLACEMENT)\s*:\s*\n\s*(`{3,})[a-zA-Z0-9_-]*\n([\s\S]*?)\n\1/gi;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(text)) !== null) {
-    blocks.push(match[2]);
-  }
-  return blocks;
+  const { commands } = scanEditCommands(text);
+  return commands.filter((command) => command.kind === 'REPLACE').map((command) => command.content);
 }
 
 /**
@@ -737,18 +828,15 @@ function extractReplacementCodeBlocks(text: string): string[] {
  */
 export function extractSearchReplacePairs(text: string): Array<{ search: string; replace: string }> {
   const pairs: Array<{ search: string; replace: string }> = [];
-  const re = /(?:^|\n)\s*(SEARCH|REPLACE|INSERT)\s*:\s*\n\s*(`{3,})[a-zA-Z0-9_-]*\n([\s\S]*?)\n\2/gi;
-  let match: RegExpExecArray | null;
+  const { commands } = scanEditCommands(text);
   let pendingSearch: string | null = null;
-  while ((match = re.exec(text)) !== null) {
-    const label = match[1].toUpperCase();
-    const content = match[3];
-    if (label === 'SEARCH') {
-      pendingSearch = content;
-    } else if (label === 'REPLACE' && pendingSearch !== null) {
-      pairs.push({ search: pendingSearch, replace: content });
+  for (const command of commands) {
+    if (command.kind === 'SEARCH') {
+      pendingSearch = command.content;
+    } else if (command.kind === 'REPLACE' && pendingSearch !== null) {
+      pairs.push({ search: pendingSearch, replace: command.content });
       pendingSearch = null;
-    } else if (label === 'INSERT') {
+    } else if (command.kind === 'INSERT') {
       pendingSearch = null;
     }
   }

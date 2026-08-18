@@ -5,6 +5,8 @@ import type { ContextMessage } from '@common/types';
 import {
   extractSearchReplacePairs,
   parseConfirmerResponse,
+  parseDigesterResponse,
+  parseEditCommands,
   parseFileEditBlocks,
   parseReviewerResponse,
   ParseError,
@@ -554,5 +556,243 @@ describe('splitConversationForSummary', () => {
     expect(result.recent.length).toBeGreaterThan(0);
     const lastUser = [...messages].reverse().find((m) => m.role === 'user')!;
     expect(result.recent).toContain(lastUser);
+  });
+});
+describe('empty fenced blocks and scanner tolerance', () => {
+  it('parses an empty REPLACE block mid-stream', () => {
+    const body = [
+      'SEARCH:',
+      '```',
+      'const a = 1;',
+      '```',
+      'REPLACE:',
+      '```',
+      'const a2 = 1;',
+      '```',
+      'SEARCH:',
+      '```',
+      'const b = 1;',
+      '```',
+      'REPLACE:',
+      '```',
+      '```',
+      'SEARCH:',
+      '```',
+      'const c = 1;',
+      '```',
+      'REPLACE:',
+      '```',
+      'const c2 = 1;',
+      '```',
+    ].join('\n');
+    const commands = parseEditCommands(body);
+    expect(commands).toHaveLength(6);
+    expect(commands[3]).toEqual({ kind: 'REPLACE', content: '' });
+  });
+
+  it('accepts an EDIT whose final REPLACE block is empty', () => {
+    const text = [
+      '=== FILE EDIT ===',
+      'PATH: src/a.ts',
+      'TYPE: EDIT',
+      'INSTRUCTIONS:',
+      'SEARCH:',
+      '```',
+      'const old = 1;',
+      '```',
+      'REPLACE:',
+      '```',
+      '```',
+      '=== END FILE EDIT ===',
+    ].join('\n');
+    const result = parseFileEditBlocks(text);
+    expect(result.edits).toHaveLength(1);
+    expect(result.edits[0].type).toBe('EDIT');
+  });
+
+  it('parses empty blocks fenced with 4 backticks', () => {
+    const body = [
+      'SEARCH:',
+      '````',
+      'const a = 1;',
+      '````',
+      'REPLACE:',
+      '````',
+      '````',
+    ].join('\n');
+    const commands = parseEditCommands(body);
+    expect(commands).toHaveLength(2);
+    expect(commands[1]).toEqual({ kind: 'REPLACE', content: '' });
+  });
+
+  it('tolerates a blank line between a label and its fence', () => {
+    const body = [
+      'SEARCH:',
+      '',
+      '```',
+      'const a = 1;',
+      '```',
+      'REPLACE:',
+      '',
+      '```',
+      'const b = 1;',
+      '```',
+    ].join('\n');
+    const commands = parseEditCommands(body);
+    expect(commands).toHaveLength(2);
+    expect(commands[0]).toEqual({ kind: 'SEARCH', content: 'const a = 1;' });
+    expect(commands[1]).toEqual({ kind: 'REPLACE', content: 'const b = 1;' });
+  });
+
+  it('keeps a 3-backtick line inside a 4-backtick block as content', () => {
+    const body = [
+      'SEARCH:',
+      '````',
+      'const code = `x`;',
+      '```',
+      'const more = 1;',
+      '````',
+      'REPLACE:',
+      '````',
+      'const y = 1;',
+      '````',
+    ].join('\n');
+    const commands = parseEditCommands(body);
+    expect(commands).toHaveLength(2);
+    expect(commands[0].content).toContain('```');
+    expect(commands[0].content).toContain('const more = 1;');
+  });
+
+  it('rejects an unclosed fenced block', () => {
+    const body = [
+      'SEARCH:',
+      '````',
+      'const a = 1;',
+      '```',
+      'const b = 1;',
+    ].join('\n');
+    expect(() => parseEditCommands(body)).toThrow(/never closed/);
+  });
+
+  it('rejects a label not followed by a fenced block', () => {
+    const body = [
+      'SEARCH:',
+      '```',
+      'const a = 1;',
+      '```',
+      'REPLACE:',
+      'const b = 1;',
+    ].join('\n');
+    expect(() => parseEditCommands(body)).toThrow(/not followed by a fenced code block/);
+  });
+
+  it('pairs a SEARCH with a truly empty REPLACE', () => {
+    const text = [
+      'SEARCH:',
+      '```',
+      'const old = 1;',
+      '```',
+      'REPLACE:',
+      '```',
+      '```',
+    ].join('\n');
+    const pairs = extractSearchReplacePairs(text);
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0].search).toContain('const old = 1;');
+    expect(pairs[0].replace).toBe('');
+  });
+
+  it('accepts a DEFICIENT verdict carrying an empty-REPLACE corrective edit', () => {
+    const text = [
+      '=== VERDICT ===',
+      'DEFICIENT',
+      '',
+      '=== FILE EDIT ===',
+      'PATH: src/a.ts',
+      'TYPE: EDIT',
+      'INSTRUCTIONS:',
+      'SEARCH:',
+      '```',
+      'const stale = 1;',
+      '```',
+      'REPLACE:',
+      '```',
+      '```',
+      '=== END FILE EDIT ===',
+    ].join('\n');
+    const result = parseConfirmerResponse(text);
+    expect(result.verdict).toBe('DEFICIENT');
+    if (result.verdict === 'DEFICIENT') {
+      expect(result.edits).toHaveLength(1);
+      expect(result.edits[0].type).toBe('EDIT');
+    }
+  });
+
+  it('flags still-present content that an empty REPLACE was meant to delete', () => {
+    const edit: FileEditInstruction = {
+      path: 'src/a.ts',
+      type: 'EDIT',
+      instructions: 'SEARCH:\n```\nconst staleOldValue = 1;\n```\nREPLACE:\n```\n```',
+    };
+    const result = verifyEditAlignment(edit, 'const staleOldValue = 1;', { insertions: 5, deletions: 5 });
+    expect(result.suspicious).toBe(true);
+    expect(result.reasons).toContain('content slated for removal is still present');
+  });
+
+  it('accepts a DIGESTER verdict wrapped in a 4-backtick fence', () => {
+    const text = ['````', 'VERDICT: YES', '````'].join('\n');
+    const result = parseDigesterResponse(text);
+    expect(result.verdict).toBe('YES');
+    expect(result.irrelevantFiles).toEqual([]);
+  });
+
+  it('parses the reported-sample shape with empty REPLACE blocks and mid-line backticks', () => {
+    const taskMenuLine = 'data-testid={`task-menu-${task.id}`}';
+    const text = [
+      '=== AMBIGUITIES ===',
+      'NONE',
+      '',
+      '=== FILE EDIT ===',
+      'PATH: src/components/TaskList.tsx',
+      'TYPE: EDIT',
+      'INSTRUCTIONS:',
+      'SEARCH:',
+      '````',
+      'const oldA = 1;',
+      '````',
+      'REPLACE:',
+      '````',
+      '````',
+      'SEARCH:',
+      '````',
+      taskMenuLine,
+      '````',
+      'REPLACE:',
+      '````',
+      `${taskMenuLine} // updated`,
+      '````',
+      'SEARCH:',
+      '````',
+      'const oldB = 2;',
+      '````',
+      'REPLACE:',
+      '````',
+      '````',
+      '=== END FILE EDIT ===',
+      '',
+      '=== FILE EDIT ===',
+      'PATH: src/components/TaskView.tsx',
+      'TYPE: EDIT',
+      'INSTRUCTIONS:',
+      'INSERT:',
+      '````',
+      'const inserted = true;',
+      '````',
+      '=== END FILE EDIT ===',
+    ].join('\n');
+    const result = parseFileEditBlocks(text);
+    expect(result.edits).toHaveLength(2);
+    expect(result.edits[0].type).toBe('EDIT');
+    expect(result.edits[1].instructions).toContain('INSERT:');
   });
 });

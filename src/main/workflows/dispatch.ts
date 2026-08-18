@@ -118,7 +118,7 @@ export function createWorkflowDispatcher(task: Task, modelSet?: WorkflowModelSet
         }
       }
 
-      throw new WorkflowError(`Workflow agent '${subagentId}' failed to produce a parseable response after ${maxAttempts} attempts`);
+      throw new WorkflowError(`Workflow agent '${subagentId}' failed to produce a parseable response after ${maxAttempts} attempts. Last parse error: ${lastError}`);
     },
   };
 
