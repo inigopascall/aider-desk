@@ -225,17 +225,17 @@ describe('TaskSidebar', () => {
 
     expect(screen.getByText('taskSidebar.changeState')).toBeInTheDocument();
     expect(screen.getByText('taskSidebar.highlightTask')).toBeInTheDocument();
-    expect(screen.getByText('taskSidebar.todo')).toBeInTheDocument();
-    expect(screen.getByText('taskSidebar.readyForImplementation')).toBeInTheDocument();
-    expect(screen.getByText('taskSidebar.readyForReview')).toBeInTheDocument();
-    expect(screen.getByText('taskSidebar.moreInfoNeeded')).toBeInTheDocument();
-    expect(screen.getByText('taskSidebar.done')).toBeInTheDocument();
+    expect(screen.getByText('taskState.todo')).toBeInTheDocument();
+    expect(screen.getByText('taskState.readyForImplementation')).toBeInTheDocument();
+    expect(screen.getByText('taskState.readyForReview')).toBeInTheDocument();
+    expect(screen.getByText('taskState.moreInfoNeeded')).toBeInTheDocument();
+    expect(screen.getByText('taskState.done')).toBeInTheDocument();
     expect(screen.queryByText('#E74C3C')).not.toBeInTheDocument();
-    expect(screen.getByText('taskSidebar.readyForReview')).toHaveClass('text-success-light');
-    expect(screen.getByText('taskSidebar.moreInfoNeeded')).toHaveClass('text-error');
-    expect(screen.getByText('taskSidebar.readyForReview')).toHaveClass('border-border-dark-light', 'bg-bg-tertiary-emphasis');
+    expect(screen.getByText('taskState.readyForReview')).toHaveClass('text-success-light');
+    expect(screen.getByText('taskState.moreInfoNeeded')).toHaveClass('text-error');
+    expect(screen.getByText('taskState.readyForReview')).toHaveClass('border-border-dark-light', 'bg-bg-tertiary-emphasis');
 
-    fireEvent.click(screen.getByText('taskSidebar.done'));
+    fireEvent.click(screen.getByText('taskState.done'));
     await waitFor(() => {
       expect(updateTask).toHaveBeenCalledWith(task.id, { state: 'done' });
     });
