@@ -301,8 +301,8 @@ export const ProfileGeneralSection = ({ profile, settings, onSettingChange }: Pr
                 <InfoIcon className="ml-1" tooltip={t('settings.agent.includeRepoMapTooltip')} />
               </div>
             }
-            checked={profile.includeRepoMap}
-            onChange={(checked) => onSettingChange('includeRepoMap', checked)}
+            checked={profile.includeRepoMappings}
+            onChange={(checked) => onSettingChange('includeRepoMappings', checked)}
           />
         </div>
       </div>

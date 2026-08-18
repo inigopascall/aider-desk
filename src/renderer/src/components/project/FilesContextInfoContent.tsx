@@ -12,7 +12,6 @@ type Props = {
   aiderTotalCost: number;
   maxInputTokens: number;
   clearMessages: (clearContext?: boolean) => void;
-  runCommand: (command: string) => void;
   resetTask: () => void;
   mode: Mode;
   showFileDialog: () => void;

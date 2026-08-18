@@ -835,7 +835,7 @@ describe('Agent - prepareMessages sanitisation', () => {
 
     mockTask = createMockTask();
     mockProfile = createMockAgentProfile({
-      includeRepoMap: false,
+      includeRepoMappings: false,
       includeContextFiles: false,
     });
 
@@ -936,6 +936,35 @@ describe('Agent - prepareMessages sanitisation', () => {
     await agent['prepareMessages'](mockTask, mockProfile, history, [], 'openrouter/model-b');
     expect((history[0] as any).providerOptions).toBeDefined();
     expect((history[0].content[0] as any).providerOptions).toBeDefined();
+  });
+
+  it('prepends repository mappings before ordinary context files', async () => {
+    mockProfile.includeContextFiles = true;
+    mockProfile.includeRepoMappings = true;
+    mockProfile.toolApprovals = {
+      [fileReadToolId]: ToolApprovalState.Always,
+    };
+    mockTask.getRepositoryMappingFiles = vi.fn().mockResolvedValue([{ path: '.aider-desk/mappings/map.md', readOnly: true, source: 'repo-mapping' }]);
+    mockTask.resolveContextFilePath = vi.fn((filePath: string) => Promise.resolve(`/test/project/${filePath}`));
+    mockFsReadFile.mockResolvedValue(Buffer.from('mapping content'));
+
+    const messages = await agent['prepareMessages'](
+      mockTask,
+      mockProfile,
+      [],
+      [{ path: 'src/app.ts', readOnly: false }],
+      'test-provider/test-model',
+    );
+
+    const mappingToolCallIndex = messages.findIndex(
+      (message: any) => message.role === 'assistant' && Array.isArray(message.content) && message.content.some((part: any) => part.input?.filePath === '.aider-desk/mappings/map.md'),
+    );
+    const contextToolCallIndex = messages.findIndex(
+      (message: any) => message.role === 'assistant' && Array.isArray(message.content) && message.content.some((part: any) => part.input?.filePath === 'src/app.ts'),
+    );
+
+    expect(mappingToolCallIndex).toBeGreaterThanOrEqual(0);
+    expect(contextToolCallIndex).toBeGreaterThan(mappingToolCallIndex);
   });
 });
 

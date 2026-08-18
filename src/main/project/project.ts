@@ -21,6 +21,7 @@ import { MemoryManager } from '@/memory/memory-manager';
 import { PromptsManager } from '@/prompts';
 import { ExtensionManager } from '@/extensions/extension-manager';
 import { AIDER_DESK_TASKS_DIR, AIDER_DESK_WATCH_FILES_LOCK } from '@/constants';
+import { ensureRepositoryMappingsInitialized } from '@/repository-mappings';
 import { PythonDependenciesInstaller } from '@/python-dependencies-installer';
 import { determineMainModel, determineWeakModel } from '@/utils';
 
@@ -66,6 +67,7 @@ export class Project {
         await this.agentProfileManager.initializeForProject(this.baseDir);
         await this.mcpConfigManager.initializeForProject(this.baseDir);
         await this.extensionManager.reloadProjectExtensions(this);
+        await ensureRepositoryMappingsInitialized(this.baseDir);
         await this.sendInputHistoryUpdatedEvent();
 
         await this.extensionManager.dispatchEvent('onProjectStarted', { baseDir: this.baseDir }, this);

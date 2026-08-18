@@ -6,12 +6,12 @@ import type { ContextFile, RegenerateRepositoryMappingsResult } from '@common/ty
 import { AIDER_DESK_MAPPINGS_SCRIPT, AIDER_DESK_PROJECT_MAPPINGS_DIR } from '@/constants';
 import { execWithShellPath } from '@/utils';
 
-export const DEFAULT_MAPPINGS_SCRIPT = `#!/usr/bin/env bash
+export const getDefaultMappingsScript = (): string => `#!/usr/bin/env bash
 #
 # AiderDesk repository-mapping generator.
 #
-# Files written to .aider-desk/mappings/ become read-only agent context when
-# "Include repository mappings" is enabled in an agent profile. Regenerate
+# Files written to ${AIDER_DESK_PROJECT_MAPPINGS_DIR}/ become read-only agent
+# context when "Include repository mappings" is enabled in an agent profile. Regenerate
 # them from the Repository Mappings Workspace section.
 #
 # Prefer writing temporary files and moving them into place so readers never
@@ -22,7 +22,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT"
 
-OUTPUT_DIR=".aider-desk/mappings"
+OUTPUT_DIR="${AIDER_DESK_PROJECT_MAPPINGS_DIR}"
 mkdir -p "$OUTPUT_DIR"
 
 # Example: generate Aider's repository map.
@@ -41,7 +41,7 @@ export const ensureRepositoryMappingsInitialized = async (baseDir: string): Prom
     await fs.access(scriptPath);
   } catch {
     await fs.mkdir(path.dirname(scriptPath), { recursive: true });
-    await fs.writeFile(scriptPath, DEFAULT_MAPPINGS_SCRIPT, 'utf8');
+    await fs.writeFile(scriptPath, getDefaultMappingsScript(), 'utf8');
   }
 };
 

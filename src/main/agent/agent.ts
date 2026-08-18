@@ -1410,7 +1410,7 @@ export class Agent {
       // Read all files and categorize them
       for (const file of files) {
         try {
-          const filePath = path.resolve(task.getTaskDir(), file.path);
+          const filePath = (await task.resolveContextFilePath(file.path)) ?? path.resolve(task.getTaskDir(), file.path);
           const fileContentBuffer = await fs.readFile(filePath);
           const relativePath = path.isAbsolute(file.path) ? path.relative(task.getTaskDir(), file.path) : file.path;
 
@@ -1536,24 +1536,12 @@ export class Agent {
   private async prepareMessages(task: Task, profile: AgentProfile, contextMessages: ContextMessage[], contextFiles: ContextFile[], targetModelId?: string): Promise<ModelMessage[]> {
     const messages: ModelMessage[] = [];
 
-    // Add repo map if enabled
-    if (profile.includeRepoMap) {
-      const repoMap = task.getRepoMap();
-      if (repoMap) {
-        messages.push({
-          role: 'user',
-          content: repoMap,
-        });
-        messages.push({
-          role: 'assistant',
-          content: 'Ok, I will use the repository map as a reference.',
-        });
-      }
-    }
+    const repositoryMappingFiles = profile.includeRepoMappings ? await task.getRepositoryMappingFiles() : [];
+    const filesForPrompt = [...repositoryMappingFiles, ...contextFiles];
 
     // Add context files with content or just list of working files
     if (profile.includeContextFiles) {
-      const contextFilesMessages = await this.getContextFilesAsToolCallMessages(task, profile, contextFiles);
+      const contextFilesMessages = await this.getContextFilesAsToolCallMessages(task, profile, filesForPrompt);
       // Add message history before context files
       messages.push(...(contextMessages as ModelMessage[]));
       messages.push(...contextFilesMessages);

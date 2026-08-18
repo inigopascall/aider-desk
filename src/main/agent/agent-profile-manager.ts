@@ -462,8 +462,14 @@ export class AgentProfileManager {
   }
 
   private sanitizeAgentProfile(loadedProfile: AgentProfile, agentDirName: string): AgentProfile {
+    const legacyProfile = loadedProfile as AgentProfile & { includeRepoMap?: boolean };
+    const { includeRepoMap: _legacyIncludeRepoMap, ...profileWithoutLegacyField } = legacyProfile;
+    const includeRepoMappings =
+      legacyProfile.includeRepoMappings ?? legacyProfile.includeRepoMap ?? DEFAULT_AGENT_PROFILE.includeRepoMappings;
+
     return {
-      ...loadedProfile,
+      ...profileWithoutLegacyField,
+      includeRepoMappings,
       id: loadedProfile.id || uuidv4(),
       name: loadedProfile.name || agentDirName,
       provider: loadedProfile.provider || DEFAULT_AGENT_PROFILE.provider,

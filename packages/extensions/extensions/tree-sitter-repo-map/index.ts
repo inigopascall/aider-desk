@@ -126,7 +126,7 @@ export default class TreeSitterRepoMapExtension implements Extension {
 
   async onAgentStarted(event: AgentStartedEvent, context: ExtensionContext): Promise<void | Partial<AgentStartedEvent>> {
     // Only process if includeRepoMap is enabled
-    if (!event.agentProfile.includeRepoMap) {
+    if (!event.agentProfile.includeRepoMappings) {
       return undefined;
     }
 
@@ -208,7 +208,7 @@ export default class TreeSitterRepoMapExtension implements Extension {
         contextMessages: modifiedContextMessages,
         agentProfile: {
           ...event.agentProfile,
-          includeRepoMap: false,
+          includeRepoMappings: false,
         },
       };
     } catch (error) {

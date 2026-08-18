@@ -65,6 +65,7 @@ import {
   WorktreeUncommittedFiles,
   TaskCreatedData,
   UpdatedFilesUpdatedData,
+  RepositoryMappingsUpdatedData,
   QueuedPromptsUpdatedData,
   InstalledExtension,
   AvailableExtension,
@@ -116,6 +117,7 @@ type EventDataMap = {
   'agent-profiles-updated': AgentProfilesUpdatedData;
   'mcp-servers-updated': McpServersData;
   'updated-files-updated': UpdatedFilesUpdatedData;
+  'repository-mappings-updated': RepositoryMappingsUpdatedData;
   'skills-updated': SkillsUpdatedData;
   notification: NotificationData;
   'task-created': TaskCreatedData;
@@ -200,6 +202,7 @@ export class BrowserApi implements ApplicationAPI {
       'provider-models-updated': new Map(),
       'providers-updated': new Map(),
       'updated-files-updated': new Map(),
+      'repository-mappings-updated': new Map(),
       'skills-updated': new Map(),
       'project-settings-updated': new Map(),
       'task-created': new Map(),
@@ -604,6 +607,12 @@ export class BrowserApi implements ApplicationAPI {
   getUpdatedFiles(baseDir: string, taskId: string): Promise<{ path: string; additions: number; deletions: number }[]> {
     return this.post('/get-updated-files', { projectDir: baseDir, taskId });
   }
+  getRepositoryMappings(baseDir: string): Promise<ContextFile[]> {
+    return this.get('/project/repository-mappings', { projectDir: baseDir });
+  }
+  regenerateRepositoryMappings(baseDir: string, taskId: string): Promise<RegenerateRepositoryMappingsResult> {
+    return this.post('/project/repository-mappings/regenerate', { projectDir: baseDir, taskId });
+  }
   async generateCommitMessage(baseDir: string, taskId: string): Promise<string> {
     const res = await this.post<{ projectDir: string; taskId: string }, { message: string }>('/project/worktree/generate-commit-message', {
       projectDir: baseDir,
@@ -959,6 +968,9 @@ export class BrowserApi implements ApplicationAPI {
   }
   addUpdatedFilesUpdatedListener(baseDir: string, taskId: string, callback: (data: UpdatedFilesUpdatedData) => void): () => void {
     return this.addListener('updated-files-updated', callback, baseDir, taskId);
+  }
+  addRepositoryMappingsUpdatedListener(baseDir: string, callback: (data: RepositoryMappingsUpdatedData) => void): () => void {
+    return this.addListener('repository-mappings-updated', callback, baseDir);
   }
   addSkillsUpdatedListener(baseDir: string, taskId: string, callback: (data: SkillsUpdatedData) => void): () => void {
     return this.addListener('skills-updated', callback, baseDir, taskId);

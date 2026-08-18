@@ -8,7 +8,7 @@ export interface TreeItem {
   file?: ContextFile;
 }
 
-export type SectionType = 'updated' | 'project' | 'context' | 'rules' | 'skills' | 'outline';
+export type SectionType = 'updated' | 'project' | 'context' | 'mappings' | 'rules' | 'skills' | 'outline';
 
 export const normalizePath = (path: string): string => {
   return path.replace(/\\/g, '/');

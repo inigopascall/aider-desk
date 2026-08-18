@@ -16,6 +16,7 @@ import { ProjectFilesSection } from './ProjectFilesSection';
 import { RulesSection } from './RulesSection';
 import { SkillsSection } from './SkillsSection';
 import { ThreadOutlineSection } from './ThreadOutlineSection';
+import { RepositoryMappingsSection } from './RepositoryMappingsSection';
 import { normalizePath } from './types';
 
 import type { SectionType, TreeItem } from './types';
@@ -27,7 +28,7 @@ import { useProjectSettings } from '@/contexts/ProjectSettingsContext';
 
 import './Workspace.css';
 
-const ALL_SECTIONS: SectionType[] = ['outline', 'context', 'updated', 'project', 'rules', 'skills'];
+const ALL_SECTIONS: SectionType[] = ['outline', 'context', 'mappings', 'updated', 'project', 'rules', 'skills'];
 
 type SortableSectionWrapperProps = {
   id: SectionType;
@@ -261,6 +262,7 @@ export const Workspace = ({
   );
 
   const handleToggleContext = useCallback(() => setActiveSection('context'), [setActiveSection]);
+  const handleToggleMappings = useCallback(() => setActiveSection('mappings'), [setActiveSection]);
   const handleToggleUpdated = useCallback(() => setActiveSection('updated'), [setActiveSection]);
   const handleToggleProject = useCallback(() => setActiveSection('project'), [setActiveSection]);
   const handleToggleRules = useCallback(() => setActiveSection('rules'), [setActiveSection]);
@@ -268,6 +270,7 @@ export const Workspace = ({
   const handleToggleOutline = useCallback(() => setActiveSection('outline'), [setActiveSection]);
 
   const handleToggleContextHidden = useCallback(() => handleToggleSectionHidden('context'), [handleToggleSectionHidden]);
+  const handleToggleMappingsHidden = useCallback(() => handleToggleSectionHidden('mappings'), [handleToggleSectionHidden]);
   const handleToggleUpdatedHidden = useCallback(() => handleToggleSectionHidden('updated'), [handleToggleSectionHidden]);
   const handleToggleProjectHidden = useCallback(() => handleToggleSectionHidden('project'), [handleToggleSectionHidden]);
   const handleToggleRulesHidden = useCallback(() => handleToggleSectionHidden('rules'), [handleToggleSectionHidden]);
@@ -312,6 +315,21 @@ export const Workspace = ({
             editMode={editMode}
             isHidden={sectionProps.isHidden('context')}
             onToggleHidden={handleToggleContextHidden}
+            showBorderTop={section !== orderedSections[0]}
+          />
+        );
+      case 'mappings':
+        return (
+          <RepositoryMappingsSection
+            baseDir={baseDir}
+            taskId={taskId}
+            isOpen={activeSection === 'mappings' && !editMode}
+            totalStats={totalStats}
+            visitedSections={visitedSections}
+            onToggle={handleToggleMappings}
+            editMode={editMode}
+            isHidden={sectionProps.isHidden('mappings')}
+            onToggleHidden={handleToggleMappingsHidden}
             showBorderTop={section !== orderedSections[0]}
           />
         );

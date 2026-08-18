@@ -334,4 +334,20 @@ describe('AgentProfileManager', () => {
       expect(mockEventManager.sendAgentProfilesUpdated).toHaveBeenCalled();
     });
   });
+
+  describe('repository mapping profile migration', () => {
+    it('migrates legacy includeRepoMap to includeRepoMappings', () => {
+      const profile = (agentProfileManager as any).sanitizeAgentProfile(
+        {
+          ...createMockAgentProfile(),
+          includeRepoMap: true,
+          includeRepoMappings: undefined,
+        },
+        'legacy-profile',
+      );
+
+      expect(profile.includeRepoMappings).toBe(true);
+      expect(profile.includeRepoMap).toBeUndefined();
+    });
+  });
 });

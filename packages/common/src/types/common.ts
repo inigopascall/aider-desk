@@ -423,6 +423,11 @@ export interface RegenerateRepositoryMappingsResult {
   error?: string;
 }
 
+export interface RegenerateRepositoryMappingsResult {
+  success: boolean;
+  error?: string;
+}
+
 export interface UpdatedFile {
   path: string;
   additions: number;
@@ -678,7 +683,7 @@ export interface AgentProfile {
   toolApprovals: Record<string, ToolApprovalState>;
   toolSettings: Record<string, ToolSettings>;
   includeContextFiles: boolean;
-  /** Include generated read-only mapping files before normal context files. */
+  /** Include generated read-only repository mapping files before normal context files. */
   includeRepoMappings: boolean;
   usePowerTools: boolean;
   useAiderTools: boolean;

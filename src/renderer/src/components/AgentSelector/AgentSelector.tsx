@@ -95,7 +95,7 @@ export const AgentSelector = memo(
     );
     useHotkeys(
       'alt+r',
-      () => handleToggleProfileSetting('includeRepoMap', !activeTaskProfile?.includeRepoMap),
+      () => handleToggleProfileSetting('includeRepoMappings', !activeTaskProfile?.includeRepoMappings),
       {
         enabled: isActive && !disabled,
         enableOnContentEditable: true,
@@ -300,7 +300,7 @@ export const AgentSelector = memo(
               {activeTaskProfile.useSkillsTools && <MdPsychology className="w-3.5 h-3.5 text-agent-skills-tools opacity-70" />}
               {activeTaskProfile.useSubagents && <HiUserGroup className="w-3.5 h-3.5 text-agent-subagents-tools opacity-70" />}
               {activeTaskProfile.includeContextFiles && <MdOutlineFileCopy className="w h-3 text-agent-context-files opacity-70" />}
-              {activeTaskProfile.includeRepoMap && <MdOutlineMap className="w h-3 text-agent-repo-map opacity-70" />}
+              {activeTaskProfile.includeRepoMappings && <MdOutlineMap className="w h-3 text-agent-repo-map opacity-70" />}
             </>
           ) : (
             <span className="text-2xs truncate max-w-[250px] -mb-0.5">{t('agentProfiles.selectProfile')}</span>
@@ -508,11 +508,11 @@ export const AgentSelector = memo(
                   />
                   <IconButton
                     icon={
-                      <MdOutlineMap className={clsx('w-3.5 h-3.5', activeTaskProfile.includeRepoMap ? 'text-agent-repo-map' : 'text-text-muted opacity-50')} />
+                      <MdOutlineMap className={clsx('w-3.5 h-3.5', activeTaskProfile.includeRepoMappings ? 'text-agent-repo-map' : 'text-text-muted opacity-50')} />
                     }
-                    onClick={() => handleToggleProfileSetting('includeRepoMap', !activeTaskProfile.includeRepoMap)}
+                    onClick={() => handleToggleProfileSetting('includeRepoMappings', !activeTaskProfile.includeRepoMappings)}
                     className="p-1.5 hover:bg-bg-secondary rounded-md"
-                    tooltip={`${t('settings.agent.includeRepoMap')} (Alt + R)`}
+                    tooltip={`${t('settings.agent.includeRepoMappings')} (Alt + R)`}
                   />
                 </div>
               </div>
