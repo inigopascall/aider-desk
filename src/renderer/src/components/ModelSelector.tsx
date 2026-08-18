@@ -108,6 +108,12 @@ export const ModelSelector = forwardRef<ModelSelectorRef, Props>(
     useClickOutside(usePortal ? popupRef : modelSelectorRef, close, isOpen);
 
     useEffect(() => {
+      if (disabled && isOpen) {
+        close();
+      }
+    }, [disabled, isOpen, close]);
+
+    useEffect(() => {
       if (usePortal && isOpen && modelSelectorRef.current) {
         const rect = modelSelectorRef.current.getBoundingClientRect();
         const POPUP_WIDTH = 500;

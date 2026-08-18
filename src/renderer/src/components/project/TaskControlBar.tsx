@@ -30,7 +30,6 @@ type Props = {
   onExpandEditor?: () => void;
   onAutonomyModeChanged?: (mode: AutonomyMode) => void;
   showSettingsPage?: (pageId?: string, options?: Record<string, unknown>) => void;
-  disabled?: boolean;
   canUndoContextChange?: boolean;
   onUndoContextChange?: () => void;
   selectedWorkflowId?: string | null;
@@ -55,7 +54,6 @@ export const TaskControlBar = ({
   onUndoContextChange,
   selectedWorkflowId,
   onWorkflowChange,
-  disabled = false,
 }: Props) => {
   const { t } = useTranslation();
   const isWorkflowSelected = !!selectedWorkflowId;
@@ -81,14 +79,14 @@ export const TaskControlBar = ({
   return (
     <div className="flex w-full flex-wrap items-center gap-1.5">
       <div className="flex items-center gap-1.5">
-        <ModeSelector baseDir={baseDir} mode={mode} onModeChange={onModeChanged} disabled={isWorkflowSelected || disabled} />
+        <ModeSelector baseDir={baseDir} mode={mode} onModeChange={onModeChanged} disabled={isWorkflowSelected} />
         {!AIDER_MODES.includes(mode) && (
           <AgentSelector
             projectDir={baseDir}
             task={task}
             isActive={isActive}
             showSettingsPage={showSettingsPage}
-            disabled={isWorkflowSelected || disabled}
+            disabled={isWorkflowSelected}
           />
         )}
       </div>
@@ -97,7 +95,7 @@ export const TaskControlBar = ({
         <AutonomySelector
           mode={task.autonomyMode ?? DEFAULT_AUTONOMY_MODE}
           locked={projectSettings?.autonomyModeLocked ?? false}
-          disabled={isWorkflowSelected || disabled}
+          disabled={isWorkflowSelected}
           onChange={onAutonomyModeChanged}
           onLockChange={handleAutonomyLockChanged}
         />

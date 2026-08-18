@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MdKeyboardArrowUp } from 'react-icons/md';
 import { EditFormat } from '@common/types';
@@ -16,9 +16,10 @@ const editFormatOptions: EditFormat[] = ['diff', 'diff-fenced', 'whole', 'udiff'
 type Props = {
   currentFormat: EditFormat;
   onFormatChange: (format: EditFormat) => void;
+  disabled?: boolean;
 };
 
-export const EditFormatSelector = forwardRef<EditFormatSelectorRef, Props>(({ currentFormat, onFormatChange }, ref) => {
+export const EditFormatSelector = forwardRef<EditFormatSelectorRef, Props>(({ currentFormat, onFormatChange, disabled = false }, ref) => {
   const { t } = useTranslation();
   const selectorRef = useRef<HTMLDivElement>(null);
   const highlightedItemRef = useRef<HTMLDivElement>(null);
@@ -30,11 +31,24 @@ export const EditFormatSelector = forwardRef<EditFormatSelectorRef, Props>(({ cu
 
   useClickOutside(selectorRef, close, isOpen);
 
+  useEffect(() => {
+    if (disabled && isOpen) {
+      close();
+    }
+  }, [disabled, isOpen, close]);
+
   useImperativeHandle(ref, () => ({
-    open: () => open(),
+    open: () => {
+      if (!disabled) {
+        open();
+      }
+    },
   }));
 
   const handleFormatSelected = (format: EditFormat) => {
+    if (disabled) {
+      return;
+    }
     onFormatChange(format);
     close();
   };
@@ -56,7 +70,13 @@ export const EditFormatSelector = forwardRef<EditFormatSelectorRef, Props>(({ cu
 
   return (
     <div className="relative" ref={selectorRef}>
-      <button onClick={toggle} className="flex items-center hover:text-text-tertiary focus:outline-none transition-colors duration-200 text-2xs">
+      <button
+        onClick={disabled ? undefined : toggle}
+        disabled={disabled}
+        className={`flex items-center hover:text-text-tertiary focus:outline-none transition-colors duration-200 text-2xs ${
+          disabled ? 'cursor-not-allowed opacity-50' : ''
+        }`}
+      >
         <span>{currentFormat || t('common.loading')}</span>
         <MdKeyboardArrowUp className="w-3 h-3 ml-1 transform rotate-180" />
       </button>

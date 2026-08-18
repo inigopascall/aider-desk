@@ -1,12 +1,13 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { AVAILABLE_WORKFLOWS } from '@common/types';
 
 import { TaskControlBar } from '../TaskControlBar';
 
 vi.mock('@/contexts/ProjectSettingsContext', () => ({
   useProjectSettings: () => ({
     projectSettings: {
-      enabledWorkflows: ['test-workflow'],
+      enabledWorkflows: [AVAILABLE_WORKFLOWS[0].id],
       autonomyModeLocked: false,
     },
     saveProjectSettings: vi.fn(),
@@ -54,7 +55,7 @@ const task = {
   name: 'Test task',
   baseDir: '/test/project',
   state: 'in-progress',
-  currentMode: 'code',
+  currentMode: 'agent',
   agentTotalCost: 0,
   aiderTotalCost: 0,
 };
@@ -65,7 +66,7 @@ const renderBar = (selectedWorkflowId: string | null) =>
       baseDir="/test/project"
       task={task}
       isActive
-      mode="code"
+      mode="agent"
       onModeChanged={vi.fn()}
       clearMessages={vi.fn()}
       selectedWorkflowId={selectedWorkflowId}
@@ -84,12 +85,13 @@ describe('TaskControlBar workflow controls', () => {
   });
 
   it('disables standard controls while a workflow is selected', () => {
-    renderBar('test-workflow');
+    const workflowId = AVAILABLE_WORKFLOWS[0].id;
+    renderBar(workflowId);
 
     expect(screen.getByTestId('mode-selector')).toHaveAttribute('data-disabled', 'true');
     expect(screen.getByTestId('agent-selector')).toHaveAttribute('data-disabled', 'true');
     expect(screen.getByTestId('autonomy-selector')).toHaveAttribute('data-disabled', 'true');
-    expect(screen.getByTestId('workflow-selector')).toHaveAttribute('data-selected', 'test-workflow');
-    expect(screen.getByTestId('workflow-model-set-selector')).toHaveAttribute('data-selected', 'test-workflow');
+    expect(screen.getByTestId('workflow-selector')).toHaveAttribute('data-selected', workflowId);
+    expect(screen.getByTestId('workflow-model-set-selector')).toHaveAttribute('data-selected', workflowId);
   });
 });

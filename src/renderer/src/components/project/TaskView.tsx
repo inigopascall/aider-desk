@@ -1015,7 +1015,6 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                   onUndoContextChange={handleUndoContextChange}
                   selectedWorkflowId={selectedWorkflowId}
                   onWorkflowChange={setSelectedWorkflowId}
-                    disabled={false}
                 />
               </div>
               <div className="flex gap-2 justify-between flex-wrap">

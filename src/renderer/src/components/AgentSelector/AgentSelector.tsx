@@ -56,6 +56,9 @@ export const AgentSelector = memo(
     const { enabledServers = [], toolApprovals = {} } = activeTaskProfile || {};
     const handleToggleProfileSetting = useCallback(
       (setting: keyof AgentProfile, value: boolean) => {
+        if (disabled) {
+          return;
+        }
         if (activeGlobalProfile) {
           const updatedProfile = { ...activeGlobalProfile, [setting]: value };
           void updateProfile(updatedProfile);
@@ -76,7 +79,7 @@ export const AgentSelector = memo(
       'alt+t',
       () => handleToggleProfileSetting('useTodoTools', !activeTaskProfile?.useTodoTools),
       {
-        enabled: isActive,
+        enabled: isActive && !disabled,
         enableOnContentEditable: true,
       },
       [handleToggleProfileSetting],
@@ -85,7 +88,7 @@ export const AgentSelector = memo(
       'alt+f',
       () => handleToggleProfileSetting('includeContextFiles', !activeTaskProfile?.includeContextFiles),
       {
-        enabled: isActive,
+        enabled: isActive && !disabled,
         enableOnContentEditable: true,
       },
       [handleToggleProfileSetting],
@@ -94,7 +97,7 @@ export const AgentSelector = memo(
       'alt+r',
       () => handleToggleProfileSetting('includeRepoMap', !activeTaskProfile?.includeRepoMap),
       {
-        enabled: isActive,
+        enabled: isActive && !disabled,
         enableOnContentEditable: true,
       },
       [handleToggleProfileSetting],
@@ -104,7 +107,7 @@ export const AgentSelector = memo(
       'alt+m',
       () => handleToggleProfileSetting('useMemoryTools', !activeTaskProfile?.useMemoryTools),
       {
-        enabled: isActive,
+        enabled: isActive && !disabled,
         enableOnContentEditable: true,
       },
       [handleToggleProfileSetting],
@@ -114,7 +117,7 @@ export const AgentSelector = memo(
       'alt+s',
       () => handleToggleProfileSetting('useSkillsTools', !activeTaskProfile?.useSkillsTools),
       {
-        enabled: isActive,
+        enabled: isActive && !disabled,
         enableOnContentEditable: true,
       },
       [handleToggleProfileSetting],

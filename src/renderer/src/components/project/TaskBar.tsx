@@ -502,6 +502,7 @@ export const TaskBar = React.forwardRef<TaskBarRef, Props>(
                   models={aiderModels}
                   selectedModelId={modelsData?.mainModel}
                   onChange={updateMainModel}
+                  disabled={disabled}
                   preferredModelIds={preferredModels}
                   removePreferredModel={handleRemovePreferredModel}
                   providers={providers}
@@ -536,7 +537,7 @@ export const TaskBar = React.forwardRef<TaskBarRef, Props>(
                     <Tooltip content={t('projectBar.editFormatTooltip')}>
                       <BsCodeSlash className="w-3.5 h-3.5 text-text-primary mr-1 flex-shrink-0" />
                     </Tooltip>
-                    <EditFormatSelector currentFormat={modelsData.editFormat} onFormatChange={updateEditFormat} />
+                    <EditFormatSelector currentFormat={modelsData.editFormat} onFormatChange={updateEditFormat} disabled={disabled} />
                   </div>
                 </>
               )}
