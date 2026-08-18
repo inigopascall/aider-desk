@@ -11,7 +11,7 @@ import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
 
 import { useClickOutside } from '@/hooks/useClickOutside';
-import { getTaskStateLabel } from '@/components/common/TaskStateChip';
+import { TaskStateChip } from '@/components/common/TaskStateChip';
 
 const TASK_HIGHLIGHT_COLORS = ['#E74C3C', '#E67E22', '#F1C40F', '#2ECC71', '#3498DB', '#9B59B6'];
 
@@ -281,7 +281,7 @@ export const TaskMenuButton = memo(
                         className="flex items-center gap-2 px-2 py-1 text-2xs text-text-primary hover:bg-bg-tertiary cursor-pointer transition-colors"
                         onClick={(e) => handleStateChange(e, state)}
                       >
-                        {getTaskStateLabel(t, state)}
+                        <TaskStateChip state={state} />
                       </li>
                     ))}
                   </>

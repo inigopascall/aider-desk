@@ -231,6 +231,9 @@ describe('TaskSidebar', () => {
     expect(screen.getByText('taskSidebar.moreInfoNeeded')).toBeInTheDocument();
     expect(screen.getByText('taskSidebar.done')).toBeInTheDocument();
     expect(screen.queryByText('#E74C3C')).not.toBeInTheDocument();
+    expect(screen.getByText('taskSidebar.readyForReview')).toHaveClass('text-success-light');
+    expect(screen.getByText('taskSidebar.moreInfoNeeded')).toHaveClass('text-error');
+    expect(screen.getByText('taskSidebar.readyForReview')).toHaveClass('border-border-dark-light', 'bg-bg-tertiary-emphasis');
 
     fireEvent.click(screen.getByText('taskSidebar.done'));
     await waitFor(() => {
