@@ -40,6 +40,7 @@ import {
   parseInvestigatorResponse,
   parsePlanUnknowns,
   serializeFileEdits,
+  validateFileEditInstruction,
   verifyEditAlignment,
 } from '../parsers';
 
@@ -600,6 +601,15 @@ export async function runEditLoop(
         } catch (error) {
           results.push({ path: edit.path, outcome: 'FAILED', detail: `deletion failed: ${error instanceof Error ? error.message : String(error)}` });
         }
+        continue;
+      }
+      // Pre-dispatch guard: a malformed instruction (prose instead of exact
+      // code, empty NEW body, non-empty DELETE body) must never reach an
+      // editor prompt — it becomes a FAILED outcome so the CONFIRMER issues
+      // parse-validated corrective edits.
+      const invalidReason = validateFileEditInstruction(edit);
+      if (invalidReason) {
+        results.push({ path: edit.path, outcome: 'FAILED', detail: `invalid edit instructions: ${invalidReason}` });
         continue;
       }
       if (edit.type === 'EDIT' && !(await fileExists(abs))) {

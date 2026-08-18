@@ -4,9 +4,11 @@ import type { ContextMessage } from '@common/types';
 
 import {
   extractSearchReplacePairs,
+  parseConfirmerResponse,
   parseFileEditBlocks,
   parseReviewerResponse,
   ParseError,
+  validateFileEditInstruction,
   verifyEditAlignment,
   type FileEditInstruction,
 } from '../parsers';
@@ -40,6 +42,192 @@ describe('parseFileEditBlocks', () => {
       '=== END FILE EDIT ===',
     ].join('\n');
     expect(() => parseFileEditBlocks(text)).toThrow(ParseError);
+  });
+});
+
+describe('parseFileEditBlocks — instruction validation', () => {
+  it('rejects TYPE: NEW with prose instructions (no fence)', () => {
+    const text = [
+      '=== FILE EDIT ===',
+      'PATH: src/ThreadOutlineWindow.tsx',
+      'TYPE: NEW',
+      'INSTRUCTIONS:',
+      'Create a new component that renders the thread outline window. It should display the list of threads, allow selecting one, and show the selected thread details in a side panel.',
+      '=== END FILE EDIT ===',
+    ].join('\n');
+    expect(() => parseFileEditBlocks(text)).toThrow(/verbatim file content/);
+  });
+
+  it('strips the fence from TYPE: NEW content', () => {
+    const text = [
+      '=== FILE EDIT ===',
+      'PATH: src/new.ts',
+      'TYPE: NEW',
+      'INSTRUCTIONS:',
+      '````',
+      'export const answer = 42;',
+      '````',
+      '=== END FILE EDIT ===',
+    ].join('\n');
+    const result = parseFileEditBlocks(text);
+    expect(result.edits[0].type).toBe('NEW');
+    expect(result.edits[0].instructions).toBe('export const answer = 42;');
+  });
+
+  it('preserves triple-backtick fences inside a 4-backtick NEW fence', () => {
+    const content = ['# README', '', '```ts', 'const x = 1;', '```'].join('\n');
+    const text = [
+      '=== FILE EDIT ===',
+      'PATH: README.md',
+      'TYPE: NEW',
+      'INSTRUCTIONS:',
+      '````',
+      content,
+      '````',
+      '=== END FILE EDIT ===',
+    ].join('\n');
+    const result = parseFileEditBlocks(text);
+    expect(result.edits[0].instructions).toBe(content);
+  });
+
+  it('rejects TYPE: NEW with an empty fenced block', () => {
+    const text = [
+      '=== FILE EDIT ===',
+      'PATH: src/empty.ts',
+      'TYPE: NEW',
+      'INSTRUCTIONS:',
+      '````',
+      '',
+      '````',
+      '=== END FILE EDIT ===',
+    ].join('\n');
+    expect(() => parseFileEditBlocks(text)).toThrow(/NEW file content must not be empty/);
+  });
+
+  it('rejects TYPE: EDIT with prose outside the commands', () => {
+    const text = [
+      '=== FILE EDIT ===',
+      'PATH: src/a.ts',
+      'TYPE: EDIT',
+      'INSTRUCTIONS:',
+      'SEARCH:',
+      '```',
+      'const old = 1;',
+      '```',
+      'REPLACE:',
+      '```',
+      'const new = 1;',
+      '```',
+      'Also update the imports at the top of the file.',
+      '=== END FILE EDIT ===',
+    ].join('\n');
+    expect(() => parseFileEditBlocks(text)).toThrow(/found prose outside the commands/);
+  });
+
+  it('accepts TYPE: EDIT with valid SEARCH/REPLACE and INSERT commands, verbatim', () => {
+    const instructions = [
+      'SEARCH:',
+      '```',
+      'const old = 1;',
+      '```',
+      'REPLACE:',
+      '```',
+      'const new = 1;',
+      '```',
+      'INSERT:',
+      '```',
+      'const added = 2;',
+      '```',
+    ].join('\n');
+    const text = [
+      '=== FILE EDIT ===',
+      'PATH: src/a.ts',
+      'TYPE: EDIT',
+      'INSTRUCTIONS:',
+      instructions,
+      '=== END FILE EDIT ===',
+    ].join('\n');
+    const result = parseFileEditBlocks(text);
+    expect(result.edits[0].type).toBe('EDIT');
+    expect(result.edits[0].instructions).toBe(instructions);
+  });
+
+  it('rejects TYPE: EDIT with a SEARCH not followed by REPLACE', () => {
+    const text = [
+      '=== FILE EDIT ===',
+      'PATH: src/a.ts',
+      'TYPE: EDIT',
+      'INSTRUCTIONS:',
+      'SEARCH:',
+      '```',
+      'const old = 1;',
+      '```',
+      '=== END FILE EDIT ===',
+    ].join('\n');
+    expect(() => parseFileEditBlocks(text)).toThrow(ParseError);
+  });
+
+  it('rejects TYPE: EDIT with an orphan REPLACE', () => {
+    const text = [
+      '=== FILE EDIT ===',
+      'PATH: src/a.ts',
+      'TYPE: EDIT',
+      'INSTRUCTIONS:',
+      'REPLACE:',
+      '```',
+      'const new = 1;',
+      '```',
+      '=== END FILE EDIT ===',
+    ].join('\n');
+    expect(() => parseFileEditBlocks(text)).toThrow(ParseError);
+  });
+
+  it('rejects TYPE: DELETE with non-empty instructions', () => {
+    const text = [
+      '=== FILE EDIT ===',
+      'PATH: src/old.ts',
+      'TYPE: DELETE',
+      'INSTRUCTIONS:',
+      'remove this file',
+      '=== END FILE EDIT ===',
+    ].join('\n');
+    expect(() => parseFileEditBlocks(text)).toThrow(/TYPE DELETE requires an empty INSTRUCTIONS body/);
+  });
+
+  it('rejects a DEFICIENT confirmer response carrying a prose NEW block', () => {
+    const text = [
+      '=== VERDICT ===',
+      'DEFICIENT',
+      '',
+      '=== FILE EDIT ===',
+      'PATH: src/a.ts',
+      'TYPE: NEW',
+      'INSTRUCTIONS:',
+      'Write a module that exports a helper function.',
+      '=== END FILE EDIT ===',
+    ].join('\n');
+    expect(() => parseConfirmerResponse(text)).toThrow(ParseError);
+  });
+
+  it('rejects a reviewer response carrying a prose NEW rectification block', () => {
+    const text = [
+      '=== FINDINGS ===',
+      '### Correctness verifier findings and reviewer disposition',
+      '| Item | Verifier Claim | Severity | Reviewer Disposition | Reviewer Rationale | Action Required |',
+      '| 1 | x | HIGH | Accepted | y | Yes |',
+      '',
+      '=== CONSIDERATIONS ===',
+      'NONE',
+      '',
+      '=== RECTIFICATION EDITS ===',
+      '=== FILE EDIT ===',
+      'PATH: src/a.ts',
+      'TYPE: NEW',
+      'INSTRUCTIONS:',
+      'Create a new utility module with a helper function.',
+      '=== END FILE EDIT ===',
+    ].join('\n');
+    expect(() => parseReviewerResponse(text)).toThrow(ParseError);
   });
 });
 
@@ -248,6 +436,53 @@ describe('extractSearchReplacePairs', () => {
     expect(pairs[0].replace).toContain('const b = 1;');
     expect(pairs[1].search).toContain('const d = 1;');
     expect(pairs[1].replace).toContain('const e = 1;');
+  });
+
+  it('pairs commands fenced with 4 backticks identically to 3-backtick fences', () => {
+    const text = [
+      'SEARCH:',
+      '````',
+      'const a = 1;',
+      '````',
+      'REPLACE:',
+      '````',
+      'const b = 1;',
+      '````',
+    ].join('\n');
+    const pairs = extractSearchReplacePairs(text);
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0].search).toContain('const a = 1;');
+    expect(pairs[0].replace).toContain('const b = 1;');
+  });
+});
+
+describe('validateFileEditInstruction', () => {
+  it('returns a reason for prose-only EDIT instructions', () => {
+    const edit: FileEditInstruction = {
+      path: 'src/a.ts',
+      type: 'EDIT',
+      instructions: 'Replace the old function with a new one.',
+    };
+    expect(validateFileEditInstruction(edit)).not.toBeNull();
+  });
+
+  it('returns null for valid EDIT commands', () => {
+    const edit: FileEditInstruction = {
+      path: 'src/a.ts',
+      type: 'EDIT',
+      instructions: 'SEARCH:\n```\nold\n```\nREPLACE:\n```\nnew\n```',
+    };
+    expect(validateFileEditInstruction(edit)).toBeNull();
+  });
+
+  it('returns a reason for empty NEW instructions', () => {
+    const edit: FileEditInstruction = { path: 'src/a.ts', type: 'NEW', instructions: '' };
+    expect(validateFileEditInstruction(edit)).not.toBeNull();
+  });
+
+  it('returns a reason for non-empty DELETE instructions', () => {
+    const edit: FileEditInstruction = { path: 'src/a.ts', type: 'DELETE', instructions: 'remove this' };
+    expect(validateFileEditInstruction(edit)).not.toBeNull();
   });
 });
 

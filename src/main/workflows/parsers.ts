@@ -20,6 +20,35 @@ export class ParseError extends Error {
 }
 
 /**
+ * The kind of a single executor-ready edit command inside an `EDIT`
+ * instruction body: `SEARCH` anchors the exact existing text, `REPLACE`
+ * supplies the replacement text for the immediately preceding `SEARCH`, and
+ * `INSERT` adds standalone content.
+ */
+export type EditCommandKind = 'SEARCH' | 'REPLACE' | 'INSERT';
+
+/** A single parsed edit command: its kind plus the fenced block content. */
+export interface EditCommand {
+  kind: EditCommandKind;
+  content: string;
+}
+
+/**
+ * Matches a body that is exactly one fenced code block: an opening fence of
+ * four or more backticks (group 1), an optional language tag, the content
+ * (group 2), and a closing fence identical to the opening. Four or more
+ * backticks let file content contain ordinary triple-backtick fences.
+ */
+const NEW_CONTENT_FENCE_RE = /^(`{4,})[a-zA-Z0-9_-]*\r?\n([\s\S]*)\r?\n\1\s*$/;
+
+/**
+ * Matches one `SEARCH:`/`REPLACE:`/`INSERT:` command: a label line (group 1)
+ * followed by a fenced code block whose opening fence (group 2) and closing
+ * fence have the same length, with the block content in group 3.
+ */
+const EDIT_COMMAND_RE = /(?:^|\n)[ \t]*(SEARCH|REPLACE|INSERT)[ \t]*:[ \t]*\r?\n[ \t]*(`{3,})[a-zA-Z0-9_-]*\r?\n([\s\S]*?)\r?\n[ \t]*\2[ \t]*(?=\r?\n|$)/gi;
+
+/**
  * A single per-file edit instruction produced by the DECOMPOSITOR (and
  * re-emitted by the CONFIRMER for corrective passes).
  */
@@ -28,7 +57,11 @@ export interface FileEditInstruction {
   path: string;
   /** `NEW` = write the full file content; `EDIT` = apply precise edit steps; `DELETE` = remove the file. */
   type: 'NEW' | 'EDIT' | 'DELETE';
-  /** Full file content (NEW) or ordered, executor-ready edit commands (EDIT). Empty for DELETE. */
+  /**
+   * `NEW` = the complete verbatim file content (emitted by the producer inside one 4+-backtick fence; the fence is stripped at parse time);
+   * `EDIT` = ordered `SEARCH:`/`REPLACE:`/`INSERT:` fenced commands only, validated at parse time;
+   * empty for `DELETE`.
+   */
   instructions: string;
 }
 
@@ -378,6 +411,94 @@ export function parsePlanUnknowns(planText: string): {
 }
 
 /**
+ * Parses an `EDIT` instruction body into its ordered commands. The body must
+ * consist solely of `SEARCH:`/`REPLACE:`/`INSERT:` fenced commands — any
+ * prose, headings, or commentary outside the commands is rejected. A `SEARCH`
+ * must be immediately followed by its `REPLACE`; an `INSERT` is standalone
+ * and clears any pending `SEARCH`; a trailing unpaired `SEARCH` is an error.
+ * At least one complete command (pair or insert) is required.
+ */
+export function parseEditCommands(body: string): EditCommand[] {
+  const commands: EditCommand[] = [];
+  const spans: Array<{ start: number; end: number }> = [];
+  const re = new RegExp(EDIT_COMMAND_RE.source, EDIT_COMMAND_RE.flags);
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(body)) !== null) {
+    commands.push({ kind: match[1].toUpperCase() as EditCommandKind, content: match[3] });
+    spans.push({ start: match.index, end: match.index + match[0].length });
+  }
+
+  // Residue check: everything not consumed by a command must be whitespace.
+  // This is what rejects descriptive prose smuggled in beside the commands.
+  let residue = '';
+  let cursor = 0;
+  for (const span of spans) {
+    residue += body.slice(cursor, span.start);
+    cursor = span.end;
+  }
+  residue += body.slice(cursor);
+  if (residue.trim().length > 0) {
+    const excerpt = residue.trim().slice(0, 80);
+    throw new ParseError(
+      `EDIT instructions must contain only SEARCH:/REPLACE:/INSERT: commands — found prose outside the commands: "${excerpt}"`,
+    );
+  }
+
+  // Pairing rules: a SEARCH must be immediately followed by its REPLACE; an
+  // INSERT is standalone and clears any pending SEARCH; a trailing unpaired
+  // SEARCH is an error.
+  let pendingSearch: string | null = null;
+  let hasCompleteCommand = false;
+  for (const command of commands) {
+    if (command.kind === 'SEARCH') {
+      if (pendingSearch !== null) {
+        throw new ParseError('EDIT instructions: a SEARCH command must be immediately followed by its REPLACE');
+      }
+      pendingSearch = command.content;
+    } else if (command.kind === 'REPLACE') {
+      if (pendingSearch === null) {
+        throw new ParseError('EDIT instructions: REPLACE command without a preceding SEARCH');
+      }
+      pendingSearch = null;
+      hasCompleteCommand = true;
+    } else {
+      // INSERT is standalone: it never pairs with a SEARCH and clears any pending one.
+      pendingSearch = null;
+      hasCompleteCommand = true;
+    }
+  }
+  if (pendingSearch !== null) {
+    throw new ParseError('EDIT instructions: a SEARCH command must be immediately followed by its REPLACE');
+  }
+  if (!hasCompleteCommand) {
+    throw new ParseError('EDIT instructions must contain at least one SEARCH/REPLACE pair or INSERT command');
+  }
+
+  return commands;
+}
+
+/**
+ * Extracts the complete verbatim file content from a `NEW` instruction body.
+ * The body must be exactly one fenced code block (four or more backticks,
+ * optional language tag); the fence is stripped and the raw inner content is
+ * returned. Prose descriptions of the file are rejected.
+ */
+function extractNewFileContent(body: string, blockLabel: string): string {
+  const trimmed = body.trim();
+  const match = trimmed.match(NEW_CONTENT_FENCE_RE);
+  if (!match) {
+    throw new ParseError(
+      `${blockLabel}: TYPE NEW requires INSTRUCTIONS to be exactly one fenced code block (4+ backticks) containing the complete, verbatim file content. A prose description of the file is not allowed — emit the actual file content.`,
+    );
+  }
+  const content = match[2];
+  if (content.trim().length === 0) {
+    throw new ParseError(`${blockLabel}: NEW file content must not be empty`);
+  }
+  return content;
+}
+
+/**
  * Parses a single `=== FILE EDIT ===` block into a `FileEditInstruction`.
  * The block must contain, in order: a non-empty `PATH:` line, a `TYPE:` line
  * whose value is `NEW`, `EDIT`, or `DELETE`, an `INSTRUCTIONS:` marker, and
@@ -425,7 +546,20 @@ function parseFileEditBlock(block: string, index: number): FileEditInstruction {
   const body = endIdx === -1 ? restLines : restLines.slice(0, endIdx);
   const instructions = [afterColon, ...body].join('\n').trim();
 
-  return { path, type: typeRaw as 'NEW' | 'EDIT' | 'DELETE', instructions };
+  const blockLabel = `FILE EDIT block ${index + 1} (PATH: ${path})`;
+  if (typeRaw === 'NEW') {
+    return { path, type: 'NEW', instructions: extractNewFileContent(instructions, blockLabel) };
+  }
+  if (typeRaw === 'EDIT') {
+    // Validate the command structure; the canonical command text is passed
+    // through verbatim for the editors and the alignment verifier.
+    parseEditCommands(instructions);
+    return { path, type: 'EDIT', instructions };
+  }
+  if (instructions.trim().length > 0) {
+    throw new ParseError(`${blockLabel}: TYPE DELETE requires an empty INSTRUCTIONS body`);
+  }
+  return { path, type: 'DELETE', instructions: '' };
 }
 
 /**
@@ -455,6 +589,28 @@ export function parseFileEditBlocks(text: string): { ambiguities: string | null;
   }
 
   return { ambiguities, edits };
+}
+
+/**
+ * Non-throwing pre-dispatch guard for a single file edit instruction. Returns
+ * a human-readable reason when the instruction is malformed, or `null` when
+ * it is executor-ready. `NEW`/`DELETE` bodies are checked for emptiness
+ * (fence-stripping already happened at parse time); `EDIT` bodies are run
+ * through `parseEditCommands`.
+ */
+export function validateFileEditInstruction(edit: FileEditInstruction): string | null {
+  if (edit.type === 'DELETE') {
+    return edit.instructions.trim().length > 0 ? 'TYPE DELETE requires an empty INSTRUCTIONS body' : null;
+  }
+  if (edit.type === 'NEW') {
+    return edit.instructions.trim().length === 0 ? 'TYPE NEW requires non-empty file content' : null;
+  }
+  try {
+    parseEditCommands(edit.instructions);
+    return null;
+  } catch (error) {
+    return error instanceof ParseError ? error.message : String(error);
+  }
 }
 
 /**
@@ -564,10 +720,10 @@ export interface EditVerificationResult {
  */
 function extractReplacementCodeBlocks(text: string): string[] {
   const blocks: string[] = [];
-  const re = /(?:^|\n)\s*(?:REPLACE|REPLACEMENT)\s*:\s*\n\s*```[a-zA-Z0-9_-]*\n([\s\S]*?)\n```/gi;
+  const re = /(?:^|\n)\s*(?:REPLACE|REPLACEMENT)\s*:\s*\n\s*(`{3,})[a-zA-Z0-9_-]*\n([\s\S]*?)\n\1/gi;
   let match: RegExpExecArray | null;
   while ((match = re.exec(text)) !== null) {
-    blocks.push(match[1]);
+    blocks.push(match[2]);
   }
   return blocks;
 }
@@ -581,12 +737,12 @@ function extractReplacementCodeBlocks(text: string): string[] {
  */
 export function extractSearchReplacePairs(text: string): Array<{ search: string; replace: string }> {
   const pairs: Array<{ search: string; replace: string }> = [];
-  const re = /(?:^|\n)\s*(SEARCH|REPLACE|INSERT)\s*:\s*\n\s*```[a-zA-Z0-9_-]*\n([\s\S]*?)\n```/gi;
+  const re = /(?:^|\n)\s*(SEARCH|REPLACE|INSERT)\s*:\s*\n\s*(`{3,})[a-zA-Z0-9_-]*\n([\s\S]*?)\n\2/gi;
   let match: RegExpExecArray | null;
   let pendingSearch: string | null = null;
   while ((match = re.exec(text)) !== null) {
     const label = match[1].toUpperCase();
-    const content = match[2];
+    const content = match[3];
     if (label === 'SEARCH') {
       pendingSearch = content;
     } else if (label === 'REPLACE' && pendingSearch !== null) {
