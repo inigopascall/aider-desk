@@ -5,7 +5,7 @@ import { HiCheck, HiOutlinePencil, HiOutlineTrash } from 'react-icons/hi';
 import { FaEllipsisVertical } from 'react-icons/fa6';
 import { IoLogoMarkdown } from 'react-icons/io';
 import { RiFlag2Line } from 'react-icons/ri';
-import { MdClose, MdColorLens, MdImage, MdPushPin, MdChevronRight, MdVerticalAlignTop } from 'react-icons/md';
+import { MdClose, MdImage, MdPushPin, MdVerticalAlignTop } from 'react-icons/md';
 import { BiDuplicate, BiArchive, BiArchiveIn, BiCopy } from 'react-icons/bi';
 import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
@@ -52,17 +52,9 @@ export const TaskMenuButton = memo(
     const { t } = useTranslation();
     const isNewTask = !task.createdAt;
     const [isMenuOpen, setIsMenuOpen] = useState(false);
-    const [isStateSubmenuOpen, setIsStateSubmenuOpen] = useState(false);
     const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
-    const [submenuPosition, setSubmenuPosition] = useState<{ top: number; left: number } | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const buttonRef = useRef<HTMLDivElement>(null);
-    const stateSubmenuItemRef = useRef<HTMLLIElement>(null);
-    const stateSubmenuRef = useRef<HTMLDivElement>(null);
-    const [isHighlightSubmenuOpen, setIsHighlightSubmenuOpen] = useState(false);
-    const [highlightSubmenuPosition, setHighlightSubmenuPosition] = useState<{ top: number; left: number } | null>(null);
-    const highlightSubmenuItemRef = useRef<HTMLLIElement>(null);
-    const highlightSubmenuRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
       if (isMenuOpen && buttonRef.current) {
@@ -76,67 +68,35 @@ export const TaskMenuButton = memo(
       }
     }, [isMenuOpen]);
 
-    useEffect(() => {
-      if (isStateSubmenuOpen && stateSubmenuItemRef.current) {
-        const rect = stateSubmenuItemRef.current.getBoundingClientRect();
-        setSubmenuPosition({
-          top: rect.top,
-          left: rect.right + 4,
-        });
-      } else {
-        setSubmenuPosition(null);
-      }
-    }, [isStateSubmenuOpen]);
 
-    useEffect(() => {
-      if (isHighlightSubmenuOpen && highlightSubmenuItemRef.current) {
-        const rect = highlightSubmenuItemRef.current.getBoundingClientRect();
-        setHighlightSubmenuPosition({
-          top: rect.top,
-          left: rect.right + 4,
-        });
-      } else {
-        setHighlightSubmenuPosition(null);
-      }
-    }, [isHighlightSubmenuOpen]);
-
-    useEffect(() => {
-      if (!isMenuOpen) {
-        setIsStateSubmenuOpen(false);
-        setIsHighlightSubmenuOpen(false);
-      }
-    }, [isMenuOpen]);
 
     useClickOutside(
-      [menuRef, buttonRef, stateSubmenuRef, highlightSubmenuRef],
+      [menuRef, buttonRef],
       () => {
         setIsMenuOpen(false);
-        setIsStateSubmenuOpen(false);
-        setIsHighlightSubmenuOpen(false);
       },
       isMenuOpen,
     );
 
     const handleMenuClick = () => {
-      setIsMenuOpen(!isMenuOpen);
+      if (!isMenuOpen) {
+        setIsMenuOpen(true);
+      }
     };
 
     const handleEditClick = (e: MouseEvent) => {
       e.stopPropagation();
       onEdit();
-      setIsMenuOpen(false);
     };
 
     const handleDeleteClick = (e: MouseEvent) => {
       e.stopPropagation();
       onDelete?.();
-      setIsMenuOpen(false);
     };
 
     const handleCopyAsMarkdownClick = (e: MouseEvent) => {
       e.stopPropagation();
       onCopyAsMarkdown?.();
-      setIsMenuOpen(false);
     };
 
     const handleExportToMarkdownClick = (e: MouseEvent) => {
