@@ -31,10 +31,11 @@ type Props = {
   task: TaskData;
   isActive: boolean;
   showSettingsPage?: (pageId?: string, options?: Record<string, unknown>) => void;
+  disabled?: boolean;
 };
 
 export const AgentSelector = memo(
-  ({ projectDir, task, isActive, showSettingsPage }: Props) => {
+  ({ projectDir, task, isActive, showSettingsPage, disabled = false }: Props) => {
     const { t } = useTranslation();
     const { getMergedServers } = useMcpServers();
     const mcpServers = useMemo(() => getMergedServers(projectDir), [getMergedServers, projectDir]);
@@ -64,6 +65,12 @@ export const AgentSelector = memo(
     );
 
     useClickOutside(selectorRef, () => setSelectorVisible(false), selectorVisible);
+
+    useEffect(() => {
+      if (disabled) {
+        setSelectorVisible(false);
+      }
+    }, [disabled]);
 
     useHotkeys(
       'alt+t',
@@ -205,6 +212,9 @@ export const AgentSelector = memo(
     };
 
     const toggleSelectorVisible = () => {
+      if (disabled) {
+        return;
+      }
       setSelectorVisible((prev) => !prev);
     };
 
@@ -259,12 +269,14 @@ export const AgentSelector = memo(
       <div className="relative" ref={selectorRef}>
         <button
           onClick={toggleSelectorVisible}
+          disabled={disabled}
           className={clsx(
             'flex items-center gap-1.5 px-2',
             'bg-bg-secondary text-text-tertiary',
-            'hover:bg-bg-secondary-light hover:text-text-primary',
+            !disabled && 'hover:bg-bg-secondary-light hover:text-text-primary',
             'focus:outline-none transition-colors duration-200',
             'text-xs border-border-default border rounded-md h-[26px]',
+            disabled && 'opacity-50 cursor-not-allowed',
           )}
         >
           <RiToolsFill className="w-3.5 h-3.5" />
@@ -513,7 +525,8 @@ export const AgentSelector = memo(
       prevProps.task.id === nextProps.task.id &&
       prevProps.task.agentProfileId === nextProps.task.agentProfileId &&
       prevProps.isActive === nextProps.isActive &&
-      prevProps.showSettingsPage === nextProps.showSettingsPage
+      prevProps.showSettingsPage === nextProps.showSettingsPage &&
+      prevProps.disabled === nextProps.disabled
     );
   },
 );

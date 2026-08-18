@@ -839,6 +839,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
             onToggleTaskSidebar={onToggleTaskSidebar}
             updateTask={updateTask}
             onRestartAiderConnector={handleRestartAiderConnector}
+            disabled={!!selectedWorkflowId}
           />
           <div className="flex-grow overflow-y-hidden relative flex flex-col">
             {renderSearchInput()}
@@ -1014,6 +1015,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                   onUndoContextChange={handleUndoContextChange}
                   selectedWorkflowId={selectedWorkflowId}
                   onWorkflowChange={setSelectedWorkflowId}
+                    disabled={false}
                 />
               </div>
               <div className="flex gap-2 justify-between flex-wrap">

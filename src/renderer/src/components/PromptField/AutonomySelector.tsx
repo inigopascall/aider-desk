@@ -14,6 +14,7 @@ type Props = {
   locked: boolean;
   onChange?: (mode: AutonomyMode) => void;
   onLockChange?: (locked: boolean) => void;
+  disabled?: boolean;
 };
 
 const MODE_CONFIG: Record<AutonomyMode, { icon: typeof LuHand; labelKey: string; tooltipKey: string }> = {
@@ -36,27 +37,33 @@ const MODE_CONFIG: Record<AutonomyMode, { icon: typeof LuHand; labelKey: string;
 
 const MODE_ORDER: AutonomyMode[] = [AutonomyMode.Manual, AutonomyMode.Guided, AutonomyMode.Autonomous];
 
-export const AutonomySelector = memo(({ mode, locked, onChange, onLockChange }: Props) => {
+export const AutonomySelector = memo(({ mode, locked, onChange, onLockChange, disabled = false }: Props) => {
   const { t } = useTranslation();
   const [optimisticMode, setOptimisticMode] = useOptimistic(mode);
 
   const handleModeClick = useCallback(
     (newMode: AutonomyMode) => {
+      if (disabled) {
+        return;
+      }
       startTransition(() => {
         setOptimisticMode(newMode);
         onChange?.(newMode);
       });
     },
-    [onChange, setOptimisticMode],
+    [disabled, onChange, setOptimisticMode],
   );
 
   const handleLockClick = useCallback(() => {
+    if (disabled) {
+      return;
+    }
     onLockChange?.(!locked);
-  }, [locked, onLockChange]);
+  }, [disabled, locked, onLockChange]);
 
   return (
     <div className="flex items-center gap-1.5">
-      <div className="flex items-center bg-bg-secondary border border-border-default rounded-md h-[26px]">
+      <div className={clsx('flex items-center bg-bg-secondary border border-border-default rounded-md h-[26px]', disabled && 'opacity-50')}>
         {MODE_ORDER.map((modeKey) => {
           const config = MODE_CONFIG[modeKey];
           const Icon = config.icon;
@@ -66,11 +73,13 @@ export const AutonomySelector = memo(({ mode, locked, onChange, onLockChange }: 
             <Tooltip key={modeKey} content={t(config.tooltipKey)} delayDuration={500}>
               <button
                 onClick={() => handleModeClick(modeKey)}
+                disabled={disabled}
                 className={clsx(
                   'flex items-center gap-1 px-2 py-1 transition-colors duration-150 border border-transparent',
                   isActive
                     ? 'bg-bg-tertiary-strong text-text-primary border-border-default-dark'
                     : 'text-text-muted hover:text-text-tertiary hover:bg-bg-tertiary',
+                  disabled && 'cursor-not-allowed hover:bg-transparent hover:text-text-muted',
                   modeKey === MODE_ORDER[0] && 'rounded-l-md',
                   modeKey === MODE_ORDER[MODE_ORDER.length - 1] && 'rounded-r-md',
                 )}
@@ -86,6 +95,7 @@ export const AutonomySelector = memo(({ mode, locked, onChange, onLockChange }: 
         icon={locked ? <VscLock className="w-3.5 h-3.5" /> : <VscUnlock className="w-3.5 h-3.5" />}
         onClick={handleLockClick}
         tooltip={t('promptField.autonomyLockTooltip')}
+        disabled={disabled}
       />
     </div>
   );

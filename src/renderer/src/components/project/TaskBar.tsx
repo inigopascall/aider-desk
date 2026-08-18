@@ -42,6 +42,7 @@ type Props = {
   onToggleTaskSidebar?: () => void;
   updateTask: (taskId: string, updates: Partial<TaskData>, useOptimistic?: boolean) => void;
   onRestartAiderConnector: () => void;
+  disabled?: boolean;
 };
 
 export const TaskBar = React.forwardRef<TaskBarRef, Props>(
@@ -58,6 +59,7 @@ export const TaskBar = React.forwardRef<TaskBarRef, Props>(
       onToggleTaskSidebar,
       updateTask,
       onRestartAiderConnector,
+      disabled = false,
     },
     ref,
   ) => {
@@ -512,6 +514,7 @@ export const TaskBar = React.forwardRef<TaskBarRef, Props>(
                 </Tooltip>
                 <ModelSelector
                   models={aiderModels}
+                  disabled={disabled}
                   selectedModelId={modelsData?.weakModel || modelsData?.mainModel}
                   onChange={updateWeakModel}
                   preferredModelIds={preferredModels}
@@ -614,6 +617,7 @@ export const TaskBar = React.forwardRef<TaskBarRef, Props>(
                       ) : (
                         <ModelSelector
                           ref={agentModelSelectorRef}
+                          disabled={disabled}
                           models={taskModels}
                           selectedModelId={currentTaskModelId}
                           onChange={handleTaskModelChange}
@@ -635,6 +639,7 @@ export const TaskBar = React.forwardRef<TaskBarRef, Props>(
                           </Tooltip>
                           <ModelSelector
                             ref={architectModelSelectorRef}
+                            disabled={disabled}
                             models={aiderModels}
                             selectedModelId={modelsData?.architectModel || modelsData?.mainModel}
                             onChange={updateArchitectModel}
@@ -657,6 +662,7 @@ export const TaskBar = React.forwardRef<TaskBarRef, Props>(
             <ExtensionComponentWrapper placement="task-top-bar-right" />
             <TaskWorkingMode
               task={task}
+              disabled={disabled}
               onMerge={handleMergeNormal}
               onSquash={handleMergeSquash}
               onOnlyUncommitted={handleOnlyUncommitted}

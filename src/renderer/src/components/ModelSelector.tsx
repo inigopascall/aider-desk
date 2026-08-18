@@ -27,6 +27,7 @@ type Props = {
   popupPlacement?: 'top' | 'bottom';
   labelOnNull?: string;
   usePortal?: boolean;
+  disabled?: boolean;
 };
 
 export const ModelSelector = forwardRef<ModelSelectorRef, Props>(
@@ -42,6 +43,7 @@ export const ModelSelector = forwardRef<ModelSelectorRef, Props>(
       popupPlacement = 'bottom',
       labelOnNull,
       usePortal = false,
+      disabled = false,
     },
     ref,
   ) => {
@@ -242,11 +244,11 @@ export const ModelSelector = forwardRef<ModelSelectorRef, Props>(
     return (
       <div className="relative w-full flex" ref={modelSelectorRef}>
         <button
-          onClick={selectedModelId !== undefined ? toggle : undefined}
-          disabled={selectedModelId === undefined}
+          onClick={selectedModelId !== undefined && !disabled ? toggle : undefined}
+          disabled={selectedModelId === undefined || disabled}
           className={twMerge(
             'focus:outline-none transition-colors duration-200 text-xs',
-            selectedModelId !== undefined ? 'hover:text-text-tertiary' : 'text-text-muted cursor-not-allowed',
+            selectedModelId !== undefined && !disabled ? 'hover:text-text-tertiary' : 'text-text-muted cursor-not-allowed opacity-50',
             className,
           )}
         >

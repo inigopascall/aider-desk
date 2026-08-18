@@ -58,6 +58,7 @@ type Props = {
   baseDir: string;
   mode: Mode;
   onModeChange: (mode: Mode) => void;
+  disabled?: boolean;
 };
 
 const getIconComponent = (iconName?: string): ElementType => {
@@ -74,7 +75,7 @@ const customModeToItemConfig = (mode: ModeDefinition): ItemConfig<Mode> => ({
   tooltipKey: mode.description,
 });
 
-export const ModeSelector = memo(({ baseDir, mode, onModeChange }: Props) => {
+export const ModeSelector = memo(({ baseDir, mode, onModeChange, disabled = false }: Props) => {
   const customModes = useCustomModes(baseDir);
 
   const modeItems = useMemo(() => {
@@ -82,7 +83,7 @@ export const ModeSelector = memo(({ baseDir, mode, onModeChange }: Props) => {
     return [...BUILT_IN_MODES, ...customModeItems];
   }, [customModes]);
 
-  return <ItemSelector items={modeItems} selectedValue={mode} onChange={onModeChange} />;
+  return <ItemSelector items={modeItems} selectedValue={mode} onChange={onModeChange} disabled={disabled} />;
 });
 
 ModeSelector.displayName = 'ModeSelector';
