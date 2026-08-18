@@ -57,15 +57,54 @@ export const TaskMenuButton = memo(
     const buttonRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-      if (isMenuOpen && buttonRef.current) {
-        const rect = buttonRef.current.getBoundingClientRect();
-        setMenuPosition({
-          top: rect.bottom + 4,
-          left: rect.right - 170,
-        });
-      } else {
+      if (!isMenuOpen || !buttonRef.current) {
         setMenuPosition(null);
+        return;
       }
+
+      const updateMenuPosition = () => {
+        if (!buttonRef.current) {
+          return;
+        }
+
+        const rect = buttonRef.current.getBoundingClientRect();
+        const menu = menuRef.current;
+        const menuWidth = menu?.offsetWidth ?? 170;
+        const menuHeight = menu?.offsetHeight ?? 400;
+        const margin = 8;
+        const gap = 4;
+
+        const left = Math.min(
+          Math.max(margin, rect.right - menuWidth),
+          Math.max(margin, window.innerWidth - menuWidth - margin),
+        );
+
+        const availableBelow = window.innerHeight - rect.bottom - margin;
+        const availableAbove = rect.top - margin;
+        const shouldOpenAbove = availableBelow < menuHeight && availableAbove > availableBelow;
+        const availableHeight = shouldOpenAbove ? availableAbove - gap : availableBelow - gap;
+        const top = shouldOpenAbove
+          ? Math.max(margin, rect.top - Math.min(menuHeight, availableAbove) - gap)
+          : Math.min(rect.bottom + gap, window.innerHeight - margin - Math.min(menuHeight, availableBelow));
+
+        setMenuPosition({
+          top,
+          left,
+        });
+
+        if (menu) {
+          menu.style.maxHeight = `${Math.max(120, availableHeight)}px`;
+        }
+      };
+
+      updateMenuPosition();
+      window.addEventListener('resize', updateMenuPosition);
+      window.addEventListener('scroll', updateMenuPosition, true);
+
+      return () => {
+        window.removeEventListener('resize', updateMenuPosition);
+        window.removeEventListener('scroll', updateMenuPosition, true);
+      };
     }, [isMenuOpen]);
 
 
