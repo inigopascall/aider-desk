@@ -423,11 +423,6 @@ export interface RegenerateRepositoryMappingsResult {
   error?: string;
 }
 
-export interface RegenerateRepositoryMappingsResult {
-  success: boolean;
-  error?: string;
-}
-
 export interface UpdatedFile {
   path: string;
   additions: number;

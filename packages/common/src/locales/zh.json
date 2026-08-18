@@ -1219,8 +1219,7 @@
     "aiderToolsTooltip": "代理可以使用Aider执行添加/删除上下文文件操作和运行提示。",
     "includeContextFiles": "包含上下文文件",
     "includeFilesTooltip": "将上下文文件内容添加到代理的聊天中。这将增加令牌使用量。",
-    "includeRepoMap": "包含仓库地图",
-    "includeRepoMapTooltip": "在代理的上下文中包含仓库地图。这有助于代理理解项目结构，但可能会增加token使用量。",
+
     "servers": "MCP服务器",
     "selectServer": "从列表中选择一个 MCP 服务器以查看其工具",
     "reloadServer": "重新加载服务器",
