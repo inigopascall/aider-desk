@@ -6,6 +6,10 @@ import {
   BranchInfo,
   ClearTaskData,
   ContextInfoData,
+  ContextFile,
+  RegenerateRepositoryMappingsResult,
+  RepositoryMappingsUpdatedData,
+
   CloudflareTunnelStatus,
   CommandOutputData,
   ContextFilesUpdatedData,
@@ -137,6 +141,8 @@ export interface ApplicationAPI {
   getAllFiles: (baseDir: string, taskId: string, useGit?: boolean) => Promise<string[]>;
   refreshContextFiles: (baseDir: string, taskId: string) => Promise<void>;
   getUpdatedFiles: (baseDir: string, taskId: string) => Promise<UpdatedFile[]>;
+  getRepositoryMappings: (baseDir: string) => Promise<ContextFile[]>;
+  regenerateRepositoryMappings: (baseDir: string, taskId: string) => Promise<RegenerateRepositoryMappingsResult>;
   addFileToGit: (baseDir: string, taskId: string, filePath: string) => Promise<void>;
   restoreFile: (baseDir: string, taskId: string, filePath: string) => Promise<void>;
   readFile: (baseDir: string, taskId: string, filePath: string) => Promise<string>;
@@ -255,6 +261,7 @@ export interface ApplicationAPI {
   addContextFilesUpdatedListener: (baseDir: string, taskId: string, callback: (data: ContextFilesUpdatedData) => void) => () => void;
   addUpdatedFilesUpdatedListener: (baseDir: string, taskId: string, callback: (data: UpdatedFilesUpdatedData) => void) => () => void;
   addSkillsUpdatedListener: (baseDir: string, taskId: string, callback: (data: SkillsUpdatedData) => void) => () => void;
+  addRepositoryMappingsUpdatedListener: (baseDir: string, callback: (data: RepositoryMappingsUpdatedData) => void) => () => void;
   addCommandsUpdatedListener: (baseDir: string, callback: (data: CommandsData) => void) => () => void;
   addUpdateAutocompletionListener: (baseDir: string, taskId: string, callback: (data: AutocompletionData) => void) => () => void;
   addAskQuestionListener: (baseDir: string, taskId: string, callback: (data: QuestionData) => void) => () => void;

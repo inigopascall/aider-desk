@@ -229,7 +229,7 @@ export interface ConnectorMessage {
 export interface ContextFile {
   path: string;
   readOnly?: boolean;
-  source?: 'global-rule' | 'project-rule' | 'agent-rule';
+  source?: 'global-rule' | 'project-rule' | 'agent-rule' | 'repo-mapping';
 }
 
 export enum ContextMemoryMode {

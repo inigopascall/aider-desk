@@ -413,6 +413,16 @@ export interface ContextFilesUpdatedData {
   files: ContextFile[];
 }
 
+export interface RepositoryMappingsUpdatedData {
+  baseDir: string;
+  files: ContextFile[];
+}
+
+export interface RegenerateRepositoryMappingsResult {
+  success: boolean;
+  error?: string;
+}
+
 export interface UpdatedFile {
   path: string;
   additions: number;
@@ -668,7 +678,8 @@ export interface AgentProfile {
   toolApprovals: Record<string, ToolApprovalState>;
   toolSettings: Record<string, ToolSettings>;
   includeContextFiles: boolean;
-  includeRepoMap: boolean;
+  /** Include generated read-only mapping files before normal context files. */
+  includeRepoMappings: boolean;
   usePowerTools: boolean;
   useAiderTools: boolean;
   useTodoTools: boolean;
