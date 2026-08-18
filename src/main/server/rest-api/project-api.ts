@@ -404,6 +404,15 @@ const RenameWorktreeBranchSchema = z.object({
   newBranchName: z.string().min(1, 'New branch name is required'),
 });
 
+const RepositoryMappingsSchema = z.object({
+  projectDir: z.string().min(1, 'Project directory is required'),
+});
+
+const RegenerateRepositoryMappingsSchema = z.object({
+  projectDir: z.string().min(1, 'Project directory is required'),
+  taskId: z.string().min(1, 'Task id is required'),
+});
+
 export class ProjectApi extends BaseApi {
   constructor(private readonly eventsHandler: EventsHandler) {
     super();
@@ -573,6 +582,30 @@ export class ProjectApi extends BaseApi {
         const { projectDir, taskId, args } = parsed;
         await this.eventsHandler.initProjectRulesFile(projectDir, taskId, args);
         res.status(200).json({ message: 'Project rules file initialized' });
+      }),
+    );
+
+    router.get(
+      '/project/repository-mappings',
+      this.handleRequest(async (req, res) => {
+        const parsed = this.validateRequest(RepositoryMappingsSchema, req.query, res);
+        if (!parsed) {
+          return;
+        }
+
+        res.status(200).json(await this.eventsHandler.getRepositoryMappings(parsed.projectDir));
+      }),
+    );
+
+    router.post(
+      '/project/repository-mappings/regenerate',
+      this.handleRequest(async (req, res) => {
+        const parsed = this.validateRequest(RegenerateRepositoryMappingsSchema, req.body, res);
+        if (!parsed) {
+          return;
+        }
+
+        res.status(200).json(await this.eventsHandler.regenerateRepositoryMappings(parsed.projectDir, parsed.taskId));
       }),
     );
 

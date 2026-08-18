@@ -17,6 +17,8 @@ export const createMockAgentProfile = (overrides: Partial<AgentProfile> = {}): A
     useSubagents: true,
     useMemoryTools: true,
     useSkillsTools: true,
+    includeContextFiles: false,
+    includeRepoMappings: false,
     toolApprovals: {} as Record<string, ToolApprovalState>,
     subagent: {
       enabled: false,

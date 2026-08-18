@@ -169,6 +169,14 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
     return await eventsHandler.getUpdatedFiles(baseDir, taskId);
   });
 
+  ipcMain.handle('get-repository-mappings', async (_, baseDir: string) => {
+    return await eventsHandler.getRepositoryMappings(baseDir);
+  });
+
+  ipcMain.handle('regenerate-repository-mappings', async (_, baseDir: string, taskId: string) => {
+    return await eventsHandler.regenerateRepositoryMappings(baseDir, taskId);
+  });
+
   ipcMain.handle('refresh-context-files', async (_, baseDir: string, taskId: string) => {
     await eventsHandler.refreshContextFiles(baseDir, taskId);
   });

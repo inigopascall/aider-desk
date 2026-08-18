@@ -121,6 +121,7 @@ import { getElectronApp } from '@/app';
 import { PromptsManager } from '@/prompts';
 import { PythonDependenciesInstaller } from '@/python-dependencies-installer';
 import { getProxyEnvVars } from '@/proxy-manager';
+import { listRepositoryMappingFiles } from '@/repository-mappings';
 import { CompactionLevel, extractSummary, smartCompactMessages } from '@/agent/compaction';
 
 export const INTERNAL_TASK_ID = 'internal';
@@ -2758,6 +2759,10 @@ export class Task {
     const disabledRuleFiles = this.project.getProjectSettings().disabledRuleFiles ?? [];
 
     return includeDisabled ? extensionResult.files : extensionResult.files.filter((f) => !disabledRuleFiles.includes(f.path));
+  }
+
+  public async getRepositoryMappingFiles(): Promise<ContextFile[]> {
+    return listRepositoryMappingFiles(this.project.baseDir);
   }
 
   public getRepoMap(): string {

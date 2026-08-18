@@ -297,8 +297,8 @@ export const ProfileGeneralSection = ({ profile, settings, onSettingChange }: Pr
           <Checkbox
             label={
               <div className="flex items-center">
-                <span>{t('settings.agent.includeRepoMap')}</span>
-                <InfoIcon className="ml-1" tooltip={t('settings.agent.includeRepoMapTooltip')} />
+                <span>{t('settings.agent.includeRepoMappings')}</span>
+                <InfoIcon className="ml-1" tooltip={t('settings.agent.includeRepoMappingsTooltip')} />
               </div>
             }
             checked={profile.includeRepoMappings}

@@ -1546,7 +1546,7 @@ export class Agent {
       messages.push(...(contextMessages as ModelMessage[]));
       messages.push(...contextFilesMessages);
     } else {
-      const workingFilesMessages = await this.getWorkingFilesMessages(task, contextFiles);
+      const workingFilesMessages = await this.getWorkingFilesMessages(task, filesForPrompt);
       messages.push(...workingFilesMessages);
       // Add message history after working files
       messages.push(...(contextMessages as ModelMessage[]));

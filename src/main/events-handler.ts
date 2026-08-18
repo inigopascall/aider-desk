@@ -66,6 +66,7 @@ import { AIDER_DESK_TMP_DIR, LOGS_DIR } from '@/constants';
 import { EventManager } from '@/events';
 import { isElectron } from '@/app';
 import { ProxyManager } from '@/proxy-manager';
+import { listRepositoryMappingFiles, runRepositoryMappingsGenerator } from '@/repository-mappings';
 
 export class EventsHandler {
   constructor(
@@ -346,6 +347,22 @@ export class EventsHandler {
       return [];
     }
     return await task.getUpdatedFiles();
+  }
+
+  async getRepositoryMappings(baseDir: string) {
+    return listRepositoryMappingFiles(baseDir);
+  }
+
+  async regenerateRepositoryMappings(baseDir: string, taskId: string) {
+    const result = await runRepositoryMappingsGenerator(baseDir);
+    const files = await listRepositoryMappingFiles(baseDir);
+    this.eventManager.sendRepositoryMappingsUpdated(baseDir, files);
+
+    if (!result.success) {
+      this.projectManager.getProject(baseDir).getTask(taskId)?.addLogMessage('error', result.error || 'Failed to regenerate repository mappings.', true);
+    }
+
+    return result;
   }
 
   async addFile(baseDir: string, taskId: string, filePath: string, readOnly = false): Promise<boolean> {

@@ -270,6 +270,15 @@ export class EventManager {
     this.broadcastToEventConnectors('updated-files-updated', data);
   }
 
+  sendRepositoryMappingsUpdated(baseDir: string, files: ContextFile[]): void {
+    const data: RepositoryMappingsUpdatedData = {
+      baseDir,
+      files,
+    };
+    this.sendToWindows('repository-mappings-updated', data);
+    this.broadcastToEventConnectors('repository-mappings-updated', data);
+  }
+
   sendSkillsUpdated(baseDir: string, taskId: string, skills: SkillDefinition[]): void {
     const data: SkillsUpdatedData = {
       baseDir,
