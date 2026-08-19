@@ -22,8 +22,6 @@ type Props = {
 export const CostInfo = ({ tokensInfo, aiderTotalCost, clearMessages, resetTask, maxInputTokens = 0, mode, task, updateTask }: Props) => {
   const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
-  const [refreshingAnimation, setRefreshingAnimation] = useState(false);
-  const REFRESH_ANIMATION_DURATION = 2000;
 
   const renderLabelValue = (label: string, value: ReactNode) => (
     <div className="flex justify-between h-[20px]">
@@ -35,14 +33,6 @@ export const CostInfo = ({ tokensInfo, aiderTotalCost, clearMessages, resetTask,
   const filesTotalTokens = tokensInfo?.files ? Object.values(tokensInfo.files).reduce((sum, file) => sum + file.tokens, 0) : 0;
   const filesTotalCost = tokensInfo?.files ? Object.values(tokensInfo.files).reduce((sum, file) => sum + file.cost, 0) : 0;
   const agentTotalCost = tokensInfo?.agent?.cost ?? 0;
-
-  const renderRefreshButton = (tooltipContent: ReactNode, onClick: () => void, icon: ReactNode) => (
-    <Tooltip content={tooltipContent}>
-      <button onClick={onClick} className="p-0.5 hover:bg-bg-tertiary rounded-md" disabled={refreshingAnimation}>
-        {icon}
-      </button>
-    </Tooltip>
-  );
 
   const renderActionButton = (tooltipContent: ReactNode, onClick: () => void, icon: ReactNode, className = 'p-0.5 hover:bg-bg-tertiary rounded-md') => (
     <Tooltip content={tooltipContent}>
@@ -65,7 +55,6 @@ export const CostInfo = ({ tokensInfo, aiderTotalCost, clearMessages, resetTask,
       <div className="text-2xs text-text-muted-light">
         <div className={`overflow-hidden transition-all duration-300 ${isExpanded ? 'max-h-48 mb-2' : 'max-h-0'}`}>
           {renderLabelValue('costInfo.files', `${filesTotalTokens} tokens, $${filesTotalCost.toFixed(5)}`)}
-          {renderLabelValue('costInfo.repoMap', `${tokensInfo?.repoMap?.tokens ?? 0} tokens, $${(tokensInfo?.repoMap?.cost ?? 0).toFixed(5)}`)}
           {tokensInfo?.chatHistory && (
             <div className="flex items-center h-[20px]">
               <div className="flex-1">

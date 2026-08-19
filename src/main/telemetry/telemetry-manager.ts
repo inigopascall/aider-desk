@@ -125,7 +125,7 @@ export class TelemetryManager {
         usePowerTools: profile.usePowerTools,
         useTodoTools: profile.useTodoTools,
         includeContextFiles: profile.includeContextFiles,
-        includeRepoMap: profile.includeRepoMap,
+        includeRepoMappings: profile.includeRepoMappings,
         autonomyMode: task?.autonomyMode ?? 'guided',
         enabledMcpServersCount: profile.enabledServers.length,
         totalMcpServersCount,

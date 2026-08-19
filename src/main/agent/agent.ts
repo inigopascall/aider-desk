@@ -1537,18 +1537,21 @@ export class Agent {
     const messages: ModelMessage[] = [];
 
     const repositoryMappingFiles = profile.includeRepoMappings ? await task.getRepositoryMappingFiles() : [];
-    const filesForPrompt = [...repositoryMappingFiles, ...contextFiles];
 
-    // Add context files with content or just list of working files
     if (profile.includeContextFiles) {
-      const contextFilesMessages = await this.getContextFilesAsToolCallMessages(task, profile, filesForPrompt);
-      // Add message history before context files
+      // Mappings first, then ordinary context files, all with inlined content.
+      const contextFilesMessages = await this.getContextFilesAsToolCallMessages(task, profile, [...repositoryMappingFiles, ...contextFiles]);
       messages.push(...(contextMessages as ModelMessage[]));
       messages.push(...contextFilesMessages);
     } else {
-      const workingFilesMessages = await this.getWorkingFilesMessages(task, filesForPrompt);
+      // Mappings are always injected with content, even when ordinary context
+      // files are only listed as working files.
+      if (repositoryMappingFiles.length > 0) {
+        const mappingMessages = await this.getContextFilesAsToolCallMessages(task, profile, repositoryMappingFiles);
+        messages.push(...mappingMessages);
+      }
+      const workingFilesMessages = await this.getWorkingFilesMessages(task, contextFiles);
       messages.push(...workingFilesMessages);
-      // Add message history after working files
       messages.push(...(contextMessages as ModelMessage[]));
     }
 

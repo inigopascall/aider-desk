@@ -3588,7 +3588,7 @@ export class Task {
 
   private async shouldStartAider(): Promise<boolean> {
     const agentProfile = await this.getTaskAgentProfile();
-    return AIDER_MODES.includes(this.getCurrentMode()) || (agentProfile?.useAiderTools ?? false) || (agentProfile?.includeRepoMap ?? false);
+    return AIDER_MODES.includes(this.getCurrentMode()) || (agentProfile?.useAiderTools ?? false);
   }
 
   private async reloadConnectorMessages() {
@@ -3972,14 +3972,14 @@ export class Task {
     this.eventManager.sendUpdateTokensInfo(this.tokensInfo);
   }
 
-  async updateContextInfo(checkContextFilesIncluded = false, checkRepoMapIncluded = false) {
-    void this.debouncedUpdateContextInfo(checkContextFilesIncluded, checkRepoMapIncluded);
+  async updateContextInfo(checkContextFilesIncluded = false, checkRepoMappingsIncluded = false) {
+    void this.debouncedUpdateContextInfo(checkContextFilesIncluded, checkRepoMappingsIncluded);
     void this.sendSkillsUpdated();
   }
 
-  private debouncedUpdateContextInfo = debounce(async (checkContextFilesIncluded = false, checkRepoMapIncluded = false) => {
+  private debouncedUpdateContextInfo = debounce(async (checkContextFilesIncluded = false, checkRepoMappingsIncluded = false) => {
     void this.sendRequestContextInfo();
-    await this.updateAgentEstimatedTokens(checkContextFilesIncluded, checkRepoMapIncluded);
+    await this.updateAgentEstimatedTokens(checkContextFilesIncluded, checkRepoMappingsIncluded);
   }, 500);
 
   private async sendRequestContextInfo() {
@@ -4006,14 +4006,14 @@ export class Task {
     this.autocompletionAllFiles = allFiles;
   }
 
-  async updateAgentEstimatedTokens(checkContextFilesIncluded = false, checkRepoMapIncluded = false) {
+  async updateAgentEstimatedTokens(checkContextFilesIncluded = false, checkRepoMappingsIncluded = false) {
     logger.debug('Updating agent estimated tokens', {
       baseDir: this.project.baseDir,
       checkContextFilesIncluded,
-      checkRepoMapIncluded,
+      checkRepoMappingsIncluded,
     });
     const agentProfile = await this.getTaskAgentProfile();
-    if (!agentProfile || (checkContextFilesIncluded && !agentProfile.includeContextFiles && checkRepoMapIncluded && !agentProfile.includeRepoMap)) {
+    if (!agentProfile || (checkContextFilesIncluded && !agentProfile.includeContextFiles && checkRepoMappingsIncluded && !agentProfile.includeRepoMappings)) {
       return;
     }
 
@@ -4042,7 +4042,7 @@ export class Task {
     const disabledServersChanged = false; // oldAgentProfile is null, so no change
     const toolApprovalsChanged = false; // oldAgentProfile is null, so no change
     const includeContextFilesChanged = false; // oldAgentProfile is null, so no change
-    const includeRepoMapChanged = false; // oldAgentProfile is null, so no change
+    const includeRepoMappingsChanged = false; // oldAgentProfile is null, so no change
     const useAiderToolsChanged = false; // oldAgentProfile is null, so no change
     const usePowerToolsChanged = false; // oldAgentProfile is null, so no change
     const customInstructionsChanged = false; // oldAgentProfile is null, so no change
@@ -4052,7 +4052,7 @@ export class Task {
       disabledServersChanged ||
       toolApprovalsChanged ||
       includeContextFilesChanged ||
-      includeRepoMapChanged ||
+      includeRepoMappingsChanged ||
       useAiderToolsChanged ||
       usePowerToolsChanged ||
       customInstructionsChanged;
@@ -5439,7 +5439,7 @@ ${error.stderr}`,
     const taskAgentProfile = await this.getTaskAgentProfile();
 
     if (taskAgentProfile?.id === newProfile.id) {
-      if (oldProfile.includeContextFiles !== newProfile.includeContextFiles || oldProfile.includeRepoMap !== newProfile.includeRepoMap) {
+      if (oldProfile.includeContextFiles !== newProfile.includeContextFiles || oldProfile.includeRepoMappings !== newProfile.includeRepoMappings) {
         void this.updateContextInfo();
       }
       if (await this.shouldStartAider()) {

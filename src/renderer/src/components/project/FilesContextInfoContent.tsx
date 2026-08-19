@@ -31,7 +31,6 @@ export const FilesContextInfoContent = ({
   aiderTotalCost,
   maxInputTokens,
   clearMessages,
-  runCommand,
   resetTask,
   mode,
   showFileDialog,
@@ -68,7 +67,6 @@ export const FilesContextInfoContent = ({
         aiderTotalCost={aiderTotalCost}
         maxInputTokens={maxInputTokens}
         clearMessages={clearMessages}
-        refreshRepoMap={() => runCommand('map-refresh')}
         resetTask={resetTask}
         mode={mode}
         task={task}

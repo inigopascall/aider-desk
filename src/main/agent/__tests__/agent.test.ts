@@ -946,7 +946,7 @@ describe('Agent - prepareMessages sanitisation', () => {
     };
     mockTask.getRepositoryMappingFiles = vi.fn().mockResolvedValue([{ path: '.aider-desk/mappings/map.md', readOnly: true, source: 'repo-mapping' }]);
     mockTask.resolveContextFilePath = vi.fn((filePath: string) => Promise.resolve(`/test/project/${filePath}`));
-    mockFsReadFile.mockResolvedValue(Buffer.from('mapping content'));
+    vi.mocked(fs.readFile).mockResolvedValue(Buffer.from('mapping content') as any);
 
     const messages = await agent['prepareMessages'](
       mockTask,
@@ -965,6 +965,45 @@ describe('Agent - prepareMessages sanitisation', () => {
 
     expect(mappingToolCallIndex).toBeGreaterThanOrEqual(0);
     expect(contextToolCallIndex).toBeGreaterThan(mappingToolCallIndex);
+  });
+
+  it('injects mapping content when includeContextFiles is disabled', async () => {
+    mockProfile.includeContextFiles = false;
+    mockProfile.includeRepoMappings = true;
+    mockProfile.toolApprovals = {
+      [fileReadToolId]: ToolApprovalState.Always,
+    };
+    mockTask.getRepositoryMappingFiles = vi.fn().mockResolvedValue([{ path: '.aider-desk/mappings/map.md', readOnly: true, source: 'repo-mapping' }]);
+    mockTask.resolveContextFilePath = vi.fn((filePath: string) => Promise.resolve(`/test/project/${filePath}`));
+    vi.mocked(fs.readFile).mockResolvedValue(Buffer.from('mapping content') as any);
+
+    const messages = await agent['prepareMessages'](
+      mockTask,
+      mockProfile,
+      [],
+      [{ path: 'src/app.ts', readOnly: false }],
+      'test-provider/test-model',
+    );
+
+    // 1. Mapping content is inlined (tool-call followed by tool-result with content).
+    const mappingToolCallIndex = messages.findIndex(
+      (message: any) => message.role === 'assistant' && Array.isArray(message.content) && message.content.some((part: any) => part.input?.filePath === '.aider-desk/mappings/map.md'),
+    );
+    expect(mappingToolCallIndex).toBeGreaterThanOrEqual(0);
+    const mappingToolResult = messages.find(
+      (message: any) => message.role === 'tool' && Array.isArray(message.content) && message.content.some((part: any) => part.type === 'tool-result' && String(part.output).includes('mapping content')),
+    );
+    expect(mappingToolResult).toBeDefined();
+
+    // 2. The ordinary context file remains a working-files listing.
+    const workingFilesMessage = messages.find(
+      (message: any) => message.role === 'user' && typeof message.content === 'string' && message.content.includes('currently in the working context') && message.content.includes('src/app.ts'),
+    );
+    expect(workingFilesMessage).toBeDefined();
+
+    // 3. Mappings are injected before the working-files listing.
+    const workingFilesIndex = messages.indexOf(workingFilesMessage);
+    expect(mappingToolCallIndex).toBeLessThan(workingFilesIndex);
   });
 });
 

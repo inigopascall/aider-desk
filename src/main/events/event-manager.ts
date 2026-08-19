@@ -37,6 +37,7 @@ import {
   UpdatedFilesUpdatedData,
   QueuedPromptData,
   QueuedPromptsUpdatedData,
+  RepositoryMappingsUpdatedData,
   SkillDefinition,
   SkillsUpdatedData,
   CommandsData,

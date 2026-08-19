@@ -25,6 +25,7 @@ import {
   QuestionAnsweredData,
   QuestionData,
   QueuedPromptsUpdatedData,
+  RepositoryMappingsUpdatedData,
   ResponseChunkData,
   ResponseCompletedData,
   SettingsData,
