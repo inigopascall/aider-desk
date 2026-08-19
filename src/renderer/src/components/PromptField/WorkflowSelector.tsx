@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react';
+import { memo } from 'react';
 import { LuWorkflow } from 'react-icons/lu';
 import { AVAILABLE_WORKFLOWS, getWorkflowColor, WorkflowInfo } from '@common/types';
 import { clsx } from 'clsx';
@@ -7,25 +7,18 @@ import { Tooltip } from '@/components/ui/Tooltip';
 
 type Props = {
   selectedWorkflowId: string | null;
-  onChange: (workflowId: string | null) => void;
+  onWorkflowClick: (workflowId: string) => void;
   workflows?: WorkflowInfo[];
 };
 
 /**
- * Toggle-button selector for choosing which workflow to run.
- * Clicking an active workflow deselects it; clicking an inactive one
- * selects it and deselects the previous selection.
+ * Button selector for choosing which workflow to run.
+ * Purely presentational: it reports which workflow was clicked and the
+ * parent decides what that means (open configuration, select, or deselect).
  * When a `workflows` list is provided it is used (e.g. the per-project
  * enabled subset); otherwise all available workflows are shown.
  */
-export const WorkflowSelector = memo(({ selectedWorkflowId, onChange, workflows }: Props) => {
-  const handleClick = useCallback(
-    (workflowId: string) => {
-      onChange(selectedWorkflowId === workflowId ? null : workflowId);
-    },
-    [selectedWorkflowId, onChange],
-  );
-
+export const WorkflowSelector = memo(({ selectedWorkflowId, onWorkflowClick, workflows }: Props) => {
   const workflowList = workflows ?? AVAILABLE_WORKFLOWS;
 
   if (workflowList.length === 0) {
@@ -39,7 +32,7 @@ export const WorkflowSelector = memo(({ selectedWorkflowId, onChange, workflows 
         return (
           <Tooltip key={workflow.id} content={workflow.name} delayDuration={500}>
             <button
-              onClick={() => handleClick(workflow.id)}
+              onClick={() => onWorkflowClick(workflow.id)}
               className={clsx(
                 'flex items-center px-2 py-1 transition-colors duration-150 border border-transparent',
                 isActive

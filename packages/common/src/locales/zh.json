@@ -463,7 +463,11 @@
     "defaultSetName": "默认",
     "noModelSets": "此工作流没有配置模型集。",
     "taskModelSetTooltip": "此任务的模型集",
-    "projectDefaultModelSetTooltip": "项目默认值（点击可为此任务覆盖）"
+    "projectDefaultModelSetTooltip": "项目默认值（点击可为此任务覆盖）",
+    "configModalTitle": "配置 {{name}}",
+    "configModalPlaceholder": "此工作流的模型和代理配置将在此处显示。保存并关闭会将此工作流保持为选中状态，供下一次提示使用；保存并运行会使用当前提示立即运行该工作流。",
+    "saveAndClose": "保存并关闭",
+    "saveAndGo": "保存并运行"
   },
   "settings": {
     "title": "设置",

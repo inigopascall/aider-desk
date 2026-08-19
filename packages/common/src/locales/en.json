@@ -465,7 +465,11 @@
     "defaultSetName": "Default",
     "noModelSets": "No model sets configured for this workflow.",
     "taskModelSetTooltip": "Model set for this task",
-    "projectDefaultModelSetTooltip": "Project default (click to override for this task)"
+    "projectDefaultModelSetTooltip": "Project default (click to override for this task)",
+    "configModalTitle": "Configure {{name}}",
+    "configModalPlaceholder": "Model and agent configuration for this workflow will appear here. Save & Close keeps this workflow selected for your next prompt; Save & Go runs it now with the current prompt.",
+    "saveAndClose": "Save & Close",
+    "saveAndGo": "Save & Go"
   },
   "settings": {
     "title": "Settings",

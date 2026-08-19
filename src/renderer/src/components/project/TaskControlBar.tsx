@@ -1,5 +1,5 @@
 import { AIDER_MODES, AutonomyMode, AVAILABLE_WORKFLOWS, DEFAULT_AUTONOMY_MODE, Mode, TaskData } from '@common/types';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FaCog, FaInfoCircle } from 'react-icons/fa';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -11,6 +11,7 @@ import { AgentSelector } from '@/components/AgentSelector';
 import { ModeSelector } from '@/components/PromptField/ModeSelector';
 import { AutonomySelector } from '@/components/PromptField/AutonomySelector';
 import { WorkflowSelector } from '@/components/PromptField/WorkflowSelector';
+import { WorkflowConfigModal } from '@/components/PromptField/WorkflowConfigModal';
 import { WorkflowModelSetSelector } from '@/components/PromptField/WorkflowModelSetSelector';
 import { Button } from '@/components/common/Button';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
@@ -34,6 +35,7 @@ type Props = {
   onUndoContextChange?: () => void;
   selectedWorkflowId?: string | null;
   onWorkflowChange?: (id: string | null) => void;
+  onWorkflowRun?: (workflowId: string) => void;
 };
 
 export const TaskControlBar = ({
@@ -54,6 +56,7 @@ export const TaskControlBar = ({
   onUndoContextChange,
   selectedWorkflowId,
   onWorkflowChange,
+  onWorkflowRun,
 }: Props) => {
   const { t } = useTranslation();
   const isWorkflowSelected = !!selectedWorkflowId;
