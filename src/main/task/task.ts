@@ -51,7 +51,6 @@ import {
   WorkingMode,
   WorktreeUncommittedFiles,
   WorkflowLogData,
-  WorkflowLogsUpdatedData,
   WorkflowRunInfo,
 } from '@common/types';
 import { parsePartialJson } from 'ai';
@@ -304,6 +303,10 @@ export class Task {
     const data = await this.readTaskDataFromDisk();
     if (data) {
       this.applyTaskData(data);
+    }
+    if (this.task.hasWorkflowHistory === undefined && (await this.workflowEventStore.exists())) {
+      // In-memory migration for pre-flag tasks; persisted on the next saveTask().
+      this.task.hasWorkflowHistory = true;
     }
   }
 
@@ -630,7 +633,6 @@ export class Task {
       question: this.currentQuestion,
       queuedPrompts: this.queuedPrompts,
       workingMode: this.task.workingMode || 'local',
-      workflowLogs: await this.workflowEventStore.load(),
     };
   }
 
@@ -796,6 +798,7 @@ export class Task {
     await this.interruptResponse();
     this.resolveAgentRunPromises();
     this.cleanupChunkBuffers();
+    await this.contextManager.flush();
 
     await this.aiderManager.kill();
     if (cleanupEmptyTask) {
@@ -1098,6 +1101,7 @@ export class Task {
         this.contextManager.addContextMessage(assistantMessage);
       }
     }
+    await this.contextManager.flush();
 
     this.sendStateUpdated();
 
@@ -1160,6 +1164,7 @@ export class Task {
       images,
       skillsToActivate,
     );
+    await this.contextManager.flush();
     if (agentMessages.length > 0) {
       // send messages to connectors
       this.contextManager.toConnectorMessages(agentMessages).forEach((message) => {
@@ -1927,6 +1932,7 @@ export class Task {
 
     if (command.trim() === 'reset') {
       this.contextManager.clearMessages();
+      await this.clearWorkflowEvents();
       this.eventManager.sendClearTask(this.project.baseDir, this.taskId, true, false);
     }
 
@@ -2134,6 +2140,7 @@ export class Task {
 
       await this.addContextMessage(assistantMessage);
       await this.addContextMessage(toolResultMessage);
+      await this.contextManager.flush();
 
       this.addToolMessage(
         toolCallId,
@@ -2193,6 +2200,7 @@ export class Task {
     prompt: string,
     description?: string,
     abortSignal?: AbortSignal,
+    run?: WorkflowRunInfo,
   ): Promise<{ status: 'success' | 'cancelled' | 'error'; outputText: string }> {
     const toolCallId = uuidv4();
     const fullToolName = `${SUBAGENTS_TOOL_GROUP_NAME}${TOOL_GROUP_NAME_SEPARATOR}${SUBAGENTS_TOOL_RUN_TASK}`;
@@ -2204,6 +2212,7 @@ export class Task {
       prompt,
       description,
       abortSignal,
+      run,
       onStarted: (promptContext) => {
         this.addToolMessage(toolCallId, SUBAGENTS_TOOL_GROUP_NAME, SUBAGENTS_TOOL_RUN_TASK, toolInput, undefined, undefined, promptContext);
         this.addLogMessage('loading', undefined, false, promptContext);
@@ -2297,6 +2306,7 @@ export class Task {
 
     await this.addContextMessage(assistantMessage);
     await this.addContextMessage(toolResultMessage);
+    await this.contextManager.flush();
 
     this.addToolMessage(
       toolCallId,
@@ -2796,11 +2806,39 @@ export class Task {
     this.eventManager.sendLog(data);
   }
 
+  public hasWorkflowHistory(): boolean {
+    return this.task.hasWorkflowHistory === true;
+  }
+
+  public async ensureWorkflowHistory(): Promise<void> {
+    if (this.hasWorkflowHistory()) return;
+    await this.saveTask({ hasWorkflowHistory: true });
+  }
+
+  public async loadWorkflowLogs(): Promise<WorkflowLogData[]> {
+    if (!this.hasWorkflowHistory()) return [];
+    return this.workflowEventStore.load();
+  }
+
+  public async clearWorkflowEvents(): Promise<void> {
+    if (!this.hasWorkflowHistory()) return;
+    await this.workflowEventStore.clear();
+    await this.saveTask({ hasWorkflowHistory: false });
+  }
+
+  public async copyWorkflowEventsFrom(sourceTask: Task, untilTimestamp?: number): Promise<void> {
+    if (!sourceTask.hasWorkflowHistory()) return;
+    await this.ensureWorkflowHistory();
+    await this.workflowEventStore.copyFrom(sourceTask.workflowEventStore, { untilTimestamp });
+  }
+
   /**
    * Persists and broadcasts a durable workflow progress event.
    * These records are task history metadata only — never sent to the model.
    */
   public async addWorkflowLogMessage(run: WorkflowRunInfo, level: LogLevel, message: string): Promise<void> {
+    await this.ensureWorkflowHistory();
+    await this.workflowEventStore.ready();
     const data: WorkflowLogData = {
       id: uuidv4(),
       baseDir: this.project.baseDir,
@@ -2819,11 +2857,6 @@ export class Task {
       logger.error('Failed to persist workflow log', { taskId: this.taskId, error });
     }
     this.eventManager.sendWorkflowLog(data);
-    this.eventManager.sendWorkflowLogsUpdated({
-      baseDir: this.project.baseDir,
-      taskId: this.taskId,
-      logs: await this.workflowEventStore.load(),
-    });
   }
 
   /**
@@ -2831,6 +2864,7 @@ export class Task {
    * broadcasts it to the live renderer.
    */
   public async addWorkflowInvocationMessage(prompt: string, run: WorkflowRunInfo): Promise<void> {
+    await this.ensureWorkflowHistory();
     const messageId = uuidv4();
     const promptContext: PromptContext = {
       id: messageId,
@@ -2848,6 +2882,7 @@ export class Task {
       promptContext,
       timestamp: Date.now(),
     });
+    await this.contextManager.flush();
     this.eventManager.sendUserMessage({
       type: 'user',
       id: messageId,
@@ -2888,6 +2923,7 @@ export class Task {
       timestamp: Date.now(),
     };
     this.contextManager.addContextMessage(summaryMessage);
+    await this.contextManager.flush();
     this.eventManager.sendResponseCompleted({
       type: 'response-completed',
       messageId,
@@ -3110,6 +3146,7 @@ export class Task {
     }
 
     this.contextManager.clearMessages(true, createSnapshot);
+    await this.clearWorkflowEvents();
     await this.runCommand('clear', addToHistory);
     this.eventManager.sendClearTask(this.project.baseDir, this.taskId, true, false);
 
@@ -5387,6 +5424,7 @@ ${error.stderr}`,
     // Copy messages
     const messages = await sourceTask.getContextMessages();
     this.contextManager.setContextMessages(messages);
+    await this.copyWorkflowEventsFrom(sourceTask);
 
     await this.updateContextInfo();
 
@@ -5420,6 +5458,8 @@ ${error.stderr}`,
 
     // Save forked messages into new task
     this.contextManager.setContextMessages(forkedMessages);
+    const lastKeptMessage = forkedMessages[forkedMessages.length - 1];
+    await this.copyWorkflowEventsFrom(sourceTask, lastKeptMessage?.timestamp);
 
     await this.updateContextInfo();
 

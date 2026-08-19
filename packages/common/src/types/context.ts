@@ -163,7 +163,7 @@ export interface WorkflowMessageMeta {
   runId: string;
   workflowId: string;
   workflowName: string;
-  kind: 'invocation' | 'checkpoint' | 'final-summary';
+  kind: 'invocation' | 'subagent' | 'checkpoint' | 'final-summary';
   label?: string;
 }
 

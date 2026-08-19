@@ -39,6 +39,7 @@ import {
   VersionsInfo,
   VoiceSession,
   ChangeRequestItem,
+  WorkflowLogsStateData,
 } from '@common/types';
 import { compareBaseDirs, normalizeBaseDir } from '@common/utils';
 // @ts-expect-error istextorbinary is not typed properly
@@ -979,9 +980,16 @@ export class EventsHandler {
         queuedPrompts: [],
         question: null,
         workingMode: 'local',
-        workflowLogs: [],
       }
     );
+  }
+
+  async loadWorkflowLogs(baseDir: string, taskId: string): Promise<WorkflowLogsStateData> {
+    const task = this.projectManager.getProject(baseDir).getTask(taskId);
+    if (!task) {
+      return { hasWorkflowHistory: false, logs: [] };
+    }
+    return { hasWorkflowHistory: task.hasWorkflowHistory(), logs: await task.loadWorkflowLogs() };
   }
 
   async generateTaskMarkdown(baseDir: string, taskId: string): Promise<string | null> {

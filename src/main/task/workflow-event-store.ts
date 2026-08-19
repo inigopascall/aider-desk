@@ -24,6 +24,11 @@ export class WorkflowEventStore {
     return this.filePath;
   }
 
+  /** Cheap existence probe used by the lazy migration. */
+  async exists(): Promise<boolean> {
+    return fileExists(this.filePath);
+  }
+
   async ready(): Promise<void> {
     if (this.initialized) return;
     if (!this.initPromise) {

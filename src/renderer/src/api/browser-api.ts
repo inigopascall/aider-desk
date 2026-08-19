@@ -81,7 +81,7 @@ import {
   SkillsUpdatedData,
   ExtensionOperationResult,
   WorkflowLogData,
-  WorkflowLogsUpdatedData,
+  WorkflowLogsStateData,
 } from '@common/types';
 import { ApplicationAPI } from '@common/api';
 import { type AxiosInstance, create } from 'axios';
@@ -136,7 +136,6 @@ type EventDataMap = {
   'modal-overlay-url': ModalOverlayUrlData;
   'aider-connector-status': { baseDir?: string; taskId?: string; status: AiderConnectorStatus };
   'workflow-log': WorkflowLogData;
-  'workflow-logs-updated': WorkflowLogsUpdatedData;
 };
 
 type EventCallback<T> = (data: T) => void;
@@ -225,7 +224,6 @@ export class BrowserApi implements ApplicationAPI {
       'modal-overlay-url': new Map(),
       'aider-connector-status': new Map(),
       'workflow-log': new Map(),
-      'workflow-logs-updated': new Map(),
     };
     this.apiClient = create({
       baseURL: `${baseUrl}/api`,
@@ -790,6 +788,9 @@ export class BrowserApi implements ApplicationAPI {
   loadTask(baseDir: string, id: string): Promise<TaskStateData> {
     return this.post('/project/tasks/load', { projectDir: baseDir, id });
   }
+  loadWorkflowLogs(baseDir: string, taskId: string): Promise<WorkflowLogsStateData> {
+    return this.post('/project/tasks/workflow-logs', { projectDir: baseDir, id: taskId });
+  }
 
   async exportTaskToMarkdown(baseDir: string, taskId: string, copyOnly: boolean = false): Promise<string | void> {
     const response = await this.apiClient.post('/project/tasks/export-markdown', {
@@ -958,9 +959,6 @@ export class BrowserApi implements ApplicationAPI {
   }
   addWorkflowLogListener(baseDir: string, taskId: string, callback: (data: WorkflowLogData) => void): () => void {
     return this.addListener('workflow-log', callback, baseDir, taskId);
-  }
-  addWorkflowLogsUpdatedListener(baseDir: string, taskId: string, callback: (data: WorkflowLogsUpdatedData) => void): () => void {
-    return this.addListener('workflow-logs-updated', callback, baseDir, taskId);
   }
   addContextFilesUpdatedListener(baseDir: string, taskId: string, callback: (data: ContextFilesUpdatedData) => void): () => void {
     return this.addListener('context-files-updated', callback, baseDir, taskId);

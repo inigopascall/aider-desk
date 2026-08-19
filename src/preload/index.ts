@@ -43,7 +43,6 @@ import {
   VersionsInfo,
   WorktreeIntegrationStatusUpdatedData,
   WorkflowLogData,
-  WorkflowLogsUpdatedData,
   AiderConnectorStatus,
 } from '@common/types';
 import { electronAPI } from '@electron-toolkit/preload';
@@ -197,6 +196,7 @@ const api: ApplicationAPI = {
   forkTask: (baseDir, taskId, messageId) => ipcRenderer.invoke('fork-task', baseDir, taskId, messageId),
   getTasks: (baseDir) => ipcRenderer.invoke('get-tasks', baseDir),
   loadTask: (baseDir, taskId) => ipcRenderer.invoke('load-task', baseDir, taskId),
+  loadWorkflowLogs: (baseDir, taskId) => ipcRenderer.invoke('load-workflow-logs', baseDir, taskId),
 
   exportTaskToMarkdown: async (baseDir, taskId, copyOnly) => ipcRenderer.invoke('export-task-to-markdown', baseDir, taskId, copyOnly),
   getRecentProjects: () => ipcRenderer.invoke('get-recent-projects'),
@@ -429,14 +429,6 @@ const api: ApplicationAPI = {
     };
     ipcRenderer.on('workflow-log', listener);
     return () => ipcRenderer.removeListener('workflow-log', listener);
-  },
-  addWorkflowLogsUpdatedListener: (baseDir, taskId, callback) => {
-    const listener = (_: Electron.IpcRendererEvent, data: WorkflowLogsUpdatedData) => {
-      if (!compareBaseDirs(data.baseDir, baseDir) || data.taskId !== taskId) return;
-      callback(data);
-    };
-    ipcRenderer.on('workflow-logs-updated', listener);
-    return () => ipcRenderer.removeListener('workflow-logs-updated', listener);
   },
 
   addTokensInfoListener: (baseDir, taskId, callback) => {

@@ -303,6 +303,10 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
     return await eventsHandler.loadTask(baseDir, taskId);
   });
 
+  ipcMain.handle('load-workflow-logs', async (_, baseDir: string, taskId: string) => {
+    return await eventsHandler.loadWorkflowLogs(baseDir, taskId);
+  });
+
   ipcMain.handle('load-mcp-server-tools', async (_, serverName: string, config?: McpServerConfig, projectDir?: string) => {
     return await eventsHandler.loadMcpServerTools(serverName, config, projectDir);
   });

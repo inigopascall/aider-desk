@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Message, TaskData, TaskStateData } from '@common/types';
+import { Message, TaskData, TaskStateData, WorkflowLogData } from '@common/types';
 
 import { ReadonlyTaskSidebar } from '@/components/readonly/ReadonlyTaskSidebar';
 import { ReadonlyTaskView } from '@/components/readonly/ReadonlyTaskView';
@@ -8,6 +8,7 @@ import { LoadingOverlay } from '@/components/common/LoadingOverlay';
 import { ExtensionsProvider } from '@/contexts/ExtensionsContext';
 import { useReadonlyApi } from '@/contexts/ReadonlyApiContext';
 import { convertTaskStateMessages } from '@/utils/task-messages';
+import { groupWorkflowLogsByRun } from '@/utils/workflow-messages';
 import { useResponsive } from '@/hooks/useResponsive';
 import { useBooleanState } from '@/hooks/useBooleanState';
 import { applyReadonlyEvent, applyReadonlyLogEvent, applyReadonlyTaskListEvent, isReadonlyTaskListEvent } from '@/utils/readonly-events';
@@ -26,10 +27,12 @@ export const ReadonlyProjectView = ({ projectDir, selectedTaskId, onSelectTask }
   const [tasks, setTasks] = useState<TaskData[]>([]);
   const [taskState, setTaskState] = useState<TaskStateData | null>(null);
   const [logMessages, setLogMessages] = useState<Message[]>([]);
+  const [workflowLogs, setWorkflowLogs] = useState<WorkflowLogData[]>([]);
   const [loading, setLoading] = useState(true);
   const [taskLoading, setTaskLoading] = useState(false);
   const [error, setError] = useState(false);
   const selectedTask = tasks.find((task) => task.id === selectedTaskId);
+  const workflowRuns = useMemo(() => groupWorkflowLogsByRun(workflowLogs), [workflowLogs]);
 
   const loadTasks = useCallback(async () => {
     setTasks(await api.getTasks());
@@ -60,6 +63,7 @@ export const ReadonlyProjectView = ({ projectDir, selectedTaskId, onSelectTask }
     if (!selectedTaskId) {
       setTaskState(null);
       setLogMessages([]);
+      setWorkflowLogs([]);
       return;
     }
 
@@ -67,7 +71,14 @@ export const ReadonlyProjectView = ({ projectDir, selectedTaskId, onSelectTask }
       try {
         setTaskLoading(true);
         setLogMessages([]);
+        setWorkflowLogs([]);
         await loadSelectedTask(selectedTaskId);
+        // Hydrate persisted workflow logs when the selected task has history.
+        const selected = tasks.find((task) => task.id === selectedTaskId);
+        if (selected?.hasWorkflowHistory === true) {
+          const result = await api.loadWorkflowLogs(selectedTaskId);
+          setWorkflowLogs(result.logs);
+        }
         setError(false);
       } catch {
         setError(true);
@@ -76,7 +87,7 @@ export const ReadonlyProjectView = ({ projectDir, selectedTaskId, onSelectTask }
       }
     };
     void load();
-  }, [loadSelectedTask, selectedTaskId]);
+  }, [loadSelectedTask, selectedTaskId, tasks, api]);
 
   useEffect(() => {
     if (!selectedTaskId && tasks[0]) {
@@ -92,6 +103,20 @@ export const ReadonlyProjectView = ({ projectDir, selectedTaskId, onSelectTask }
       if (selectedTaskId) {
         setTaskState((current) => (current ? applyReadonlyEvent(current, event, selectedTaskId) : current));
         setLogMessages((current) => applyReadonlyLogEvent(current, event, selectedTaskId, t('messages.thinking')));
+        if (event.type === 'workflow-log') {
+          const data = event.data as WorkflowLogData;
+          if (data.taskId === selectedTaskId) {
+            setWorkflowLogs((current) => {
+              // Deduplicate by id, then keep sequence-sorted order.
+              if (current.some((log) => log.id === data.id)) {
+                return current;
+              }
+              const next = [...current, data];
+              next.sort((a, b) => a.sequence - b.sequence || a.timestamp - b.timestamp);
+              return next;
+            });
+          }
+        }
       }
     });
   }, [api, selectedTaskId, t]);
@@ -131,6 +156,7 @@ export const ReadonlyProjectView = ({ projectDir, selectedTaskId, onSelectTask }
               task={selectedTask}
               state={taskState}
               logMessages={logMessages}
+              workflowRuns={workflowRuns}
               onToggleTaskSidebar={isMobile ? showTaskSidebar : undefined}
             />
           ) : (

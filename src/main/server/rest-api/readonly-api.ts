@@ -166,6 +166,22 @@ export class ReadonlyApi extends BaseApi {
     );
 
     router.get(
+      '/tasks/:taskId/workflow-logs',
+      this.handleRequest(async (req, res) => {
+        const parsed = this.validateRequest(ProjectQuerySchema.extend({ taskId: z.string().min(1) }), { ...req.query, taskId: req.params.taskId }, res);
+        if (!parsed) return;
+        const project = this.resolveProject(parsed.projectDir, res);
+        if (!project) return;
+        const task = project.getTask(parsed.taskId);
+        if (!task) {
+          res.status(404).json({ error: 'Task not found' });
+          return;
+        }
+        res.status(200).json({ hasWorkflowHistory: task.hasWorkflowHistory(), logs: await task.loadWorkflowLogs() });
+      }),
+    );
+
+    router.get(
       '/extensions/ui-components',
       this.handleRequest(async (req, res) => {
         const parsed = this.validateRequest(ComponentsQuerySchema, req.query, res);

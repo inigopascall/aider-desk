@@ -61,4 +61,72 @@ describe('EventsHandler', () => {
       }),
     ]);
   });
+
+  it('loadWorkflowLogs returns empty history for an unknown task', async () => {
+    const projectManager = {
+      getProject: vi.fn(() => ({
+        getTask: vi.fn(() => undefined),
+      })),
+    } as never;
+    const eventsHandler = new EventsHandler(
+      projectManager,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const result = await eventsHandler.loadWorkflowLogs('/project', 'unknown-task');
+
+    expect(result).toEqual({ hasWorkflowHistory: false, logs: [] });
+  });
+
+  it('loadWorkflowLogs delegates to the task with its workflow-history flag', async () => {
+    const task = {
+      hasWorkflowHistory: vi.fn(() => true),
+      loadWorkflowLogs: vi.fn().mockResolvedValue([{ id: 'log-1' }]),
+    };
+    const projectManager = {
+      getProject: vi.fn(() => ({
+        getTask: vi.fn(() => task),
+      })),
+    } as never;
+    const eventsHandler = new EventsHandler(
+      projectManager,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const result = await eventsHandler.loadWorkflowLogs('/project', 'task-1');
+
+    expect(task.hasWorkflowHistory).toHaveBeenCalled();
+    expect(task.loadWorkflowLogs).toHaveBeenCalled();
+    expect(result).toEqual({ hasWorkflowHistory: true, logs: [{ id: 'log-1' }] });
+  });
 });

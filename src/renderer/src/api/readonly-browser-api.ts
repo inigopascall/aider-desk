@@ -1,5 +1,5 @@
 import { ExtensionDisplayAPI } from '@common/api';
-import { BrowserBootstrap, ExtensionUIComponent, ExtensionUIRefreshData, TaskData, TaskStateData } from '@common/types';
+import { BrowserBootstrap, ExtensionUIComponent, ExtensionUIRefreshData, TaskData, TaskStateData, WorkflowLogsStateData } from '@common/types';
 import { type AxiosInstance, create } from 'axios';
 import { io, Socket } from 'socket.io-client';
 
@@ -26,6 +26,7 @@ const EVENT_TYPES = [
   'command-output',
   'clear-task',
   'message-removed',
+  'workflow-log',
   'extension-ui-refresh',
 ];
 
@@ -90,6 +91,11 @@ export class ReadonlyBrowserApi implements ExtensionDisplayAPI {
 
   async loadTask(taskId: string): Promise<TaskStateData> {
     const response = await this.client.get<TaskStateData>(`/tasks/${encodeURIComponent(taskId)}`, { params: { projectDir: this.projectDir } });
+    return response.data;
+  }
+
+  async loadWorkflowLogs(taskId: string): Promise<WorkflowLogsStateData> {
+    const response = await this.client.get(`/tasks/${encodeURIComponent(taskId)}/workflow-logs`, { params: { projectDir: this.projectDir } });
     return response.data;
   }
 

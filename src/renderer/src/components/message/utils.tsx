@@ -10,6 +10,7 @@ import {
   isToolMessage,
   isGroupMessage,
   isAssistantGroupMessage,
+  isWorkflowRunMessage,
   Message,
   ResponseMessage,
   ToolMessage,
@@ -573,6 +574,9 @@ export const parseToolContent = (rawContent: string): ToolContentResult => {
 };
 
 export const includeMessageProperty = (message: Message): boolean => {
+  if (isWorkflowRunMessage(message)) {
+    return true;
+  }
   if (isAssistantGroupMessage(message)) {
     return message.responseMessage.finished === true;
   }
@@ -724,6 +728,30 @@ export const areMessagesEqual = (prevMessage: Message, nextMessage: Message): bo
       if (!areMessagesEqual(prevMessage.toolMessages[i], nextMessage.toolMessages[i])) {
         return false;
       }
+    }
+    return true;
+  }
+
+  // Workflow-run panels re-render when their run identity, latest-run flag, or
+  // boundary log ids change (e.g. a new log is appended or the latest-run flip).
+  if (isWorkflowRunMessage(prevMessage) && isWorkflowRunMessage(nextMessage)) {
+    if (prevMessage.runId !== nextMessage.runId) {
+      return false;
+    }
+    if (prevMessage.workflowName !== nextMessage.workflowName) {
+      return false;
+    }
+    if (prevMessage.isLatestRun !== nextMessage.isLatestRun) {
+      return false;
+    }
+    if (prevMessage.logs.length !== nextMessage.logs.length) {
+      return false;
+    }
+    if (prevMessage.logs[0]?.id !== nextMessage.logs[0]?.id) {
+      return false;
+    }
+    if (prevMessage.logs.at(-1)?.id !== nextMessage.logs.at(-1)?.id) {
+      return false;
     }
     return true;
   }

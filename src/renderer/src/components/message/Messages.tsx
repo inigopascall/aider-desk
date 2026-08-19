@@ -11,6 +11,8 @@ import { useScrollingPaused } from '@/hooks/useScrollingPaused';
 import { useUserMessageNavigation } from '@/hooks/useUserMessageNavigation';
 import { MessagesTaskProvider } from '@/contexts/MessagesTaskContext';
 import { useProcessedMessages } from '@/hooks/useProcessedMessages';
+import { composeMessagesWithWorkflowRuns } from '@/utils/workflow-messages';
+import { EMPTY_WORKFLOW_RUNS, WorkflowRunState } from '@/stores/taskStore';
 
 export type MessagesRef = {
   exportToImage: () => void;
@@ -24,6 +26,7 @@ type Props = {
   taskId: string;
   inProgress: boolean;
   messages: Message[];
+  workflowRuns?: WorkflowRunState[];
   allFiles?: string[];
   renderMarkdown: boolean;
   removeMessage?: (message: Message) => void;
@@ -42,6 +45,7 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
       taskId,
       inProgress,
       messages,
+      workflowRuns,
       allFiles = [],
       renderMarkdown,
       removeMessage,
@@ -87,7 +91,11 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
       return latestActivityMessageId;
     }, [inProgress, messages]);
 
-    const processedMessages = useProcessedMessages(messages);
+    const timelineMessages = useMemo(
+      () => composeMessagesWithWorkflowRuns(messages, workflowRuns ?? EMPTY_WORKFLOW_RUNS),
+      [messages, workflowRuns],
+    );
+    const processedMessages = useProcessedMessages(timelineMessages);
 
     const { scrollingPaused, setScrollingPaused, scrollToBottom, eventHandlers } = useScrollingPaused({
       onAutoScroll: () => messagesEndRef.current?.scrollIntoView(),

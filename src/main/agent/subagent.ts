@@ -1,4 +1,4 @@
-import { AgentProfile, ContextMemoryMode, ContextMessage, PromptContext } from '@common/types';
+import { AgentProfile, ContextMemoryMode, ContextMessage, PromptContext, WorkflowRunInfo } from '@common/types';
 import { DEFAULT_AGENT_PROFILE, getSubagentId, isSubagentEnabled } from '@common/agent';
 import { SUBAGENTS_TOOL_GROUP_NAME, SUBAGENTS_TOOL_RUN_TASK } from '@common/tools';
 import { extractServerNameToolName } from '@common/utils';
@@ -20,6 +20,7 @@ export type RunSubagentTaskParams = {
   prompt: string;
   description?: string;
   abortSignal?: AbortSignal;
+  run?: WorkflowRunInfo;
   contextMessages?: ContextMessage[];
   currentMessages?: ContextMessage[];
   onStarted?: (promptContext: PromptContext) => void | Promise<void>;
@@ -64,8 +65,8 @@ export const buildRestrictedSubagentProfile = (targetSubagent: AgentProfile): Ag
   };
 };
 
-export const createSubagentPromptContext = (targetSubagent: AgentProfile, description?: string): PromptContext => {
-  return {
+export const createSubagentPromptContext = (targetSubagent: AgentProfile, description?: string, run?: WorkflowRunInfo): PromptContext => {
+  const promptContext: PromptContext = {
     id: uuidv4(),
     group: {
       id: uuidv4(),
@@ -74,6 +75,16 @@ export const createSubagentPromptContext = (targetSubagent: AgentProfile, descri
       interruptId: uuidv4(),
     },
   };
+  if (run) {
+    promptContext.workflow = {
+      runId: run.runId,
+      workflowId: run.workflowId,
+      workflowName: run.workflowName,
+      kind: 'subagent',
+      label: description,
+    };
+  }
+  return promptContext;
 };
 
 export const getRunningGroupName = (targetSubagent: AgentProfile, description?: string): SubagentGroupName => {
@@ -218,13 +229,14 @@ export const runSubagentTask = async ({
   prompt,
   description,
   abortSignal,
+  run,
   contextMessages = [],
   currentMessages = [],
   onStarted,
 }: RunSubagentTaskParams): Promise<RunSubagentTaskResult> => {
   const subagentId = getSubagentId(targetSubagent);
   const subagentProfile = buildRestrictedSubagentProfile(targetSubagent);
-  const promptContext = createSubagentPromptContext(targetSubagent, description);
+  const promptContext = createSubagentPromptContext(targetSubagent, description, run);
   const interruptId = promptContext.group!.interruptId!;
   const subagentAbortController = new AbortController();
 

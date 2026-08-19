@@ -1,4 +1,4 @@
-import { AgentProfile, WorkflowModelSet } from '@common/types';
+import { AgentProfile, WorkflowModelSet, WorkflowRunInfo } from '@common/types';
 
 import { findEnabledSubagent } from '@/agent/subagent';
 import type { Task } from '@/task';
@@ -61,7 +61,7 @@ export function resolveWorkflowAgent(task: Task, subagentId: string): AgentProfi
  * name, applies any model-set override, dispatches the run, and surfaces
  * failures as `WorkflowError` / `WorkflowCancelled`.
  */
-export function createWorkflowDispatcher(task: Task, modelSet?: WorkflowModelSet): WorkflowDispatcher {
+export function createWorkflowDispatcher(task: Task, run: WorkflowRunInfo, modelSet?: WorkflowModelSet): WorkflowDispatcher {
   const dispatcher: WorkflowDispatcher = {
     agent: async (subagentId, prompt, description, options) => {
       const base = resolveWorkflowAgent(task, subagentId);
@@ -74,7 +74,7 @@ export function createWorkflowDispatcher(task: Task, modelSet?: WorkflowModelSet
         controller.abort();
       }, timeoutMs);
       try {
-        const { status, outputText } = await task.dispatchSubagent(target, prompt, description, controller.signal);
+        const { status, outputText } = await task.dispatchSubagent(target, prompt, description, controller.signal, run);
         if (status === 'cancelled') {
           if (timedOut) throw new WorkflowTimeout(subagentId, timeoutMs);
           throw new WorkflowCancelled();

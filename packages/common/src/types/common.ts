@@ -365,9 +365,8 @@ export interface WorkflowLogData extends WorkflowRunInfo {
   sequence: number;
 }
 
-export interface WorkflowLogsUpdatedData {
-  baseDir: string;
-  taskId: string;
+export interface WorkflowLogsStateData {
+  hasWorkflowHistory: boolean;
   logs: WorkflowLogData[];
 }
 
@@ -1107,8 +1106,6 @@ export interface TaskStateData {
   question: QuestionData | null;
   queuedPrompts: QueuedPromptData[];
   workingMode: WorkingMode;
-  /** Persisted workflow progress events in ascending sequence order. */
-  workflowLogs: WorkflowLogData[];
 }
 
 export const WorkingModeSchema = z.enum(['local', 'worktree']);
@@ -1161,6 +1158,7 @@ export const TaskDataSchema = z.object({
   lastAgentProviderMetadataModel: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   workflowModelSetIds: z.record(z.string(), z.string()).optional(),
+  hasWorkflowHistory: z.boolean().optional(),
 });
 
 export type TaskData = z.infer<typeof TaskDataSchema>;

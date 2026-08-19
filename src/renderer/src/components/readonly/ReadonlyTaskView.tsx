@@ -6,16 +6,18 @@ import { Messages } from '@/components/message/Messages';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
 import { convertTaskStateMessages } from '@/utils/task-messages';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { WorkflowRunState } from '@/stores/taskStore';
 
 type Props = {
   projectDir: string;
   task: TaskData;
   state: TaskStateData;
   logMessages?: Message[];
+  workflowRuns?: WorkflowRunState[];
   onToggleTaskSidebar?: () => void;
 };
 
-export const ReadonlyTaskView = ({ projectDir, task, state, logMessages, onToggleTaskSidebar }: Props) => {
+export const ReadonlyTaskView = ({ projectDir, task, state, logMessages, workflowRuns, onToggleTaskSidebar }: Props) => {
   const { t } = useTranslation();
   const renderMarkdown = useSettingsStore((store) => store.settings?.renderMarkdown) ?? true;
   const allFiles = state.files.map((file) => file.path);
@@ -38,6 +40,7 @@ export const ReadonlyTaskView = ({ projectDir, task, state, logMessages, onToggl
         projectDir={projectDir}
         task={task}
         messages={messages}
+        workflowRuns={workflowRuns}
         allFiles={allFiles}
         inProgress={inProgress}
         renderMarkdown={renderMarkdown}
@@ -55,14 +58,23 @@ type ContentProps = {
   task: TaskData;
   allFiles: string[];
   messages: Message[];
+  workflowRuns?: WorkflowRunState[];
   inProgress: boolean;
   renderMarkdown: boolean;
 };
 
-const ExtensionsTaskContent = ({ projectDir, task, messages, allFiles, inProgress, renderMarkdown }: ContentProps) => (
+const ExtensionsTaskContent = ({ projectDir, task, messages, workflowRuns, allFiles, inProgress, renderMarkdown }: ContentProps) => (
   <div className="flex-1 min-h-0 overflow-y-auto">
     <ExtensionComponentWrapper placement="task-messages-top" projectDir={projectDir} taskId={task.id} className="px-4 pt-4" />
-    <Messages baseDir={projectDir} taskId={task.id} messages={messages} allFiles={allFiles} renderMarkdown={renderMarkdown} inProgress={inProgress} />
+    <Messages
+      baseDir={projectDir}
+      taskId={task.id}
+      messages={messages}
+      workflowRuns={workflowRuns}
+      allFiles={allFiles}
+      renderMarkdown={renderMarkdown}
+      inProgress={inProgress}
+    />
     <ExtensionComponentWrapper placement="task-messages-bottom" projectDir={projectDir} taskId={task.id} className="px-4 pb-4" />
   </div>
 );

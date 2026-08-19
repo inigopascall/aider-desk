@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 
-import { updateTaskState, clearSession, setMessages } from '@/stores/taskStore';
-import { convertTaskStateMessages, mergeWorkflowLogs } from '@/utils/task-messages';
+import { updateTaskState, clearSession, setMessages, setWorkflowLogs, setHasWorkflowHistory } from '@/stores/taskStore';
+import { convertTaskStateMessages } from '@/utils/task-messages';
 import { setTaskAllFiles } from '@/stores/taskFilesStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { getTaskDir } from '@/utils/task-utils';
@@ -19,14 +19,27 @@ export const useTaskActions = ({ baseDir }: UseTaskActionsParams) => {
       try {
         updateTaskState(taskId, { loading: true });
 
-        const { messages: stateMessages, files, todoItems, question, queuedPrompts, workflowLogs } = await api.loadTask(baseDir, taskId);
+        const hasWorkflowHistory = useProjectStore.getState().projectTasksMap.get(baseDir)?.find((t) => t.id === taskId)?.hasWorkflowHistory === true;
+        const [state, workflow] = await Promise.all([
+          api.loadTask(baseDir, taskId),
+          hasWorkflowHistory
+            ? api.loadWorkflowLogs(baseDir, taskId).catch((error) => {
+                // eslint-disable-next-line no-console
+                console.error('Failed to load workflow logs:', error);
+                return null;
+              })
+            : Promise.resolve(null),
+        ]);
 
-        const messages = mergeWorkflowLogs(convertTaskStateMessages(stateMessages), workflowLogs);
+        const { messages: stateMessages, files, todoItems, question, queuedPrompts } = state;
+        const messages = convertTaskStateMessages(stateMessages);
 
         setMessages(taskId, (existingMessages) => [
           ...messages,
           ...existingMessages.filter((existingMessage) => !messages.some((message) => message.id === existingMessage.id)),
         ]);
+        setHasWorkflowHistory(taskId, hasWorkflowHistory);
+        setWorkflowLogs(taskId, workflow?.logs ?? []);
         updateTaskState(taskId, {
           loading: false,
           loaded: true,
@@ -110,10 +123,24 @@ export const useTaskActions = ({ baseDir }: UseTaskActionsParams) => {
   const refreshTask = useCallback(
     async (taskId: string) => {
       try {
-        const { messages: stateMessages, files, todoItems, question, queuedPrompts, workflowLogs } = await api.loadTask(baseDir, taskId);
-        const messages = mergeWorkflowLogs(convertTaskStateMessages(stateMessages), workflowLogs);
+        const hasWorkflowHistory = useProjectStore.getState().projectTasksMap.get(baseDir)?.find((t) => t.id === taskId)?.hasWorkflowHistory === true;
+        const [state, workflow] = await Promise.all([
+          api.loadTask(baseDir, taskId),
+          hasWorkflowHistory
+            ? api.loadWorkflowLogs(baseDir, taskId).catch((error) => {
+                // eslint-disable-next-line no-console
+                console.error('Failed to load workflow logs:', error);
+                return null;
+              })
+            : Promise.resolve(null),
+        ]);
+
+        const { messages: stateMessages, files, todoItems, question, queuedPrompts } = state;
+        const messages = convertTaskStateMessages(stateMessages);
 
         setMessages(taskId, () => messages);
+        setHasWorkflowHistory(taskId, hasWorkflowHistory);
+        setWorkflowLogs(taskId, workflow?.logs ?? []);
         updateTaskState(taskId, {
           loaded: true,
           contextFiles: files,

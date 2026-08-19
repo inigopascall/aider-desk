@@ -10,8 +10,6 @@ import {
   ToolMessage,
   UserMessage,
   UserMessageData,
-  WorkflowLogData,
-  WorkflowLogMessage,
 } from '@common/types';
 
 const convertUserMessage = (data: UserMessageData): UserMessage => ({
@@ -79,30 +77,4 @@ export const convertTaskStateMessages = (messages: TaskStateData['messages']): M
   });
 };
 
-export const convertWorkflowLogToMessage = (log: WorkflowLogData): WorkflowLogMessage => ({
-  id: log.id,
-  type: 'workflow-log',
-  content: log.message,
-  level: log.level,
-  runId: log.runId,
-  workflowId: log.workflowId,
-  workflowName: log.workflowName,
-  actionIds: log.actionIds,
-  finished: log.finished,
-  promptContext: log.promptContext,
-  timestamp: log.timestamp,
-  sequence: log.sequence,
-});
 
-export const mergeWorkflowLogs = (messages: Message[], logs?: WorkflowLogData[]): Message[] => {
-  if (!logs || logs.length === 0) return messages;
-  const workflowMessages = logs.map(convertWorkflowLogToMessage);
-  return [...messages, ...workflowMessages].sort((a, b) => {
-    const ta = a.timestamp ?? 0;
-    const tb = b.timestamp ?? 0;
-    if (ta !== tb) return ta - tb;
-    const sa = (a as WorkflowLogMessage).sequence ?? 0;
-    const sb = (b as WorkflowLogMessage).sequence ?? 0;
-    return sa - sb;
-  });
-};

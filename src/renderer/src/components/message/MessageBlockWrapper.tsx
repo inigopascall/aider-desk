@@ -1,9 +1,10 @@
 import { memo, useMemo, type ReactNode } from 'react';
-import { GroupMessage, isGroupMessage, isAssistantGroupMessage, isUserMessage, Message } from '@common/types';
+import { GroupMessage, isGroupMessage, isAssistantGroupMessage, isUserMessage, isWorkflowRunMessage, Message } from '@common/types';
 
 import { MessageBlock } from './MessageBlock';
 import { GroupMessageBlock } from './GroupMessageBlock';
 import { AssistantMessageBlock } from './AssistantMessageBlock';
+import { WorkflowRunMessageBlock } from './WorkflowRunMessageBlock';
 import { areMessagesEqual } from './utils';
 
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
@@ -95,6 +96,8 @@ const MessageBlockWrapperInner = ({
         activityMessageId={activityMessageId}
       />
     );
+  } else if (isWorkflowRunMessage(message)) {
+    messageBlock = <WorkflowRunMessageBlock baseDir={baseDir} taskId={taskId} message={message} inProgress={inProgress} />;
   } else {
     messageBlock = (
       <MessageBlock

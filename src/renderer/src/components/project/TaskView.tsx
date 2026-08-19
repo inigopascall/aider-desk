@@ -51,7 +51,7 @@ import { useModelProviders } from '@/contexts/ModelProviderContext';
 import { useTask } from '@/contexts/TasksContext';
 import { useConfiguredHotkeys } from '@/hooks/useConfiguredHotkeys';
 import { LoadingOverlay } from '@/components/common/LoadingOverlay';
-import { useTaskMessages, useOptimizedTaskState, useTaskStore } from '@/stores/taskStore';
+import { useTaskMessages, useOptimizedTaskState, useTaskStore, useTaskWorkflowRuns } from '@/stores/taskStore';
 import { useTaskAllFiles, useTaskAutocompletionWords } from '@/stores/taskFilesStore';
 import { getTaskDir } from '@/utils/task-utils';
 import { showErrorNotification } from '@/utils/notifications';
@@ -135,6 +135,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
     const autocompletionWords = useTaskAutocompletionWords(getTaskDir(task));
 
     const messages = useTaskMessages(task.id);
+    const workflowRuns = useTaskWorkflowRuns(task.id);
     const deferredMessages = useDeferredValue(messages);
     const [displayedMessages, setDisplayedMessages] = useOptimistic(deferredMessages);
     const messagesPending = task.updatedAt && messages.length !== displayedMessages.length;
@@ -876,6 +877,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                       taskId={task.id}
                       inProgress={inProgress}
                       messages={displayedMessages}
+                      workflowRuns={workflowRuns}
                       allFiles={allFiles}
                       renderMarkdown={renderMarkdown!}
                       removeMessage={handleRemoveMessage}
@@ -893,6 +895,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                       taskId={task.id}
                       inProgress={inProgress}
                       messages={displayedMessages}
+                      workflowRuns={workflowRuns}
                       allFiles={allFiles}
                       renderMarkdown={renderMarkdown!}
                       removeMessage={handleRemoveMessage}

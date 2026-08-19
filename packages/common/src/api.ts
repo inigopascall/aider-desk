@@ -84,7 +84,7 @@ import {
   SkillsUpdatedData,
   ExtensionOperationResult,
   WorkflowLogData,
-  WorkflowLogsUpdatedData,
+  WorkflowLogsStateData,
 } from '@common/types';
 
 export type ExtensionDisplayAPI = Pick<
@@ -217,6 +217,7 @@ export interface ApplicationAPI {
   forkTask: (baseDir: string, taskId: string, messageId: string) => Promise<TaskData>;
   getTasks: (baseDir: string) => Promise<TaskData[]>;
   loadTask: (baseDir: string, taskId: string) => Promise<TaskStateData>;
+  loadWorkflowLogs: (baseDir: string, taskId: string) => Promise<WorkflowLogsStateData>;
   exportTaskToMarkdown: (baseDir: string, taskId: string, copyOnly?: boolean) => Promise<string | void>;
   getRecentProjects: () => Promise<string[]>;
   addRecentProject: (baseDir: string) => Promise<void>;
@@ -354,7 +355,6 @@ export interface ApplicationAPI {
   clearSystemLogs: () => Promise<void>;
   addSystemLogListener: (callback: (data: SystemLogData) => void) => () => void;
   addWorkflowLogListener: (baseDir: string, taskId: string, callback: (data: WorkflowLogData) => void) => () => void;
-  addWorkflowLogsUpdatedListener: (baseDir: string, taskId: string, callback: (data: WorkflowLogsUpdatedData) => void) => () => void;
 
   // Aider connector status (Python install + per-task connector lifecycle)
   addAiderConnectorStatusListener: (

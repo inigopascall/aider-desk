@@ -2,7 +2,7 @@ import { createContext, memo, ReactNode, useCallback, useContext, useEffect, use
 import { usePrevious } from '@reactuses/core';
 import { DefaultTaskState, TaskData, TodoItem, ModelsData, isLoadingMessage, Message } from '@common/types';
 
-import { setMessages, setTodoItems, setAiderModelsData, updateTaskState, unloadTask, useTaskStore, useTaskLoaded } from '@/stores/taskStore';
+import { setMessages, setTodoItems, setAiderModelsData, updateTaskState, unloadTask, useTaskStore, useTaskLoaded, useTaskHasWorkflowHistory } from '@/stores/taskStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { releaseTaskFiles } from '@/stores/taskFilesStore';
 import { cleanupTaskCache } from '@/stores/extensionUIStore';
@@ -25,10 +25,12 @@ interface TaskEventSubscriberProps {
   baseDir: string;
   taskId: string;
   state?: string;
+  hasWorkflowHistory?: boolean;
 }
 
-const TaskEventSubscriber = memo(function TaskEventSubscriber({ baseDir, taskId, state }: TaskEventSubscriberProps) {
+const TaskEventSubscriber = memo(function TaskEventSubscriber({ baseDir, taskId, state, hasWorkflowHistory }: TaskEventSubscriberProps) {
   const previousState = usePrevious(state);
+  const storeHasWorkflowHistory = useTaskHasWorkflowHistory(taskId);
 
   useEffect(() => {
     if (previousState === DefaultTaskState.InProgress && state !== DefaultTaskState.InProgress) {
@@ -43,7 +45,7 @@ const TaskEventSubscriber = memo(function TaskEventSubscriber({ baseDir, taskId,
   useTaskDataHandlers(baseDir, taskId);
   useTaskMessageHandlers(baseDir, taskId);
   useTaskLifecycleHandlers(baseDir, taskId);
-  useTaskWorkflowLogHandlers(baseDir, taskId);
+  useTaskWorkflowLogHandlers(baseDir, taskId, hasWorkflowHistory === true || storeHasWorkflowHistory);
 
   return null;
 });
@@ -53,11 +55,13 @@ const TaskEventSubscriberWrapper = memo(function TaskEventSubscriberWrapper({
   taskId,
   state,
   isActive,
+  hasWorkflowHistory,
 }: {
   baseDir: string;
   taskId: string;
   state?: string;
   isActive: boolean;
+  hasWorkflowHistory?: boolean;
 }) {
   const loaded = useTaskLoaded(taskId);
   const inProgress = state === DefaultTaskState.InProgress;
@@ -66,7 +70,7 @@ const TaskEventSubscriberWrapper = memo(function TaskEventSubscriberWrapper({
     return null;
   }
 
-  return <TaskEventSubscriber baseDir={baseDir} taskId={taskId} state={state} />;
+  return <TaskEventSubscriber baseDir={baseDir} taskId={taskId} state={state} hasWorkflowHistory={hasWorkflowHistory} />;
 });
 
 TaskEventSubscriberWrapper.displayName = 'TaskEventSubscriberWrapper';
@@ -168,7 +172,14 @@ export const TasksProvider = ({
   return (
     <TasksContext.Provider value={contextValue}>
       {tasks.map((task) => (
-        <TaskEventSubscriberWrapper key={task.id} baseDir={baseDir} taskId={task.id} state={task.state} isActive={task.id === activeTaskId} />
+        <TaskEventSubscriberWrapper
+          key={task.id}
+          baseDir={baseDir}
+          taskId={task.id}
+          state={task.state}
+          isActive={task.id === activeTaskId}
+          hasWorkflowHistory={task.hasWorkflowHistory}
+        />
       ))}
       {children}
     </TasksContext.Provider>

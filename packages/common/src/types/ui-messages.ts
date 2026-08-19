@@ -1,9 +1,9 @@
-import { LogLevel, TaskData, TokensInfoData } from './common';
+import { LogLevel, TaskData, TokensInfoData, WorkflowLogData } from './common';
 import { PromptContext, UsageReportData, Group } from './context';
 
 export interface Message {
   id: string;
-  type: 'user' | 'response' | 'loading' | 'reflected-message' | 'command-output' | 'log' | 'workflow-log' | 'tokens-info' | 'tool' | 'group' | 'task-info' | 'assistant-group';
+  type: 'user' | 'response' | 'loading' | 'reflected-message' | 'command-output' | 'log' | 'workflow-run' | 'tokens-info' | 'tool' | 'group' | 'task-info' | 'assistant-group';
   content: string;
   promptContext?: PromptContext;
   timestamp?: number;
@@ -33,19 +33,18 @@ export interface LogMessage extends Message {
   actionIds?: string[];
 }
 
-export interface WorkflowLogMessage extends Message {
-  type: 'workflow-log';
-  level: LogLevel;
+export interface WorkflowRunMessage extends Message {
+  type: 'workflow-run';
   runId: string;
   workflowId: string;
   workflowName: string;
-  actionIds?: string[];
-  finished?: boolean;
-  sequence: number;
+  logs: WorkflowLogData[];
+  /** True on the most recent run's panel; drives default expansion while live. */
+  isLatestRun?: boolean;
 }
 
-export const isWorkflowLogMessage = (message: Message): message is WorkflowLogMessage => {
-  return message.type === 'workflow-log';
+export const isWorkflowRunMessage = (message: Message): message is WorkflowRunMessage => {
+  return message.type === 'workflow-run';
 };
 
 export interface LoadingMessage extends Message {

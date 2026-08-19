@@ -655,6 +655,17 @@ export class ProjectApi extends BaseApi {
       }),
     );
 
+    // Load workflow logs
+    router.post(
+      '/project/tasks/workflow-logs',
+      this.handleRequest(async (req, res) => {
+        const parsed = this.validateRequest(LoadTaskSchema, req.body, res);
+        if (!parsed) return;
+        const { projectDir, id } = parsed;
+        res.status(200).json(await this.eventsHandler.loadWorkflowLogs(projectDir, id));
+      }),
+    );
+
     // List tasks
     router.get(
       '/project/tasks',

@@ -10,6 +10,8 @@ import { formatWorkflowStart } from './reporting';
 import type { Task } from '@/task';
 
 export async function runWorkflow(task: Task, workflow: WorkflowDefinition, prompt: string): Promise<void> {
+  await task.ensureWorkflowHistory();
+
   // Snapshot the conversation before the workflow command was added.
   // handleWorkflowCommand emits the command via addUserMessage (UI-only, not
   // persisted to context), so getContextMessages returns the prior thread.
@@ -32,7 +34,7 @@ export async function runWorkflow(task: Task, workflow: WorkflowDefinition, prom
 
   await log.info(formatWorkflowStart(workflow.name, describeModelSet(modelSet), conversationText.length));
 
-  const dispatch = createWorkflowDispatcher(task, modelSet);
+  const dispatch = createWorkflowDispatcher(task, run, modelSet);
 
   // Imperative path
   if (workflow.run) {
@@ -64,7 +66,7 @@ export async function runWorkflow(task: Task, workflow: WorkflowDefinition, prom
     const label = step.description ?? `${workflow.name} — step ${stepIndex + 1}`;
 
     await log.info(`### ▶️ ${label}`);
-    const { status, outputText } = await task.dispatchSubagent(target, stepPrompt, label);
+    const { status, outputText } = await task.dispatchSubagent(target, stepPrompt, label, undefined, run);
 
     if (status !== 'success') {
       await log.warning(`Workflow '${workflow.name}' stopped at step ${stepIndex + 1} (status: ${status}).`);

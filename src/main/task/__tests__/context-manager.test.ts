@@ -1090,3 +1090,62 @@ describe('ContextManager - removeMessageById', () => {
     });
   });
 });
+
+describe('ContextManager - flush', () => {
+  let ContextManager: any;
+  let mockTask: any;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockTask = {
+      taskId: 'test-task-id',
+      getProjectDir: vi.fn(() => '/test/project'),
+    };
+
+    ContextManager = (await import('../context-manager')).ContextManager;
+  });
+
+  it('writes immediately after addContextMessage without advancing timers when autosave is enabled', async () => {
+    const manager = new ContextManager(mockTask, 'test-task', []);
+    manager.enableAutosave();
+
+    const saveSpy = vi.spyOn(manager as { save: () => Promise<void> }, 'save').mockResolvedValue(undefined);
+
+    manager.addContextMessage('user', 'Hello');
+    await manager.flush();
+
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels a pending debounce so it never fires afterward', async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = new ContextManager(mockTask, 'test-task', []);
+      manager.enableAutosave();
+
+      const saveSpy = vi.spyOn(manager as { save: () => Promise<void> }, 'save').mockResolvedValue(undefined);
+
+      manager.addContextMessage('user', 'Hello');
+      await manager.flush();
+
+      // Advance well past the debounce window; the cancelled debounce must not fire.
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(saveSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('is a no-op when autosave is disabled', async () => {
+    const manager = new ContextManager(mockTask, 'test-task', []);
+    // Autosave is disabled by default.
+
+    const saveSpy = vi.spyOn(manager as { save: () => Promise<void> }, 'save').mockResolvedValue(undefined);
+
+    manager.addContextMessage('user', 'Hello');
+    await manager.flush();
+
+    expect(saveSpy).not.toHaveBeenCalled();
+  });
+});

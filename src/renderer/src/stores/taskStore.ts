@@ -1,8 +1,9 @@
 import { useShallow } from 'zustand/react/shallow';
-import { ContextFile, ModelsData, QueuedPromptData, QuestionData, TodoItem, TokensInfoData, Message } from '@common/types';
+import { ContextFile, ModelsData, QueuedPromptData, QuestionData, TodoItem, TokensInfoData, Message, WorkflowLogData } from '@common/types';
 import { createWithEqualityFn } from 'zustand/traditional';
 import { shallow } from 'zustand/vanilla/shallow';
 import { devtools } from 'zustand/middleware';
+import { groupWorkflowLogsByRun } from '@/utils/workflow-messages';
 
 export interface TaskState {
   loading: boolean;
@@ -32,6 +33,13 @@ export const EMPTY_TASK_STATE: TaskState = {
 
 export const EMPTY_MESSAGES: Message[] = [];
 
+export interface WorkflowRunState {
+  runId: string;
+  workflowId: string;
+  workflowName: string;
+  logs: WorkflowLogData[];
+}
+
 const taskPendingMessages = new Map<string, Message[]>();
 const lastActiveAtThrottleMap = new Map<string, number>();
 const TOUCH_THROTTLE_MS = 60_000;
@@ -39,6 +47,8 @@ const TOUCH_THROTTLE_MS = 60_000;
 interface TaskStore {
   taskStateMap: Map<string, TaskState>;
   taskMessagesMap: Map<string, Message[]>;
+  taskWorkflowRunsMap: Map<string, WorkflowRunState[]>;
+  taskHasWorkflowHistoryMap: Map<string, boolean>;
 
   updateTaskState: (taskId: string, updates: Partial<TaskState>) => void;
   setMessages: (taskId: string, updateMessages: (prev: Message[]) => Message[]) => void;
@@ -47,6 +57,10 @@ interface TaskStore {
   setQuestion: (taskId: string, question: QuestionData | null) => void;
   setAiderModelsData: (taskId: string, modelsData: ModelsData | null) => void;
   setQueuedPrompts: (taskId: string, queuedPrompts: QueuedPromptData[]) => void;
+  setWorkflowLogs: (taskId: string, logs: WorkflowLogData[]) => void;
+  appendWorkflowLog: (taskId: string, log: WorkflowLogData) => void;
+  clearWorkflowRuns: (taskId: string) => void;
+  setHasWorkflowHistory: (taskId: string, value: boolean) => void;
   clearSession: (taskId: string) => void;
   unloadTask: (taskId: string) => void;
   unloadTasks: (taskIds: string[]) => void;
@@ -68,6 +82,8 @@ export const useTaskStore = createWithEqualityFn<TaskStore>()(
     (set, get) => ({
       taskStateMap: new Map(),
       taskMessagesMap: new Map(),
+      taskWorkflowRunsMap: new Map(),
+      taskHasWorkflowHistoryMap: new Map(),
 
       updateTaskState: (taskId, updates) =>
         set((state) => {
@@ -142,6 +158,50 @@ export const useTaskStore = createWithEqualityFn<TaskStore>()(
           return { taskStateMap: newMap };
         }),
 
+      setWorkflowLogs: (taskId, logs) =>
+        set((state) => {
+          const newMap = new Map(state.taskWorkflowRunsMap);
+          newMap.set(taskId, groupWorkflowLogsByRun(logs));
+          return { taskWorkflowRunsMap: newMap };
+        }),
+
+      appendWorkflowLog: (taskId, log) =>
+        set((state) => {
+          const currentRuns = state.taskWorkflowRunsMap.get(taskId) || [];
+          const existingRun = currentRuns.find((run) => run.runId === log.runId);
+          if (existingRun) {
+            if (existingRun.logs.some((l) => l.id === log.id)) {
+              return state;
+            }
+            const newLogs = [...existingRun.logs, log].sort((a, b) => a.sequence - b.sequence || a.timestamp - b.timestamp);
+            const newRuns = currentRuns.map((run) => (run.runId === log.runId ? { ...run, logs: newLogs } : run));
+            const newMap = new Map(state.taskWorkflowRunsMap);
+            newMap.set(taskId, newRuns);
+            return { taskWorkflowRunsMap: newMap };
+          }
+          const newRuns = [...currentRuns, { runId: log.runId, workflowId: log.workflowId, workflowName: log.workflowName, logs: [log] }];
+          const newMap = new Map(state.taskWorkflowRunsMap);
+          newMap.set(taskId, newRuns);
+          return { taskWorkflowRunsMap: newMap };
+        }),
+
+      clearWorkflowRuns: (taskId) =>
+        set((state) => {
+          if (!state.taskWorkflowRunsMap.has(taskId)) {
+            return state;
+          }
+          const newMap = new Map(state.taskWorkflowRunsMap);
+          newMap.delete(taskId);
+          return { taskWorkflowRunsMap: newMap };
+        }),
+
+      setHasWorkflowHistory: (taskId, value) =>
+        set((state) => {
+          const newMap = new Map(state.taskHasWorkflowHistoryMap);
+          newMap.set(taskId, value);
+          return { taskHasWorkflowHistoryMap: newMap };
+        }),
+
       clearSession: (taskId) =>
         set((state) => {
           const newStateMap = new Map(state.taskStateMap);
@@ -159,24 +219,42 @@ export const useTaskStore = createWithEqualityFn<TaskStore>()(
         set((state) => {
           const newStateMap = new Map(state.taskStateMap);
           const newMessagesMap = new Map(state.taskMessagesMap);
+          const newWorkflowRunsMap = new Map(state.taskWorkflowRunsMap);
+          const newHasWorkflowHistoryMap = new Map(state.taskHasWorkflowHistoryMap);
           newStateMap.set(taskId, { ...EMPTY_TASK_STATE, loaded: false });
           newMessagesMap.delete(taskId);
+          newWorkflowRunsMap.delete(taskId);
+          newHasWorkflowHistoryMap.delete(taskId);
           taskPendingMessages.delete(taskId);
           lastActiveAtThrottleMap.delete(taskId);
-          return { taskStateMap: newStateMap, taskMessagesMap: newMessagesMap };
+          return {
+            taskStateMap: newStateMap,
+            taskMessagesMap: newMessagesMap,
+            taskWorkflowRunsMap: newWorkflowRunsMap,
+            taskHasWorkflowHistoryMap: newHasWorkflowHistoryMap,
+          };
         }),
 
       unloadTasks: (taskIds) =>
         set((state) => {
           const newStateMap = new Map(state.taskStateMap);
           const newMessagesMap = new Map(state.taskMessagesMap);
+          const newWorkflowRunsMap = new Map(state.taskWorkflowRunsMap);
+          const newHasWorkflowHistoryMap = new Map(state.taskHasWorkflowHistoryMap);
           for (const taskId of taskIds) {
             newStateMap.set(taskId, { ...EMPTY_TASK_STATE, loaded: false });
             newMessagesMap.delete(taskId);
+            newWorkflowRunsMap.delete(taskId);
+            newHasWorkflowHistoryMap.delete(taskId);
             taskPendingMessages.delete(taskId);
             lastActiveAtThrottleMap.delete(taskId);
           }
-          return { taskStateMap: newStateMap, taskMessagesMap: newMessagesMap };
+          return {
+            taskStateMap: newStateMap,
+            taskMessagesMap: newMessagesMap,
+            taskWorkflowRunsMap: newWorkflowRunsMap,
+            taskHasWorkflowHistoryMap: newHasWorkflowHistoryMap,
+          };
         }),
     }),
     DEVTOOLS_OPTIONS,
@@ -199,6 +277,14 @@ export const setQuestion = (taskId: string, question: QuestionData | null) => us
 export const setAiderModelsData = (taskId: string, modelsData: ModelsData | null) => useTaskStore.getState().setAiderModelsData(taskId, modelsData);
 
 export const setQueuedPrompts = (taskId: string, queuedPrompts: QueuedPromptData[]) => useTaskStore.getState().setQueuedPrompts(taskId, queuedPrompts);
+
+export const setWorkflowLogs = (taskId: string, logs: WorkflowLogData[]) => useTaskStore.getState().setWorkflowLogs(taskId, logs);
+
+export const appendWorkflowLog = (taskId: string, log: WorkflowLogData) => useTaskStore.getState().appendWorkflowLog(taskId, log);
+
+export const clearWorkflowRuns = (taskId: string) => useTaskStore.getState().clearWorkflowRuns(taskId);
+
+export const setHasWorkflowHistory = (taskId: string, value: boolean) => useTaskStore.getState().setHasWorkflowHistory(taskId, value);
 
 export const clearSession = (taskId: string) => useTaskStore.getState().clearSession(taskId);
 
@@ -244,3 +330,9 @@ export const useTaskQueuedPrompts = (taskId: string) =>
 export const useTaskMessages = (taskId: string) => useTaskStore(useShallow((state) => state.taskMessagesMap.get(taskId) || EMPTY_MESSAGES));
 
 export const useTaskLoaded = (taskId: string) => useTaskStore((state) => state.taskStateMap.get(taskId)?.loaded ?? false);
+
+export const EMPTY_WORKFLOW_RUNS: WorkflowRunState[] = [];
+export const useTaskWorkflowRuns = (taskId: string) =>
+  useTaskStore(useShallow((state) => state.taskWorkflowRunsMap.get(taskId) ?? EMPTY_WORKFLOW_RUNS));
+export const useTaskHasWorkflowHistory = (taskId: string) =>
+  useTaskStore((state) => state.taskHasWorkflowHistoryMap.get(taskId) ?? false);

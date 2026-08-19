@@ -37,6 +37,7 @@ export class ContextManager {
   private loadPromise: Promise<void> | null = null;
   private loaded = false;
   private autosaveEnabled = false;
+  private saveChain: Promise<void> = Promise.resolve();
   private readonly storagePath: string;
 
   constructor(
@@ -667,7 +668,7 @@ export class ContextManager {
     }) as { role: MessageRole; content: string }[];
   }
 
-  async save(): Promise<void> {
+  private async saveInternal(): Promise<void> {
     try {
       await fs.mkdir(path.dirname(this.storagePath), { recursive: true });
 
@@ -687,6 +688,21 @@ export class ContextManager {
         taskId: this.taskId,
       });
       throw error;
+    }
+  }
+
+  async save(): Promise<void> {
+    const run = this.saveChain.then(() => this.saveInternal());
+    // Keep the chain alive across failures; saveInternal already logs and rethrows.
+    this.saveChain = run.catch(() => undefined);
+    return run;
+  }
+
+  /** Cancel any pending debounced autosave and persist the current state now. */
+  async flush(): Promise<void> {
+    this.debouncedAutosave.cancel();
+    if (this.autosaveEnabled) {
+      await this.save();
     }
   }
 
@@ -805,6 +821,7 @@ export class ContextManager {
 
     this.disableAutosave();
     this.debouncedAutosave.cancel();
+    await this.saveChain;
     try {
       const contextData = await this.readContextFromDisk();
       const messages = contextData?.contextMessages || [];
