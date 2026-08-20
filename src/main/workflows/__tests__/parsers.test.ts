@@ -207,7 +207,8 @@ describe('parseDecompositorResponse / parseEditSpecBlocks', () => {
       '== EDIT 1: rename: src/a.ts ==',
       'Some instructions',
     ].join('\n');
-    expect(parseEditSpecBlocks(text)).toEqual([]);
+    expect(() => parseEditSpecBlocks(text)).toThrow(ParseError);
+    expect(() => parseEditSpecBlocks(text)).toThrow(/EDIT 1: unknown operation 'rename'/);
   });
 
   it('throws on zero edits in decompositor response', () => {

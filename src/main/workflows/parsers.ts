@@ -269,7 +269,7 @@ export function parsePlanUnknowns(planText: string): {
  */
 export function parseEditSpecBlocks(sectionText: string): FileEditInstruction[] {
   const lines = sectionText.split(/\r?\n/);
-  const headerRegex = /^==\s*EDIT\s+(\d+)\s*:\s*(create|edit|delete)\s*:\s*(.+?)\s*==\s*$/i;
+  const headerRegex = /^==\s*EDIT\s+(\d+)\s*:\s*(.+?)\s*:\s*(.+?)\s*==\s*$/i;
 
   interface HeaderMatch {
     lineIndex: number;
@@ -285,7 +285,7 @@ export function parseEditSpecBlocks(sectionText: string): FileEditInstruction[] 
       headers.push({
         lineIndex: i,
         idStr: match[1],
-        opStr: match[2],
+        opStr: match[2].trim(),
         pathStr: match[3],
       });
     }

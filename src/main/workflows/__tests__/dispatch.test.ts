@@ -7,11 +7,9 @@ import { createWorkflowDispatcher, WorkflowCancelled, WorkflowError } from '../d
 
 describe('createWorkflowDispatcher fallback logic', () => {
   const dummyRun: WorkflowRunInfo = {
-    id: 'run-1',
+    runId: 'run-1',
     workflowId: 'dev-pipeline',
     workflowName: 'Dev Pipeline',
-    status: 'running',
-    createdAt: Date.now(),
   };
 
   const createStubTask = (profile: AgentProfile) => {
