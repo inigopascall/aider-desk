@@ -5,7 +5,6 @@ import type {
   Journey,
   ReportState,
 } from './journey';
-import type { EditVerificationResult } from './parsers';
 
 const ALIGNMENT_GLYPH: Record<FileChangeRow['alignment'], string> = {
   ok: '✅',
@@ -17,6 +16,7 @@ const OUTCOME_GLYPH: Record<string, string> = {
   DONE: '✅',
   FAILED: '❌',
   UNKNOWN: '❔',
+  BLOCKED: '⛔',
   'NOT INSTRUCTED': '➕',
 };
 
@@ -80,11 +80,6 @@ function listCell(values: string[]): string {
   return values.map(code).join('<br>');
 }
 
-function verdictCell(verdict: string | null): string {
-  if (!verdict) return '❌ FAILED';
-  return verdict === 'ALIGNED' ? '✅ ALIGNED' : '⚠️ MISALIGNED';
-}
-
 export function formatContextChange(label: string, added: string[], removed: string[], skipped: string[]): string {
   const rows = [
     ...added.map((path) => [code('+'), path]),
@@ -139,7 +134,7 @@ export function formatCheckpointReport(journey: Journey, workflowName: string, l
     ['Evidence rounds', String(journey.evidenceIterations)],
     ['Research documents', String(journey.researchDocs)],
     ['Context files', `+${journey.filesAdded.length} / −${journey.filesRemoved.length}`],
-    ['Edit passes', String(journey.passes.length)],
+    ['Edit batches', String(journey.batches.length)],
     ['Files touched', String(Object.keys(journey.fileStats).length)],
   ];
 
@@ -149,11 +144,9 @@ export function formatCheckpointReport(journey: Journey, workflowName: string, l
     journey.evidenceRows.length
       ? section('### 🧾 Evidence', markdownTable(['Round', 'Verdict', 'Added', 'Removed', 'Research'], ['right', 'left', 'left', 'left', 'center'], evidenceRows(journey.evidenceRows)))
       : null,
-    null,
-    journey.passes.length
-      ? section('### ✍️ Edit passes', markdownTable(['Pass', 'Stage', 'Edits', 'Verdict'], ['right', 'left', 'right', 'left'], journey.passes.map((pass) => [String(pass.pass), pass.stage, String(pass.editCount), pass.verdict])))
+    journey.batches.length
+      ? section('### ✍️ Edit batches', markdownTable(['Batch', 'Stage', 'Edits', 'Verdict'], ['right', 'left', 'right', 'left'], journey.batches.map((b) => [String(b.batch), b.stage, String(b.editCount), b.verdict])))
       : null,
-    journey.ambiguities ? section('### ❓ Ambiguities', journey.ambiguities) : null,
   ]
     .filter((block): block is string => !!block && block.trim().length > 0)
     .join('\n\n');
@@ -185,34 +178,32 @@ export function formatPlanUnknowns(
 
 export function formatEditTargets(
   label: string,
-  edits: Array<{ path: string; type: 'NEW' | 'EDIT' | 'DELETE' }>,
-  ambiguities: string | null,
+  edits: Array<{ id: number; path: string; type: 'NEW' | 'EDIT' | 'DELETE' }>,
 ): string {
   const plural = edits.length === 1 ? '' : 's';
+  const opLabel = (type: 'NEW' | 'EDIT' | 'DELETE') =>
+    type === 'NEW' ? '🆕 CREATE' : type === 'DELETE' ? '🗑️ DELETE' : '✏️ EDIT';
   return section(
     `### 🧩 ${label}`,
     `Decomposed into **${edits.length}** file edit${plural}.`,
     markdownTable(
-      ['File', 'Type'],
-      ['left', 'left'],
-      edits.map((edit) => [edit.path, edit.type === 'NEW' ? '🆕 NEW' : edit.type === 'DELETE' ? '🗑️ DELETE' : '✏️ EDIT']),
+      ['#', 'File', 'Op'],
+      ['right', 'left', 'left'],
+      edits.map((edit) => [String(edit.id), edit.path, opLabel(edit.type)]),
     ),
-    ambiguities
-      ? `**Ambiguities resolved by the decompositor**\n\n${truncate(ambiguities, 1200)}`
-      : null,
   );
 }
 
-export function formatEditSummary(
+export function formatEditBatchSummary(
   stage: string,
-  pass: number,
+  batch: number,
   rows: FileChangeRow[],
-  gatePassed: boolean,
-  gateReason: string,
+  passed: boolean,
+  reason: string,
 ): string {
   return section(
     '### ✍️ Edits applied',
-    `_${stage} — pass ${pass}_`,
+    `_${stage} — batch ${batch}_`,
     markdownTable(
       ['File', '+', '−', 'Editor', 'Aligned'],
       ['left', 'right', 'right', 'left', 'center'],
@@ -224,62 +215,19 @@ export function formatEditSummary(
         ALIGNMENT_GLYPH[row.alignment],
       ]),
     ),
-    gatePassed
-      ? '_All applied edits align with the file-edit specifications — CONFIRMER skipped._'
-      : `_Gate failed: ${gateReason}_`,
+    passed
+      ? '_All edits applied and structurally validated._'
+      : `_Structural validation failed: ${reason}_`,
   );
 }
 
-export function formatDeficiencyNotice(reason: string): string {
+export function formatArbiterRound(round: number, summary: string, rectificationEdits: number): string {
   return section(
-    '### ⚠️ Possible deficiencies detected',
-    'Possible deficiencies detected in applied edits; handing to CONFIRMER for confirmation.',
-    `_${reason}_`,
-  );
-}
-
-export function formatVerificationFlags(results: EditVerificationResult[]): string {
-  const suspicious = results.filter((r) => r.suspicious);
-  if (suspicious.length === 0) {
-    return '';
-  }
-  const lines = suspicious.map((r) => `- **${r.path}**: ${r.reasons.join('; ')}`);
-  return `### ⚠️ Script verification flags\n\n${lines.join('\n')}`;
-}
-
-export function formatConfirmerVerdict(
-  pass: number,
-  verdict: 'ALIGNED' | 'DEFICIENT',
-  correctiveEdits: number,
-): string {
-  return section(
-    '### 🔍 CONFIRMER verdict',
-    verdict === 'ALIGNED'
-      ? `Pass ${pass}: ✅ **ALIGNED** — applied edits match the specification.`
-      : `Pass ${pass}: ⚠️ **DEFICIENT** — ${correctiveEdits} corrective edit(s) queued for the next pass.`,
-  );
-}
-
-export function formatReviewRound(
-  round: number,
-  correctness: string | null,
-  quality: string | null,
-  findings: string,
-  rectificationRequired: boolean,
-): string {
-  return section(
-    `### 🔬 Review round ${round}`,
-    markdownTable(
-      ['Lens', 'Verdict'],
-      ['left', 'left'],
-      [
-        ['Correctness', verdictCell(correctness)],
-        ['Quality', verdictCell(quality)],
-        ['Arbiter', rectificationRequired ? '🛠️ Rectification required' : '✅ No action required'],
-      ],
-    ),
-    '#### Arbiter findings',
-    findings,
+    `### ⚖️ Arbiter review — round ${round}`,
+    truncate(summary, 4000),
+    rectificationEdits === 0
+      ? '_✅ No rectification required._'
+      : `_🛠️ ${rectificationEdits} rectification edit(s) queued._`,
   );
 }
 
@@ -312,20 +260,12 @@ export function formatJourneyReport(journey: Journey, report: ReportState, workf
     ['Evidence rounds', String(journey.evidenceIterations)],
     ['Research documents', String(journey.researchDocs)],
     ['Context files', `+${journey.filesAdded.length} / −${journey.filesRemoved.length}${journey.filesSkipped.length ? ` / ${journey.filesSkipped.length} skipped` : ''}`],
-    ['Edit passes', String(journey.passes.length)],
+    ['Edit batches', String(journey.batches.length)],
     ['Files touched', String(Object.keys(journey.fileStats).length)],
     ['Format retries', String(journey.formatRetries)],
-    ['CONFIRMER fast-path skips', String(journey.confirmerSkips)],
   ];
 
   if (journey.gitRetries > 0) summaryRows.push(['Git retries', String(journey.gitRetries)]);
-
-  if (journey.conversationSummarized) {
-    summaryRows.push([
-      'Conversation',
-      `${journey.conversationChars.toLocaleString()} chars → summarized (${journey.summaryChars.toLocaleString()} chars)`,
-    ]);
-  }
 
   if (journey.editorTimeouts > 0) {
     summaryRows.push(['Editor timeouts', String(journey.editorTimeouts)]);
@@ -350,21 +290,22 @@ export function formatJourneyReport(journey: Journey, report: ReportState, workf
           markdownTable(['Stage', 'Change', 'Path'], ['left', 'center', 'left'], contextRows(journey.contextChanges)),
         )
       : null,
-    journey.passes.length > 0
+    journey.batches.length > 0
       ? section(
-          '### ✍️ Edit passes',
+          '### ✍️ Edit batches',
           markdownTable(
-            ['Pass', 'Stage', 'Edits', 'DONE', 'FAILED', 'UNKNOWN', 'Verdict', 'Commit'],
-            ['right', 'left', 'right', 'right', 'right', 'right', 'left', 'left'],
-            journey.passes.map((pass) => [
-              String(pass.pass),
-              pass.stage,
-              String(pass.editCount),
-              String(pass.done),
-              pass.failed.length ? pass.failed.join(', ') : '—',
-              pass.unknown.length ? pass.unknown.join(', ') : '—',
-              pass.verdict,
-              code(pass.commit),
+            ['Batch', 'Stage', 'Edits', 'DONE', 'FAILED', 'BLOCKED', 'UNKNOWN', 'Verdict', 'Commit'],
+            ['right', 'left', 'right', 'right', 'right', 'right', 'right', 'left', 'left'],
+            journey.batches.map((batch) => [
+              String(batch.batch),
+              batch.stage,
+              String(batch.editCount),
+              String(batch.done),
+              batch.failed.length ? batch.failed.join(', ') : '—',
+              batch.blocked.length ? batch.blocked.join(', ') : '—',
+              batch.unknown.length ? batch.unknown.join(', ') : '—',
+              batch.verdict,
+              code(batch.commit),
             ]),
           ),
         )
@@ -385,36 +326,22 @@ export function formatJourneyReport(journey: Journey, report: ReportState, workf
       ? section(
           '### 🔬 Review',
           markdownTable(
-            ['Round', 'Correctness', 'Quality', 'Outcome', 'Rectification edits'],
-            ['right', 'left', 'left', 'left', 'right'],
+            ['Round', 'Outcome', 'Rectification edits'],
+            ['right', 'left', 'right'],
             journey.reviewTable.map((row) => [
               String(row.round),
-              row.correctness,
-              row.quality,
               row.outcome,
               String(row.rectificationEdits),
             ]),
           ),
-          ...journey.reviewFindings.map((finding) =>
-            section(
-              `#### Review round ${finding.round} — arbiter findings`,
-              finding.findings,
-              finding.correctnessAreas || finding.qualityAreas
-                ? `_Verifier areas sound — correctness: ${finding.correctnessAreas ?? '—'} · quality: ${finding.qualityAreas ?? '—'}_`
-                : null,
-            ),
+          ...journey.arbiterSummaries.map((arbiter) =>
+            section(`#### Arbiter review — round ${arbiter.round}`, truncate(arbiter.summary, 4000)),
           ),
-          journey.reviewerConsiderations ? section('#### Reviewer considerations', journey.reviewerConsiderations) : null,
-          journey.reviewerFailure ? section('#### ⚠️ Review incomplete', journey.reviewerFailure) : null,
-          journey.outstandingRectification
-            ? section('### 🚧 Outstanding rectification (final round — recorded, not executed)', truncate(journey.outstandingRectification, 4000))
-            : null,
-          journey.verifierFailures.length > 0
-            ? section('#### Verifier failures', journey.verifierFailures.map((failure) => `- ${failure}`).join('\n'))
+          journey.arbiterFailures.length > 0
+            ? section('#### ⚠️ Arbiter failures', journey.arbiterFailures.map((failure) => `- ${failure}`).join('\n'))
             : null,
         )
       : null,
-    journey.ambiguities ? section('### ❓ Ambiguities', journey.ambiguities) : null,
     journey.gitWarnings.length > 0 ? section('### ⚠️ Git warnings', journey.gitWarnings.map((w) => `- ${w}`).join('\n')) : null,
     journey.error ? section('### ❌ Error', journey.error) : null,
   ];

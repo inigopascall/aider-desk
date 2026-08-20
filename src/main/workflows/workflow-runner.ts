@@ -13,8 +13,7 @@ export async function runWorkflow(task: Task, workflow: WorkflowDefinition, prom
   // Snapshot the conversation before the workflow command was added.
   // handleWorkflowCommand emits the command via addUserMessage (UI-only, not
   // persisted to context), so getContextMessages returns the prior thread.
-  const conversationMessages = await task.getContextMessages();
-  const conversationText = formatConversation(conversationMessages);
+  const conversationText = formatConversation(await task.getContextMessages());
 
   const run = createWorkflowRun(workflow);
   const log = createWorkflowLogger(task, run);
@@ -36,7 +35,7 @@ export async function runWorkflow(task: Task, workflow: WorkflowDefinition, prom
 
   // Imperative path
   if (workflow.run) {
-    await workflow.run({ task, initialPrompt: prompt, conversationText, conversationMessages, modelSet, dispatch, run, log });
+    await workflow.run({ task, initialPrompt: prompt, conversationText, modelSet, dispatch, run, log });
     return;
   }
 

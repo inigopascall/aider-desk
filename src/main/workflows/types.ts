@@ -1,4 +1,4 @@
-import type { ContextMessage, WorkflowModelSet, WorkflowRunInfo } from '@common/types';
+import type { WorkflowModelSet, WorkflowRunInfo } from '@common/types';
 import type { Task } from '@/task';
 
 export interface WorkflowStepContext {
@@ -49,7 +49,6 @@ export interface WorkflowRunContext {
   task: Task;
   initialPrompt: string;
   conversationText: string;
-  conversationMessages: ContextMessage[];
   modelSet?: WorkflowModelSet;
   dispatch: WorkflowDispatcher;
   run: WorkflowRunInfo;

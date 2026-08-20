@@ -1,9 +1,10 @@
 import type { WorkflowModelSet } from '@common/types';
 
-export type EditorOutcomeStatus = 'DONE' | 'FAILED' | 'UNKNOWN';
+export type EditorOutcomeStatus = 'DONE' | 'FAILED' | 'UNKNOWN' | 'BLOCKED';
 export type FileAlignment = 'ok' | 'missing' | 'unsolicited';
 
 export interface EditorOutcome {
+  editId: number;
   path: string;
   outcome: EditorOutcomeStatus;
   detail?: string;
@@ -35,23 +36,22 @@ export interface EvidenceRow {
   research: boolean;
 }
 
-export interface EditPassRecord {
-  pass: number;
+export interface EditBatchRecord {
+  batch: number;
   stage: string;
   editCount: number;
   done: number;
-  failed: string[];
+  failed: string[]; // "EDIT <id>: <path>" labels
+  blocked: string[];
   unknown: string[];
-  verdict: string;
+  verdict: string; // 'ALIGNED' | 'DEFICIENT: <reason>'
   commit: string;
   rows: FileChangeRow[];
 }
 
 export interface ReviewRoundRow {
   round: number;
-  correctness: string;
-  quality: string;
-  outcome: 'clean' | 'rectified' | 'exhausted';
+  outcome: 'clean' | 'rectified' | 'failed';
   rectificationEdits: number;
 }
 
@@ -64,25 +64,18 @@ export interface Journey {
   contextChanges: ContextChangeRecord[];
   researchDocs: number;
   planTitle: string;
-  ambiguities: string | null;
-  passes: EditPassRecord[];
+  batches: EditBatchRecord[];
   fileStats: Record<string, { insertions: number; deletions: number; passes: number }>;
   formatRetries: number;
-  confirmerSkips: number;
   cancelled: boolean;
   modelSetName: string;
   modelOverrides: Record<string, string>;
   conversationChars: number;
-  conversationSummarized: boolean;
-  summaryChars: number;
   editorTimeouts: number;
-  reviewerFailure: string | null;
-  outstandingRectification: string | null;
   reviewRounds: number;
   reviewTable: ReviewRoundRow[];
-  reviewFindings: { round: number; findings: string; correctnessAreas?: string; qualityAreas?: string }[];
-  reviewerConsiderations: string | null;
-  verifierFailures: string[];
+  arbiterSummaries: Array<{ round: number; summary: string }>;
+  arbiterFailures: string[];
   gitRetries: number;
   gitWarnings: string[];
   error?: string;
@@ -104,25 +97,18 @@ export function createJourney(modelSet: WorkflowModelSet | undefined, conversati
     contextChanges: [],
     researchDocs: 0,
     planTitle: '',
-    ambiguities: null,
-    passes: [],
+    batches: [],
     fileStats: {},
     formatRetries: 0,
-    confirmerSkips: 0,
     cancelled: false,
     modelSetName: modelSet?.name ?? '',
     modelOverrides: modelSet?.models ?? {},
     conversationChars: conversationText.length,
-    conversationSummarized: false,
-    summaryChars: 0,
     editorTimeouts: 0,
-    reviewerFailure: null,
-    outstandingRectification: null,
     reviewRounds: 0,
     reviewTable: [],
-    reviewFindings: [],
-    reviewerConsiderations: null,
-    verifierFailures: [],
+    arbiterSummaries: [],
+    arbiterFailures: [],
     gitRetries: 0,
     gitWarnings: [],
   };

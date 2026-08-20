@@ -25,7 +25,7 @@ export async function runDevPipeline(ctx: WorkflowRunContext): Promise<void> {
     await emitCheckpoint(ctx, journey, 'Dev Pipeline', 'Evidence');
     const { planText, unknownsResearch } = await runPlanningStage(ctx, journey, report, researchFindings);
     await emitCheckpoint(ctx, journey, 'Dev Pipeline', 'Plan');
-    const edits = await runDecompositionStage(ctx, journey, report, planText, unknownsResearch, false);
+    const { edits } = await runDecompositionStage(ctx, journey, report, planText, unknownsResearch);
     const verdict = await runEditLoop(ctx, journey, report, git, edits, 'dev-pipeline');
     await emitCheckpoint(ctx, journey, 'Dev Pipeline', 'Edit Loop');
 

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'fs/promises';
 import path from 'path';
 import { simpleGit, SimpleGit } from 'simple-git';
@@ -15,10 +16,8 @@ import {
   type ReportState,
 } from '../journey';
 import {
-  formatConfirmerVerdict,
   formatContextChange,
-  formatDeficiencyNotice,
-  formatEditSummary,
+  formatEditBatchSummary,
   formatEditTargets,
   formatEvidenceInsufficient,
   formatEvidenceSufficient,
@@ -27,25 +26,21 @@ import {
   formatPlanProduced,
   formatPlanUnknowns,
   formatResearchReceived,
-  formatVerificationFlags,
 } from '../reporting';
 import {
+  DELETE_MARKER,
   FileEditInstruction,
-  EditVerificationResult,
-  normalizeForCompare,
-  parseConfirmerResponse,
   parseDecompositorResponse,
   parseDigesterResponse,
   parseEditorResponse,
   parseInvestigatorResponse,
   parsePlanUnknowns,
   serializeFileEdits,
-  validateFileEditInstruction,
-  verifyEditAlignment,
+  validateEditChains,
 } from '../parsers';
 
 import { buildPrompt, PromptSection } from '../prompt-formatting';
-import { extractAddedLinesByFile, withGitRetry } from '../git-utils';
+import { withGitRetry } from '../git-utils';
 
 export const AGENTS = {
   digester: 'DIGESTER',
@@ -55,12 +50,9 @@ export const AGENTS = {
   decompositor: 'DECOMPOSITOR',
   editor: 'EDITOR-LIGHT',
   heavyEditor: 'EDITOR-HEAVY',
-  confirmer: 'CONFIRMER',
-  summarizer: 'SUMMARIZER',
 } as const;
 
 export const MAX_EVIDENCE_ITERATIONS = 3;
-export const MAX_CONFIRM_PASSES = 3;
 export const MAX_DIFF_CHARS = 80_000;
 export const MAX_RESEARCH_DOC_CHARS = 30_000;
 export const HEAVY_NEW_CHAR_THRESHOLD = 10_000;
@@ -82,115 +74,20 @@ export function parseChangedPaths(raw: string): string[] {
     .map(normalizePath);
 }
 
-export function selectEditorRole(edit: FileEditInstruction, escalatedPaths: Set<string>): 'light' | 'heavy' {
-  if (escalatedPaths.has(normalizePath(edit.path))) return 'heavy';
+export function selectEditorRole(edit: FileEditInstruction): 'light' | 'heavy' {
   if (edit.type === 'NEW' && (edit.instructions.length > HEAVY_NEW_CHAR_THRESHOLD || edit.instructions.split(/\r?\n/).length > HEAVY_NEW_LINE_THRESHOLD)) return 'heavy';
   if (edit.type === 'EDIT' && edit.instructions.length > HEAVY_EDIT_CHAR_THRESHOLD) return 'heavy';
   return 'light';
 }
 
-export function evaluateEditGate(
-  results: EditorOutcome[],
-  changedPaths: string[],
-  suspicious: EditVerificationResult[] = [],
-): { passed: boolean; reason: string } {
-  if (results.length === 0) return { passed: false, reason: 'no edits were dispatched' };
-
-  const notDone = results.filter((result) => result.outcome !== 'DONE').map((result) => result.path);
-  if (notDone.length > 0) return { passed: false, reason: `editor did not report DONE for: ${notDone.join(', ')}` };
-
-  const expected = new Set(results.map((result) => normalizePath(result.path)));
-  const actual = new Set(changedPaths);
-  const missing = [...expected].filter((filePath) => !actual.has(filePath));
-  if (missing.length > 0) return { passed: false, reason: `instructed file(s) absent from the diff: ${missing.join(', ')}` };
-
-  const extra = [...actual].filter((filePath) => !expected.has(filePath));
-  if (extra.length > 0) return { passed: false, reason: `diff touches unexpected file(s): ${extra.join(', ')}` };
-
-  if (suspicious.length > 0) {
-    return {
-      passed: false,
-      reason: `script verification flagged ${suspicious.length} suspicious edit(s): ${suspicious.map((v) => v.path).join(', ')}`,
-    };
-  }
-
-  return { passed: true, reason: '' };
-}
-
 /**
- * Builds the conversation section for agent prompts. Once the pipeline has
- * summarized the prior conversation, the section is labelled as a digest so
- * downstream agents treat it as a compressed record rather than a verbatim
- * history.
+ * Builds the conversation section for agent prompts.
  */
-export function conversationSection(ctx: WorkflowRunContext, journey: Journey): PromptSection {
+export function conversationSection(ctx: WorkflowRunContext): PromptSection {
   return {
-    title: journey.conversationSummarized ? 'CONVERSATION DIGEST (SUMMARIZED)' : 'CONVERSATION HISTORY',
+    title: 'CONVERSATION HISTORY',
     body: ctx.conversationText,
   };
-}
-
-/**
- * Compresses the older portion of the prior conversation via the SUMMARIZER
- * agent, keeping the most recent turns verbatim. The pipeline never aborts
- * over summarization: any `WorkflowError` (including timeouts) falls back to
- * the raw conversation text with a warning. User cancellation rethrows.
- */
-export async function resolveConversationDigest(ctx: WorkflowRunContext, journey: Journey): Promise<string> {
-  const { tail, recent } = splitConversationForSummary(ctx.conversationMessages);
-  if (tail.length === 0) {
-    return ctx.conversationText;
-  }
-
-  const prompt = buildPrompt([
-    { title: 'CONVERSATION TO COMPACT', body: formatConversation(tail) },
-    {
-      title: 'INSTRUCTION',
-      body: 'Compress the older conversation above into a decisions-only summary per your instructions. Output only the summary document.',
-    },
-  ]);
-
-  try {
-    const summary = await ctx.dispatch.agent(AGENTS.summarizer, prompt, 'Summarizing prior conversation');
-    const summaryText = summary.trim();
-    const summarized = summaryText.length > 0 && summaryText.toUpperCase() !== 'NONE';
-    journey.conversationSummarized = true;
-    journey.summaryChars = summarized ? summaryText.length : 0;
-    await emitInfo(
-      ctx.log,
-      `Conversation compressed: ${formatConversation(tail).length.toLocaleString()} chars → ${journey.summaryChars.toLocaleString()} chars (${recent.length} recent turns kept verbatim).`,
-    );
-    if (!summarized) {
-      return `=== RECENT CONVERSATION (VERBATIM) ===\n${formatConversation(recent)}`;
-    }
-    return `=== PRIOR CONVERSATION SUMMARY (decisions only) ===\n${summaryText}\n\n=== RECENT CONVERSATION (VERBATIM) ===\n${formatConversation(recent)}`;
-  } catch (error) {
-    if (error instanceof WorkflowCancelled) throw error;
-    if (error instanceof WorkflowError) {
-      const message = error instanceof Error ? error.message : String(error);
-      await ctx.log.warning(`Conversation summarization failed (${message}); falling back to raw conversation text.`);
-      return ctx.conversationText;
-    }
-    throw error;
-  }
-}
-
-/**
- * Wraps a single agent dispatch with exactly one retry on `WorkflowError`
- * (not user cancellation). The second failure propagates to the caller.
- */
-export async function withAgentRetry<T>(ctx: WorkflowRunContext, label: string, fn: () => Promise<T>): Promise<T> {
-  try {
-    return await fn();
-  } catch (error) {
-    if (error instanceof WorkflowCancelled) throw error;
-    if (error instanceof WorkflowError) {
-      const message = error instanceof Error ? error.message : String(error);
-      await ctx.log.warning(`${label} failed (${message}); retrying once.`);
-      return await fn();
-    }
-    throw error;
-  }
 }
 
 export async function prepareRepository(task: Task): Promise<{ git: SimpleGit; baselineCommit: string; warnings: string[] }> {
@@ -302,11 +199,15 @@ export function buildEditRows(
   stats: Map<string, { insertions: number; deletions: number }>,
 ): FileChangeRow[] {
   const changed = new Set(changedPaths);
-  const expected = new Set(results.map((result) => normalizePath(result.path)));
   const rows: FileChangeRow[] = [];
 
+  // Group by path and take the LAST outcome for that path
+  const lastOutcomeByPath = new Map<string, EditorOutcome>();
   for (const result of results) {
-    const filePath = normalizePath(result.path);
+    lastOutcomeByPath.set(normalizePath(result.path), result);
+  }
+
+  for (const [filePath, result] of lastOutcomeByPath.entries()) {
     const stat = stats.get(filePath) ?? { insertions: 0, deletions: 0 };
     rows.push({
       path: filePath,
@@ -319,6 +220,7 @@ export function buildEditRows(
     });
   }
 
+  const expected = new Set(lastOutcomeByPath.keys());
   for (const filePath of changedPaths) {
     if (expected.has(filePath)) {
       continue;
@@ -342,22 +244,20 @@ export async function runEvidenceStage(ctx: WorkflowRunContext, journey: Journey
 
   for (let iteration = 1; iteration <= MAX_EVIDENCE_ITERATIONS; iteration++) {
     const digesterPrompt = buildPrompt([
-      conversationSection(ctx, journey),
+      conversationSection(ctx),
       { title: 'USER REQUEST', body: ctx.initialPrompt },
       { title: 'RESEARCH FINDINGS GATHERED SO FAR', body: findings.join('\n\n---\n\n') },
       { title: 'ITERATION', body: `This is evidence-gathering iteration ${iteration} of ${MAX_EVIDENCE_ITERATIONS}.` },
     ]);
 
-    const response = await withAgentRetry(ctx, `DIGESTER (round ${iteration})`, () =>
-      ctx.dispatch.parsed(
-        AGENTS.digester,
-        digesterPrompt,
-        `Assessing evidence (round ${iteration})`,
-        parseDigesterResponse,
-        () => {
-          journey.formatRetries++;
-        },
-      ),
+    const response = await ctx.dispatch.parsed(
+      AGENTS.digester,
+      digesterPrompt,
+      `Assessing evidence (round ${iteration})`,
+      parseDigesterResponse,
+      () => {
+        journey.formatRetries++;
+      },
     );
 
     journey.evidenceIterations = iteration;
@@ -380,6 +280,23 @@ export async function runEvidenceStage(ctx: WorkflowRunContext, journey: Journey
         );
         row.removed = change.removed;
       }
+
+      if (response.researchBrief) {
+        const research = await ctx.dispatch.agent(
+          AGENTS.researcher,
+          buildPrompt([
+            conversationSection(ctx),
+            { title: 'USER REQUEST', body: ctx.initialPrompt },
+            { title: 'RESEARCH BRIEF', body: response.researchBrief },
+          ]),
+          `Researching online (round ${iteration}, pre-planning)`,
+        );
+        findings.push(research);
+        journey.researchDocs++;
+        row.research = true;
+        await emitInfo(ctx.log, formatResearchReceived(iteration, research.length));
+      }
+
       await emitInfo(ctx.log, formatEvidenceSufficient());
       journey.evidenceRows.push(row);
       break;
@@ -388,22 +305,20 @@ export async function runEvidenceStage(ctx: WorkflowRunContext, journey: Journey
     await emitInfo(ctx.log, formatEvidenceInsufficient(iteration, MAX_EVIDENCE_ITERATIONS, !!response.researchBrief));
 
     const investigatorPrompt = buildPrompt([
-      conversationSection(ctx, journey),
+      conversationSection(ctx),
       { title: 'USER REQUEST', body: ctx.initialPrompt },
       { title: 'INVESTIGATION BRIEF', body: response.investigationBrief },
       { title: 'REMINDER', body: 'Respond with exactly the required file sections.' },
     ]);
 
-    const investigation = await withAgentRetry(ctx, `INVESTIGATOR (round ${iteration})`, () =>
-      ctx.dispatch.parsed(
-        AGENTS.investigator,
-        investigatorPrompt,
-        `Investigating codebase (round ${iteration})`,
-        parseInvestigatorResponse,
-        () => {
-          journey.formatRetries++;
-        },
-      ),
+    const investigation = await ctx.dispatch.parsed(
+      AGENTS.investigator,
+      investigatorPrompt,
+      `Investigating codebase (round ${iteration})`,
+      parseInvestigatorResponse,
+      () => {
+        journey.formatRetries++;
+      },
     );
 
     const change = await reconfigureContext(
@@ -418,12 +333,14 @@ export async function runEvidenceStage(ctx: WorkflowRunContext, journey: Journey
 
     if (response.researchBrief) {
       const researcherPrompt = buildPrompt([
-        conversationSection(ctx, journey),
+        conversationSection(ctx),
         { title: 'USER REQUEST', body: ctx.initialPrompt },
         { title: 'RESEARCH BRIEF', body: response.researchBrief },
       ]);
-      const research = await withAgentRetry(ctx, `RESEARCHER (round ${iteration})`, () =>
-        ctx.dispatch.agent(AGENTS.researcher, researcherPrompt, `Researching online (round ${iteration})`),
+      const research = await ctx.dispatch.agent(
+        AGENTS.researcher,
+        researcherPrompt,
+        `Researching online (round ${iteration})`,
       );
       findings.push(research);
       journey.researchDocs++;
@@ -448,33 +365,29 @@ export async function resolvePlanUnknowns(
     await emitInfo(ctx.log, formatPlanUnknowns(label, researchUnknowns, codebaseUnknowns));
   }
   const researchPromise = researchUnknowns
-    ? withAgentRetry(ctx, `RESEARCHER (${label} unknowns)`, () =>
-        ctx.dispatch.agent(
-          AGENTS.researcher,
-          buildPrompt([
-            conversationSection(ctx, journey),
-            { title: 'USER REQUEST', body: ctx.initialPrompt },
-            { title: 'RESEARCH UNKNOWNS', body: researchUnknowns },
-          ]),
-          `Resolving ${label} research unknowns`,
-        ),
+    ? ctx.dispatch.agent(
+        AGENTS.researcher,
+        buildPrompt([
+          conversationSection(ctx),
+          { title: 'USER REQUEST', body: ctx.initialPrompt },
+          { title: 'RESEARCH UNKNOWNS', body: researchUnknowns },
+        ]),
+        `Resolving ${label} research unknowns`,
       )
     : Promise.resolve(null);
   const codebasePromise = codebaseUnknowns
-    ? withAgentRetry(ctx, `INVESTIGATOR (${label} unknowns)`, () =>
-        ctx.dispatch.parsed(
-          AGENTS.investigator,
-          buildPrompt([
-            conversationSection(ctx, journey),
-            { title: 'USER REQUEST', body: ctx.initialPrompt },
-            { title: 'CODEBASE UNKNOWNS', body: codebaseUnknowns },
-          ]),
-          `Resolving ${label} codebase unknowns`,
-          parseInvestigatorResponse,
-          () => {
-            journey.formatRetries++;
-          },
-        ),
+    ? ctx.dispatch.parsed(
+        AGENTS.investigator,
+        buildPrompt([
+          conversationSection(ctx),
+          { title: 'USER REQUEST', body: ctx.initialPrompt },
+          { title: 'CODEBASE UNKNOWNS', body: codebaseUnknowns },
+        ]),
+        `Resolving ${label} codebase unknowns`,
+        parseInvestigatorResponse,
+        () => {
+          journey.formatRetries++;
+        },
       )
     : Promise.resolve(null);
 
@@ -493,18 +406,16 @@ export async function runPlanningStage(
 ): Promise<{ planText: string; unknownsResearch: string | null }> {
   report.abortStage = 'planning';
   const plannerPrompt = buildPrompt([
-    conversationSection(ctx, journey),
+    conversationSection(ctx),
     { title: 'USER REQUEST', body: ctx.initialPrompt },
     { title: 'RESEARCH FINDINGS', body: researchFindings.join('\n\n---\n\n') },
     { title: 'INSTRUCTION', body: 'Produce the Implementation Plan now, per your instructions.' },
   ]);
 
-  const planText = await withAgentRetry(ctx, 'GRAND-PLANNER', () =>
-    ctx.dispatch.agent(
-      AGENTS.planner,
-      plannerPrompt,
-      'Producing Implementation Plan',
-    ),
+  const planText = await ctx.dispatch.agent(
+    AGENTS.planner,
+    plannerPrompt,
+    'Producing Implementation Plan',
   );
   journey.planTitle = parsePlanUnknowns(planText).title;
   await emitInfo(ctx.log, formatPlanProduced(journey.planTitle));
@@ -517,14 +428,11 @@ export async function runDecompositionStage(
   report: ReportState,
   planText: string,
   resolvedResearch: string | null,
-  isRectification: boolean,
-  stageLabel?: string,
-): Promise<FileEditInstruction[]> {
-  const label = stageLabel ?? (isRectification ? 'Rectification plan decomposed' : 'Implementation plan decomposed');
+): Promise<{ edits: FileEditInstruction[]; summary: string }> {
   const decomposerSections: PromptSection[] = [
-    conversationSection(ctx, journey),
+    conversationSection(ctx),
     { title: 'USER REQUEST', body: ctx.initialPrompt },
-    { title: isRectification ? 'RECTIFICATION PLAN' : 'IMPLEMENTATION PLAN', body: `${planText}\n\n(verbatim — treat as strict instructions)` },
+    { title: 'IMPLEMENTATION PLAN', body: `${planText}\n\n(verbatim — treat as strict instructions)` },
   ];
 
   if (resolvedResearch) {
@@ -533,31 +441,103 @@ export async function runDecompositionStage(
 
   decomposerSections.push({
     title: 'INSTRUCTION',
-    body: 'Decompose into per-file edit blocks now, per your instructions.',
+    body: 'Decompose into ordered edit specs now, per your instructions.',
   });
 
   const decomposerPrompt = buildPrompt(decomposerSections);
 
-  const result = await withAgentRetry(ctx, 'DECOMPOSITOR', () =>
-    ctx.dispatch.parsed(
-      AGENTS.decompositor,
-      decomposerPrompt,
-      isRectification ? 'Decomposing rectification plan into file edits' : 'Decomposing plan into file edits',
-      parseDecompositorResponse,
-      () => {
-        journey.formatRetries++;
-      },
-    ),
+  const result = await ctx.dispatch.parsed(
+    AGENTS.decompositor,
+    decomposerPrompt,
+    'Decomposing plan into file edits',
+    parseDecompositorResponse,
+    () => {
+      journey.formatRetries++;
+    },
   );
 
-  if (result.ambiguities) {
-    journey.ambiguities = journey.ambiguities ? `${journey.ambiguities}\n\n---\n\n${result.ambiguities}` : result.ambiguities;
+  await emitInfo(ctx.log, formatEditTargets('Implementation plan decomposed', result.edits));
+  return { edits: result.edits, summary: result.summary };
+}
+
+function hashOf(content: string): string {
+  return createHash('sha256').update(content, 'utf8').digest('hex');
+}
+
+async function readTarget(absPath: string): Promise<{ exists: boolean; content: string | null; hash: string | null; size: number }> {
+  try {
+    const content = await fs.readFile(absPath, 'utf8');
+    return {
+      exists: true,
+      content,
+      hash: hashOf(content),
+      size: Buffer.byteLength(content, 'utf8'),
+    };
+  } catch {
+    return {
+      exists: false,
+      content: null,
+      hash: null,
+      size: 0,
+    };
   }
-  await emitInfo(
-    ctx.log,
-    formatEditTargets(label, result.edits.map((edit) => ({ path: edit.path, type: edit.type })), result.ambiguities),
-  );
-  return result.edits;
+}
+
+function validateAppliedEdit(
+  edit: FileEditInstruction,
+  pre: { exists: boolean; content: string | null; hash: string | null; size: number },
+  post: { exists: boolean; content: string | null; hash: string | null; size: number },
+): string | null {
+  if (!post.exists || post.content === null) {
+    return 'post-edit file does not exist';
+  }
+
+  const lines = post.content.split(/\r?\n/);
+  for (const line of lines) {
+    if (/^<{7}/.test(line) || /^>{7}/.test(line)) {
+      return 'post-edit file contains conflict markers (<<<<<<< or >>>>>>>)';
+    }
+  }
+
+  if (edit.path.toLowerCase().endsWith('.json') && edit.type !== 'DELETE') {
+    try {
+      JSON.parse(post.content);
+    } catch {
+      return 'post-edit JSON file is not valid JSON';
+    }
+  }
+
+  if (edit.type === 'NEW') {
+    if (pre.exists) {
+      return 'file already existed before create';
+    }
+    if (post.content.trim().length === 0) {
+      return 'created file is empty';
+    }
+    return null;
+  }
+
+  if (edit.type === 'EDIT') {
+    if (!pre.exists) {
+      return 'file did not exist before edit';
+    }
+    if (post.content.trim().length === 0) {
+      return 'edited file is empty';
+    }
+    if (post.hash === pre.hash) {
+      return 'file content was unchanged after edit';
+    }
+    return null;
+  }
+
+  if (edit.type === 'DELETE') {
+    if (post.content.trim() !== DELETE_MARKER) {
+      return `deleted file does not contain exact deprecation marker: ${DELETE_MARKER}`;
+    }
+    return null;
+  }
+
+  return 'unknown edit type';
 }
 
 export async function runEditLoop(
@@ -569,190 +549,214 @@ export async function runEditLoop(
   commitLabel: string,
 ): Promise<'ALIGNED' | 'DEFICIENT'> {
   report.abortStage = `editing (${commitLabel})`;
-  let currentEdits = edits;
-  let verdict: 'ALIGNED' | 'DEFICIENT' = 'DEFICIENT';
+  const batch = journey.batches.length + 1;
   const escalatedPaths = new Set<string>();
+
   const bumpGitRetry = (attempt: number, message: string) => {
     journey.gitRetries++;
     void ctx.log.warning(`Git retry ${attempt}: ${message}`);
   };
 
-  for (let localPass = 1; localPass <= MAX_CONFIRM_PASSES; localPass++) {
-    const pass = journey.passes.length + 1;
-    const passBase = (await withGitRetry(() => git.revparse(['HEAD']), { name: 'pass baseline', onRetry: bumpGitRetry })).trim();
+  const passBase = (await withGitRetry(() => git.revparse(['HEAD']), { name: 'batch baseline', onRetry: bumpGitRetry })).trim();
 
-    // Pre-flight: execute deletions and validate paths synchronously before
-    // any dispatch. Deletions are the pipeline's own job — editors never see
-    // them. An EDIT whose file is missing is failed up front so the CONFIRMER
-    // can issue a corrected path.
-    const dispatchedEdits: FileEditInstruction[] = [];
-    const results: EditorOutcome[] = [];
-    for (const edit of currentEdits) {
-      const abs = path.resolve(ctx.task.getTaskDir(), edit.path);
-      if (edit.type === 'DELETE') {
-        try {
-          if (await fileExists(abs)) {
-            await fs.rm(abs, { force: true });
-            results.push({ path: edit.path, outcome: 'DONE', detail: 'deleted by pipeline' });
-          } else {
-            results.push({ path: edit.path, outcome: 'DONE', detail: 'already absent' });
-          }
-        } catch (error) {
-          results.push({ path: edit.path, outcome: 'FAILED', detail: `deletion failed: ${error instanceof Error ? error.message : String(error)}` });
-        }
-        continue;
-      }
-      // Pre-dispatch guard: a malformed instruction (prose instead of exact
-      // code, empty NEW body, non-empty DELETE body) must never reach an
-      // editor prompt — it becomes a FAILED outcome so the CONFIRMER issues
-      // parse-validated corrective edits.
-      const invalidReason = validateFileEditInstruction(edit);
-      if (invalidReason) {
-        results.push({ path: edit.path, outcome: 'FAILED', detail: `invalid edit instructions: ${invalidReason}` });
-        continue;
-      }
-      if (edit.type === 'EDIT' && !(await fileExists(abs))) {
-        results.push({ path: edit.path, outcome: 'FAILED', detail: 'instructed path does not exist' });
-        continue;
-      }
-      if (edit.type === 'NEW') {
-        await fs.mkdir(path.dirname(abs), { recursive: true });
-      }
-      dispatchedEdits.push(edit);
+  // 2. Normalize edit paths, check existing paths, validate chains
+  const normalizedEdits = edits.map((e) => ({ ...e, path: normalizePath(e.path) }));
+  const uniquePaths = [...new Set(normalizedEdits.map((e) => e.path))];
+  const existingPaths = new Set<string>();
+  for (const p of uniquePaths) {
+    const abs = path.resolve(ctx.task.getTaskDir(), p);
+    if (await fileExists(abs)) {
+      existingPaths.add(p);
     }
+  }
 
-    // Dispatch: serial within a file, parallel across files. Each dispatch
-    // carries a role-specific hard timeout; a light-editor timeout escalates
-    // the same edit to EDITOR-HEAVY within this pass.
-    const groups = new Map<string, number[]>();
-    dispatchedEdits.forEach((edit, index) => {
-      const key = normalizePath(edit.path);
-      groups.set(key, [...(groups.get(key) ?? []), index]);
-    });
-    await Promise.all([...groups.values()].map(async (indexes) => {
-      for (const index of indexes) {
-        const edit = dispatchedEdits[index];
-        const heavy = selectEditorRole(edit, escalatedPaths) === 'heavy';
-        const timeoutMs = heavy ? EDITOR_HEAVY_TIMEOUT_MS : EDITOR_LIGHT_TIMEOUT_MS;
-        const prompt = `Apply the following edit to exactly one file. The PATH has been verified by the pipeline: ${edit.type === 'NEW' ? 'the parent directory exists' : 'the file exists'}. Do not search for it.\n\n${serializeFileEdits([edit])}`;
+  const chainProblems = validateEditChains(normalizedEdits, existingPaths);
+  const results: EditorOutcome[] = [];
+  const validEditsByPath = new Map<string, FileEditInstruction[]>();
+
+  for (const edit of normalizedEdits) {
+    const problem = chainProblems.get(edit.path);
+    if (problem) {
+      const alreadyReported = results.some((r) => r.path === edit.path);
+      if (!alreadyReported) {
+        results.push({ editId: edit.id, path: edit.path, outcome: 'FAILED', detail: problem });
+      } else {
+        results.push({ editId: edit.id, path: edit.path, outcome: 'BLOCKED', detail: 'blocked by invalid chain' });
+      }
+    } else {
+      const list = validEditsByPath.get(edit.path) ?? [];
+      list.push(edit);
+      validEditsByPath.set(edit.path, list);
+    }
+  }
+
+  // 3. Ensure parent directory exists for files starting with NEW
+  for (const [p, chain] of validEditsByPath.entries()) {
+    if (chain[0].type === 'NEW') {
+      const abs = path.resolve(ctx.task.getTaskDir(), p);
+      await fs.mkdir(path.dirname(abs), { recursive: true });
+    }
+  }
+
+  // 4. Run chains concurrently
+  await Promise.all(
+    [...validEditsByPath.entries()].map(async ([p, chain]) => {
+      const abs = path.resolve(ctx.task.getTaskDir(), p);
+
+      for (let i = 0; i < chain.length; i++) {
+        const edit = chain[i];
+        const pre = await readTarget(abs);
+        let heavy = escalatedPaths.has(p) || selectEditorRole(edit) === 'heavy';
+        let timeoutMs = heavy ? EDITOR_HEAVY_TIMEOUT_MS : EDITOR_LIGHT_TIMEOUT_MS;
+
+        const basePrompt = `Apply the following edit to exactly one file. Earlier edits to this file in this batch are already applied — the file's current on-disk content is authoritative.\n\n${serializeFileEdits([edit])}`;
+
+        let outcomeResult: { outcome: 'DONE' | 'FAILED' | 'UNKNOWN'; detail?: string };
+        let failureReason: string | null = null;
+        let usedRole: 'light' | 'heavy' = heavy ? 'heavy' : 'light';
+
         try {
           const raw = await ctx.dispatch.agent(
             heavy ? AGENTS.heavyEditor : AGENTS.editor,
-            prompt,
-            `Editing ${edit.path}${heavy ? ' (heavy editor)' : ''}`,
+            basePrompt,
+            `Editing ${edit.path} (EDIT ${edit.id}${heavy ? ', heavy' : ''})`,
             { timeoutMs },
           );
-          results.push({ path: edit.path, ...parseEditorResponse(raw), editorRole: heavy ? 'heavy' : 'light' });
+          outcomeResult = parseEditorResponse(raw);
+          if (outcomeResult.outcome !== 'DONE') {
+            failureReason = outcomeResult.detail ?? outcomeResult.outcome;
+          } else {
+            const post = await readTarget(abs);
+            failureReason = validateAppliedEdit(edit, pre, post);
+          }
         } catch (error) {
           if (error instanceof WorkflowCancelled) throw error;
-          if (error instanceof WorkflowTimeout) {
-            if (!heavy) {
-              journey.editorTimeouts++;
-              escalatedPaths.add(normalizePath(edit.path));
-              await ctx.log.warning(`Light editor timed out on ${edit.path}; escalating to EDITOR-HEAVY.`);
-              try {
-                const raw = await ctx.dispatch.agent(
-                  AGENTS.heavyEditor,
-                  prompt,
-                  `Editing ${edit.path} (heavy editor, after light timeout)`,
-                  { timeoutMs: EDITOR_HEAVY_TIMEOUT_MS },
-                );
-                results.push({ path: edit.path, ...parseEditorResponse(raw), editorRole: 'heavy' });
-                continue;
-              } catch (retryError) {
-                if (retryError instanceof WorkflowCancelled) throw retryError;
-                if (retryError instanceof WorkflowTimeout) journey.editorTimeouts++;
-                results.push({ path: edit.path, outcome: 'FAILED', detail: String(retryError), editorRole: 'heavy' });
-                continue;
-              }
+          if (error instanceof WorkflowTimeout) journey.editorTimeouts++;
+          failureReason = error instanceof Error ? error.message : String(error);
+          outcomeResult = { outcome: 'FAILED', detail: failureReason };
+        }
+
+        // Escalation: if light attempt failed, retry ONCE with heavy
+        if (failureReason !== null && !heavy) {
+          escalatedPaths.add(p);
+          heavy = true;
+          usedRole = 'heavy';
+          await ctx.log.warning(`Light editor failed on ${edit.path} (EDIT ${edit.id}: ${failureReason}); escalating to EDITOR-HEAVY.`);
+
+          const retryPrompt = `${basePrompt}\n\n=== PREVIOUS ATTEMPT FAILED ===\n${failureReason}\nRe-read the file and apply the edit correctly.`;
+          try {
+            const raw = await ctx.dispatch.agent(
+              AGENTS.heavyEditor,
+              retryPrompt,
+              `Editing ${edit.path} (EDIT ${edit.id}, heavy escalation)`,
+              { timeoutMs: EDITOR_HEAVY_TIMEOUT_MS },
+            );
+            outcomeResult = parseEditorResponse(raw);
+            if (outcomeResult.outcome !== 'DONE') {
+              failureReason = outcomeResult.detail ?? outcomeResult.outcome;
+            } else {
+              const post = await readTarget(abs);
+              failureReason = validateAppliedEdit(edit, pre, post);
             }
-            journey.editorTimeouts++;
-            results.push({ path: edit.path, outcome: 'FAILED', detail: String(error), editorRole: 'heavy' });
-            continue;
+          } catch (retryError) {
+            if (retryError instanceof WorkflowCancelled) throw retryError;
+            if (retryError instanceof WorkflowTimeout) journey.editorTimeouts++;
+            failureReason = retryError instanceof Error ? retryError.message : String(retryError);
+            outcomeResult = { outcome: 'FAILED', detail: failureReason };
           }
-          results.push({ path: edit.path, outcome: 'FAILED', detail: String(error), editorRole: heavy ? 'heavy' : 'light' });
+        }
+
+        if (failureReason === null) {
+          results.push({ editId: edit.id, path: edit.path, outcome: 'DONE', editorRole: usedRole });
+        } else {
+          results.push({ editId: edit.id, path: edit.path, outcome: 'FAILED', detail: failureReason, editorRole: usedRole });
+          // Block all remaining edits in this chain
+          for (let j = i + 1; j < chain.length; j++) {
+            results.push({
+              editId: chain[j].id,
+              path: chain[j].path,
+              outcome: 'BLOCKED',
+              detail: `blocked by failed EDIT ${edit.id}`,
+            });
+          }
+          return;
         }
       }
-    }));
+    }),
+  );
 
-    const editedPaths = results.map((result) => result.path);
-    const commitMessage = `[${commitLabel} pass ${pass}] ${journey.planTitle.slice(0, 60)}`;
-    let commitSucceeded = true;
-    try {
-      await withGitRetry(async () => { await git.add('-A'); await git.raw(['commit', '--no-verify', '--allow-empty', '-m', commitMessage]); }, { name: 'pass checkpoint commit', onRetry: bumpGitRetry });
-    } catch (error) {
-      commitSucceeded = false;
-      const warning = `Checkpoint commit deferred after retries: ${error instanceof Error ? error.message : String(error)}`;
-      journey.gitWarnings.push(warning); await ctx.log.warning(warning);
-    }
-    const changedRaw = commitSucceeded
-      ? await withGitRetry(() => git.raw(['diff', '--name-only', '-z', passBase, 'HEAD']), { name: 'changed paths', onRetry: bumpGitRetry })
-      : await withGitRetry(() => git.raw(['diff', '--name-only', '-z', passBase]), { name: 'working-tree changed paths', onRetry: bumpGitRetry });
-    const changedPaths = parseChangedPaths(changedRaw);
-    const statsMap = await collectDiffStats(git, passBase, commitSucceeded ? 'HEAD' : undefined, bumpGitRetry);
-    const rows = buildEditRows(results, changedPaths, statsMap);
-    const diff = await withGitRetry(() => commitSucceeded ? git.raw(['diff', passBase, 'HEAD']) : git.raw(['diff', passBase]), { name: 'pass diff', onRetry: bumpGitRetry });
-    const addedLinesByFile = extractAddedLinesByFile(diff);
-    const verificationResults: EditVerificationResult[] = [];
-    for (const edit of currentEdits) {
-      let content: string | null = null;
-      try { content = await fs.readFile(path.resolve(ctx.task.getTaskDir(), edit.path), 'utf-8'); } catch {}
-      const normPath = normalizePath(edit.path);
-      const addedLines = new Set((addedLinesByFile.get(normPath) ?? []).map((line) => normalizeForCompare(line)));
-      verificationResults.push(verifyEditAlignment(edit, content, statsMap.get(normPath) ?? { insertions: 0, deletions: 0 }, addedLines));
-    }
-    const suspicious = verificationResults.filter((v) => v.suspicious);
-    const gate = evaluateEditGate(results, changedPaths, suspicious);
-    for (const row of rows) { const entry = journey.fileStats[row.path] ?? { insertions: 0, deletions: 0, passes: 0 }; entry.insertions += row.insertions; entry.deletions += row.deletions; entry.passes++; journey.fileStats[row.path] = entry; }
-    await reconfigureContext(ctx, journey, `${commitLabel} — pass ${pass} outputs`, [...new Set([...editedPaths, ...changedPaths])]);
-
-    await emitInfo(ctx.log, formatEditSummary(commitLabel, pass, rows, gate.passed, gate.reason));
-    if (suspicious.length > 0) {
-      await emitInfo(ctx.log, formatVerificationFlags(verificationResults));
-    }
-
-    // Gate fast-path: when every edit is DONE, present in the diff, and free
-    // of script-level suspicion, the CONFIRMER is skipped entirely.
-    if (gate.passed) {
-      journey.confirmerSkips++;
-      journey.passes.push({ pass, stage: commitLabel, editCount: currentEdits.length, done: results.filter((r) => r.outcome === 'DONE').length, failed: results.filter((r) => r.outcome === 'FAILED').map((r) => r.path), unknown: results.filter((r) => r.outcome === 'UNKNOWN').map((r) => r.path), verdict: 'ALIGNED (gate)', commit: commitSucceeded ? commitMessage : 'DEFERRED (commit failed — see git warnings)', rows });
-      verdict = 'ALIGNED';
-      break;
-    }
-
-    await emitInfo(ctx.log, formatDeficiencyNotice(gate.reason));
-
-    let confirmer: { verdict: 'ALIGNED' } | { verdict: 'DEFICIENT'; edits: FileEditInstruction[] };
-    try {
-      confirmer = await withAgentRetry(ctx, `CONFIRMER (pass ${pass})`, () =>
-        ctx.dispatch.parsed(
-          AGENTS.confirmer,
-          buildPrompt([
-            { title: 'FILE EDITS THAT WERE SUPPOSED TO BE APPLIED', body: serializeFileEdits(currentEdits) },
-            { title: 'GIT DIFF', body: ['```diff', diff.slice(0, MAX_DIFF_CHARS), '```'].join('\n') },
-            { title: 'EDITOR RESULTS', body: results.map((r) => `${r.path}: ${r.outcome}${r.detail ? ` — ${r.detail}` : ''}`).join('\n') },
-            { title: 'SUSPICIOUS EDITS FLAGGED BY SCRIPT VERIFICATION', body: suspicious.length ? suspicious.map((v) => `${v.path}: ${v.reasons.join('; ')}`).join('\n') : 'None' },
-            { title: 'PASS', body: `This is confirmation pass ${localPass} of ${MAX_CONFIRM_PASSES} for this edit batch.` },
-          ]),
-          `Confirming edits (pass ${pass})`,
-          parseConfirmerResponse,
-          () => { journey.formatRetries++; },
-        ),
-      );
-    } catch (error) {
-      if (error instanceof WorkflowCancelled) throw error;
-      journey.passes.push({ pass, stage: commitLabel, editCount: currentEdits.length, done: results.filter((r) => r.outcome === 'DONE').length, failed: results.filter((r) => r.outcome === 'FAILED').map((r) => r.path), unknown: results.filter((r) => r.outcome === 'UNKNOWN').map((r) => r.path), verdict: 'CONFIRMER FAILED', commit: commitSucceeded ? commitMessage : 'DEFERRED (commit failed — see git warnings)', rows });
-      await ctx.log.warning(`CONFIRMER failed after retries (pass ${pass}); marking the batch DEFICIENT.`);
-      return 'DEFICIENT';
-    }
-
-    await emitInfo(ctx.log, formatConfirmerVerdict(pass, confirmer.verdict, confirmer.verdict === 'DEFICIENT' ? confirmer.edits.length : 0));
-    for (const result of results) if (result.outcome !== 'DONE') escalatedPaths.add(normalizePath(result.path));
-    for (const result of verificationResults) if (result.suspicious) escalatedPaths.add(normalizePath(result.path));
-    journey.passes.push({ pass, stage: commitLabel, editCount: currentEdits.length, done: results.filter((r) => r.outcome === 'DONE').length, failed: results.filter((r) => r.outcome === 'FAILED').map((r) => r.path), unknown: results.filter((r) => r.outcome === 'UNKNOWN').map((r) => r.path), verdict: confirmer.verdict, commit: commitSucceeded ? commitMessage : 'DEFERRED (commit failed — see git warnings)', rows });
-    if (confirmer.verdict === 'ALIGNED') { verdict = 'ALIGNED'; break; }
-    currentEdits = confirmer.edits;
+  // 5. Commit & diff
+  const commitMessage = `[${commitLabel} batch ${batch}] ${journey.planTitle.slice(0, 60)}`;
+  let commitSucceeded = true;
+  try {
+    await withGitRetry(async () => {
+      await git.add('-A');
+      await git.raw(['commit', '--no-verify', '--allow-empty', '-m', commitMessage]);
+    }, { name: 'batch checkpoint commit', onRetry: bumpGitRetry });
+  } catch (error) {
+    commitSucceeded = false;
+    const warning = `Checkpoint commit deferred after retries: ${error instanceof Error ? error.message : String(error)}`;
+    journey.gitWarnings.push(warning);
+    await ctx.log.warning(warning);
   }
+
+  const changedRaw = commitSucceeded
+    ? await withGitRetry(() => git.raw(['diff', '--name-only', '-z', passBase, 'HEAD']), { name: 'changed paths', onRetry: bumpGitRetry })
+    : await withGitRetry(() => git.raw(['diff', '--name-only', '-z', passBase]), { name: 'working-tree changed paths', onRetry: bumpGitRetry });
+  const changedPaths = parseChangedPaths(changedRaw);
+  const statsMap = await collectDiffStats(git, passBase, commitSucceeded ? 'HEAD' : undefined, bumpGitRetry);
+
+  // 6. Batch validation
+  const expected = new Set(normalizedEdits.map((e) => e.path));
+  const changedSet = new Set(changedPaths);
+
+  const donePaths = new Set(results.filter((r) => r.outcome === 'DONE').map((r) => r.path));
+  const missing = [...donePaths].filter((p) => !changedSet.has(p));
+  const unexpected = changedPaths.filter((p) => !expected.has(p));
+
+  const notDone = results.filter((r) => r.outcome !== 'DONE');
+  const passed = notDone.length === 0 && missing.length === 0 && unexpected.length === 0;
+
+  const reasons: string[] = [];
+  if (notDone.length > 0) {
+    const failedLabels = notDone.map((r) => `EDIT ${r.editId} (${r.path}: ${r.outcome}${r.detail ? ` - ${r.detail}` : ''})`);
+    reasons.push(`unsuccessful edits: ${failedLabels.join(', ')}`);
+  }
+  if (missing.length > 0) {
+    reasons.push(`instructed file(s) absent from the diff: ${missing.join(', ')}`);
+  }
+  if (unexpected.length > 0) {
+    reasons.push(`diff touches unexpected file(s): ${unexpected.join(', ')}`);
+  }
+  const reason = reasons.join('; ');
+  const verdict = passed ? 'ALIGNED' : 'DEFICIENT';
+
+  // 7. Build rows & accumulate stats
+  const rows = buildEditRows(results, changedPaths, statsMap);
+  for (const row of rows) {
+    const entry = journey.fileStats[row.path] ?? { insertions: 0, deletions: 0, passes: 0 };
+    entry.insertions += row.insertions;
+    entry.deletions += row.deletions;
+    entry.passes++;
+    journey.fileStats[row.path] = entry;
+  }
+  await reconfigureContext(ctx, journey, `${commitLabel} — batch ${batch} outputs`, [...new Set([...expected, ...changedPaths])]);
+
+  // 8. Record batch & emit summary
+  journey.batches.push({
+    batch,
+    stage: commitLabel,
+    editCount: normalizedEdits.length,
+    done: results.filter((r) => r.outcome === 'DONE').length,
+    failed: results.filter((r) => r.outcome === 'FAILED').map((r) => `EDIT ${r.editId}: ${r.path}`),
+    blocked: results.filter((r) => r.outcome === 'BLOCKED').map((r) => `EDIT ${r.editId}: ${r.path}`),
+    unknown: results.filter((r) => r.outcome === 'UNKNOWN').map((r) => `EDIT ${r.editId}: ${r.path}`),
+    verdict: passed ? 'ALIGNED' : `DEFICIENT: ${reason}`,
+    commit: commitSucceeded ? commitMessage : 'DEFERRED (commit failed — see git warnings)',
+    rows,
+  });
+
+  await emitInfo(ctx.log, formatEditBatchSummary(commitLabel, batch, rows, passed, reason));
   return verdict;
 }
 
