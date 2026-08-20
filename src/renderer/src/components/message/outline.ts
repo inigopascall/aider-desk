@@ -7,13 +7,13 @@ import {
   isResponseMessage,
   isToolMessage,
   isUserMessage,
-  isWorkflowLogMessage,
+  isWorkflowRunMessage,
   LocalizedString,
   Message,
   ToolMessage,
 } from '@common/types';
 
-export type OutlineItemKind = 'user' | 'response' | 'assistant-group' | 'tool' | 'group' | 'workflow-log' | 'reflected';
+export type OutlineItemKind = 'user' | 'response' | 'assistant-group' | 'tool' | 'group' | 'workflow-run' | 'reflected';
 
 export interface OutlineItem {
   /** Message id — the bookmark key and the outline row key. */
@@ -155,8 +155,8 @@ export const buildOutline = (processedMessages: Message[], t: TranslateFn): Outl
       return;
     }
 
-    if (isWorkflowLogMessage(message)) {
-      addItem(message.id, scrollTargetId, 'workflow-log', `${message.workflowName}: ${extractFirstLine(message.content)}`, depth, bookmarkable);
+    if (isWorkflowRunMessage(message)) {
+      addItem(message.id, scrollTargetId, 'workflow-run', `${message.workflowName} — ${message.logs.length} events`, depth, bookmarkable);
       return;
     }
 
