@@ -1142,10 +1142,6 @@ export const TaskDataSchema = z.object({
   contextCompactingThresholdTokens: z.number().optional(),
   weakModelLocked: z.boolean().optional(),
   handoff: z.boolean().optional(),
->>>>>>> cadccd24 (TEMP_UNCOMMITTED_1787217636576)
-});
-=======
->>>>>>> cadccd24 (TEMP_UNCOMMITTED_1787217636576)
 });
 
 export type TaskData = z.infer<typeof TaskDataSchema>;
