@@ -11,6 +11,8 @@ export interface WorkflowStepContext {
 export interface WorkflowDispatchOptions {
   /** Hard timeout for the subagent run; on expiry the run is aborted and a WorkflowTimeout is thrown. */
   timeoutMs?: number;
+  /** Optional one-shot fallback model in `provider/model` form. */
+  fallbackModelId?: string;
 }
 
 export interface WorkflowDispatcher {

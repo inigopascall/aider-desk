@@ -60,6 +60,16 @@ export function describeModelSet(set: WorkflowModelSet): string {
 }
 
 /**
+ * Applies an ephemeral provider/model override to an in-memory agent profile.
+ * This never mutates or persists the stored workflow-agent profile.
+ */
+export function applyModelIdToProfile(profile: AgentProfile, modelId?: string): AgentProfile {
+  if (!modelId || modelId.trim().length === 0) return profile;
+  const [provider, model] = extractProviderModel(modelId);
+  return { ...profile, provider, model };
+}
+
+/**
  * Shallow-overrides provider and model on a resolved agent profile.
  * Returns the original profile unchanged when no override is in force
  * or when the set has no model entry for the given role.
@@ -69,9 +79,5 @@ export function applyModelSetToProfile(
   roleName: string,
   set?: WorkflowModelSet,
 ): AgentProfile {
-  if (!set) return profile;
-  const modelId = set.models[roleName];
-  if (!modelId || modelId.trim().length === 0) return profile;
-  const [provider, model] = extractProviderModel(modelId);
-  return { ...profile, provider, model };
+  return applyModelIdToProfile(profile, set?.models[roleName]);
 }

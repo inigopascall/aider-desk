@@ -1,8 +1,6 @@
-import { findEnabledSubagent } from '@/agent/subagent';
-
 import { formatConversation } from './conversation';
 import { createWorkflowDispatcher } from './dispatch';
-import { applyModelSetToProfile, describeModelSet, resolveActiveModelSet, validateModelSet } from './model-sets';
+import { describeModelSet, resolveActiveModelSet, validateModelSet } from './model-sets';
 import { WorkflowDefinition } from './types';
 import { createWorkflowLogger, createWorkflowRun } from './logging';
 import { formatWorkflowStart } from './reporting';
@@ -43,7 +41,6 @@ export async function runWorkflow(task: Task, workflow: WorkflowDefinition, prom
   }
 
   // Linear (steps) path
-  const workflowAgents = task.getProject().getWorkflowAgentProfiles();
   let previousOutput = prompt;
   const steps = workflow.steps ?? [];
 
@@ -54,26 +51,16 @@ export async function runWorkflow(task: Task, workflow: WorkflowDefinition, prom
 
   for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
     const step = steps[stepIndex];
-    const found = findEnabledSubagent(workflowAgents, step.subagentId, { matchByName: true });
-
-    if (!found) {
-      await log.error(`Workflow '${workflow.name}': workflow agent '${step.subagentId}' not found. Create it under Workflow Agents.`);
-      return;
-    }
-
-    const target = applyModelSetToProfile(found, step.subagentId, modelSet);
     const stepPrompt = step.buildPrompt({ initialPrompt: prompt, previousOutput, stepIndex, conversationText });
     const label = step.description ?? `${workflow.name} — step ${stepIndex + 1}`;
 
     await log.info(`### ▶️ ${label}`);
-    const { status, outputText } = await task.dispatchSubagent(target, stepPrompt, label, undefined, run);
-
-    if (status !== 'success') {
-      await log.warning(`Workflow '${workflow.name}' stopped at step ${stepIndex + 1} (status: ${status}).`);
+    try {
+      previousOutput = await dispatch.agent(step.subagentId, stepPrompt, label);
+    } catch (error) {
+      await log.warning(`Workflow '${workflow.name}' stopped at step ${stepIndex + 1}: ${error instanceof Error ? error.message : String(error)}`);
       return;
     }
-
-    previousOutput = outputText;
   }
 
   await log.info(`Workflow '${workflow.name}' completed.`);

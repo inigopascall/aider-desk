@@ -4,7 +4,7 @@ import { findEnabledSubagent } from '@/agent/subagent';
 import type { Task } from '@/task';
 
 import { ParseError } from './parsers';
-import { applyModelSetToProfile } from './model-sets';
+import { applyModelIdToProfile, applyModelSetToProfile } from './model-sets';
 import { WorkflowDispatcher } from './types';
 
 /**
@@ -43,6 +43,9 @@ export class WorkflowTimeout extends WorkflowError {
 /** Default hard timeout applied to every workflow subagent dispatch. */
 export const DEFAULT_DISPATCH_TIMEOUT_MS = 15 * 60_000;
 
+/** Phase-one fallback used when the primary workflow model cannot complete. */
+export const DEFAULT_WORKFLOW_FALLBACK_MODEL_ID = '9router/openai-compatible-opencode-go/deepseek-v4-flash';
+
 /**
  * Resolves a workflow agent by its slug/name from the Workflow Agents tier.
  * Throws a `WorkflowError` when the agent is not found.
@@ -62,27 +65,61 @@ export function resolveWorkflowAgent(task: Task, subagentId: string): AgentProfi
  * failures as `WorkflowError` / `WorkflowCancelled`.
  */
 export function createWorkflowDispatcher(task: Task, run: WorkflowRunInfo, modelSet?: WorkflowModelSet): WorkflowDispatcher {
+  const dispatchOnce = async (
+    subagentId: string,
+    target: AgentProfile,
+    prompt: string,
+    description: string,
+    timeoutMs: number,
+  ): Promise<string> => {
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+
+    try {
+      const { status, outputText } = await task.dispatchSubagent(target, prompt, description, controller.signal, run);
+      if (status === 'cancelled') {
+        if (timedOut) throw new WorkflowTimeout(subagentId, timeoutMs);
+        throw new WorkflowCancelled();
+      }
+      if (status === 'error') throw new WorkflowError(`Workflow agent '${subagentId}' failed to complete its run.`);
+      return outputText;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
   const dispatcher: WorkflowDispatcher = {
     agent: async (subagentId, prompt, description, options) => {
       const base = resolveWorkflowAgent(task, subagentId);
-      const target = applyModelSetToProfile(base, subagentId, modelSet);
+      const primary = applyModelSetToProfile(base, subagentId, modelSet);
       const timeoutMs = options?.timeoutMs ?? DEFAULT_DISPATCH_TIMEOUT_MS;
-      const controller = new AbortController();
-      let timedOut = false;
-      const timer = setTimeout(() => {
-        timedOut = true;
-        controller.abort();
-      }, timeoutMs);
+
       try {
-        const { status, outputText } = await task.dispatchSubagent(target, prompt, description, controller.signal, run);
-        if (status === 'cancelled') {
-          if (timedOut) throw new WorkflowTimeout(subagentId, timeoutMs);
-          throw new WorkflowCancelled();
+        return await dispatchOnce(subagentId, primary, prompt, description, timeoutMs);
+      } catch (error) {
+        if (error instanceof WorkflowCancelled) throw error;
+        if (!(error instanceof WorkflowError)) throw error;
+
+        const fallbackModelId = options?.fallbackModelId ?? DEFAULT_WORKFLOW_FALLBACK_MODEL_ID;
+        const fallback = applyModelIdToProfile(primary, fallbackModelId);
+        if (fallback.provider === primary.provider && fallback.model === primary.model) {
+          throw error;
         }
-        if (status === 'error') throw new WorkflowError(`Workflow agent '${subagentId}' failed to complete its run.`);
-        return outputText;
-      } finally {
-        clearTimeout(timer);
+        if (!task.hasProvider(fallback.provider)) {
+          throw new WorkflowError(`${error.message} Fallback provider '${fallback.provider}' is not configured.`);
+        }
+
+        try {
+          return await dispatchOnce(subagentId, fallback, prompt, `${description} (fallback)`, timeoutMs);
+        } catch (fallbackError) {
+          if (fallbackError instanceof WorkflowCancelled) throw fallbackError;
+          const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+          throw new WorkflowError(`${error.message} Fallback '${fallbackModelId}' also failed: ${fallbackMessage}`);
+        }
       }
     },
 
