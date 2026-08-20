@@ -28,7 +28,7 @@ import { useProjectSettings } from '@/contexts/ProjectSettingsContext';
 
 import './Workspace.css';
 
-const ALL_SECTIONS: SectionType[] = ['outline', 'context', 'mappings', 'updated', 'project', 'rules', 'skills'];
+const ALL_SECTIONS: SectionType[] = ['outline', 'mappings', 'rules', 'context', 'updated', 'project', 'skills'];
 
 type SortableSectionWrapperProps = {
   id: SectionType;
