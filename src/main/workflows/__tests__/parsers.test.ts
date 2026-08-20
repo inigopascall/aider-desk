@@ -1,23 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  DELETE_MARKER,
   ParseError,
+  computeWaves,
   parseArbiterResponse,
-  parseDecompositorResponse,
+  parseAssignmentsResponse,
   parseDigesterResponse,
-  parseEditorResponse,
-  parseEditSpecBlocks,
-  serializeFileEdits,
-  validateEditChains,
-  type FileEditInstruction,
+  parseEditorResult,
+  serializeAssignment,
+  validateAssignments,
+  type FileAssignment,
 } from '../parsers';
-
-describe('DELETE_MARKER constant', () => {
-  it('equals [DEPRECATED: PLEASE DELETE]', () => {
-    expect(DELETE_MARKER).toBe('[DEPRECATED: PLEASE DELETE]');
-  });
-});
 
 describe('parseDigesterResponse', () => {
   it('parses YES with research brief and irrelevant files', () => {
@@ -98,340 +91,343 @@ describe('parseDigesterResponse', () => {
   });
 });
 
-describe('parseDecompositorResponse / parseEditSpecBlocks', () => {
-  it('parses multiple blocks for one file in document order with correct ids/types', () => {
+describe('parseAssignmentsResponse', () => {
+  it('parses multiple assignments with sections and dependencies', () => {
     const text = [
-      '=== EDIT SPECS ===',
+      '=== ASSIGNMENTS ===',
       '',
-      '== EDIT 1: edit: src/file.ts ==',
-      'Replace line 5 with: const x = 1;',
+      '== ASSIGNMENT 1: MODIFY: src/file.ts ==',
+      'DEPENDS ON: none',
+      'OBJECTIVE:',
+      'Update the auth handler to use the new token API.',
+      'INSTRUCTIONS:',
+      '- Replace the token refresh call with refreshToken()',
+      '- Update the error handling to match the new contract',
+      'ACCEPTANCE CRITERIA:',
+      '- No references to oldToken() remain',
+      '- refreshToken() is called with the session id',
       '',
-      '== EDIT 2: edit: src/file.ts ==',
-      'Replace line 10 with: const y = 2;',
+      '== ASSIGNMENT 2: CREATE: src/new-file.ts ==',
+      'DEPENDS ON: 1',
+      'OBJECTIVE:',
+      'Create the new token module.',
+      'INSTRUCTIONS:',
+      '- Export function refreshToken(sessionId: string)',
+      'ACCEPTANCE CRITERIA:',
+      '- Module exports refreshToken',
       '',
-      '=== EDITS SUMMARY ===',
-      '- `src/file.ts`: updated x and y',
+      '=== SUMMARY ===',
+      '- src/file.ts: updated auth handler',
+      '- src/new-file.ts: created token module',
     ].join('\n');
 
-    const result = parseDecompositorResponse(text);
-    expect(result.edits).toHaveLength(2);
-    expect(result.edits[0]).toEqual({
+    const result = parseAssignmentsResponse(text);
+    expect(result.assignments).toHaveLength(2);
+    expect(result.assignments[0]).toEqual({
       id: 1,
       path: 'src/file.ts',
-      type: 'EDIT',
-      instructions: 'Replace line 5 with: const x = 1;',
+      operation: 'MODIFY',
+      objective: 'Update the auth handler to use the new token API.',
+      instructions: ['Replace the token refresh call with refreshToken()', 'Update the error handling to match the new contract'],
+      acceptanceCriteria: ['No references to oldToken() remain', 'refreshToken() is called with the session id'],
+      dependsOn: [],
     });
-    expect(result.edits[1]).toEqual({
+    expect(result.assignments[1].dependsOn).toEqual([1]);
+    expect(result.summary).toContain('src/file.ts: updated auth handler');
+  });
+
+  it('handles case-insensitive operations and DELETE with header only', () => {
+    const text = [
+      '== ASSIGNMENT 1: modify: src/a.ts ==',
+      'OBJECTIVE:',
+      'Tweak a.',
+      'INSTRUCTIONS:',
+      '- Change x',
+      'ACCEPTANCE CRITERIA:',
+      '- x changed',
+      '',
+      '== ASSIGNMENT 2: DELETE: src/old.ts ==',
+    ].join('\n');
+
+    const result = parseAssignmentsResponse(text);
+    expect(result.assignments[0].operation).toBe('MODIFY');
+    expect(result.assignments[1]).toEqual({
       id: 2,
-      path: 'src/file.ts',
-      type: 'EDIT',
-      instructions: 'Replace line 10 with: const y = 2;',
+      path: 'src/old.ts',
+      operation: 'DELETE',
+      objective: '',
+      instructions: [],
+      acceptanceCriteria: [],
+      dependsOn: [],
     });
-    expect(result.summary).toBe('- `src/file.ts`: updated x and y');
   });
 
-  it('preserves instruction bodies with fenced code and backticks verbatim', () => {
-    const codeBlock = '```typescript\nconst greeting = `Hello ${name}`;\n```';
+  it('defaults missing INSTRUCTIONS and ACCEPTANCE CRITERIA to empty arrays', () => {
     const text = [
-      '=== EDIT SPECS ===',
-      '',
-      '== EDIT 1: create: src/greet.ts ==',
-      codeBlock,
-      '',
-      '=== EDITS SUMMARY ===',
-      '- `src/greet.ts`: created greeting module',
+      '== ASSIGNMENT 1: MODIFY: src/a.ts ==',
+      'OBJECTIVE:',
+      'Just change the return type.',
     ].join('\n');
 
-    const result = parseDecompositorResponse(text);
-    expect(result.edits[0].instructions).toBe(codeBlock);
+    const result = parseAssignmentsResponse(text);
+    expect(result.assignments[0].instructions).toEqual([]);
+    expect(result.assignments[0].acceptanceCriteria).toEqual([]);
   });
 
-  it('handles case-insensitive ops (CREATE / Edit / delete)', () => {
+  it('throws on missing OBJECTIVE for MODIFY', () => {
     const text = [
-      '== EDIT 1: CREATE: src/new.ts ==',
-      'Write this content verbatim.',
-      '',
-      '== EDIT 2: Edit: src/edit.ts ==',
-      'Update imports.',
-      '',
-      '== EDIT 3: delete: src/del.ts ==',
-      'Deprecate file.',
+      '== ASSIGNMENT 1: MODIFY: src/a.ts ==',
+      'INSTRUCTIONS:',
+      '- Change x',
     ].join('\n');
-
-    const edits = parseEditSpecBlocks(text);
-    expect(edits).toHaveLength(3);
-    expect(edits[0].type).toBe('NEW');
-    expect(edits[1].type).toBe('EDIT');
-    expect(edits[2].type).toBe('DELETE');
+    expect(() => parseAssignmentsResponse(text)).toThrow(/OBJECTIVE is required/);
   });
 
-  it('throws on duplicate edit ids', () => {
+  it('throws on zero assignments', () => {
+    expect(() => parseAssignmentsResponse('=== ASSIGNMENTS ===\n\n=== SUMMARY ===\n- none')).toThrow(/no assignments found/);
+  });
+
+  it('throws on malformed assignment header', () => {
     const text = [
-      '== EDIT 1: edit: src/a.ts ==',
-      'First change',
-      '',
-      '== EDIT 1: edit: src/b.ts ==',
-      'Second change',
+      '== ASSIGNMENT 1: MODIFY src/a.ts ==',
+      'OBJECTIVE:',
+      'Broken header',
     ].join('\n');
-    expect(() => parseEditSpecBlocks(text)).toThrow(/duplicate edit id/);
+    expect(() => parseAssignmentsResponse(text)).toThrow(/malformed assignment header/);
   });
 
-  it('throws on absolute path', () => {
+  it('throws on invalid path', () => {
     const text = [
-      '== EDIT 1: edit: /etc/passwd ==',
+      '== ASSIGNMENT 1: MODIFY: /etc/passwd ==',
+      'OBJECTIVE:',
       'Change',
     ].join('\n');
-    expect(() => parseEditSpecBlocks(text)).toThrow(/invalid file path/);
+    expect(() => parseAssignmentsResponse(text)).toThrow(/invalid file path/);
   });
 
-  it('throws on .. path', () => {
+  it('does not absorb the SUMMARY section into the last assignment body', () => {
     const text = [
-      '== EDIT 1: edit: ../outside.ts ==',
-      'Change',
-    ].join('\n');
-    expect(() => parseEditSpecBlocks(text)).toThrow(/invalid file path/);
-  });
-
-  it('throws on empty instructions', () => {
-    const text = [
-      '== EDIT 1: edit: src/a.ts ==',
-      '',
-      '== EDIT 2: edit: src/b.ts ==',
-      'Some instructions',
-    ].join('\n');
-    expect(() => parseEditSpecBlocks(text)).toThrow(/instructions must not be empty/);
-  });
-
-  it('throws on unknown operation', () => {
-    const text = [
-      '== EDIT 1: rename: src/a.ts ==',
-      'Some instructions',
-    ].join('\n');
-    expect(() => parseEditSpecBlocks(text)).toThrow(ParseError);
-    expect(() => parseEditSpecBlocks(text)).toThrow(/EDIT 1: unknown operation 'rename'/);
-  });
-
-  it('throws on zero edits in decompositor response', () => {
-    const text = [
-      '=== EDIT SPECS ===',
-      '',
-      '=== EDITS SUMMARY ===',
-      '- none',
-    ].join('\n');
-    expect(() => parseDecompositorResponse(text)).toThrow(/at least one edit specification is required/);
-  });
-
-  it('throws on missing EDITS SUMMARY marker', () => {
-    const text = [
-      '=== EDIT SPECS ===',
-      '',
-      '== EDIT 1: create: src/a.ts ==',
-      'Instructions',
-    ].join('\n');
-    expect(() => parseDecompositorResponse(text)).toThrow(/markers/);
-  });
-
-  it('throws on EDITS SUMMARY of NONE', () => {
-    const text = [
-      '=== EDIT SPECS ===',
-      '',
-      '== EDIT 1: create: src/a.ts ==',
-      'Instructions',
-      '',
-      '=== EDITS SUMMARY ===',
-      'NONE',
-    ].join('\n');
-    expect(() => parseDecompositorResponse(text)).toThrow(/must not be empty or NONE/);
-  });
-
-  it('ensures specs section ends at summary marker and does not absorb summary into last block', () => {
-    const text = [
-      '=== EDIT SPECS ===',
-      '',
-      '== EDIT 1: edit: src/a.ts ==',
+      '== ASSIGNMENT 1: MODIFY: src/a.ts ==',
+      'OBJECTIVE:',
       'Change x to y.',
+      'INSTRUCTIONS:',
+      '- Change x',
+      'ACCEPTANCE CRITERIA:',
+      '- x changed',
       '',
-      '=== EDITS SUMMARY ===',
-      '- `src/a.ts`: changed x to y',
+      '=== SUMMARY ===',
+      '- src/a.ts: changed x to y',
     ].join('\n');
-    const result = parseDecompositorResponse(text);
-    expect(result.edits[0].instructions).toBe('Change x to y.');
-    expect(result.summary).toBe('- `src/a.ts`: changed x to y');
+
+    const result = parseAssignmentsResponse(text);
+    expect(result.assignments[0].instructions).toEqual(['Change x']);
+    expect(result.assignments[0].acceptanceCriteria).toEqual(['x changed']);
+    expect(result.summary).toBe('- src/a.ts: changed x to y');
   });
 });
 
-describe('serializeFileEdits', () => {
-  it('round-trips through parseEditSpecBlocks', () => {
-    const originalEdits: FileEditInstruction[] = [
-      { id: 1, path: 'src/create.ts', type: 'NEW', instructions: 'const a = `hello`;' },
-      { id: 2, path: 'src/edit.ts', type: 'EDIT', instructions: 'replace foo with bar\nconst b = 2;' },
-      { id: 3, path: 'src/delete.ts', type: 'DELETE', instructions: DELETE_MARKER },
-    ];
+describe('serializeAssignment', () => {
+  it('round-trips through parseAssignmentsResponse', () => {
+    const assignment: FileAssignment = {
+      id: 1,
+      path: 'src/file.ts',
+      operation: 'MODIFY',
+      objective: 'Update the handler.',
+      instructions: ['Replace the call', 'Fix the error path'],
+      acceptanceCriteria: ['No old calls remain'],
+      dependsOn: [2, 3],
+    };
 
-    const serialized = serializeFileEdits(originalEdits);
-    const parsed = parseEditSpecBlocks(serialized);
-
-    expect(parsed).toEqual(originalEdits);
+    const serialized = serializeAssignment(assignment);
+    const parsed = parseAssignmentsResponse(serialized);
+    expect(parsed.assignments).toEqual([assignment]);
   });
 });
 
-describe('validateEditChains', () => {
-  it('allows create followed by edit on missing file', () => {
-    const edits: FileEditInstruction[] = [
-      { id: 1, path: 'src/new.ts', type: 'NEW', instructions: 'initial' },
-      { id: 2, path: 'src/new.ts', type: 'EDIT', instructions: 'tweak' },
+describe('validateAssignments', () => {
+  const base = (overrides: Partial<FileAssignment>): FileAssignment => ({
+    id: 1,
+    path: 'src/a.ts',
+    operation: 'MODIFY',
+    objective: 'obj',
+    instructions: [],
+    acceptanceCriteria: [],
+    dependsOn: [],
+    ...overrides,
+  });
+
+  it('flags duplicate ids and duplicate paths', () => {
+    const assignments = [
+      base({ id: 1, path: 'src/a.ts' }),
+      base({ id: 1, path: 'src/b.ts' }),
+      base({ id: 2, path: 'src/a.ts' }),
     ];
-    const problems = validateEditChains(edits, new Set());
+    const problems = validateAssignments(assignments, new Set(['src/a.ts', 'src/b.ts']));
+    expect(problems.get(1)).toBe('duplicate assignment id');
+    expect(problems.get(2)).toBe('duplicate path');
+  });
+
+  it('flags dependsOn referencing a nonexistent id or itself', () => {
+    const assignments = [
+      base({ id: 1, dependsOn: [99] }),
+      base({ id: 2, path: 'src/b.ts', dependsOn: [2] }),
+    ];
+    const problems = validateAssignments(assignments, new Set(['src/a.ts', 'src/b.ts']));
+    expect(problems.get(1)).toBe('depends on nonexistent assignment 99');
+    expect(problems.get(2)).toBe('assignment depends on itself');
+  });
+
+  it('flags MODIFY of a missing file and CREATE of an existing file', () => {
+    const assignments = [
+      base({ id: 1, operation: 'MODIFY', path: 'src/missing.ts' }),
+      base({ id: 2, path: 'src/exists.ts', operation: 'CREATE' }),
+    ];
+    const problems = validateAssignments(assignments, new Set(['src/exists.ts']));
+    expect(problems.get(1)).toBe('MODIFY targets a file that does not exist');
+    expect(problems.get(2)).toBe('CREATE targets an existing file');
+  });
+
+  it('flags membership in a dependency cycle', () => {
+    const assignments = [
+      base({ id: 1, dependsOn: [2] }),
+      base({ id: 2, path: 'src/b.ts', dependsOn: [1] }),
+    ];
+    const problems = validateAssignments(assignments, new Set(['src/a.ts', 'src/b.ts']));
+    expect(problems.get(1)).toBe('dependency cycle');
+    expect(problems.get(2)).toBe('dependency cycle');
+  });
+
+  it('does not flag DELETE of a missing path', () => {
+    const assignments = [base({ id: 1, operation: 'DELETE', path: 'src/absent.ts' })];
+    const problems = validateAssignments(assignments, new Set());
     expect(problems.size).toBe(0);
   });
+});
 
-  it('rejects edit of a missing file when first op is not NEW', () => {
-    const edits: FileEditInstruction[] = [
-      { id: 1, path: 'src/missing.ts', type: 'EDIT', instructions: 'tweak' },
-    ];
-    const problems = validateEditChains(edits, new Set());
-    expect(problems.get('src/missing.ts')).toBe('file does not exist and the first edit is not a create');
+describe('computeWaves', () => {
+  const base = (overrides: Partial<FileAssignment>): FileAssignment => ({
+    id: 1,
+    path: 'src/a.ts',
+    operation: 'MODIFY',
+    objective: 'obj',
+    instructions: [],
+    acceptanceCriteria: [],
+    dependsOn: [],
+    ...overrides,
   });
 
-  it('rejects create targeting an existing file', () => {
-    const edits: FileEditInstruction[] = [
-      { id: 1, path: 'src/exists.ts', type: 'NEW', instructions: 'initial' },
+  it('layers independent assignments into one wave', () => {
+    const assignments = [
+      base({ id: 1, path: 'src/a.ts' }),
+      base({ id: 2, path: 'src/b.ts' }),
     ];
-    const problems = validateEditChains(edits, new Set(['src/exists.ts']));
-    expect(problems.get('src/exists.ts')).toBe('create targets an existing file');
+    const waves = computeWaves(assignments);
+    expect(waves).toHaveLength(1);
+    expect(waves[0].map((a) => a.id).sort()).toEqual([1, 2]);
   });
 
-  it('rejects multiple creates for one file', () => {
-    const edits: FileEditInstruction[] = [
-      { id: 1, path: 'src/new.ts', type: 'NEW', instructions: 'first' },
-      { id: 2, path: 'src/new.ts', type: 'NEW', instructions: 'second' },
+  it('orders dependent assignments into sequential waves', () => {
+    const assignments = [
+      base({ id: 1, path: 'src/types.ts' }),
+      base({ id: 2, path: 'src/consumer.ts', dependsOn: [1] }),
+      base({ id: 3, path: 'src/test.ts', dependsOn: [2] }),
     ];
-    const problems = validateEditChains(edits, new Set());
-    expect(problems.get('src/new.ts')).toBe('multiple create edits for one file');
+    const waves = computeWaves(assignments);
+    expect(waves.map((w) => w.map((a) => a.id))).toEqual([[1], [2], [3]]);
   });
 
-  it('rejects create when not the first op in its chain', () => {
-    const edits: FileEditInstruction[] = [
-      { id: 1, path: 'src/file.ts', type: 'EDIT', instructions: 'edit first' },
-      { id: 2, path: 'src/file.ts', type: 'NEW', instructions: 'create later' },
-    ];
-    const problems = validateEditChains(edits, new Set(['src/file.ts']));
-    expect(problems.get('src/file.ts')).toBe('create targets an existing file');
-  });
-
-  it('allows delete as terminal operation', () => {
-    const edits: FileEditInstruction[] = [
-      { id: 1, path: 'src/old.ts', type: 'EDIT', instructions: 'final edit' },
-      { id: 2, path: 'src/old.ts', type: 'DELETE', instructions: DELETE_MARKER },
-    ];
-    const problems = validateEditChains(edits, new Set(['src/old.ts']));
-    expect(problems.size).toBe(0);
-  });
-
-  it('rejects edit following delete in the same chain', () => {
-    const edits: FileEditInstruction[] = [
-      { id: 1, path: 'src/file.ts', type: 'DELETE', instructions: DELETE_MARKER },
-      { id: 2, path: 'src/file.ts', type: 'EDIT', instructions: 'after delete' },
-    ];
-    const problems = validateEditChains(edits, new Set(['src/file.ts']));
-    expect(problems.get('src/file.ts')).toBe('edit follows a delete in the same chain');
-  });
-
-  it('keeps independent valid chains unaffected by a sibling invalid chain', () => {
-    const edits: FileEditInstruction[] = [
-      { id: 1, path: 'src/valid.ts', type: 'EDIT', instructions: 'valid edit' },
-      { id: 2, path: 'src/missing.ts', type: 'EDIT', instructions: 'invalid edit' },
-    ];
-    const problems = validateEditChains(edits, new Set(['src/valid.ts']));
-    expect(problems.has('src/valid.ts')).toBe(false);
-    expect(problems.has('src/missing.ts')).toBe(true);
+  it('treats dependencies on ids outside the input as satisfied', () => {
+    const assignments = [base({ id: 1, dependsOn: [99] })];
+    const waves = computeWaves(assignments);
+    expect(waves).toHaveLength(1);
+    expect(waves[0][0].id).toBe(1);
   });
 });
 
 describe('parseArbiterResponse', () => {
-  it('parses response with review summary, edits, and edits summary', () => {
+  it('parses review summary with assignments', () => {
     const text = [
       '=== REVIEW SUMMARY ===',
       'The changes look solid overall but need one fix.',
       '',
-      '=== EDIT SPECS ===',
+      '=== ASSIGNMENTS ===',
       '',
-      '== EDIT 1: edit: src/fix.ts ==',
+      '== ASSIGNMENT 1: MODIFY: src/fix.ts ==',
+      'DEPENDS ON: none',
+      'OBJECTIVE:',
       'Fix the return value.',
+      'INSTRUCTIONS:',
+      '- Return the mapped result',
+      'ACCEPTANCE CRITERIA:',
+      '- Returns mapped result',
       '',
-      '=== EDITS SUMMARY ===',
-      '- `src/fix.ts`: fixed return value',
+      '=== SUMMARY ===',
+      '- src/fix.ts: fixed return value',
     ].join('\n');
 
     const result = parseArbiterResponse(text);
     expect(result.reviewSummary).toBe('The changes look solid overall but need one fix.');
-    expect(result.edits).toHaveLength(1);
-    expect(result.edits[0].path).toBe('src/fix.ts');
-    expect(result.editsSummary).toBe('- `src/fix.ts`: fixed return value');
+    expect(result.assignments).toHaveLength(1);
+    expect(result.assignments[0].path).toBe('src/fix.ts');
+    expect(result.assignments[0].operation).toBe('MODIFY');
   });
 
-  it('parses clean arbiter response with NONE for edit specs', () => {
+  it('parses a clean review with no assignments section', () => {
     const text = [
       '=== REVIEW SUMMARY ===',
       'All requirements met and tests pass cleanly.',
-      '',
-      '=== EDIT SPECS ===',
-      'NONE',
-      '',
-      '=== EDITS SUMMARY ===',
-      'NONE',
     ].join('\n');
 
     const result = parseArbiterResponse(text);
     expect(result.reviewSummary).toBe('All requirements met and tests pass cleanly.');
-    expect(result.edits).toHaveLength(0);
-    expect(result.editsSummary).toBeNull();
+    expect(result.assignments).toHaveLength(0);
+  });
+
+  it('parses a clean review with an empty assignments section', () => {
+    const text = [
+      '=== REVIEW SUMMARY ===',
+      'All good.',
+      '',
+      '=== ASSIGNMENTS ===',
+      'NONE',
+    ].join('\n');
+
+    const result = parseArbiterResponse(text);
+    expect(result.assignments).toHaveLength(0);
   });
 
   it('throws when REVIEW SUMMARY marker is missing or empty', () => {
     const text = [
       '=== REVIEW SUMMARY ===',
       '',
-      '=== EDIT SPECS ===',
+      '=== ASSIGNMENTS ===',
       'NONE',
     ].join('\n');
     expect(() => parseArbiterResponse(text)).toThrow(ParseError);
   });
-
-  it('throws when edits are present but EDITS SUMMARY is NONE or missing', () => {
-    const text = [
-      '=== REVIEW SUMMARY ===',
-      'Needs edits',
-      '',
-      '=== EDIT SPECS ===',
-      '',
-      '== EDIT 1: edit: src/fix.ts ==',
-      'Fix return value.',
-      '',
-      '=== EDITS SUMMARY ===',
-      'NONE',
-    ].join('\n');
-    expect(() => parseArbiterResponse(text)).toThrow(/EDITS SUMMARY/);
-  });
 });
 
-describe('parseEditorResponse', () => {
-  it('parses DONE', () => {
-    expect(parseEditorResponse('DONE')).toEqual({ outcome: 'DONE' });
-    expect(parseEditorResponse('```\nDONE\n```')).toEqual({ outcome: 'DONE' });
+describe('parseEditorResult', () => {
+  it('parses DONE from the final line', () => {
+    expect(parseEditorResult('RESULT: DONE')).toEqual({ status: 'DONE' });
+    expect(parseEditorResult('Some notes.\n\nRESULT: DONE')).toEqual({ status: 'DONE' });
   });
 
-  it('parses FAILED with reason', () => {
-    expect(parseEditorResponse('FAILED: anchor not found')).toEqual({
-      outcome: 'FAILED',
-      detail: 'anchor not found',
+  it('parses BLOCKED with reason', () => {
+    expect(parseEditorResult('RESULT: BLOCKED: cannot satisfy objective in one file')).toEqual({
+      status: 'BLOCKED',
+      detail: 'cannot satisfy objective in one file',
     });
   });
 
-  it('parses unrecognized output as UNKNOWN with excerpt', () => {
-    const raw = 'Here is what I did: I modified the file and added some stuff.';
-    const result = parseEditorResponse(raw);
-    expect(result.outcome).toBe('UNKNOWN');
-    expect(result.detail).toBe(raw.slice(0, 200));
+  it('scans from the end and tolerates trailing prose', () => {
+    const raw = 'RESULT: DONE\n\n(notes after the result line)';
+    const result = parseEditorResult(raw);
+    expect(result.status).toBe('DONE');
+  });
+
+  it('returns UNKNOWN when no RESULT line is present', () => {
+    const result = parseEditorResult('Here is what I did: I modified the file.');
+    expect(result.status).toBe('UNKNOWN');
   });
 });

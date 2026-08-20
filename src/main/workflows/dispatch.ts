@@ -96,9 +96,16 @@ export function createWorkflowDispatcher(task: Task, config?: WorkflowConfig, lo
         }
       };
 
-      const primary = applyModelOverride(base, subagentId, config, 'primary');
+      const slot = options?.modelSlot ?? 'primary';
+      const primary = applyModelOverride(base, subagentId, config, slot);
+      let target = primary;
+      if (slot === 'fallback') {
+        // Direct fallback-slot dispatch escalates effort: triple the agent's iteration budget (0 = unlimited stays 0).
+        target = { ...primary, maxIterations: primary.maxIterations > 0 ? primary.maxIterations * 3 : 0 };
+      }
+
       try {
-        return await runOnce(primary);
+        return await runOnce(target);
       } catch (error) {
         if (error instanceof WorkflowCancelled) {
           throw error;
@@ -107,24 +114,30 @@ export function createWorkflowDispatcher(task: Task, config?: WorkflowConfig, lo
           throw error;
         }
 
-        // With an unset fallback slot, the fallback resolves to the agent profile's own model —
-        // a real fallback whenever a primary override is set, and a no-op (no extra attempt) when neither slot is set.
-        const fallbackBase = applyModelOverride(base, subagentId, config, 'fallback');
-        if (fallbackBase.provider === primary.provider && fallbackBase.model === primary.model) {
-          throw error;
+        // The built-in automatic fallback retry only applies to primary-slot dispatches
+        // that have not opted out. Fallback-slot dispatches propagate errors immediately.
+        if (slot === 'primary' && !options?.disableFallback) {
+          // With an unset fallback slot, the fallback resolves to the agent profile's own model —
+          // a real fallback whenever a primary override is set, and a no-op (no extra attempt) when neither slot is set.
+          const fallbackBase = applyModelOverride(base, subagentId, config, 'fallback');
+          if (fallbackBase.provider === primary.provider && fallbackBase.model === primary.model) {
+            throw error;
+          }
+
+          // Fallback mode escalates effort: triple the agent's iteration budget (0 = unlimited stays 0).
+          const fallback: AgentProfile = {
+            ...fallbackBase,
+            maxIterations: fallbackBase.maxIterations > 0 ? fallbackBase.maxIterations * 3 : 0,
+          };
+
+          const message = error.message;
+          await log?.warning(
+            `Workflow agent '${subagentId}' failed with ${primary.provider}/${primary.model} (${message}); retrying with fallback ${fallback.provider}/${fallback.model} (max iterations ×3).`,
+          );
+          return await runOnce(fallback);
         }
 
-        // Fallback mode escalates effort: triple the agent's iteration budget (0 = unlimited stays 0).
-        const fallback: AgentProfile = {
-          ...fallbackBase,
-          maxIterations: fallbackBase.maxIterations > 0 ? fallbackBase.maxIterations * 3 : 0,
-        };
-
-        const message = error.message;
-        await log?.warning(
-          `Workflow agent '${subagentId}' failed with ${primary.provider}/${primary.model} (${message}); retrying with fallback ${fallback.provider}/${fallback.model} (max iterations ×3).`,
-        );
-        return await runOnce(fallback);
+        throw error;
       }
     },
 

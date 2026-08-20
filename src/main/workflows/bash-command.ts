@@ -76,3 +76,61 @@ export async function runWorkflowBashCommand(
     await log.warning(`Failed to commit post-command changes: ${gitMessage}`);
   }
 }
+
+/**
+ * Runs the configured optional pre-review validation command in the task
+ * directory and returns its full output for the reviewer. A failing command
+ * is valuable arbiter evidence, not a workflow error, so this never throws.
+ *
+ * @param task The task running the workflow
+ * @param workflowId The workflow id whose config supplies the command
+ * @param log The workflow logger
+ * @returns The formatted command output, or null when no command is configured
+ */
+export async function runPreArbiterCommand(task: Task, workflowId: string, log: WorkflowLogger): Promise<string | null> {
+  const command = task.getSettings().workflowConfigs?.[workflowId]?.preArbiterCommand?.trim();
+  if (!command) {
+    return null;
+  }
+
+  await log.info(`### 🧪 Pre-review validation command\n\`\`\`bash\n${command}\n\`\`\``);
+
+  let exitLine = 'Exit: success';
+  let stdout = '';
+  let stderr = '';
+
+  try {
+    const result = await execWithShellPath(command, {
+      cwd: task.getTaskDir(),
+      signal: AbortSignal.timeout(10 * 60_000),
+    });
+    stdout = result.stdout.trim();
+    stderr = result.stderr.trim();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    exitLine = `Exit: FAILED — ${message}`;
+    if (error && typeof error === 'object' && 'stdout' in error) {
+      stdout = String((error as { stdout?: unknown }).stdout ?? '').trim();
+    }
+    if (error && typeof error === 'object' && 'stderr' in error) {
+      stderr = String((error as { stderr?: unknown }).stderr ?? '').trim();
+    }
+  }
+
+  const blocks: string[] = [`Command: ${command}`, exitLine];
+  if (stdout.length > 0) {
+    blocks.push('--- stdout ---', truncateOutput(stdout, MAX_OUTPUT_CHARS));
+  }
+  if (stderr.length > 0) {
+    blocks.push('--- stderr ---', truncateOutput(stderr, MAX_OUTPUT_CHARS));
+  }
+  const resultText = blocks.join('\n');
+
+  if (exitLine === 'Exit: success') {
+    await log.info(resultText);
+  } else {
+    await log.warning(resultText);
+  }
+
+  return resultText;
+}

@@ -201,4 +201,54 @@ describe('createWorkflowDispatcher fallback logic', () => {
     expect(profile.provider).toBe('openrouter');
     expect(profile.model).toBe('primary-model');
   });
+
+  it('case 7: disableFallback suppresses the automatic retry', async () => {
+    const profile: AgentProfile = {
+      id: 'digester-id',
+      name: 'DIGESTER',
+      provider: 'openrouter',
+      model: 'primary-model',
+      subagent: { enabled: true },
+    } as AgentProfile;
+
+    const { task, dispatchSubagent } = createStubTask(profile);
+    dispatchSubagent.mockResolvedValueOnce({
+      status: 'error',
+      outputText: '',
+    });
+
+    const dispatcher = createWorkflowDispatcher(task, fallbackConfig);
+    await expect(
+      dispatcher.agent('DIGESTER', 'test prompt', 'test description', { disableFallback: true }),
+    ).rejects.toThrow(/failed to complete its run/);
+    expect(dispatchSubagent).toHaveBeenCalledTimes(1);
+  });
+
+  it('case 8: modelSlot fallback dispatches the fallback model directly with tripled iterations', async () => {
+    const profile: AgentProfile = {
+      id: 'digester-id',
+      name: 'DIGESTER',
+      provider: 'openrouter',
+      model: 'primary-model',
+      maxIterations: 8,
+      subagent: { enabled: true },
+    } as AgentProfile;
+
+    const { task, dispatchSubagent } = createStubTask(profile);
+    dispatchSubagent.mockResolvedValueOnce({
+      status: 'success',
+      outputText: 'output from fallback slot',
+    });
+
+    const dispatcher = createWorkflowDispatcher(task, fallbackConfig);
+    const result = await dispatcher.agent('DIGESTER', 'test prompt', 'test description', { modelSlot: 'fallback' });
+
+    expect(result).toBe('output from fallback slot');
+    expect(dispatchSubagent).toHaveBeenCalledTimes(1);
+
+    const fallbackProfile = dispatchSubagent.mock.calls[0][0] as AgentProfile;
+    expect(fallbackProfile.provider).toBe('9router');
+    expect(fallbackProfile.model).toBe('openai-compatible-opencode-go/deepseek-v4-flash');
+    expect(fallbackProfile.maxIterations).toBe(profile.maxIterations * 3);
+  });
 });

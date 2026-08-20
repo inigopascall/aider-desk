@@ -19,32 +19,6 @@ export class ParseError extends Error {
   }
 }
 
-export const DELETE_MARKER = '[DEPRECATED: PLEASE DELETE]';
-
-/**
- * A single per-file edit instruction produced by the DECOMPOSITOR or ARBITER.
- */
-export interface FileEditInstruction {
-  /** Unique positive integer in execution order. */
-  id: number;
-  /** Project-relative normalized path. */
-  path: string;
-  /** create → NEW, edit → EDIT, delete → DELETE. */
-  type: 'NEW' | 'EDIT' | 'DELETE';
-  /** Exact instructions with code snippet and anchor. */
-  instructions: string;
-}
-
-/**
- * Report produced by the ARBITER subagent after code review.
- */
-export interface ArbiterReport {
-  reviewSummary: string;
-  edits: FileEditInstruction[];
-  editsSummary: string | null;
-  raw: string;
-}
-
 /**
  * Result of the DIGESTER subagent's evidence sufficiency check.
  */
@@ -264,12 +238,52 @@ export function parsePlanUnknowns(planText: string): {
 }
 
 /**
- * Parses a series of `== EDIT <id>: <create|edit|delete>: <path> ==` blocks
- * from a text section. Shared by DECOMPOSITOR and ARBITER parsers.
+ * The operation a single file assignment performs. DELETE assignments are
+ * executed by the host (real fs.rm) and never reach an editor agent.
  */
-export function parseEditSpecBlocks(sectionText: string): FileEditInstruction[] {
-  const lines = sectionText.split(/\r?\n/);
-  const headerRegex = /^==\s*EDIT\s+(\d+)\s*:\s*(.+?)\s*:\s*(.+?)\s*==\s*$/i;
+export type AssignmentOperation = 'CREATE' | 'MODIFY' | 'DELETE';
+
+/**
+ * A single self-contained per-file assignment produced by the DECOMPOSITOR
+ * or ARBITER. Each assignment is executed by an independent editor agent
+ * that sees only this block plus the file's live on-disk content.
+ */
+export interface FileAssignment {
+  /** Unique positive integer in execution order. */
+  id: number;
+  /** Project-relative normalized path. */
+  path: string;
+  operation: AssignmentOperation;
+  /** One short paragraph describing the required end state of the file. */
+  objective: string;
+  /** Semantic change instructions (no exact anchors or search/replace blocks). */
+  instructions: string[];
+  /** Concrete, checkable criteria against the final file. */
+  acceptanceCriteria: string[];
+  /** Ids of assignments that must complete first; empty when independent. */
+  dependsOn: number[];
+}
+
+/**
+ * Parses the DECOMPOSITOR's per-file assignment response.
+ *
+ * Assignment headers match `== ASSIGNMENT <n>: <CREATE|MODIFY|DELETE>: <path> ==`
+ * (operation case-insensitive). Everything between headers belongs to that
+ * assignment. Within a block, `DEPENDS ON:` (single line), `OBJECTIVE:`,
+ * `INSTRUCTIONS:` and `ACCEPTANCE CRITERIA:` start sections; `- ` lines under
+ * the latter two become array items and the objective is joined free text.
+ * Missing INSTRUCTIONS/ACCEPTANCE CRITERIA default to `[]`; a missing
+ * OBJECTIVE for CREATE/MODIFY is a ParseError; DELETE assignments need only
+ * their header. An optional `=== SUMMARY ===` section becomes the summary.
+ *
+ * Duplicate ids and unknown dependency ids are NOT parse errors — they are
+ * validation problems handled by `validateAssignments`, so one bad assignment
+ * cannot kill the whole batch.
+ */
+export function parseAssignmentsResponse(raw: string): { assignments: FileAssignment[]; summary: string } {
+  const t = stripCodeFences(raw);
+  const lines = t.split(/\r?\n/);
+  const headerRegex = /^==\s*ASSIGNMENT\s+(\d+):\s*(CREATE|MODIFY|DELETE):\s*(.+?)\s*==\s*$/i;
 
   interface HeaderMatch {
     lineIndex: number;
@@ -280,8 +294,12 @@ export function parseEditSpecBlocks(sectionText: string): FileEditInstruction[] 
 
   const headers: HeaderMatch[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const match = lines[i].match(headerRegex);
-    if (match) {
+    const line = lines[i];
+    if (/^==\s*ASSIGNMENT/i.test(line)) {
+      const match = line.match(headerRegex);
+      if (!match) {
+        throw new ParseError(`malformed assignment header: ${line.trim()}`);
+      }
       headers.push({
         lineIndex: i,
         idStr: match[1],
@@ -292,37 +310,40 @@ export function parseEditSpecBlocks(sectionText: string): FileEditInstruction[] 
   }
 
   if (headers.length === 0) {
-    return [];
+    throw new ParseError('no assignments found');
   }
 
-  const seenIds = new Set<number>();
-  const edits: FileEditInstruction[] = [];
+  // Locate the optional === SUMMARY === section so it never leaks into the
+  // last assignment's body.
+  let summaryLineIndex = lines.length;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^===\s*SUMMARY\s*===\s*$/i.test(lines[i].trim())) {
+      summaryLineIndex = i;
+      break;
+    }
+  }
+  const summary = summaryLineIndex < lines.length ? lines.slice(summaryLineIndex + 1).join('\n').trim() : '';
+
+  const assignments: FileAssignment[] = [];
 
   for (let h = 0; h < headers.length; h++) {
     const current = headers[h];
     const nextLineIndex = h + 1 < headers.length ? headers[h + 1].lineIndex : lines.length;
-    const bodyLines = lines.slice(current.lineIndex + 1, nextLineIndex);
-    const instructions = bodyLines.join('\n').trim();
+    const bodyLines = lines.slice(current.lineIndex + 1, Math.min(nextLineIndex, summaryLineIndex));
 
     const id = parseInt(current.idStr, 10);
     if (isNaN(id) || id <= 0) {
-      throw new ParseError(`EDIT ${current.idStr}: id must be a positive integer`);
+      throw new ParseError(`ASSIGNMENT ${current.idStr}: id must be a positive integer`);
     }
-    if (seenIds.has(id)) {
-      throw new ParseError(`EDIT ${id}: duplicate edit id`);
-    }
-    seenIds.add(id);
 
     const opLower = current.opStr.toLowerCase();
-    let type: 'NEW' | 'EDIT' | 'DELETE';
+    let operation: AssignmentOperation;
     if (opLower === 'create') {
-      type = 'NEW';
-    } else if (opLower === 'edit') {
-      type = 'EDIT';
-    } else if (opLower === 'delete') {
-      type = 'DELETE';
+      operation = 'CREATE';
+    } else if (opLower === 'modify') {
+      operation = 'MODIFY';
     } else {
-      throw new ParseError(`EDIT ${id}: unknown operation '${current.opStr}'`);
+      operation = 'DELETE';
     }
 
     let normalizedPath = current.pathStr.trim().replace(/\\/g, '/');
@@ -335,65 +356,85 @@ export function parseEditSpecBlocks(sectionText: string): FileEditInstruction[] 
       /^[A-Za-z]:/.test(normalizedPath) ||
       normalizedPath.split('/').includes('..')
     ) {
-      throw new ParseError(`EDIT ${id}: invalid file path '${current.pathStr.trim()}'`);
+      throw new ParseError(`ASSIGNMENT ${id}: invalid file path '${current.pathStr.trim()}'`);
     }
 
-    if (instructions.length === 0) {
-      throw new ParseError(`EDIT ${id}: instructions must not be empty`);
+    let dependsOn: number[] = [];
+    let objective = '';
+    const instructions: string[] = [];
+    const acceptanceCriteria: string[] = [];
+    let currentSection: 'objective' | 'instructions' | 'acceptance' | null = null;
+
+    for (const rawLine of bodyLines) {
+      const line = rawLine.trim();
+      if (line.length === 0) {
+        continue;
+      }
+
+      const dependsMatch = line.match(/^DEPENDS\s+ON\s*:\s*(.*)$/i);
+      if (dependsMatch) {
+        const value = dependsMatch[1].trim();
+        if (value.length > 0 && value.toUpperCase() !== 'NONE') {
+          dependsOn = value
+            .split(',')
+            .map((s) => parseInt(s.trim(), 10))
+            .filter((n) => !isNaN(n));
+        }
+        continue;
+      }
+
+      if (/^OBJECTIVE\s*:\s*$/i.test(line)) {
+        currentSection = 'objective';
+        continue;
+      }
+      if (/^INSTRUCTIONS\s*:\s*$/i.test(line)) {
+        currentSection = 'instructions';
+        continue;
+      }
+      if (/^ACCEPTANCE\s+CRITERIA\s*:\s*$/i.test(line)) {
+        currentSection = 'acceptance';
+        continue;
+      }
+
+      if (currentSection === 'objective') {
+        objective = objective.length === 0 ? line : `${objective} ${line}`;
+      } else if (currentSection === 'instructions') {
+        if (line.startsWith('- ')) {
+          instructions.push(line.slice(2).trim());
+        }
+      } else if (currentSection === 'acceptance') {
+        if (line.startsWith('- ')) {
+          acceptanceCriteria.push(line.slice(2).trim());
+        }
+      }
     }
 
-    edits.push({
+    if (operation !== 'DELETE' && objective.trim().length === 0) {
+      throw new ParseError(`ASSIGNMENT ${id}: OBJECTIVE is required for ${operation}`);
+    }
+
+    assignments.push({
       id,
       path: normalizedPath,
-      type,
+      operation,
+      objective: objective.trim(),
       instructions,
+      acceptanceCriteria,
+      dependsOn,
     });
   }
 
-  return edits;
-}
-
-/**
- * Parses the DECOMPOSITOR's response.
- *
- * Requires `=== EDIT SPECS ===` and `=== EDITS SUMMARY ===` markers.
- * At least one edit spec is required, and the summary section must not be empty or NONE.
- */
-export function parseDecompositorResponse(text: string): { edits: FileEditInstruction[]; summary: string } {
-  const t = stripCodeFences(text);
-  const specsMarker = findMarker(t, '=== EDIT SPECS ===');
-  const summaryMarker = findMarker(t, '=== EDITS SUMMARY ===');
-
-  if (!specsMarker || !summaryMarker) {
-    throw new ParseError('response must contain === EDIT SPECS === and === EDITS SUMMARY === markers');
-  }
-  if (summaryMarker.start < specsMarker.end) {
-    throw new ParseError('=== EDITS SUMMARY === must appear after === EDIT SPECS ===');
-  }
-
-  const specsText = t.slice(specsMarker.end, summaryMarker.start);
-  const edits = parseEditSpecBlocks(specsText);
-  if (edits.length === 0) {
-    throw new ParseError('at least one edit specification is required');
-  }
-
-  const summaryText = t.slice(summaryMarker.end).trim();
-  if (summaryText.length === 0 || summaryText.toUpperCase() === 'NONE') {
-    throw new ParseError('=== EDITS SUMMARY === must not be empty or NONE');
-  }
-
-  return { edits, summary: summaryText };
+  return { assignments, summary };
 }
 
 /**
  * Parses the ARBITER's review report.
  *
- * Requires `=== REVIEW SUMMARY ===` with non-empty content.
- * An `=== EDIT SPECS ===` section containing NONE or empty yields zero edits.
- * When edits exist, `=== EDITS SUMMARY ===` is required and must not be empty/NONE.
+ * Requires `=== REVIEW SUMMARY ===` with non-empty content. An optional
+ * `=== ASSIGNMENTS ===` section is parsed with the same block parser as the
+ * decompositor; absent or empty it yields zero assignments (a clean review).
  */
-export function parseArbiterResponse(text: string): ArbiterReport {
-  const raw = text;
+export function parseArbiterResponse(text: string): { reviewSummary: string; assignments: FileAssignment[] } {
   const t = stripCodeFences(text);
 
   const reviewMarker = findMarker(t, '=== REVIEW SUMMARY ===');
@@ -401,119 +442,125 @@ export function parseArbiterResponse(text: string): ArbiterReport {
     throw new ParseError('response must contain === REVIEW SUMMARY === marker');
   }
 
-  const specsMarker = findMarker(t, '=== EDIT SPECS ===');
-  const summaryMarker = findMarker(t, '=== EDITS SUMMARY ===');
-
-  const reviewEnd = specsMarker && specsMarker.start >= reviewMarker.end ? specsMarker.start : t.length;
+  const assignmentsMarker = findMarker(t, '=== ASSIGNMENTS ===');
+  const reviewEnd = assignmentsMarker && assignmentsMarker.start >= reviewMarker.end ? assignmentsMarker.start : t.length;
   const reviewSummary = t.slice(reviewMarker.end, reviewEnd).trim();
   if (reviewSummary.length === 0) {
     throw new ParseError('=== REVIEW SUMMARY === must not be empty');
   }
 
-  let edits: FileEditInstruction[] = [];
-  if (specsMarker) {
-    const specsEnd = summaryMarker && summaryMarker.start >= specsMarker.end ? summaryMarker.start : t.length;
-    const specsContent = t.slice(specsMarker.end, specsEnd).trim();
-    if (specsContent.length > 0 && specsContent.toUpperCase() !== 'NONE') {
-      edits = parseEditSpecBlocks(specsContent);
+  let assignments: FileAssignment[] = [];
+  if (assignmentsMarker) {
+    const body = t.slice(assignmentsMarker.end).trim();
+    if (body.length > 0 && body.toUpperCase() !== 'NONE') {
+      assignments = parseAssignmentsResponse(body).assignments;
     }
   }
 
-  let editsSummary: string | null = null;
-  if (edits.length > 0) {
-    if (!summaryMarker) {
-      throw new ParseError('=== EDITS SUMMARY === is required when edits are present');
-    }
-    const sumContent = t.slice(summaryMarker.end).trim();
-    if (sumContent.length === 0 || sumContent.toUpperCase() === 'NONE') {
-      throw new ParseError('=== EDITS SUMMARY === must not be empty or NONE when edits are present');
-    }
-    editsSummary = sumContent;
-  } else {
-    if (summaryMarker) {
-      const sumContent = t.slice(summaryMarker.end).trim();
-      if (sumContent.length > 0 && sumContent.toUpperCase() !== 'NONE') {
-        editsSummary = sumContent;
-      }
-    }
-  }
-
-  return {
-    reviewSummary,
-    edits,
-    editsSummary,
-    raw,
-  };
+  return { reviewSummary, assignments };
 }
 
 /**
- * Serializes a list of FileEditInstruction items into standard spec format.
+ * Renders one assignment block in exactly the input format (header, DEPENDS
+ * ON, OBJECTIVE, bulleted INSTRUCTIONS, bulleted ACCEPTANCE CRITERIA) for
+ * embedding into editor prompts and target tables.
  */
-export function serializeFileEdits(edits: FileEditInstruction[]): string {
-  return edits
-    .map((edit) => {
-      const op = edit.type === 'NEW' ? 'create' : edit.type === 'EDIT' ? 'edit' : 'delete';
-      return `== EDIT ${edit.id}: ${op}: ${edit.path} ==\n${edit.instructions}`;
-    })
-    .join('\n\n');
+export function serializeAssignment(a: FileAssignment): string {
+  return [
+    `== ASSIGNMENT ${a.id}: ${a.operation}: ${a.path} ==`,
+    `DEPENDS ON: ${a.dependsOn.length > 0 ? a.dependsOn.join(', ') : 'none'}`,
+    'OBJECTIVE:',
+    a.objective,
+    'INSTRUCTIONS:',
+    ...a.instructions.map((i) => `- ${i}`),
+    'ACCEPTANCE CRITERIA:',
+    ...a.acceptanceCriteria.map((c) => `- ${c}`),
+  ].join('\n');
 }
 
 /**
- * Validates logical chains of edits per file path against existing disk state.
- * Returns a map of path -> problem description.
+ * Validates a batch of assignments against each other and against the current
+ * disk state. Returns a map of assignment id -> problem description.
+ *
+ * Problems: duplicate id, duplicate path (second and later occurrences),
+ * dependsOn referencing a nonexistent id or itself, membership in a
+ * dependency cycle, MODIFY of a missing file, and CREATE of an existing file.
+ * DELETE of a missing path is NOT a problem — it is handled idempotently at
+ * runtime.
  */
-export function validateEditChains(edits: FileEditInstruction[], existingPaths: Set<string>): Map<string, string> {
-  const chains = new Map<string, FileEditInstruction[]>();
-  for (const edit of edits) {
-    const list = chains.get(edit.path);
-    if (list) {
-      list.push(edit);
-    } else {
-      chains.set(edit.path, [edit]);
+export function validateAssignments(assignments: FileAssignment[], existingPaths: Set<string>): Map<number, string> {
+  const problems = new Map<number, string>();
+  const seenIds = new Set<number>();
+  const seenPaths = new Set<string>();
+  const ids = new Set(assignments.map((a) => a.id));
+
+  for (const a of assignments) {
+    if (seenIds.has(a.id)) {
+      problems.set(a.id, 'duplicate assignment id');
+    }
+    seenIds.add(a.id);
+
+    if (seenPaths.has(a.path)) {
+      problems.set(a.id, 'duplicate path');
+    }
+    seenPaths.add(a.path);
+
+    for (const dep of a.dependsOn) {
+      if (dep === a.id) {
+        problems.set(a.id, 'assignment depends on itself');
+      } else if (!ids.has(dep)) {
+        problems.set(a.id, `depends on nonexistent assignment ${dep}`);
+      }
+    }
+
+    if (a.operation === 'MODIFY' && !existingPaths.has(a.path)) {
+      problems.set(a.id, 'MODIFY targets a file that does not exist');
+    }
+    if (a.operation === 'CREATE' && existingPaths.has(a.path)) {
+      problems.set(a.id, 'CREATE targets an existing file');
     }
   }
 
-  const problems = new Map<string, string>();
-
-  for (const [path, chain] of chains.entries()) {
-    const fileExists = existingPaths.has(path);
-    const firstOp = chain[0].type;
-
-    if (!fileExists && firstOp !== 'NEW') {
-      problems.set(path, 'file does not exist and the first edit is not a create');
-      continue;
-    }
-
-    if (fileExists && chain.some((e) => e.type === 'NEW')) {
-      problems.set(path, 'create targets an existing file');
-      continue;
-    }
-
-    const createCount = chain.filter((e) => e.type === 'NEW').length;
-    if (createCount > 1) {
-      problems.set(path, 'multiple create edits for one file');
-      continue;
-    }
-
-    if (createCount === 1 && chain[0].type !== 'NEW') {
-      problems.set(path, 'create must be the first edit for the file');
-      continue;
-    }
-
-    let seenDelete = false;
-    let editAfterDelete = false;
-    for (const edit of chain) {
-      if (seenDelete) {
-        editAfterDelete = true;
-        break;
+  // Dependency cycle detection via Kahn's algorithm residue: every node that
+  // cannot be resolved is part of a cycle.
+  const indegree = new Map<number, number>();
+  const dependents = new Map<number, number[]>();
+  for (const a of assignments) {
+    indegree.set(a.id, 0);
+    dependents.set(a.id, []);
+  }
+  for (const a of assignments) {
+    for (const dep of a.dependsOn) {
+      if (dep === a.id || !ids.has(dep)) {
+        continue;
       }
-      if (edit.type === 'DELETE') {
-        seenDelete = true;
+      indegree.set(a.id, (indegree.get(a.id) ?? 0) + 1);
+      dependents.get(dep)?.push(a.id);
+    }
+  }
+
+  const queue: number[] = [];
+  for (const [id, deg] of indegree.entries()) {
+    if (deg === 0) {
+      queue.push(id);
+    }
+  }
+  const resolved = new Set<number>();
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    resolved.add(id);
+    for (const dependent of dependents.get(id) ?? []) {
+      const next = (indegree.get(dependent) ?? 0) - 1;
+      indegree.set(dependent, next);
+      if (next === 0) {
+        queue.push(dependent);
       }
     }
-    if (editAfterDelete) {
-      problems.set(path, 'edit follows a delete in the same chain');
-      continue;
+  }
+
+  for (const a of assignments) {
+    if (!resolved.has(a.id)) {
+      problems.set(a.id, 'dependency cycle');
     }
   }
 
@@ -521,26 +568,67 @@ export function validateEditChains(edits: FileEditInstruction[], existingPaths: 
 }
 
 /**
- * Parses the EDITOR's one-line outcome response. Lenient and never throws:
- * a response starting with `DONE` maps to DONE, one starting with `FAILED`
- * maps to FAILED (with the remainder as detail), and anything else maps to
- * UNKNOWN with the first 200 characters as detail.
+ * Kahn topological layering over the supplied (already-validated) assignments.
+ * Dependencies on ids not present in the input are treated as satisfied.
+ * Assumes cycle-free input (guaranteed by `validateAssignments` filtering).
  */
-export function parseEditorResponse(text: string): { outcome: 'DONE' | 'FAILED' | 'UNKNOWN'; detail?: string } {
-  const t = stripCodeFences(text).trim();
-  const lines = t.split('\n');
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.toUpperCase() === 'DONE') {
-      return { outcome: 'DONE' };
-    }
-    const failedMatch = trimmed.match(/^FAILED\s*[:\s]\s*(.*)$/i);
-    if (failedMatch) {
-      const detail = failedMatch[1].trim();
-      return { outcome: 'FAILED', detail: detail || undefined };
+export function computeWaves(assignments: FileAssignment[]): FileAssignment[][] {
+  const byId = new Map(assignments.map((a) => [a.id, a]));
+  const indegree = new Map<number, number>();
+  const dependents = new Map<number, number[]>();
+  for (const a of assignments) {
+    indegree.set(a.id, 0);
+    dependents.set(a.id, []);
+  }
+  for (const a of assignments) {
+    for (const dep of a.dependsOn) {
+      if (!byId.has(dep)) {
+        continue; // dependency outside the input is already satisfied
+      }
+      indegree.set(a.id, (indegree.get(a.id) ?? 0) + 1);
+      dependents.get(dep)?.push(a.id);
     }
   }
 
-  return { outcome: 'UNKNOWN', detail: t.slice(0, 200) };
+  const waves: FileAssignment[][] = [];
+  const remaining = new Set(assignments.map((a) => a.id));
+
+  while (remaining.size > 0) {
+    const wave: FileAssignment[] = [];
+    for (const id of remaining) {
+      if ((indegree.get(id) ?? 0) === 0) {
+        wave.push(byId.get(id)!);
+      }
+    }
+    if (wave.length === 0) {
+      break; // cycle — should not happen with validated input
+    }
+    waves.push(wave);
+    for (const a of wave) {
+      remaining.delete(a.id);
+      for (const dependent of dependents.get(a.id) ?? []) {
+        indegree.set(dependent, (indegree.get(dependent) ?? 0) - 1);
+      }
+    }
+  }
+
+  return waves;
+}
+
+/**
+ * Scans an editor response from the end for the first `RESULT: DONE` or
+ * `RESULT: BLOCKED: <reason>` line. No match yields `UNKNOWN`. Never throws —
+ * structural validation of the actual file state is the real gate.
+ */
+export function parseEditorResult(raw: string): { status: 'DONE' | 'BLOCKED' | 'UNKNOWN'; detail?: string } {
+  const lines = raw.split(/\r?\n/);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const match = lines[i].trim().match(/^RESULT:\s*(DONE|BLOCKED)(?::\s*(.*))?$/i);
+    if (match) {
+      const status = match[1].toUpperCase() as 'DONE' | 'BLOCKED';
+      const detail = match[2]?.trim();
+      return { status, detail: detail || undefined };
+    }
+  }
+  return { status: 'UNKNOWN' };
 }

@@ -455,8 +455,11 @@
     "agentModelsTitle": "Agent models",
     "primaryModel": "Primary model",
     "fallbackModel": "Fallback model",
-    "bashCommandTitle": "Bash command",
-    "bashCommandInfo": "Runs in the task directory after the workflow's edits complete, before the final git commit.",
+    "preArbiterCommandTitle": "Validation command (pre-review)",
+    "preArbiterCommandInfo": "Runs in the task directory before the review stage. Its full output is passed to the reviewer as evidence.",
+    "preArbiterCommandPlaceholder": "e.g. npm run typecheck",
+    "bashCommandTitle": "Post-workflow command",
+    "bashCommandInfo": "Runs in the task directory after all edits and review complete, before the final git commit.",
     "bashCommandPlaceholder": "e.g. npm run lint && npm test",
     "saveAndClose": "Save & Close",
     "saveAndGo": "Save & Go"

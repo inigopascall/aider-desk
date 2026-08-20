@@ -1,3 +1,4 @@
+import type { AssignmentOperation, FileAssignment } from './parsers';
 import type {
   ContextChangeRecord,
   EvidenceRow,
@@ -15,7 +16,6 @@ const ALIGNMENT_GLYPH: Record<FileChangeRow['alignment'], string> = {
 const OUTCOME_GLYPH: Record<string, string> = {
   DONE: '✅',
   FAILED: '❌',
-  UNKNOWN: '❔',
   BLOCKED: '⛔',
   'NOT INSTRUCTED': '➕',
 };
@@ -145,7 +145,7 @@ export function formatCheckpointReport(journey: Journey, workflowName: string, l
       ? section('### 🧾 Evidence', markdownTable(['Round', 'Verdict', 'Added', 'Removed', 'Research'], ['right', 'left', 'left', 'left', 'center'], evidenceRows(journey.evidenceRows)))
       : null,
     journey.batches.length
-      ? section('### ✍️ Edit batches', markdownTable(['Batch', 'Stage', 'Edits', 'Verdict'], ['right', 'left', 'right', 'left'], journey.batches.map((b) => [String(b.batch), b.stage, String(b.editCount), b.verdict])))
+      ? section('### ✍️ Assignment batches', markdownTable(['Batch', 'Stage', 'Assignments', 'Waves', 'Verdict'], ['right', 'left', 'right', 'right', 'left'], journey.batches.map((b) => [String(b.batch), b.stage, String(b.assignmentCount), String(b.waves), b.verdict])))
       : null,
   ]
     .filter((block): block is string => !!block && block.trim().length > 0)
@@ -176,25 +176,25 @@ export function formatPlanUnknowns(
   );
 }
 
-export function formatEditTargets(
+export function formatAssignmentTargets(
   label: string,
-  edits: Array<{ id: number; path: string; type: 'NEW' | 'EDIT' | 'DELETE' }>,
+  assignments: FileAssignment[],
 ): string {
-  const plural = edits.length === 1 ? '' : 's';
-  const opLabel = (type: 'NEW' | 'EDIT' | 'DELETE') =>
-    type === 'NEW' ? '🆕 CREATE' : type === 'DELETE' ? '🗑️ DELETE' : '✏️ EDIT';
+  const plural = assignments.length === 1 ? '' : 's';
+  const opLabel = (op: AssignmentOperation) =>
+    op === 'CREATE' ? '🆕 CREATE' : op === 'DELETE' ? '🗑️ DELETE' : '✏️ MODIFY';
   return section(
     `### 🧩 ${label}`,
-    `Decomposed into **${edits.length}** file edit${plural}.`,
+    `Decomposed into **${assignments.length}** file assignment${plural}.`,
     markdownTable(
-      ['#', 'File', 'Op'],
-      ['right', 'left', 'left'],
-      edits.map((edit) => [String(edit.id), edit.path, opLabel(edit.type)]),
+      ['#', 'File', 'Op', 'Depends on'],
+      ['right', 'left', 'left', 'left'],
+      assignments.map((a) => [String(a.id), a.path, opLabel(a.operation), a.dependsOn.length > 0 ? a.dependsOn.join(', ') : '—']),
     ),
   );
 }
 
-export function formatEditBatchSummary(
+export function formatAssignmentBatchSummary(
   stage: string,
   batch: number,
   rows: FileChangeRow[],
@@ -202,21 +202,21 @@ export function formatEditBatchSummary(
   reason: string,
 ): string {
   return section(
-    '### ✍️ Edits applied',
+    '### ✍️ Assignments applied',
     `_${stage} — batch ${batch}_`,
     markdownTable(
-      ['File', '+', '−', 'Editor', 'Aligned'],
+      ['File', '+', '−', 'Outcome', 'Aligned'],
       ['left', 'right', 'right', 'left', 'center'],
       rows.map((row) => [
         row.path,
         String(row.insertions),
         String(row.deletions),
-        `${OUTCOME_GLYPH[row.editorOutcome]} ${row.editorOutcome}`,
+        `${OUTCOME_GLYPH[row.outcome]} ${row.outcome}`,
         ALIGNMENT_GLYPH[row.alignment],
       ]),
     ),
     passed
-      ? '_All edits applied and structurally validated._'
+      ? '_All assignments applied and structurally validated._'
       : `_Structural validation failed: ${reason}_`,
   );
 }
@@ -281,6 +281,10 @@ export function formatJourneyReport(journey: Journey, report: ReportState, workf
     summaryRows.push(['Editor timeouts', String(journey.editorTimeouts)]);
   }
 
+  if (journey.fallbackRetries > 0) {
+    summaryRows.push(['Fallback retries', String(journey.fallbackRetries)]);
+  }
+
   if (journey.reviewRounds > 0) {
     summaryRows.push(['Review rounds', String(journey.reviewRounds)]);
   }
@@ -302,18 +306,18 @@ export function formatJourneyReport(journey: Journey, report: ReportState, workf
       : null,
     journey.batches.length > 0
       ? section(
-          '### ✍️ Edit batches',
+          '### ✍️ Assignment batches',
           markdownTable(
-            ['Batch', 'Stage', 'Edits', 'DONE', 'FAILED', 'BLOCKED', 'UNKNOWN', 'Verdict', 'Commit'],
+            ['Batch', 'Stage', 'Assignments', 'Waves', 'DONE', 'FAILED', 'BLOCKED', 'Verdict', 'Commit'],
             ['right', 'left', 'right', 'right', 'right', 'right', 'right', 'left', 'left'],
             journey.batches.map((batch) => [
               String(batch.batch),
               batch.stage,
-              String(batch.editCount),
+              String(batch.assignmentCount),
+              String(batch.waves),
               String(batch.done),
               batch.failed.length ? batch.failed.join(', ') : '—',
               batch.blocked.length ? batch.blocked.join(', ') : '—',
-              batch.unknown.length ? batch.unknown.join(', ') : '—',
               batch.verdict,
               code(batch.commit),
             ]),

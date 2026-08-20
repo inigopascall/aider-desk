@@ -8,15 +8,16 @@ import {
   emitInfo,
   getCumulativeDiff,
   prepareRepository,
+  runAssignmentBatch,
   runDecompositionStage,
-  runEditLoop,
   runEvidenceStage,
   runPlanningStage,
 } from './dev-pipeline-core';
 import { createJourney, type ReportState } from '../journey';
-import { formatArbiterRound, formatEditTargets } from '../reporting';
+import { formatArbiterRound, formatAssignmentTargets } from '../reporting';
 import { parseArbiterResponse } from '../parsers';
 import { WorkflowCancelled } from '../dispatch';
+import { runPreArbiterCommand } from '../bash-command';
 import { buildPrompt } from '../prompt-formatting';
 
 const ARBITER_RUNS = 1;
@@ -39,8 +40,8 @@ export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<voi
     const { planText, unknownsResearch } = await runPlanningStage(ctx, journey, report, researchFindings);
     await emitCheckpoint(ctx, journey, 'Dev Pipeline + Review', 'Plan');
 
-    const { edits, summary: decompositionSummary } = await runDecompositionStage(ctx, journey, report, planText, unknownsResearch);
-    let editVerdict = await runEditLoop(ctx, journey, report, git, edits, 'dev-pipeline-review');
+    const { assignments, summary: decompositionSummary } = await runDecompositionStage(ctx, journey, report, planText, unknownsResearch);
+    let editVerdict = await runAssignmentBatch(ctx, journey, report, git, assignments, 'dev-pipeline-review');
     await emitCheckpoint(ctx, journey, 'Dev Pipeline + Review', 'Edit Loop');
 
     let finalStatus: 'aligned' | 'deficient' = editVerdict === 'ALIGNED' ? 'aligned' : 'deficient';
@@ -59,24 +60,27 @@ export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<voi
           signalLines.add(`Batch ${b.batch} verdict: ${b.verdict}`);
         }
         for (const row of b.rows) {
-          if (row.editorOutcome !== 'DONE' || row.alignment !== 'ok') {
-            signalLines.add(`${row.path} — ${row.editorOutcome}${row.alignment !== 'ok' ? `, ${row.alignment}` : ''} (batch ${b.batch})`);
+          if (row.outcome !== 'DONE' || row.alignment !== 'ok') {
+            signalLines.add(`${row.path} — ${row.outcome}${row.alignment !== 'ok' ? `, ${row.alignment}` : ''} (batch ${b.batch})`);
           }
         }
       }
-      const editChainSignals = [...signalLines].join('\n');
+      const assignmentSignals = [...signalLines].join('\n');
+
+      const validationOutput = await runPreArbiterCommand(task, 'dev-pipeline-review', ctx.log);
 
       const prompt = buildPrompt([
         {
           title: 'REVIEW CONTEXT',
-          body: "The user request and the actual code/diff are authoritative. The decompositor's edits summary is non-authoritative provenance. Conversation history, when present, is authoritative for intent.",
+          body: "The user request and the actual code/diff are authoritative. The decompositor's assignment summary is non-authoritative provenance. Conversation history, when present, is authoritative for intent. Any rectification must be expressed as semantic per-file assignments in the decompositor format — exactly one assignment per file, no search/replace blocks.",
         },
         conversationSection(ctx),
         { title: 'USER REQUEST', body: ctx.initialPrompt },
         { title: 'ARBITER ROUND', body: `This is arbiter round ${round} of ${ARBITER_RUNS}.` },
-        { title: 'DECOMPOSITOR EDITS SUMMARY', body: decompositionSummary },
+        { title: 'DECOMPOSITOR ASSIGNMENTS SUMMARY', body: decompositionSummary },
         { title: 'CHANGED FILES', body: changedFilesSummary || 'None' },
-        { title: 'EDIT-CHAIN SIGNALS', body: editChainSignals },
+        { title: 'ASSIGNMENT SIGNALS', body: assignmentSignals },
+        { title: 'VALIDATION COMMAND OUTPUT', body: validationOutput ?? 'No validation command configured.' },
         { title: 'CUMULATIVE GIT DIFF', body: ['```diff', diff, '```'].join('\n') },
       ]);
 
@@ -102,19 +106,19 @@ export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<voi
       }
 
       journey.arbiterSummaries.push({ round, summary: arbiter.reviewSummary });
-      await emitInfo(ctx.log, formatArbiterRound(round, arbiter.reviewSummary, arbiter.edits.length));
+      await emitInfo(ctx.log, formatArbiterRound(round, arbiter.reviewSummary, arbiter.assignments.length));
 
-      if (arbiter.edits.length === 0) {
+      if (arbiter.assignments.length === 0) {
         journey.reviewTable.push({ round, outcome: 'clean', rectificationEdits: 0 });
         finalStatus = editVerdict === 'ALIGNED' ? 'aligned' : 'deficient';
         break;
       }
 
-      await emitInfo(ctx.log, formatEditTargets(`Arbiter rectification — round ${round}`, arbiter.edits));
+      await emitInfo(ctx.log, formatAssignmentTargets(`Arbiter rectification — round ${round}`, arbiter.assignments));
       report.abortStage = `arbiter rectification (round ${round})`;
-      editVerdict = await runEditLoop(ctx, journey, report, git, arbiter.edits, `dev-pipeline-review rectification ${round}`);
+      editVerdict = await runAssignmentBatch(ctx, journey, report, git, arbiter.assignments, `dev-pipeline-review rectification ${round}`);
       finalStatus = editVerdict === 'ALIGNED' ? 'aligned' : 'deficient';
-      journey.reviewTable.push({ round, outcome: 'rectified', rectificationEdits: arbiter.edits.length });
+      journey.reviewTable.push({ round, outcome: 'rectified', rectificationEdits: arbiter.assignments.length });
       await emitCheckpoint(ctx, journey, 'Dev Pipeline + Review', `Arbiter Round ${round}`);
     }
 

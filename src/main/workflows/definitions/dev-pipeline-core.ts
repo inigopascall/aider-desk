@@ -9,16 +9,16 @@ import { Task } from '@/task';
 import { WorkflowCancelled, WorkflowError, WorkflowTimeout } from '../dispatch';
 import { WorkflowLogger, WorkflowRunContext } from '../types';
 import {
-  type EditorOutcome,
+  type AssignmentOutcome,
   type EvidenceRow,
   type FileChangeRow,
   type Journey,
   type ReportState,
 } from '../journey';
 import {
+  formatAssignmentBatchSummary,
+  formatAssignmentTargets,
   formatContextChange,
-  formatEditBatchSummary,
-  formatEditTargets,
   formatEvidenceInsufficient,
   formatEvidenceSufficient,
   formatJourneyReport,
@@ -28,15 +28,15 @@ import {
   formatResearchReceived,
 } from '../reporting';
 import {
-  DELETE_MARKER,
-  FileEditInstruction,
-  parseDecompositorResponse,
+  type FileAssignment,
+  computeWaves,
+  parseAssignmentsResponse,
   parseDigesterResponse,
-  parseEditorResponse,
+  parseEditorResult,
   parseInvestigatorResponse,
   parsePlanUnknowns,
-  serializeFileEdits,
-  validateEditChains,
+  serializeAssignment,
+  validateAssignments,
 } from '../parsers';
 
 import { buildPrompt, PromptSection } from '../prompt-formatting';
@@ -182,8 +182,8 @@ export async function collectDiffStats(
   return stats;
 }
 
-export function buildEditRows(
-  results: EditorOutcome[],
+export function buildAssignmentRows(
+  outcomes: AssignmentOutcome[],
   changedPaths: string[],
   stats: Map<string, { insertions: number; deletions: number }>,
 ): FileChangeRow[] {
@@ -191,20 +191,23 @@ export function buildEditRows(
   const rows: FileChangeRow[] = [];
 
   // Group by path and take the LAST outcome for that path
-  const lastOutcomeByPath = new Map<string, EditorOutcome>();
-  for (const result of results) {
-    lastOutcomeByPath.set(normalizePath(result.path), result);
+  const lastOutcomeByPath = new Map<string, AssignmentOutcome>();
+  for (const outcome of outcomes) {
+    lastOutcomeByPath.set(normalizePath(outcome.path), outcome);
   }
 
-  for (const [filePath, result] of lastOutcomeByPath.entries()) {
+  for (const [filePath, outcome] of lastOutcomeByPath.entries()) {
     const stat = stats.get(filePath) ?? { insertions: 0, deletions: 0 };
+    // A completed DELETE is aligned regardless of diff presence — the host
+    // removed the file, so it cannot appear in the diff.
+    const isDeleteDone = outcome.operation === 'DELETE' && outcome.outcome === 'DONE';
     rows.push({
       path: filePath,
       insertions: stat.insertions,
       deletions: stat.deletions,
-      editorOutcome: result.outcome,
-      alignment: changed.has(filePath) ? 'ok' : 'missing',
-      detail: result.detail,
+      outcome: outcome.outcome,
+      alignment: isDeleteDone || changed.has(filePath) ? 'ok' : 'missing',
+      detail: outcome.detail,
     });
   }
 
@@ -218,7 +221,7 @@ export function buildEditRows(
       path: filePath,
       insertions: stat.insertions,
       deletions: stat.deletions,
-      editorOutcome: 'NOT INSTRUCTED',
+      outcome: 'NOT INSTRUCTED',
       alignment: 'unsolicited',
     });
   }
@@ -416,7 +419,7 @@ export async function runDecompositionStage(
   report: ReportState,
   planText: string,
   resolvedResearch: string | null,
-): Promise<{ edits: FileEditInstruction[]; summary: string }> {
+): Promise<{ assignments: FileAssignment[]; summary: string }> {
   const decomposerSections: PromptSection[] = [
     conversationSection(ctx),
     { title: 'USER REQUEST', body: ctx.initialPrompt },
@@ -429,7 +432,7 @@ export async function runDecompositionStage(
 
   decomposerSections.push({
     title: 'INSTRUCTION',
-    body: 'Decompose into ordered edit specs now, per your instructions.',
+    body: 'Decompose the plan into one self-contained assignment per file now, per your instructions.',
   });
 
   const decomposerPrompt = buildPrompt(decomposerSections);
@@ -437,15 +440,15 @@ export async function runDecompositionStage(
   const result = await ctx.dispatch.parsed(
     AGENTS.decompositor,
     decomposerPrompt,
-    'Decomposing plan into file edits',
-    parseDecompositorResponse,
+    'Decomposing plan into per-file assignments',
+    parseAssignmentsResponse,
     () => {
       journey.formatRetries++;
     },
   );
 
-  await emitInfo(ctx.log, formatEditTargets('Implementation plan decomposed', result.edits));
-  return { edits: result.edits, summary: result.summary };
+  await emitInfo(ctx.log, formatAssignmentTargets('Implementation plan decomposed', result.assignments));
+  return { assignments: result.assignments, summary: result.summary };
 }
 
 function hashOf(content: string): string {
@@ -471,11 +474,24 @@ async function readTarget(absPath: string): Promise<{ exists: boolean; content: 
   }
 }
 
-function validateAppliedEdit(
-  edit: FileEditInstruction,
+/**
+ * Structurally validates the actual on-disk state of a file after an
+ * assignment attempt. The filesystem is authoritative — the editor's RESULT
+ * line is only a hint. Returns a problem description, or null when the file
+ * state satisfies the assignment's operation.
+ */
+function validateAssignmentResult(
+  assignment: FileAssignment,
   pre: { exists: boolean; content: string | null; hash: string | null; size: number },
   post: { exists: boolean; content: string | null; hash: string | null; size: number },
 ): string | null {
+  if (assignment.operation === 'DELETE') {
+    if (post.exists) {
+      return 'file still exists after delete';
+    }
+    return null;
+  }
+
   if (!post.exists || post.content === null) {
     return 'post-edit file does not exist';
   }
@@ -487,7 +503,7 @@ function validateAppliedEdit(
     }
   }
 
-  if (edit.path.toLowerCase().endsWith('.json') && edit.type !== 'DELETE') {
+  if (assignment.path.toLowerCase().endsWith('.json')) {
     try {
       JSON.parse(post.content);
     } catch {
@@ -495,7 +511,7 @@ function validateAppliedEdit(
     }
   }
 
-  if (edit.type === 'NEW') {
+  if (assignment.operation === 'CREATE') {
     if (pre.exists) {
       return 'file already existed before create';
     }
@@ -505,38 +521,194 @@ function validateAppliedEdit(
     return null;
   }
 
-  if (edit.type === 'EDIT') {
+  if (assignment.operation === 'MODIFY') {
     if (!pre.exists) {
-      return 'file did not exist before edit';
+      return 'file did not exist before modify';
     }
     if (post.content.trim().length === 0) {
-      return 'edited file is empty';
+      return 'modified file is empty';
     }
     if (post.hash === pre.hash) {
-      return 'file content was unchanged after edit';
+      return 'file content was unchanged';
     }
     return null;
   }
 
-  if (edit.type === 'DELETE') {
-    if (post.content.trim() !== DELETE_MARKER) {
-      return `deleted file does not contain exact deprecation marker: ${DELETE_MARKER}`;
-    }
-    return null;
-  }
-
-  return 'unknown edit type';
+  return 'unknown assignment operation';
 }
 
-export async function runEditLoop(
+/**
+ * Restores a target file to its pre-dispatch snapshot. Existing files are
+ * rewritten with their original content; files that did not exist are removed.
+ */
+async function restoreTarget(
+  abs: string,
+  pre: { exists: boolean; content: string | null; hash: string | null; size: number },
+): Promise<void> {
+  if (pre.exists && pre.content !== null) {
+    await fs.writeFile(abs, pre.content, 'utf8');
+  } else {
+    await fs.rm(abs, { force: true });
+  }
+}
+
+/**
+ * Builds the prompt handed to the EDITOR for one file-scoped assignment. The
+ * editor is told to read the live file first and implement the objective
+ * semantically — no exact anchors are ever supplied.
+ */
+function buildEditorPrompt(assignment: FileAssignment): string {
+  return [
+    "You are implementing exactly one file-scoped assignment. Read the target file's",
+    'current on-disk content first — it is the only source of truth; do not assume',
+    'its state. Implement the complete objective in the assigned file only.',
+    '',
+    serializeAssignment(assignment),
+    '',
+    'Finish your response with a final line: "RESULT: DONE" or "RESULT: BLOCKED: <reason>".',
+  ].join('\n');
+}
+
+/**
+ * Executes one assignment transactionally. The target file is snapshotted
+ * before dispatch; on failure the snapshot is restored before any fallback
+ * retry. A dispatch failure whose post-state passes structural validation is
+ * accepted — the file, not the response, is truth. DELETE assignments are
+ * host operations and never reach an editor.
+ */
+async function runSingleAssignment(
+  ctx: WorkflowRunContext,
+  journey: Journey,
+  assignment: FileAssignment,
+  abs: string,
+): Promise<AssignmentOutcome> {
+  const label = `ASSIGNMENT ${assignment.id}: ${assignment.path}`;
+  const pre = await readTarget(abs);
+
+  // DELETE is a host-only operation — real fs.rm, no editor dispatch.
+  if (assignment.operation === 'DELETE') {
+    if (!pre.exists) {
+      return { id: assignment.id, path: assignment.path, operation: 'DELETE', outcome: 'DONE', detail: 'already absent' };
+    }
+    try {
+      await fs.rm(abs, { force: true });
+    } catch (error) {
+      return {
+        id: assignment.id,
+        path: assignment.path,
+        operation: 'DELETE',
+        outcome: 'FAILED',
+        detail: error instanceof Error ? error.message : String(error),
+      };
+    }
+    const post = await readTarget(abs);
+    const structural = validateAssignmentResult(assignment, pre, post);
+    if (structural === null) {
+      return { id: assignment.id, path: assignment.path, operation: 'DELETE', outcome: 'DONE' };
+    }
+    return { id: assignment.id, path: assignment.path, operation: 'DELETE', outcome: 'FAILED', detail: structural };
+  }
+
+  // CREATE parents are created by the host before any editor dispatch.
+  if (assignment.operation === 'CREATE') {
+    await fs.mkdir(path.dirname(abs), { recursive: true });
+  }
+
+  const attempt = async (
+    slot: 'primary' | 'fallback',
+  ): Promise<{ ok: boolean; structural: string | null; hint: { status: 'DONE' | 'BLOCKED' | 'UNKNOWN'; detail?: string } }> => {
+    const raw = await ctx.dispatch.agent(
+      AGENTS.editor,
+      buildEditorPrompt(assignment),
+      label,
+      { timeoutMs: EDITOR_TIMEOUT_MS, modelSlot: slot, disableFallback: true },
+    );
+    const hint = parseEditorResult(raw);
+    const post = await readTarget(abs);
+    const structural = validateAssignmentResult(assignment, pre, post);
+    return { ok: structural === null && hint.status !== 'BLOCKED', structural, hint };
+  };
+
+  // Dispatch failure acceptance: re-read the post-state and validate it. If
+  // the file is structurally correct, the change is accepted regardless of
+  // what the agent's response said.
+  const acceptFromFileState = async (msg: string): Promise<AssignmentOutcome> => {
+    const post = await readTarget(abs);
+    const structural = validateAssignmentResult(assignment, pre, post);
+    if (structural === null) {
+      await ctx.log.warning(`${label}: dispatch failed (${msg}) but the file state is structurally valid — accepting the change.`);
+      return {
+        id: assignment.id,
+        path: assignment.path,
+        operation: assignment.operation,
+        outcome: 'DONE',
+        detail: `accepted from file state after dispatch failure: ${msg}`,
+      };
+    }
+    return { id: assignment.id, path: assignment.path, operation: assignment.operation, outcome: 'FAILED', detail: structural };
+  };
+
+  let lastReason = '';
+
+  // Primary attempt.
+  try {
+    const result = await attempt('primary');
+    if (result.ok) {
+      return { id: assignment.id, path: assignment.path, operation: assignment.operation, outcome: 'DONE' };
+    }
+    lastReason = result.hint.status === 'BLOCKED' ? (result.hint.detail ?? 'editor reported BLOCKED') : (result.structural ?? 'editor response was not DONE');
+  } catch (error) {
+    if (error instanceof WorkflowCancelled) throw error;
+    if (error instanceof WorkflowTimeout) journey.editorTimeouts++;
+    const msg = error instanceof Error ? error.message : String(error);
+    const accepted = await acceptFromFileState(msg);
+    if (accepted.outcome === 'DONE') return accepted;
+    lastReason = msg;
+  }
+
+  // Fallback path: restore the snapshot first so the retry never inherits
+  // partial side effects, then run a single fallback-slot attempt.
+  await restoreTarget(abs, pre);
+  journey.fallbackRetries++;
+  await ctx.log.warning(`${label}: primary attempt failed (${lastReason}); restored snapshot and retrying with fallback model.`);
+
+  try {
+    const result = await attempt('fallback');
+    if (result.ok) {
+      return { id: assignment.id, path: assignment.path, operation: assignment.operation, outcome: 'DONE', usedFallback: true };
+    }
+    lastReason = result.hint.status === 'BLOCKED' ? (result.hint.detail ?? 'editor reported BLOCKED') : (result.structural ?? 'editor response was not DONE');
+  } catch (error) {
+    if (error instanceof WorkflowCancelled) throw error;
+    if (error instanceof WorkflowTimeout) journey.editorTimeouts++;
+    const msg = error instanceof Error ? error.message : String(error);
+    const accepted = await acceptFromFileState(msg);
+    if (accepted.outcome === 'DONE') {
+      return { ...accepted, usedFallback: true };
+    }
+    lastReason = msg;
+  }
+
+  // Final failure — leave the tree clean.
+  await restoreTarget(abs, pre);
+  return { id: assignment.id, path: assignment.path, operation: assignment.operation, outcome: 'FAILED', detail: lastReason };
+}
+
+/**
+ * Runs a batch of per-file assignments in dependency waves. Assignments
+ * within a wave run concurrently; a failed assignment blocks only its
+ * transitive dependents, never unrelated work. Deletes are performed by the
+ * host, and the batch is committed with a checkpoint commit.
+ */
+export async function runAssignmentBatch(
   ctx: WorkflowRunContext,
   journey: Journey,
   report: ReportState,
   git: SimpleGit,
-  edits: FileEditInstruction[],
+  assignments: FileAssignment[],
   commitLabel: string,
 ): Promise<'ALIGNED' | 'DEFICIENT'> {
-  report.abortStage = `editing (${commitLabel})`;
+  report.abortStage = `assignments (${commitLabel})`;
   const batch = journey.batches.length + 1;
 
   const bumpGitRetry = (attempt: number, message: string) => {
@@ -546,9 +718,9 @@ export async function runEditLoop(
 
   const passBase = (await withGitRetry(() => git.revparse(['HEAD']), { name: 'batch baseline', onRetry: bumpGitRetry })).trim();
 
-  // 2. Normalize edit paths, check existing paths, validate chains
-  const normalizedEdits = edits.map((e) => ({ ...e, path: normalizePath(e.path) }));
-  const uniquePaths = [...new Set(normalizedEdits.map((e) => e.path))];
+  // 2. Normalize paths, check existing paths, validate assignments
+  const normalized = assignments.map((a) => ({ ...a, path: normalizePath(a.path) }));
+  const uniquePaths = [...new Set(normalized.map((a) => a.path))];
   const existingPaths = new Set<string>();
   for (const p of uniquePaths) {
     const abs = path.resolve(ctx.task.getTaskDir(), p);
@@ -557,85 +729,95 @@ export async function runEditLoop(
     }
   }
 
-  const chainProblems = validateEditChains(normalizedEdits, existingPaths);
-  const results: EditorOutcome[] = [];
-  const validEditsByPath = new Map<string, FileEditInstruction[]>();
+  const problems = validateAssignments(normalized, existingPaths);
+  const outcomes = new Map<number, AssignmentOutcome>();
+  const valid: FileAssignment[] = [];
 
-  for (const edit of normalizedEdits) {
-    const problem = chainProblems.get(edit.path);
+  for (const a of normalized) {
+    const problem = problems.get(a.id);
     if (problem) {
-      const alreadyReported = results.some((r) => r.path === edit.path);
-      if (!alreadyReported) {
-        results.push({ editId: edit.id, path: edit.path, outcome: 'FAILED', detail: problem });
-      } else {
-        results.push({ editId: edit.id, path: edit.path, outcome: 'BLOCKED', detail: 'blocked by invalid chain' });
-      }
+      outcomes.set(a.id, { id: a.id, path: a.path, operation: a.operation, outcome: 'FAILED', detail: problem });
     } else {
-      const list = validEditsByPath.get(edit.path) ?? [];
-      list.push(edit);
-      validEditsByPath.set(edit.path, list);
+      valid.push(a);
     }
   }
 
-  // 3. Ensure parent directory exists for files starting with NEW
-  for (const [p, chain] of validEditsByPath.entries()) {
-    if (chain[0].type === 'NEW') {
-      const abs = path.resolve(ctx.task.getTaskDir(), p);
-      await fs.mkdir(path.dirname(abs), { recursive: true });
+  // 3. Block transitive dependents of failed assignments
+  const failedIds = new Set(outcomes.keys());
+  const dependentsOf = new Map<number, number[]>();
+  for (const a of valid) {
+    for (const dep of a.dependsOn) {
+      const list = dependentsOf.get(dep) ?? [];
+      list.push(a.id);
+      dependentsOf.set(dep, list);
+    }
+  }
+  const blockedIds = new Set<number>();
+  const blockedBy = new Map<number, number>();
+  const queue = [...failedIds];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    for (const dependent of dependentsOf.get(id) ?? []) {
+      if (!blockedIds.has(dependent) && !failedIds.has(dependent)) {
+        blockedIds.add(dependent);
+        blockedBy.set(dependent, id);
+        queue.push(dependent);
+      }
+    }
+  }
+  for (const a of valid) {
+    if (blockedIds.has(a.id)) {
+      outcomes.set(a.id, {
+        id: a.id,
+        path: a.path,
+        operation: a.operation,
+        outcome: 'BLOCKED',
+        detail: `blocked by failed ASSIGNMENT ${blockedBy.get(a.id)}`,
+      });
     }
   }
 
-  // 4. Run chains concurrently
-  await Promise.all(
-    [...validEditsByPath.entries()].map(async ([p, chain]) => {
-      const abs = path.resolve(ctx.task.getTaskDir(), p);
+  // 4. Remaining valid set → dependency waves
+  const waveSet = valid.filter((a) => !blockedIds.has(a.id) && !failedIds.has(a.id));
+  const waves = computeWaves(waveSet);
 
-      for (let i = 0; i < chain.length; i++) {
-        const edit = chain[i];
-        const pre = await readTarget(abs);
-        const basePrompt = `Apply the following edit to exactly one file. Earlier edits to this file in this batch are already applied — the file's current on-disk content is authoritative.\n\n${serializeFileEdits([edit])}`;
-
-        let failureReason: string | null = null;
-
-        try {
-          const raw = await ctx.dispatch.agent(
-            AGENTS.editor,
-            basePrompt,
-            `Editing ${edit.path} (EDIT ${edit.id})`,
-            { timeoutMs: EDITOR_TIMEOUT_MS },
-          );
-          const outcomeResult = parseEditorResponse(raw);
-          if (outcomeResult.outcome !== 'DONE') {
-            failureReason = outcomeResult.detail ?? outcomeResult.outcome;
-          } else {
-            const post = await readTarget(abs);
-            failureReason = validateAppliedEdit(edit, pre, post);
-          }
-        } catch (error) {
-          if (error instanceof WorkflowCancelled) throw error;
-          if (error instanceof WorkflowTimeout) journey.editorTimeouts++;
-          failureReason = error instanceof Error ? error.message : String(error);
-        }
-
-        if (failureReason === null) {
-          results.push({ editId: edit.id, path: edit.path, outcome: 'DONE' });
-        } else {
-          results.push({ editId: edit.id, path: edit.path, outcome: 'FAILED', detail: failureReason });
-          for (let j = i + 1; j < chain.length; j++) {
-            results.push({
-              editId: chain[j].id,
-              path: chain[j].path,
-              outcome: 'BLOCKED',
-              detail: `blocked by failed EDIT ${edit.id}`,
-            });
-          }
-          return;
+  // 5. Execute waves sequentially; within a wave run concurrently
+  for (const wave of waves) {
+    const runnable = wave.filter((a) => {
+      for (const dep of a.dependsOn) {
+        const depOutcome = outcomes.get(dep);
+        if (depOutcome && depOutcome.outcome !== 'DONE') {
+          outcomes.set(a.id, {
+            id: a.id,
+            path: a.path,
+            operation: a.operation,
+            outcome: 'BLOCKED',
+            detail: `blocked by failed ASSIGNMENT ${dep}`,
+          });
+          return false;
         }
       }
-    }),
-  );
+      return true;
+    });
+    const results = await Promise.all(
+      runnable.map((a) => runSingleAssignment(ctx, journey, a, path.resolve(ctx.task.getTaskDir(), a.path))),
+    );
+    for (const r of results) {
+      outcomes.set(r.id, r);
+    }
+  }
 
-  // 5. Commit & diff
+  // 6. Drop successfully deleted files from the task context
+  for (const a of normalized) {
+    if (a.operation === 'DELETE') {
+      const outcome = outcomes.get(a.id);
+      if (outcome?.outcome === 'DONE') {
+        await ctx.task.dropFile(a.path);
+      }
+    }
+  }
+
+  // 7. Commit & diff
   const commitMessage = `[${commitLabel} batch ${batch}] ${journey.planTitle.slice(0, 60)}`;
   let commitSucceeded = true;
   try {
@@ -656,21 +838,24 @@ export async function runEditLoop(
   const changedPaths = parseChangedPaths(changedRaw);
   const statsMap = await collectDiffStats(git, passBase, commitSucceeded ? 'HEAD' : undefined, bumpGitRetry);
 
-  // 6. Batch validation
-  const expected = new Set(normalizedEdits.map((e) => e.path));
+  // 8. Batch validation
+  const expected = new Set(normalized.map((a) => a.path));
   const changedSet = new Set(changedPaths);
 
-  const donePaths = new Set(results.filter((r) => r.outcome === 'DONE').map((r) => r.path));
-  const missing = [...donePaths].filter((p) => !changedSet.has(p));
+  const doneOutcomes = [...outcomes.values()].filter((o) => o.outcome === 'DONE');
+  const missing = doneOutcomes
+    .filter((o) => o.operation !== 'DELETE' && o.detail !== 'already absent')
+    .map((o) => o.path)
+    .filter((p) => !changedSet.has(p));
   const unexpected = changedPaths.filter((p) => !expected.has(p));
 
-  const notDone = results.filter((r) => r.outcome !== 'DONE');
+  const notDone = [...outcomes.values()].filter((o) => o.outcome !== 'DONE');
   const passed = notDone.length === 0 && missing.length === 0 && unexpected.length === 0;
 
   const reasons: string[] = [];
   if (notDone.length > 0) {
-    const failedLabels = notDone.map((r) => `EDIT ${r.editId} (${r.path}: ${r.outcome}${r.detail ? ` - ${r.detail}` : ''})`);
-    reasons.push(`unsuccessful edits: ${failedLabels.join(', ')}`);
+    const failedLabels = notDone.map((o) => `ASSIGNMENT ${o.id} (${o.path}: ${o.outcome}${o.detail ? ` - ${o.detail}` : ''})`);
+    reasons.push(`unsuccessful assignments: ${failedLabels.join(', ')}`);
   }
   if (missing.length > 0) {
     reasons.push(`instructed file(s) absent from the diff: ${missing.join(', ')}`);
@@ -681,8 +866,8 @@ export async function runEditLoop(
   const reason = reasons.join('; ');
   const verdict = passed ? 'ALIGNED' : 'DEFICIENT';
 
-  // 7. Build rows & accumulate stats
-  const rows = buildEditRows(results, changedPaths, statsMap);
+  // 9. Build rows & accumulate stats
+  const rows = buildAssignmentRows([...outcomes.values()], changedPaths, statsMap);
   for (const row of rows) {
     const entry = journey.fileStats[row.path] ?? { insertions: 0, deletions: 0, passes: 0 };
     entry.insertions += row.insertions;
@@ -692,21 +877,21 @@ export async function runEditLoop(
   }
   await reconfigureContext(ctx, journey, `${commitLabel} — batch ${batch} outputs`, [...new Set([...expected, ...changedPaths])]);
 
-  // 8. Record batch & emit summary
+  // 10. Record batch & emit summary
   journey.batches.push({
     batch,
     stage: commitLabel,
-    editCount: normalizedEdits.length,
-    done: results.filter((r) => r.outcome === 'DONE').length,
-    failed: results.filter((r) => r.outcome === 'FAILED').map((r) => `EDIT ${r.editId}: ${r.path}`),
-    blocked: results.filter((r) => r.outcome === 'BLOCKED').map((r) => `EDIT ${r.editId}: ${r.path}`),
-    unknown: results.filter((r) => r.outcome === 'UNKNOWN').map((r) => `EDIT ${r.editId}: ${r.path}`),
+    assignmentCount: normalized.length,
+    waves: waves.length,
+    done: [...outcomes.values()].filter((o) => o.outcome === 'DONE').length,
+    failed: [...outcomes.values()].filter((o) => o.outcome === 'FAILED').map((o) => `ASSIGNMENT ${o.id}: ${o.path}`),
+    blocked: [...outcomes.values()].filter((o) => o.outcome === 'BLOCKED').map((o) => `ASSIGNMENT ${o.id}: ${o.path}`),
     verdict: passed ? 'ALIGNED' : `DEFICIENT: ${reason}`,
     commit: commitSucceeded ? commitMessage : 'DEFERRED (commit failed — see git warnings)',
     rows,
   });
 
-  await emitInfo(ctx.log, formatEditBatchSummary(commitLabel, batch, rows, passed, reason));
+  await emitInfo(ctx.log, formatAssignmentBatchSummary(commitLabel, batch, rows, passed, reason));
   return verdict;
 }
 

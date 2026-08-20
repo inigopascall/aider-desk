@@ -114,6 +114,8 @@ export interface WorkflowAgentModels {
 export interface WorkflowConfig {
   /** Keyed by agent role name (e.g. "DIGESTER"). */
   agentModels: Record<string, WorkflowAgentModels>;
+  /** Optional shell command run in the task directory before the review stage; its output is passed to the reviewer. */
+  preArbiterCommand?: string;
   /** Optional shell command run in the task directory before the workflow's final git commit. */
   bashCommand?: string;
 }

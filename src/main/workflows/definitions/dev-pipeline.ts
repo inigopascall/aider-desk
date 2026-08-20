@@ -5,8 +5,8 @@ import {
   emitCheckpoint,
   emitReport,
   prepareRepository,
+  runAssignmentBatch,
   runDecompositionStage,
-  runEditLoop,
   runEvidenceStage,
   runPlanningStage,
 } from './dev-pipeline-core';
@@ -25,8 +25,8 @@ export async function runDevPipeline(ctx: WorkflowRunContext): Promise<void> {
     await emitCheckpoint(ctx, journey, 'Dev Pipeline', 'Evidence');
     const { planText, unknownsResearch } = await runPlanningStage(ctx, journey, report, researchFindings);
     await emitCheckpoint(ctx, journey, 'Dev Pipeline', 'Plan');
-    const { edits } = await runDecompositionStage(ctx, journey, report, planText, unknownsResearch);
-    const verdict = await runEditLoop(ctx, journey, report, git, edits, 'dev-pipeline');
+    const { assignments } = await runDecompositionStage(ctx, journey, report, planText, unknownsResearch);
+    const verdict = await runAssignmentBatch(ctx, journey, report, git, assignments, 'dev-pipeline');
     await emitCheckpoint(ctx, journey, 'Dev Pipeline', 'Edit Loop');
 
     report.status = verdict === 'ALIGNED' ? 'aligned' : 'deficient';

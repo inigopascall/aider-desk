@@ -31,6 +31,7 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
 
   const persisted = settings?.workflowConfigs?.[workflow.id];
   const [agentModels, setAgentModels] = useState<Record<string, WorkflowAgentModels>>(() => ({ ...(persisted?.agentModels ?? {}) }));
+  const [preArbiterCommand, setPreArbiterCommand] = useState(persisted?.preArbiterCommand ?? '');
   const [bashCommand, setBashCommand] = useState(persisted?.bashCommand ?? '');
 
   const workflowProfiles = getWorkflowAgentProfiles();
@@ -56,7 +57,11 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
     for (const [role, m] of Object.entries(agentModels)) {
       if (workflow.agents.includes(role) && (m.primary || m.fallback)) pruned[role] = m;
     }
-    const config: WorkflowConfig = { agentModels: pruned, bashCommand: bashCommand.trim() || undefined };
+    const config: WorkflowConfig = {
+      agentModels: pruned,
+      preArbiterCommand: preArbiterCommand.trim() || undefined,
+      bashCommand: bashCommand.trim() || undefined,
+    };
     await saveSettings({ ...settings, workflowConfigs: { ...(settings.workflowConfigs ?? {}), [workflow.id]: config } });
   };
 
@@ -157,6 +162,18 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
             );
           })}
         </div>
+      </div>
+
+      <div className="border-t border-border-default pt-3 mt-3">
+        <label className="text-xs font-medium text-text-primary block mb-1">{t('workflowsSettings.preArbiterCommandTitle')}</label>
+        <p className="text-2xs text-text-muted mb-2">{t('workflowsSettings.preArbiterCommandInfo')}</p>
+        <textarea
+          rows={2}
+          value={preArbiterCommand}
+          onChange={(e) => setPreArbiterCommand(e.target.value)}
+          placeholder={t('workflowsSettings.preArbiterCommandPlaceholder')}
+          className="w-full px-2 py-1 text-xs font-mono bg-bg-secondary-light border border-border-default rounded focus:outline-none focus:border-border-light text-text-primary resize-y"
+        />
       </div>
 
       <div className="border-t border-border-default pt-3 mt-3">

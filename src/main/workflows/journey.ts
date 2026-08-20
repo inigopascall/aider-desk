@@ -1,20 +1,22 @@
 import type { WorkflowAgentModels, WorkflowConfig } from '@common/types';
 
-export type EditorOutcomeStatus = 'DONE' | 'FAILED' | 'UNKNOWN' | 'BLOCKED';
+export type AssignmentOutcomeStatus = 'DONE' | 'FAILED' | 'BLOCKED';
 export type FileAlignment = 'ok' | 'missing' | 'unsolicited';
 
-export interface EditorOutcome {
-  editId: number;
+export interface AssignmentOutcome {
+  id: number;
   path: string;
-  outcome: EditorOutcomeStatus;
+  operation: 'CREATE' | 'MODIFY' | 'DELETE';
+  outcome: AssignmentOutcomeStatus;
   detail?: string;
+  usedFallback?: boolean;
 }
 
 export interface FileChangeRow {
   path: string;
   insertions: number;
   deletions: number;
-  editorOutcome: EditorOutcomeStatus | 'NOT INSTRUCTED';
+  outcome: AssignmentOutcomeStatus | 'NOT INSTRUCTED';
   alignment: FileAlignment;
   detail?: string;
 }
@@ -34,14 +36,14 @@ export interface EvidenceRow {
   research: boolean;
 }
 
-export interface EditBatchRecord {
+export interface AssignmentBatchRecord {
   batch: number;
   stage: string;
-  editCount: number;
+  assignmentCount: number;
+  waves: number;
   done: number;
-  failed: string[]; // "EDIT <id>: <path>" labels
+  failed: string[]; // "ASSIGNMENT <id>: <path>" labels
   blocked: string[];
-  unknown: string[];
   verdict: string; // 'ALIGNED' | 'DEFICIENT: <reason>'
   commit: string;
   rows: FileChangeRow[];
@@ -62,13 +64,14 @@ export interface Journey {
   contextChanges: ContextChangeRecord[];
   researchDocs: number;
   planTitle: string;
-  batches: EditBatchRecord[];
+  batches: AssignmentBatchRecord[];
   fileStats: Record<string, { insertions: number; deletions: number; passes: number }>;
   formatRetries: number;
   cancelled: boolean;
   modelOverrides: Record<string, WorkflowAgentModels>;
   conversationChars: number;
   editorTimeouts: number;
+  fallbackRetries: number;
   reviewRounds: number;
   reviewTable: ReviewRoundRow[];
   arbiterSummaries: Array<{ round: number; summary: string }>;
@@ -101,6 +104,7 @@ export function createJourney(modelConfig: WorkflowConfig | undefined, conversat
     modelOverrides: modelConfig?.agentModels ?? {},
     conversationChars: conversationText.length,
     editorTimeouts: 0,
+    fallbackRetries: 0,
     reviewRounds: 0,
     reviewTable: [],
     arbiterSummaries: [],
