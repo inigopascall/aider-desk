@@ -414,6 +414,15 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
       }
     });
 
+    const handleRunWorkflow = useEvent((workflowId: string) => {
+      setSelectedWorkflowId(workflowId);
+      const prompt = promptFieldRef.current?.getValue().trim() ?? '';
+      if (!prompt) return; // Empty prompt: select-only, like Save & Close
+      updateOptimisticTaskState(task.id, DefaultTaskState.InProgress);
+      runCommand(`workflow ${workflowId} ${prompt}`);
+      promptFieldRef.current?.setText(''); // Mirror PromptField's post-submit clearing
+    });
+
     const handleSavePrompt = useCallback(
       async (prompt: string) => {
         if (canSaveEditedPrompt && editedMessage) {
@@ -1015,6 +1024,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                   onUndoContextChange={handleUndoContextChange}
                   selectedWorkflowId={selectedWorkflowId}
                   onWorkflowChange={setSelectedWorkflowId}
+                  onWorkflowRun={handleRunWorkflow}
                 />
               </div>
               <div className="flex gap-2 justify-between flex-wrap">

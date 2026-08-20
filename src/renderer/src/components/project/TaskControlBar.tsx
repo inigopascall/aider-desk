@@ -1,5 +1,5 @@
 import { AIDER_MODES, AutonomyMode, AVAILABLE_WORKFLOWS, DEFAULT_AUTONOMY_MODE, Mode, TaskData } from '@common/types';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FaCog, FaInfoCircle } from 'react-icons/fa';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -11,6 +11,7 @@ import { AgentSelector } from '@/components/AgentSelector';
 import { ModeSelector } from '@/components/PromptField/ModeSelector';
 import { AutonomySelector } from '@/components/PromptField/AutonomySelector';
 import { WorkflowSelector } from '@/components/PromptField/WorkflowSelector';
+import { WorkflowConfigModal } from '@/components/PromptField/WorkflowConfigModal';
 import { WorkflowModelSetSelector } from '@/components/PromptField/WorkflowModelSetSelector';
 import { Button } from '@/components/common/Button';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
@@ -34,6 +35,7 @@ type Props = {
   onUndoContextChange?: () => void;
   selectedWorkflowId?: string | null;
   onWorkflowChange?: (id: string | null) => void;
+  onWorkflowRun?: (workflowId: string) => void;
 };
 
 export const TaskControlBar = ({
@@ -54,6 +56,7 @@ export const TaskControlBar = ({
   onUndoContextChange,
   selectedWorkflowId,
   onWorkflowChange,
+  onWorkflowRun,
 }: Props) => {
   const { t } = useTranslation();
   const isWorkflowSelected = !!selectedWorkflowId;
@@ -69,6 +72,39 @@ export const TaskControlBar = ({
       onWorkflowChange?.(null);
     }
   }, [selectedWorkflowId, availableWorkflows, onWorkflowChange]);
+
+  const [configWorkflowId, setConfigWorkflowId] = useState<string | null>(null);
+  const configWorkflow = availableWorkflows.find((workflow) => workflow.id === configWorkflowId) ?? null;
+
+  const handleWorkflowClick = (workflowId: string) => {
+    if (workflowId === selectedWorkflowId) {
+      onWorkflowChange?.(null);
+      return;
+    }
+    setConfigWorkflowId(workflowId);
+  };
+
+  const handleCancel = () => {
+    setConfigWorkflowId(null);
+  };
+
+  const handleSaveAndClose = () => {
+    if (configWorkflowId) {
+      onWorkflowChange?.(configWorkflowId);
+    }
+    setConfigWorkflowId(null);
+  };
+
+  const handleSaveAndGo = () => {
+    if (configWorkflowId) {
+      if (onWorkflowRun) {
+        onWorkflowRun(configWorkflowId);
+      } else {
+        onWorkflowChange?.(configWorkflowId);
+      }
+    }
+    setConfigWorkflowId(null);
+  };
 
   const handleAutonomyLockChanged = (locked: boolean) => {
     void saveProjectSettings({
@@ -118,7 +154,7 @@ export const TaskControlBar = ({
           <WorkflowSelector
               workflows={availableWorkflows}
               selectedWorkflowId={selectedWorkflowId ?? null}
-              onChange={onWorkflowChange}
+              onWorkflowClick={handleWorkflowClick}
             />
             <WorkflowModelSetSelector baseDir={baseDir} task={task} selectedWorkflowId={selectedWorkflowId ?? null} />
           </>
@@ -191,6 +227,14 @@ export const TaskControlBar = ({
           )}
         </div>
       </div>
+      {configWorkflow && (
+        <WorkflowConfigModal
+          workflow={configWorkflow}
+          onCancel={handleCancel}
+          onSaveAndClose={handleSaveAndClose}
+          onSaveAndGo={handleSaveAndGo}
+        />
+      )}
     </div>
   );
 };

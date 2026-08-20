@@ -460,7 +460,11 @@
     "defaultSetName": "기본값",
     "noModelSets": "이 워크플로에 구성된 모델 세트가 없습니다.",
     "taskModelSetTooltip": "이 작업의 모델 세트",
-    "projectDefaultModelSetTooltip": "프로젝트 기본값(클릭하여 이 작업에 재정의)"
+    "projectDefaultModelSetTooltip": "프로젝트 기본값(클릭하여 이 작업에 재정의)",
+    "configModalTitle": "{{name}} 구성",
+    "configModalPlaceholder": "이 워크플로의 모델 및 에이전트 구성이 여기에 표시됩니다. 저장 후 닫기는 다음 프롬프트를 위해 이 워크플로를 선택된 상태로 유지하고, 저장 후 실행은 현재 프롬프트로 즉시 실행합니다.",
+    "saveAndClose": "저장 후 닫기",
+    "saveAndGo": "저장 후 실행"
   },
   "settings": {
     "title": "설정",

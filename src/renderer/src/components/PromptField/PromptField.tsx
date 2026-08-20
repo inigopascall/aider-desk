@@ -137,6 +137,7 @@ export interface PromptFieldRef {
   setText: (text: string) => void;
   appendText: (text: string) => void;
   setImages: (images: string[]) => void;
+  getValue: () => string;
   toggleExpanded: () => void;
   toggleExpandedEditorMode: () => void;
   toggleExpandedWidth: () => void;
@@ -769,6 +770,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       setImages: (newImages: string[]) => {
         setPastedImages(newImages);
       },
+      getValue: () => text,
       toggleExpanded: () => {
         if (isExpanded) {
           closeExpanded();
