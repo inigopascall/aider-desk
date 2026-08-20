@@ -46,7 +46,6 @@ import {
 
 import { buildPrompt, PromptSection } from '../prompt-formatting';
 import { extractAddedLinesByFile, withGitRetry } from '../git-utils';
-import { formatConversation, splitConversationForSummary } from '../conversation';
 
 export const AGENTS = {
   digester: 'DIGESTER',
