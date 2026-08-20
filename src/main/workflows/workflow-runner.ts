@@ -38,8 +38,6 @@ export async function runWorkflow(task: Task, workflow: WorkflowDefinition, prom
     await runWorkflowBashCommand(task, workflow, log);
     return;
   }
-    return;
-  }
 
   // Linear (steps) path
   let previousOutput = prompt;

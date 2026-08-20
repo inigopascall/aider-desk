@@ -1,4 +1,4 @@
-import type { ContextMessage, WorkflowConfig, WorkflowModelSet, WorkflowRunInfo } from '@common/types';
+import type { ContextMessage, WorkflowConfig, WorkflowRunInfo } from '@common/types';
 import type { Task } from '@/task';
 
 export interface WorkflowStepContext {

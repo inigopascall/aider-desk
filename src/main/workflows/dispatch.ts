@@ -1,11 +1,11 @@
-import { AgentProfile, WorkflowModelSet, WorkflowRunInfo } from '@common/types';
+import { AgentProfile, WorkflowConfig } from '@common/types';
 
 import { findEnabledSubagent } from '@/agent/subagent';
 import type { Task } from '@/task';
 
+import { applyModelOverride } from './model-config';
 import { ParseError } from './parsers';
-import { applyModelIdToProfile, applyModelSetToProfile } from './model-sets';
-import { WorkflowDispatcher } from './types';
+import { WorkflowDispatcher, WorkflowLogger } from './types';
 
 /**
  * Raised for any non-cancellation failure within an imperative workflow
@@ -43,12 +43,13 @@ export class WorkflowTimeout extends WorkflowError {
 /** Default hard timeout applied to every workflow subagent dispatch. */
 export const DEFAULT_DISPATCH_TIMEOUT_MS = 15 * 60_000;
 
-/** Phase-one fallback used when the primary workflow model cannot complete. */
-export const DEFAULT_WORKFLOW_FALLBACK_MODEL_ID = '9router/openai-compatible-opencode-go/deepseek-v4-flash';
-
 /**
  * Resolves a workflow agent by its slug/name from the Workflow Agents tier.
  * Throws a `WorkflowError` when the agent is not found.
+ *
+ * @param task The task running the workflow
+ * @param subagentId The name or identifier of the workflow subagent
+ * @returns The resolved AgentProfile
  */
 export function resolveWorkflowAgent(task: Task, subagentId: string): AgentProfile {
   const target = findEnabledSubagent(task.getProject().getWorkflowAgentProfiles(), subagentId, { matchByName: true });
@@ -63,65 +64,12 @@ export function resolveWorkflowAgent(task: Task, subagentId: string): AgentProfi
  * The returned `WorkflowDispatcher` resolves each workflow agent by role name,
  * attempts dispatch with primary model overrides, and falls back to fallback model overrides
  * on WorkflowError / WorkflowTimeout.
+ *
+ * @param task The task running the workflow
+ * @param config Optional workflow model configuration overrides
+ * @param log Optional workflow logger for progress and warnings
+ * @returns A WorkflowDispatcher instance for executing workflow subagent prompts
  */
-<<<<<<< HEAD
-export function createWorkflowDispatcher(task: Task, run: WorkflowRunInfo, modelSet?: WorkflowModelSet): WorkflowDispatcher {
-  const dispatchOnce = async (
-    subagentId: string,
-    target: AgentProfile,
-    prompt: string,
-    description: string,
-    timeoutMs: number,
-  ): Promise<string> => {
-    const controller = new AbortController();
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, timeoutMs);
-
-    try {
-      const { status, outputText } = await task.dispatchSubagent(target, prompt, description, controller.signal, run);
-      if (status === 'cancelled') {
-        if (timedOut) throw new WorkflowTimeout(subagentId, timeoutMs);
-        throw new WorkflowCancelled();
-      }
-      if (status === 'error') throw new WorkflowError(`Workflow agent '${subagentId}' failed to complete its run.`);
-      return outputText;
-    } finally {
-      clearTimeout(timer);
-    }
-  };
-
-  const dispatcher: WorkflowDispatcher = {
-    agent: async (subagentId, prompt, description, options) => {
-      const base = resolveWorkflowAgent(task, subagentId);
-      const primary = applyModelSetToProfile(base, subagentId, modelSet);
-      const timeoutMs = options?.timeoutMs ?? DEFAULT_DISPATCH_TIMEOUT_MS;
-
-      try {
-        return await dispatchOnce(subagentId, primary, prompt, description, timeoutMs);
-      } catch (error) {
-        if (error instanceof WorkflowCancelled) throw error;
-        if (!(error instanceof WorkflowError)) throw error;
-
-        const fallbackModelId = options?.fallbackModelId ?? DEFAULT_WORKFLOW_FALLBACK_MODEL_ID;
-        const fallback = applyModelIdToProfile(primary, fallbackModelId);
-        if (fallback.provider === primary.provider && fallback.model === primary.model) {
-          throw error;
-        }
-        if (!task.hasProvider(fallback.provider)) {
-          throw new WorkflowError(`${error.message} Fallback provider '${fallback.provider}' is not configured.`);
-        }
-
-        try {
-          return await dispatchOnce(subagentId, fallback, prompt, `${description} (fallback)`, timeoutMs);
-        } catch (fallbackError) {
-          if (fallbackError instanceof WorkflowCancelled) throw fallbackError;
-          const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-          throw new WorkflowError(`${error.message} Fallback '${fallbackModelId}' also failed: ${fallbackMessage}`);
-        }
-=======
 export function createWorkflowDispatcher(task: Task, config?: WorkflowConfig, log?: WorkflowLogger): WorkflowDispatcher {
   const dispatcher: WorkflowDispatcher = {
     agent: async (subagentId, prompt, description, options) => {
@@ -171,7 +119,6 @@ export function createWorkflowDispatcher(task: Task, config?: WorkflowConfig, lo
           `Workflow agent '${subagentId}' failed with ${primary.provider}/${primary.model} (${message}); retrying with fallback ${fallback.provider}/${fallback.model}.`,
         );
         return await runOnce(fallback);
->>>>>>> cadccd24 (TEMP_UNCOMMITTED_1787217636576)
       }
     },
 
