@@ -119,7 +119,6 @@ export interface WorkflowConfig {
 }
 
 export const WORKFLOW_AGENT_ROLES: Record<string, string[]> = {
-  'three-agent-relay': ['EDITOR-LIGHT', 'CONFIRMER', 'REVIEWER-RECTIFIER'],
   'dev-pipeline': ['DIGESTER', 'INVESTIGATOR', 'RESEARCHER', 'GRAND-PLANNER', 'DECOMPOSITOR', 'EDITOR'],
   'dev-pipeline-review': ['DIGESTER', 'INVESTIGATOR', 'RESEARCHER', 'GRAND-PLANNER', 'DECOMPOSITOR', 'EDITOR', 'ARBITER'],
 };

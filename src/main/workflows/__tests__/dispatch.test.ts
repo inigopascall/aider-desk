@@ -57,12 +57,13 @@ describe('createWorkflowDispatcher fallback logic', () => {
     expect(hasProvider).not.toHaveBeenCalled();
   });
 
-  it('case 2: primary error triggers fallback dispatch with fallback model and suffixed description', async () => {
+  it('case 2: primary error retries with the configured fallback model and triples a finite iteration budget', async () => {
     const profile: AgentProfile = {
       id: 'digester-id',
       name: 'DIGESTER',
       provider: 'openrouter',
       model: 'primary-model',
+      maxIterations: 8,
       subagent: { enabled: true },
     } as AgentProfile;
 
@@ -167,7 +168,7 @@ describe('createWorkflowDispatcher fallback logic', () => {
 
     const dispatcher = createWorkflowDispatcher(task, fallbackConfig);
     await expect(dispatcher.agent('DIGESTER', 'test prompt', 'test description')).rejects.toThrow(
-      /Fallback '9router\/openai-compatible-opencode-go\/deepseek-v4-flash' also failed/,
+      /Workflow agent 'DIGESTER' failed to complete its run/,
     );
     expect(dispatchSubagent).toHaveBeenCalledTimes(2);
   });

@@ -6,7 +6,7 @@ import { simpleGit, SimpleGit } from 'simple-git';
 import { fileExists } from '@common/node-utils';
 
 import { Task } from '@/task';
-import { WorkflowCancelled, WorkflowError } from '../dispatch';
+import { WorkflowCancelled, WorkflowError, WorkflowTimeout } from '../dispatch';
 import { WorkflowLogger, WorkflowRunContext } from '../types';
 import {
   type EditorOutcome,
@@ -54,11 +54,7 @@ export const AGENTS = {
 export const MAX_EVIDENCE_ITERATIONS = 3;
 export const MAX_DIFF_CHARS = 80_000;
 export const MAX_RESEARCH_DOC_CHARS = 30_000;
-export const HEAVY_NEW_CHAR_THRESHOLD = 10_000;
-export const HEAVY_NEW_LINE_THRESHOLD = 250;
-export const HEAVY_EDIT_CHAR_THRESHOLD = 6_000;
-export const EDITOR_LIGHT_TIMEOUT_MS = 5 * 60_000;
-export const EDITOR_HEAVY_TIMEOUT_MS = 10 * 60_000;
+export const EDITOR_TIMEOUT_MS = 10 * 60_000;
 
 export function normalizePath(p: string): string {
   return p.replace(/\\/g, '/');
@@ -71,12 +67,6 @@ export function parseChangedPaths(raw: string): string[] {
     .filter(Boolean)
     .map((entry) => (entry.startsWith('./') ? entry.slice(2) : entry))
     .map(normalizePath);
-}
-
-export function selectEditorRole(edit: FileEditInstruction): 'light' | 'heavy' {
-  if (edit.type === 'NEW' && (edit.instructions.length > HEAVY_NEW_CHAR_THRESHOLD || edit.instructions.split(/\r?\n/).length > HEAVY_NEW_LINE_THRESHOLD)) return 'heavy';
-  if (edit.type === 'EDIT' && edit.instructions.length > HEAVY_EDIT_CHAR_THRESHOLD) return 'heavy';
-  return 'light';
 }
 
 /**
@@ -213,7 +203,6 @@ export function buildEditRows(
       insertions: stat.insertions,
       deletions: stat.deletions,
       editorOutcome: result.outcome,
-      editorRole: result.editorRole,
       alignment: changed.has(filePath) ? 'ok' : 'missing',
       detail: result.detail,
     });
@@ -549,7 +538,6 @@ export async function runEditLoop(
 ): Promise<'ALIGNED' | 'DEFICIENT'> {
   report.abortStage = `editing (${commitLabel})`;
   const batch = journey.batches.length + 1;
-  const escalatedPaths = new Set<string>();
 
   const bumpGitRetry = (attempt: number, message: string) => {
     journey.gitRetries++;
@@ -605,23 +593,18 @@ export async function runEditLoop(
       for (let i = 0; i < chain.length; i++) {
         const edit = chain[i];
         const pre = await readTarget(abs);
-        let heavy = escalatedPaths.has(p) || selectEditorRole(edit) === 'heavy';
-        let timeoutMs = heavy ? EDITOR_HEAVY_TIMEOUT_MS : EDITOR_LIGHT_TIMEOUT_MS;
-
         const basePrompt = `Apply the following edit to exactly one file. Earlier edits to this file in this batch are already applied — the file's current on-disk content is authoritative.\n\n${serializeFileEdits([edit])}`;
 
-        let outcomeResult: { outcome: 'DONE' | 'FAILED' | 'UNKNOWN'; detail?: string };
         let failureReason: string | null = null;
-        let usedRole: 'light' | 'heavy' = heavy ? 'heavy' : 'light';
 
         try {
           const raw = await ctx.dispatch.agent(
-            heavy ? AGENTS.heavyEditor : AGENTS.editor,
+            AGENTS.editor,
             basePrompt,
-            `Editing ${edit.path} (EDIT ${edit.id}${heavy ? ', heavy' : ''})`,
-            { timeoutMs },
+            `Editing ${edit.path} (EDIT ${edit.id})`,
+            { timeoutMs: EDITOR_TIMEOUT_MS },
           );
-          outcomeResult = parseEditorResponse(raw);
+          const outcomeResult = parseEditorResponse(raw);
           if (outcomeResult.outcome !== 'DONE') {
             failureReason = outcomeResult.detail ?? outcomeResult.outcome;
           } else {
@@ -632,44 +615,12 @@ export async function runEditLoop(
           if (error instanceof WorkflowCancelled) throw error;
           if (error instanceof WorkflowTimeout) journey.editorTimeouts++;
           failureReason = error instanceof Error ? error.message : String(error);
-          outcomeResult = { outcome: 'FAILED', detail: failureReason };
-        }
-
-        // Escalation: if light attempt failed, retry ONCE with heavy
-        if (failureReason !== null && !heavy) {
-          escalatedPaths.add(p);
-          heavy = true;
-          usedRole = 'heavy';
-          await ctx.log.warning(`Light editor failed on ${edit.path} (EDIT ${edit.id}: ${failureReason}); escalating to EDITOR-HEAVY.`);
-
-          const retryPrompt = `${basePrompt}\n\n=== PREVIOUS ATTEMPT FAILED ===\n${failureReason}\nRe-read the file and apply the edit correctly.`;
-          try {
-            const raw = await ctx.dispatch.agent(
-              AGENTS.heavyEditor,
-              retryPrompt,
-              `Editing ${edit.path} (EDIT ${edit.id}, heavy escalation)`,
-              { timeoutMs: EDITOR_HEAVY_TIMEOUT_MS },
-            );
-            outcomeResult = parseEditorResponse(raw);
-            if (outcomeResult.outcome !== 'DONE') {
-              failureReason = outcomeResult.detail ?? outcomeResult.outcome;
-            } else {
-              const post = await readTarget(abs);
-              failureReason = validateAppliedEdit(edit, pre, post);
-            }
-          } catch (retryError) {
-            if (retryError instanceof WorkflowCancelled) throw retryError;
-            if (retryError instanceof WorkflowTimeout) journey.editorTimeouts++;
-            failureReason = retryError instanceof Error ? retryError.message : String(retryError);
-            outcomeResult = { outcome: 'FAILED', detail: failureReason };
-          }
         }
 
         if (failureReason === null) {
-          results.push({ editId: edit.id, path: edit.path, outcome: 'DONE', editorRole: usedRole });
+          results.push({ editId: edit.id, path: edit.path, outcome: 'DONE' });
         } else {
-          results.push({ editId: edit.id, path: edit.path, outcome: 'FAILED', detail: failureReason, editorRole: usedRole });
-          // Block all remaining edits in this chain
+          results.push({ editId: edit.id, path: edit.path, outcome: 'FAILED', detail: failureReason });
           for (let j = i + 1; j < chain.length; j++) {
             results.push({
               editId: chain[j].id,
