@@ -1144,10 +1144,8 @@ export const TaskDataSchema = z.object({
   handoff: z.boolean().optional(),
   lastAgentProviderMetadata: z.unknown().optional(),
   lastAgentProviderMetadataModel: z.string().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-<<<<<<< HEAD
-  workflowModelSetIds: z.record(z.string(), z.string()).optional(),
-  hasWorkflowHistory: z.boolean().optional(),
+>>>>>>> cadccd24 (TEMP_UNCOMMITTED_1787217636576)
+});
 =======
 >>>>>>> cadccd24 (TEMP_UNCOMMITTED_1787217636576)
 });
