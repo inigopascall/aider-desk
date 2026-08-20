@@ -211,7 +211,7 @@ export function formatEditBatchSummary(
         row.path,
         String(row.insertions),
         String(row.deletions),
-        `${OUTCOME_GLYPH[row.editorOutcome]} ${row.editorOutcome}${row.editorRole === 'heavy' ? ' (heavy)' : ''}`,
+        `${OUTCOME_GLYPH[row.editorOutcome]} ${row.editorOutcome}`,
         ALIGNMENT_GLYPH[row.alignment],
       ]),
     ),

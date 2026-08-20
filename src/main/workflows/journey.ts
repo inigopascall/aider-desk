@@ -8,7 +8,6 @@ export interface EditorOutcome {
   path: string;
   outcome: EditorOutcomeStatus;
   detail?: string;
-  editorRole?: 'light' | 'heavy';
 }
 
 export interface FileChangeRow {
@@ -18,7 +17,6 @@ export interface FileChangeRow {
   editorOutcome: EditorOutcomeStatus | 'NOT INSTRUCTED';
   alignment: FileAlignment;
   detail?: string;
-  editorRole?: 'light' | 'heavy';
 }
 
 export interface ContextChangeRecord {

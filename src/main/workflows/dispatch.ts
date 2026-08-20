@@ -109,14 +109,20 @@ export function createWorkflowDispatcher(task: Task, config?: WorkflowConfig, lo
 
         // With an unset fallback slot, the fallback resolves to the agent profile's own model —
         // a real fallback whenever a primary override is set, and a no-op (no extra attempt) when neither slot is set.
-        const fallback = applyModelOverride(base, subagentId, config, 'fallback');
-        if (fallback.provider === primary.provider && fallback.model === primary.model) {
+        const fallbackBase = applyModelOverride(base, subagentId, config, 'fallback');
+        if (fallbackBase.provider === primary.provider && fallbackBase.model === primary.model) {
           throw error;
         }
 
+        // Fallback mode escalates effort: triple the agent's iteration budget (0 = unlimited stays 0).
+        const fallback: AgentProfile = {
+          ...fallbackBase,
+          maxIterations: fallbackBase.maxIterations > 0 ? fallbackBase.maxIterations * 3 : 0,
+        };
+
         const message = error.message;
         await log?.warning(
-          `Workflow agent '${subagentId}' failed with ${primary.provider}/${primary.model} (${message}); retrying with fallback ${fallback.provider}/${fallback.model}.`,
+          `Workflow agent '${subagentId}' failed with ${primary.provider}/${primary.model} (${message}); retrying with fallback ${fallback.provider}/${fallback.model} (max iterations ×3).`,
         );
         return await runOnce(fallback);
       }

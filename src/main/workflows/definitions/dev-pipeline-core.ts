@@ -48,8 +48,7 @@ export const AGENTS = {
   researcher: 'RESEARCHER',
   planner: 'GRAND-PLANNER',
   decompositor: 'DECOMPOSITOR',
-  editor: 'EDITOR-LIGHT',
-  heavyEditor: 'EDITOR-HEAVY',
+  editor: 'EDITOR',
 } as const;
 
 export const MAX_EVIDENCE_ITERATIONS = 3;

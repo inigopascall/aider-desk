@@ -120,8 +120,8 @@ export interface WorkflowConfig {
 
 export const WORKFLOW_AGENT_ROLES: Record<string, string[]> = {
   'three-agent-relay': ['EDITOR-LIGHT', 'CONFIRMER', 'REVIEWER-RECTIFIER'],
-  'dev-pipeline': ['DIGESTER', 'INVESTIGATOR', 'RESEARCHER', 'GRAND-PLANNER', 'DECOMPOSITOR', 'EDITOR-LIGHT', 'EDITOR-HEAVY'],
-  'dev-pipeline-review': ['DIGESTER', 'INVESTIGATOR', 'RESEARCHER', 'GRAND-PLANNER', 'DECOMPOSITOR', 'EDITOR-LIGHT', 'EDITOR-HEAVY', 'ARBITER'],
+  'dev-pipeline': ['DIGESTER', 'INVESTIGATOR', 'RESEARCHER', 'GRAND-PLANNER', 'DECOMPOSITOR', 'EDITOR'],
+  'dev-pipeline-review': ['DIGESTER', 'INVESTIGATOR', 'RESEARCHER', 'GRAND-PLANNER', 'DECOMPOSITOR', 'EDITOR', 'ARBITER'],
 };
 
 /** Fallback dot colour for workflows with no explicit identity colour. */
@@ -129,7 +129,6 @@ export const DEFAULT_WORKFLOW_COLOR = '#8A8A8A';
 
 /** Hard-coded identity colour per workflow id, used for the dot in the workflow selector. */
 export const WORKFLOW_COLORS: Record<string, string> = {
-  'three-agent-relay': '#3368A8',
   'dev-pipeline': '#F8E61B',
   'dev-pipeline-review': '#7ED321',
 };
@@ -145,12 +144,6 @@ export interface WorkflowInfo {
 }
 
 export const AVAILABLE_WORKFLOWS: WorkflowInfo[] = [
-  {
-    id: 'three-agent-relay',
-    name: 'Three Agent Relay',
-    agents: WORKFLOW_AGENT_ROLES['three-agent-relay'],
-    color: WORKFLOW_COLORS['three-agent-relay'],
-  },
   {
     id: 'dev-pipeline',
     name: 'Dev Pipeline',

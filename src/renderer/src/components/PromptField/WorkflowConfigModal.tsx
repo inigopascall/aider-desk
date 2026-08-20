@@ -54,7 +54,7 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
     if (!settings) return;
     const pruned: Record<string, WorkflowAgentModels> = {};
     for (const [role, m] of Object.entries(agentModels)) {
-      if (m.primary || m.fallback) pruned[role] = m;
+      if (workflow.agents.includes(role) && (m.primary || m.fallback)) pruned[role] = m;
     }
     const config: WorkflowConfig = { agentModels: pruned, bashCommand: bashCommand.trim() || undefined };
     await saveSettings({ ...settings, workflowConfigs: { ...(settings.workflowConfigs ?? {}), [workflow.id]: config } });
