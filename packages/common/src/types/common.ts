@@ -1142,8 +1142,6 @@ export const TaskDataSchema = z.object({
   contextCompactingThresholdTokens: z.number().optional(),
   weakModelLocked: z.boolean().optional(),
   handoff: z.boolean().optional(),
-  lastAgentProviderMetadata: z.unknown().optional(),
-  lastAgentProviderMetadataModel: z.string().optional(),
 >>>>>>> cadccd24 (TEMP_UNCOMMITTED_1787217636576)
 });
 =======
