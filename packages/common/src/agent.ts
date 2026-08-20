@@ -1,4 +1,4 @@
-import { AgentProfile, ContextMemoryMode, DEFAULT_WORKFLOW_MODEL_SET_ID, InvocationMode, Model, ReasoningEffort, ToolApprovalState, WorkflowModelSet } from '@common/types';
+import { AgentProfile, ContextMemoryMode, InvocationMode, Model, ReasoningEffort, ToolApprovalState } from '@common/types';
 import {
   AIDER_TOOL_ADD_CONTEXT_FILES,
   AIDER_TOOL_DROP_CONTEXT_FILES,
@@ -856,52 +856,4 @@ export const getSubagentId = (subagent: AgentProfile): string => {
 
 export const getProviderModelId = (model: Model): string => {
   return `${model.providerId}/${model.id}`;
-};
-
-/**
- * Builds the built-in "Default" model set for a workflow: for every declared
- * agent role, maps to that role's currently-configured workflow agent
- * profile provider/model. Roles without a matching workflow agent profile
- * are simply omitted. This is a pure/derived value — it is never persisted
- * implicitly; callers persist an edited copy under `DEFAULT_WORKFLOW_MODEL_SET_ID`
- * only once the user customizes it.
- */
-export const buildDefaultWorkflowModelSet = (agentRoles: string[], workflowAgentProfiles: AgentProfile[]): WorkflowModelSet => {
-  const models: Record<string, string> = {};
-  for (const role of agentRoles) {
-    const profile = workflowAgentProfiles.find((p) => p.name === role);
-    if (profile) {
-      models[role] = `${profile.provider}/${profile.model}`;
-    }
-  }
-  return { id: DEFAULT_WORKFLOW_MODEL_SET_ID, name: 'Default', models };
-};
-
-/**
- * Unique model names (the part after the provider prefix) used by a model set,
- * in first-appearance order. Empty entries are skipped.
- */
-export const getWorkflowModelSetModelNames = (set: WorkflowModelSet): string[] => {
-  const names: string[] = [];
-
-  for (const modelId of Object.values(set.models)) {
-    if (!modelId || modelId.trim().length === 0) {
-      continue;
-    }
-
-    const slashIndex = modelId.indexOf('/');
-    const name = slashIndex !== -1 ? modelId.slice(slashIndex + 1) : modelId;
-
-    if (!names.includes(name)) {
-      names.push(name);
-    }
-  }
-
-  return names;
-};
-
-/** `"<name>: <model1>, <model2>"`, or just `"<name>"` when the set has no models. */
-export const getWorkflowModelSetLabel = (set: WorkflowModelSet): string => {
-  const names = getWorkflowModelSetModelNames(set);
-  return names.length > 0 ? `${set.name}: ${names.join(', ')}` : set.name;
 };

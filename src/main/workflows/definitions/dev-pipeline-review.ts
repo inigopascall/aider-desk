@@ -24,8 +24,8 @@ const MAX_ARBITER_DIFF_CHARS = 60_000;
 const AGENT_ARBITER = 'ARBITER';
 
 export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<void> {
-  const { task, modelSet, conversationText } = ctx;
-  const journey = createJourney(modelSet, conversationText);
+  const { task, modelConfig, conversationText } = ctx;
+  const journey = createJourney(modelConfig, conversationText);
   const report: ReportState = { status: 'aborted' };
 
   try {

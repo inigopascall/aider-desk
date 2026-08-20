@@ -1,4 +1,4 @@
-import type { WorkflowModelSet } from '@common/types';
+import type { WorkflowAgentModels, WorkflowConfig } from '@common/types';
 
 export type EditorOutcomeStatus = 'DONE' | 'FAILED' | 'UNKNOWN' | 'BLOCKED';
 export type FileAlignment = 'ok' | 'missing' | 'unsolicited';
@@ -68,8 +68,7 @@ export interface Journey {
   fileStats: Record<string, { insertions: number; deletions: number; passes: number }>;
   formatRetries: number;
   cancelled: boolean;
-  modelSetName: string;
-  modelOverrides: Record<string, string>;
+  modelOverrides: Record<string, WorkflowAgentModels>;
   conversationChars: number;
   editorTimeouts: number;
   reviewRounds: number;
@@ -87,7 +86,7 @@ export interface ReportState {
   reportEmitted?: boolean;
 }
 
-export function createJourney(modelSet: WorkflowModelSet | undefined, conversationText: string): Journey {
+export function createJourney(modelConfig: WorkflowConfig | undefined, conversationText: string): Journey {
   return {
     evidenceIterations: 0,
     evidenceRows: [],
@@ -101,8 +100,7 @@ export function createJourney(modelSet: WorkflowModelSet | undefined, conversati
     fileStats: {},
     formatRetries: 0,
     cancelled: false,
-    modelSetName: modelSet?.name ?? '',
-    modelOverrides: modelSet?.models ?? {},
+    modelOverrides: modelConfig?.agentModels ?? {},
     conversationChars: conversationText.length,
     editorTimeouts: 0,
     reviewRounds: 0,

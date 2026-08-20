@@ -62,8 +62,6 @@ type Props = {
   setProviders?: (providers: ProviderProfile[]) => void;
   workflowsByProject?: Record<string, string[]>;
   onToggleWorkflowForProject?: (baseDir: string, workflowId: string, checked: boolean) => void;
-  workflowModelSetIdsByProject?: Record<string, Record<string, string>>;
-  onSetWorkflowModelSetId?: (baseDir: string, workflowId: string, setId: string) => void;
   onShowLogs?: () => void;
 };
 
@@ -86,8 +84,6 @@ export const Settings = ({
   setProviders,
   workflowsByProject,
   onToggleWorkflowForProject,
-  workflowModelSetIdsByProject,
-  onSetWorkflowModelSetId,
   onShowLogs,
 }: Props) => {
   const { t } = useTranslation();
@@ -295,12 +291,6 @@ export const Settings = ({
             projects={openProjects ?? []}
             workflowsByProject={workflowsByProject ?? {}}
             onToggleWorkflowForProject={onToggleWorkflowForProject ?? (() => {})}
-            settings={settings}
-            setSettings={updateSettings}
-            providers={providers ?? []}
-            agentProfiles={agentProfiles ?? []}
-            workflowModelSetIdsByProject={workflowModelSetIdsByProject ?? {}}
-            onSetWorkflowModelSetId={onSetWorkflowModelSetId ?? (() => {})}
           />
         );
       case 'mcpServers':

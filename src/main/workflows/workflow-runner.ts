@@ -1,6 +1,7 @@
 import { formatConversation } from './conversation';
-import { createWorkflowDispatcher } from './dispatch';
-import { describeModelSet, resolveActiveModelSet, validateModelSet } from './model-sets';
+import { createWorkflowDispatcher, WorkflowCancelled, WorkflowError } from './dispatch';
+import { describeWorkflowConfig, resolveWorkflowConfig, validateWorkflowConfig } from './model-config';
+import { runWorkflowBashCommand } from './bash-command';
 import { WorkflowDefinition } from './types';
 import { createWorkflowLogger, createWorkflowRun } from './logging';
 import { formatWorkflowStart } from './reporting';
@@ -19,23 +20,24 @@ export async function runWorkflow(task: Task, workflow: WorkflowDefinition, prom
   const log = createWorkflowLogger(task, run);
   await task.addWorkflowInvocationMessage(prompt, run);
 
-  // Resolve and validate the active model set.
-  const modelSet = resolveActiveModelSet(task, workflow);
-  const problems = validateModelSet(task, modelSet);
+  // Resolve and validate the workflow model configuration.
+  const modelConfig = resolveWorkflowConfig(task, workflow);
+  const problems = validateWorkflowConfig(task, modelConfig);
   if (problems.length > 0) {
-    await log.error(
-      `Workflow '${workflow.name}': model set '${modelSet.name}' cannot be used:\n${problems.map((p) => `- ${p}`).join('\n')}`,
-    );
+    await log.error(`Workflow '${workflow.name}': model configuration cannot be used:\n${problems.map((p) => `- ${p}`).join('\n')}`);
     return;
   }
 
-  await log.info(formatWorkflowStart(workflow.name, describeModelSet(modelSet), conversationText.length));
+  await log.info(formatWorkflowStart(workflow.name, describeWorkflowConfig(modelConfig), conversationText.length));
 
-  const dispatch = createWorkflowDispatcher(task, run, modelSet);
+  const dispatch = createWorkflowDispatcher(task, modelConfig, log);
 
   // Imperative path
   if (workflow.run) {
-    await workflow.run({ task, initialPrompt: prompt, conversationText, modelSet, dispatch, run, log });
+    await workflow.run({ task, initialPrompt: prompt, conversationText, modelConfig, dispatch, run, log });
+    await runWorkflowBashCommand(task, workflow, log);
+    return;
+  }
     return;
   }
 
@@ -57,11 +59,19 @@ export async function runWorkflow(task: Task, workflow: WorkflowDefinition, prom
     try {
       previousOutput = await dispatch.agent(step.subagentId, stepPrompt, label);
     } catch (error) {
-      await log.warning(`Workflow '${workflow.name}' stopped at step ${stepIndex + 1}: ${error instanceof Error ? error.message : String(error)}`);
-      return;
+      if (error instanceof WorkflowCancelled) {
+        await log.warning(`Workflow '${workflow.name}' cancelled at step ${stepIndex + 1}.`);
+        return;
+      }
+      if (error instanceof WorkflowError) {
+        await log.warning(`Workflow '${workflow.name}' stopped at step ${stepIndex + 1}: ${error.message}`);
+        return;
+      }
+      throw error;
     }
   }
 
+  await runWorkflowBashCommand(task, workflow, log);
   await log.info(`Workflow '${workflow.name}' completed.`);
   await log.summary(`## ${workflow.name} — Summary\n\n${previousOutput}`, 'final-summary');
 }

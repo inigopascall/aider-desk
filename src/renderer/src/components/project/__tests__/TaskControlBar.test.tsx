@@ -44,12 +44,6 @@ vi.mock('@/components/PromptField/WorkflowConfigModal', () => ({
   ),
 }));
 
-vi.mock('@/components/PromptField/WorkflowModelSetSelector', () => ({
-  WorkflowModelSetSelector: (props: { selectedWorkflowId: string | null }) => (
-    <div data-testid="workflow-model-set-selector" data-selected={props.selectedWorkflowId ?? ''} />
-  ),
-}));
-
 vi.mock('@/components/common/Button', () => ({
   Button: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => <button onClick={onClick}>{children}</button>,
 }));
@@ -109,7 +103,6 @@ describe('TaskControlBar workflow controls', () => {
     expect(screen.getByTestId('agent-selector')).toHaveAttribute('data-disabled', 'true');
     expect(screen.getByTestId('autonomy-selector')).toHaveAttribute('data-disabled', 'true');
     expect(screen.getByTestId('workflow-selector')).toHaveAttribute('data-selected', workflowId);
-    expect(screen.getByTestId('workflow-model-set-selector')).toHaveAttribute('data-selected', workflowId);
   });
 
   it('opens the configuration modal for an inactive workflow without changing selection', () => {

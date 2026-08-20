@@ -13,8 +13,8 @@ import {
 import { createJourney, type ReportState } from '../journey';
 
 export async function runDevPipeline(ctx: WorkflowRunContext): Promise<void> {
-  const { task, modelSet, conversationText } = ctx;
-  const journey = createJourney(modelSet, conversationText);
+  const { task, modelConfig, conversationText } = ctx;
+  const journey = createJourney(modelConfig, conversationText);
   const report: ReportState = { status: 'aborted' };
 
   try {

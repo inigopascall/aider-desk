@@ -115,14 +115,14 @@ export function formatResearchReceived(round: number, chars: number): string {
   );
 }
 
-export function formatWorkflowStart(workflowName: string, modelSetName: string, conversationChars: number): string {
+export function formatWorkflowStart(workflowName: string, modelsSummary: string, conversationChars: number): string {
   return section(
     `### 🚀 ${workflowName} starting`,
     markdownTable(
       ['Field', 'Value'],
       ['left', 'left'],
       [
-        ['Model set', modelSetName],
+        ['Models', modelsSummary],
         ['Prior conversation', `${conversationChars.toLocaleString()} characters`],
       ],
     ),
@@ -253,10 +253,20 @@ export function formatJourneyReport(journey: Journey, report: ReportState, workf
     report.status === 'aborted' && report.abortStage ? ` — aborted during ${report.abortStage}` : ''
   }`;
 
+  const overrideEntries = Object.entries(journey.modelOverrides).filter(
+    ([, m]) => (m.primary && m.primary.trim().length > 0) || (m.fallback && m.fallback.trim().length > 0),
+  );
+  const modelOverridesSummary =
+    overrideEntries.length === 0
+      ? 'Agent profile defaults'
+      : overrideEntries
+          .map(([role, m]) => `${role}: ${m.primary ?? 'default'}${m.fallback ? ` (fallback: ${m.fallback})` : ''}`)
+          .join('; ');
+
   const summaryRows = [
     ['Status', status],
     ['Plan', journey.planTitle || '—'],
-    ['Model set', journey.modelSetName || 'Default'],
+    ['Model overrides', modelOverridesSummary],
     ['Evidence rounds', String(journey.evidenceIterations)],
     ['Research documents', String(journey.researchDocs)],
     ['Context files', `+${journey.filesAdded.length} / −${journey.filesRemoved.length}${journey.filesSkipped.length ? ` / ${journey.filesSkipped.length} skipped` : ''}`],

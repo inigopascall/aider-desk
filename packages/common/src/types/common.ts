@@ -104,17 +104,19 @@ export const AIDER_MODES: Mode[] = ['code', 'ask', 'architect', 'context'];
 
 export const AIDER_COMMANDS: string[] = ['commit', 'map', 'map-refresh', 'tokens', 'test'];
 
-export interface WorkflowModelSet {
-  id: string;
-  name: string;
-  /** Maps agent role name (e.g. "DIGESTER") to a model ID in "provider/model" format. */
-  models: Record<string, string>;
+/** Per-agent model assignment for a workflow. Model ids are "provider/model". Undefined = agent profile default. */
+export interface WorkflowAgentModels {
+  primary?: string;
+  fallback?: string;
 }
 
-export type WorkflowModelSets = Record<string, WorkflowModelSet[]>;
-
-/** Stable id for each workflow's built-in, always-present "Default" model set. */
-export const DEFAULT_WORKFLOW_MODEL_SET_ID = 'default';
+/** Persisted per-workflow configuration set via the workflow configuration modal. */
+export interface WorkflowConfig {
+  /** Keyed by agent role name (e.g. "DIGESTER"). */
+  agentModels: Record<string, WorkflowAgentModels>;
+  /** Optional shell command run in the task directory before the workflow's final git commit. */
+  bashCommand?: string;
+}
 
 export const WORKFLOW_AGENT_ROLES: Record<string, string[]> = {
   'three-agent-relay': ['EDITOR-LIGHT', 'CONFIRMER', 'REVIEWER-RECTIFIER'],
@@ -516,7 +518,6 @@ export const ProjectSettingsSchema = z.object({
   contextSidebarSectionsOrder: z.array(z.string()).default([]),
   contextSidebarSectionsHidden: z.array(z.string()).default([]),
   enabledWorkflows: z.array(z.string()).optional(),
-  workflowModelSetIds: z.record(z.string(), z.string()).optional(),
 });
 
 export type ProjectSettings = z.infer<typeof ProjectSettingsSchema>;
@@ -923,7 +924,7 @@ export interface SettingsData {
     noProxy: string;
   };
   fileWatchMode?: FileWatchMode;
-  workflowModelSets?: WorkflowModelSets;
+  workflowConfigs?: Record<string, WorkflowConfig>;
 }
 
 export interface ProviderProfile {
@@ -1144,8 +1145,11 @@ export const TaskDataSchema = z.object({
   lastAgentProviderMetadata: z.unknown().optional(),
   lastAgentProviderMetadataModel: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+<<<<<<< HEAD
   workflowModelSetIds: z.record(z.string(), z.string()).optional(),
   hasWorkflowHistory: z.boolean().optional(),
+=======
+>>>>>>> cadccd24 (TEMP_UNCOMMITTED_1787217636576)
 });
 
 export type TaskData = z.infer<typeof TaskDataSchema>;

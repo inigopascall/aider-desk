@@ -59,11 +59,12 @@ export function resolveWorkflowAgent(task: Task, subagentId: string): AgentProfi
 }
 
 /**
- * Creates a workflow dispatch handle bound to a task and (optionally) a model
- * set. The returned `WorkflowDispatcher` resolves each workflow agent by role
- * name, applies any model-set override, dispatches the run, and surfaces
- * failures as `WorkflowError` / `WorkflowCancelled`.
+ * Creates a workflow dispatch handle bound to a task, workflow configuration, and logger.
+ * The returned `WorkflowDispatcher` resolves each workflow agent by role name,
+ * attempts dispatch with primary model overrides, and falls back to fallback model overrides
+ * on WorkflowError / WorkflowTimeout.
  */
+<<<<<<< HEAD
 export function createWorkflowDispatcher(task: Task, run: WorkflowRunInfo, modelSet?: WorkflowModelSet): WorkflowDispatcher {
   const dispatchOnce = async (
     subagentId: string,
@@ -120,6 +121,57 @@ export function createWorkflowDispatcher(task: Task, run: WorkflowRunInfo, model
           const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
           throw new WorkflowError(`${error.message} Fallback '${fallbackModelId}' also failed: ${fallbackMessage}`);
         }
+=======
+export function createWorkflowDispatcher(task: Task, config?: WorkflowConfig, log?: WorkflowLogger): WorkflowDispatcher {
+  const dispatcher: WorkflowDispatcher = {
+    agent: async (subagentId, prompt, description, options) => {
+      const base = resolveWorkflowAgent(task, subagentId);
+      const timeoutMs = options?.timeoutMs ?? DEFAULT_DISPATCH_TIMEOUT_MS;
+
+      const runOnce = async (target: AgentProfile): Promise<string> => {
+        const controller = new AbortController();
+        let timedOut = false;
+        const timer = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, timeoutMs);
+        try {
+          const { status, outputText } = await task.dispatchSubagent(target, prompt, description, controller.signal);
+          if (status === 'cancelled') {
+            if (timedOut) throw new WorkflowTimeout(subagentId, timeoutMs);
+            throw new WorkflowCancelled();
+          }
+          if (status === 'error') throw new WorkflowError(`Workflow agent '${subagentId}' failed to complete its run.`);
+          return outputText;
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+
+      const primary = applyModelOverride(base, subagentId, config, 'primary');
+      try {
+        return await runOnce(primary);
+      } catch (error) {
+        if (error instanceof WorkflowCancelled) {
+          throw error;
+        }
+        if (!(error instanceof WorkflowError)) {
+          throw error;
+        }
+
+        // With an unset fallback slot, the fallback resolves to the agent profile's own model —
+        // a real fallback whenever a primary override is set, and a no-op (no extra attempt) when neither slot is set.
+        const fallback = applyModelOverride(base, subagentId, config, 'fallback');
+        if (fallback.provider === primary.provider && fallback.model === primary.model) {
+          throw error;
+        }
+
+        const message = error.message;
+        await log?.warning(
+          `Workflow agent '${subagentId}' failed with ${primary.provider}/${primary.model} (${message}); retrying with fallback ${fallback.provider}/${fallback.model}.`,
+        );
+        return await runOnce(fallback);
+>>>>>>> cadccd24 (TEMP_UNCOMMITTED_1787217636576)
       }
     },
 
