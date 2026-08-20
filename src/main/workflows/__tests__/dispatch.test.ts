@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { AgentProfile, WorkflowRunInfo } from '@common/types';
+import type { AgentProfile, WorkflowConfig, WorkflowRunInfo } from '@common/types';
 import type { Task } from '@/task';
 
 import { createWorkflowDispatcher, WorkflowCancelled, WorkflowError } from '../dispatch';
@@ -10,6 +10,14 @@ describe('createWorkflowDispatcher fallback logic', () => {
     runId: 'run-1',
     workflowId: 'dev-pipeline',
     workflowName: 'Dev Pipeline',
+  };
+
+  const fallbackConfig: WorkflowConfig = {
+    agentModels: {
+      DIGESTER: {
+        fallback: '9router/openai-compatible-opencode-go/deepseek-v4-flash',
+      },
+    },
   };
 
   const createStubTask = (profile: AgentProfile) => {
@@ -41,7 +49,7 @@ describe('createWorkflowDispatcher fallback logic', () => {
       outputText: 'output from primary',
     });
 
-    const dispatcher = createWorkflowDispatcher(task, dummyRun);
+    const dispatcher = createWorkflowDispatcher(task, fallbackConfig);
     const result = await dispatcher.agent('DIGESTER', 'test prompt', 'test description');
 
     expect(result).toBe('output from primary');
@@ -71,7 +79,7 @@ describe('createWorkflowDispatcher fallback logic', () => {
         outputText: 'output from fallback',
       });
 
-    const dispatcher = createWorkflowDispatcher(task, dummyRun);
+    const dispatcher = createWorkflowDispatcher(task, fallbackConfig);
     const result = await dispatcher.agent('DIGESTER', 'test prompt', 'test description');
 
     expect(result).toBe('output from fallback');
@@ -83,7 +91,8 @@ describe('createWorkflowDispatcher fallback logic', () => {
 
     expect(fallbackProfile.provider).toBe('9router');
     expect(fallbackProfile.model).toBe('openai-compatible-opencode-go/deepseek-v4-flash');
-    expect(fallbackDescription).toBe('test description (fallback)');
+    expect(fallbackProfile.maxIterations).toBe(profile.maxIterations * 3);
+    expect(fallbackDescription).toBe('test description');
   });
 
   it('case 3: primary cancelled throws WorkflowCancelled without fallback dispatch', async () => {
@@ -101,33 +110,37 @@ describe('createWorkflowDispatcher fallback logic', () => {
       outputText: '',
     });
 
-    const dispatcher = createWorkflowDispatcher(task, dummyRun);
+    const dispatcher = createWorkflowDispatcher(task, fallbackConfig);
     await expect(dispatcher.agent('DIGESTER', 'test prompt', 'test description')).rejects.toThrow(WorkflowCancelled);
     expect(dispatchSubagent).toHaveBeenCalledTimes(1);
   });
 
-  it('case 4: hasProvider false throws WorkflowError mentioning provider not configured', async () => {
+  it('case 4: fallback preserves an unlimited iteration budget', async () => {
     const profile: AgentProfile = {
       id: 'digester-id',
       name: 'DIGESTER',
       provider: 'openrouter',
       model: 'primary-model',
+      maxIterations: 0,
       subagent: { enabled: true },
     } as AgentProfile;
 
-    const { task, hasProvider, dispatchSubagent } = createStubTask(profile);
-    hasProvider.mockReturnValue(false);
+    const { task, dispatchSubagent } = createStubTask(profile);
+    dispatchSubagent
+      .mockResolvedValueOnce({
+        status: 'error',
+        outputText: '',
+      })
+      .mockResolvedValueOnce({
+        status: 'success',
+        outputText: 'output from fallback',
+      });
 
-    dispatchSubagent.mockResolvedValueOnce({
-      status: 'error',
-      outputText: '',
-    });
+    const dispatcher = createWorkflowDispatcher(task, fallbackConfig);
+    await dispatcher.agent('DIGESTER', 'test prompt', 'test description');
 
-    const dispatcher = createWorkflowDispatcher(task, dummyRun);
-    await expect(dispatcher.agent('DIGESTER', 'test prompt', 'test description')).rejects.toThrow(
-      /Fallback provider '9router' is not configured/,
-    );
-    expect(dispatchSubagent).toHaveBeenCalledTimes(1);
+    const fallbackProfile = dispatchSubagent.mock.calls[1][0] as AgentProfile;
+    expect(fallbackProfile.maxIterations).toBe(0);
   });
 
   it('case 5: fallback error throws WorkflowError containing primary message and fallback failure info', async () => {
@@ -152,7 +165,7 @@ describe('createWorkflowDispatcher fallback logic', () => {
         outputText: '',
       });
 
-    const dispatcher = createWorkflowDispatcher(task, dummyRun);
+    const dispatcher = createWorkflowDispatcher(task, fallbackConfig);
     await expect(dispatcher.agent('DIGESTER', 'test prompt', 'test description')).rejects.toThrow(
       /Fallback '9router\/openai-compatible-opencode-go\/deepseek-v4-flash' also failed/,
     );
@@ -181,7 +194,7 @@ describe('createWorkflowDispatcher fallback logic', () => {
         outputText: 'output from fallback',
       });
 
-    const dispatcher = createWorkflowDispatcher(task, dummyRun);
+    const dispatcher = createWorkflowDispatcher(task, fallbackConfig);
     await dispatcher.agent('DIGESTER', 'test prompt', 'test description');
 
     expect(profile.provider).toBe('openrouter');

@@ -6,7 +6,7 @@ import { simpleGit, SimpleGit } from 'simple-git';
 import { fileExists } from '@common/node-utils';
 
 import { Task } from '@/task';
-import { WorkflowCancelled, WorkflowError, WorkflowTimeout } from '../dispatch';
+import { WorkflowCancelled, WorkflowError } from '../dispatch';
 import { WorkflowLogger, WorkflowRunContext } from '../types';
 import {
   type EditorOutcome,
