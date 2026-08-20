@@ -26,6 +26,7 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
       title={t('workflowsSettings.configModalTitle', { name: workflow.name })}
       onClose={onCancel}
       closeOnEscape
+      closeOnBackdrop
       width={420}
       footer={
         <>

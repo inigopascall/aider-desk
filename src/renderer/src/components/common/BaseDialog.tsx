@@ -1,5 +1,5 @@
 import { FocusTrap } from 'focus-trap-react';
-import { ReactNode, useRef } from 'react';
+import { ReactNode, useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { twMerge } from 'tailwind-merge';
 import { useHotkeys } from 'react-hotkeys-hook';
@@ -12,6 +12,7 @@ type Props = {
   footer?: ReactNode;
   width?: number;
   closeOnEscape?: boolean;
+  closeOnBackdrop?: boolean;
   closeButtonText?: string;
   enableFocusTrap?: boolean;
 };
@@ -24,11 +25,13 @@ export const BaseDialog = ({
   footer,
   width = 500,
   closeOnEscape = true,
+  closeOnBackdrop = false,
   closeButtonText,
   enableFocusTrap = true,
 }: Props) => {
   const { t } = useTranslation();
   const dialogRef = useRef<HTMLDivElement>(null);
+  const headingId = useId();
 
   useHotkeys(
     'escape',
@@ -42,12 +45,17 @@ export const BaseDialog = ({
 
   const dialogContent = (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={headingId}
       style={{ width: `${width}px` }}
       className="bg-bg-secondary-light-strongest shadow-2xl rounded-xl border border-bg-tertiary-strong max-h-[90vh] flex flex-col"
       ref={dialogRef}
     >
       <div className="px-6 py-4 border-b border-bg-tertiary-strong flex-shrink-0">
-        <h2 className="text-lg font-medium text-text-primary uppercase">{title}</h2>
+        <h2 id={headingId} className="text-lg font-medium text-text-primary uppercase">
+          {title}
+        </h2>
       </div>
       <div
         className={twMerge(
@@ -69,8 +77,14 @@ export const BaseDialog = ({
 
   return (
     <div
+      role="presentation"
       className="fixed inset-0 top-0 bottom-0 left-0 right-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto"
       data-dialog-open="true"
+      onMouseDown={(event) => {
+        if (closeOnBackdrop && event.target === event.currentTarget) {
+          onClose?.();
+        }
+      }}
     >
       {enableFocusTrap ? <FocusTrap focusTrapOptions={{ allowOutsideClick: true, escapeDeactivates: false }}>{dialogContent}</FocusTrap> : dialogContent}
     </div>

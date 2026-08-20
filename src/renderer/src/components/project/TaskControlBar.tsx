@@ -73,6 +73,39 @@ export const TaskControlBar = ({
     }
   }, [selectedWorkflowId, availableWorkflows, onWorkflowChange]);
 
+  const [configWorkflowId, setConfigWorkflowId] = useState<string | null>(null);
+  const configWorkflow = availableWorkflows.find((workflow) => workflow.id === configWorkflowId) ?? null;
+
+  const handleWorkflowClick = (workflowId: string) => {
+    if (workflowId === selectedWorkflowId) {
+      onWorkflowChange?.(null);
+      return;
+    }
+    setConfigWorkflowId(workflowId);
+  };
+
+  const handleCancel = () => {
+    setConfigWorkflowId(null);
+  };
+
+  const handleSaveAndClose = () => {
+    if (configWorkflowId) {
+      onWorkflowChange?.(configWorkflowId);
+    }
+    setConfigWorkflowId(null);
+  };
+
+  const handleSaveAndGo = () => {
+    if (configWorkflowId) {
+      if (onWorkflowRun) {
+        onWorkflowRun(configWorkflowId);
+      } else {
+        onWorkflowChange?.(configWorkflowId);
+      }
+    }
+    setConfigWorkflowId(null);
+  };
+
   const handleAutonomyLockChanged = (locked: boolean) => {
     void saveProjectSettings({
       autonomyModeLocked: locked,
@@ -121,7 +154,7 @@ export const TaskControlBar = ({
           <WorkflowSelector
               workflows={availableWorkflows}
               selectedWorkflowId={selectedWorkflowId ?? null}
-              onChange={onWorkflowChange}
+              onWorkflowClick={handleWorkflowClick}
             />
             <WorkflowModelSetSelector baseDir={baseDir} task={task} selectedWorkflowId={selectedWorkflowId ?? null} />
           </>
@@ -194,6 +227,14 @@ export const TaskControlBar = ({
           )}
         </div>
       </div>
+      {configWorkflow && (
+        <WorkflowConfigModal
+          workflow={configWorkflow}
+          onCancel={handleCancel}
+          onSaveAndClose={handleSaveAndClose}
+          onSaveAndGo={handleSaveAndGo}
+        />
+      )}
     </div>
   );
 };
