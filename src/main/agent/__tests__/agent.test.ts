@@ -15,6 +15,46 @@ vi.mock('uuid', () => ({
   v4: vi.fn(),
 }));
 
+// Mock the AI SDK so runAgent lifecycle tests never make real model calls.
+// The mock functions are shared across the whole file; only the runAgent
+// lifecycle tests install implementations on them.
+const {
+  mockStreamText,
+  mockGenerateText,
+  mockSmoothStream,
+  mockWrapLanguageModel,
+  mockTool,
+  mockAPICallError,
+  mockNoSuchToolError,
+  mockInvalidToolInputError,
+  mockOutput,
+  mockParsePartialJson,
+} = vi.hoisted(() => ({
+  mockStreamText: vi.fn(),
+  mockGenerateText: vi.fn(),
+  mockSmoothStream: vi.fn(),
+  mockWrapLanguageModel: vi.fn(({ model }: any) => model),
+  mockTool: vi.fn((def: any) => def),
+  mockAPICallError: { isInstance: vi.fn(() => false) },
+  mockNoSuchToolError: { isInstance: vi.fn(() => false) },
+  mockInvalidToolInputError: { isInstance: vi.fn(() => false) },
+  mockOutput: { object: vi.fn() },
+  mockParsePartialJson: vi.fn(),
+}));
+
+vi.mock('ai', () => ({
+  streamText: mockStreamText,
+  generateText: mockGenerateText,
+  smoothStream: mockSmoothStream,
+  wrapLanguageModel: mockWrapLanguageModel,
+  tool: mockTool,
+  APICallError: mockAPICallError,
+  NoSuchToolError: mockNoSuchToolError,
+  InvalidToolInputError: mockInvalidToolInputError,
+  Output: mockOutput,
+  parsePartialJson: mockParsePartialJson,
+}));
+
 // Type declarations for mocked modules without type declarations
 declare global {
   // file-type has types but we mock it
@@ -28,12 +68,12 @@ import path from 'path';
 // @ts-expect-error istextorbinary is not typed properly
 import { isBinary } from 'istextorbinary';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ToolApprovalState } from '@common/types';
+import { ContextCompactionType, DefaultTaskState, ToolApprovalState } from '@common/types';
 import { POWER_TOOL_FILE_READ, POWER_TOOL_GROUP_NAME, TOOL_GROUP_NAME_SEPARATOR } from '@common/tools';
 import { fileTypeFromBuffer } from 'file-type';
 import { v4 as uuidv4 } from 'uuid';
 
-import type { ContextAssistantMessage, ContextFile } from '@common/types';
+import type { ContextAssistantMessage, ContextFile, ContextMessage } from '@common/types';
 
 // Re-export types that are needed
 import { AIDER_DESK_PROJECT_RULES_DIR } from '@/constants';
@@ -1004,6 +1044,370 @@ describe('Agent - prepareMessages sanitisation', () => {
     // 3. Mappings are injected before the working-files listing.
     const workingFilesIndex = messages.indexOf(workingFilesMessage);
     expect(mappingToolCallIndex).toBeLessThan(workingFilesIndex);
+  });
+});
+
+describe('Agent - runAgent lifecycle persistence', () => {
+  let agent: Agent;
+  let mockTask: any;
+  let mockProfile: ReturnType<typeof createMockAgentProfile>;
+  let mockExtensionManager: any;
+  let persistenceLog: string[];
+
+  const provider = {
+    id: 'test-provider',
+    provider: { name: 'test-provider' },
+  };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+
+    persistenceLog = [];
+    let flushCount = 0;
+
+    mockTask = createMockTask();
+    mockTask.getContextMessages = vi.fn(() => Promise.resolve([]));
+    mockTask.getContextFiles = vi.fn(() => Promise.resolve([]));
+    mockTask.addContextMessage = vi.fn(async (message: ContextMessage) => {
+      persistenceLog.push(`add:${message.role}`);
+    });
+    mockTask.flushContext = vi.fn(async () => {
+      flushCount++;
+      persistenceLog.push(`flush:${flushCount}`);
+    });
+    mockTask.addLogMessage = vi.fn();
+    mockTask.processResponseMessage = vi.fn(() => Promise.resolve());
+    mockTask.addToolMessage = vi.fn();
+    mockTask.updateTask = vi.fn(() => Promise.resolve());
+    mockTask.createSkillMessages = vi.fn(() => Promise.resolve(null));
+
+    mockProfile = createMockAgentProfile({
+      useAiderTools: false,
+      usePowerTools: false,
+      useSubagents: false,
+      useTodoTools: false,
+      useTaskTools: false,
+      useMemoryTools: false,
+      useSkillsTools: false,
+      includeContextFiles: false,
+      includeRepoMappings: false,
+      autoCompactThresholdPercentage: 0,
+      autoCompactThresholdTokens: 0,
+      autoCompactionType: ContextCompactionType.Compact,
+      maxIterations: 10,
+    });
+
+    const mockStore = {
+      getSettings: vi.fn(() => ({})),
+      getUserId: vi.fn(() => 'test-user'),
+    };
+    const mockAgentProfileManager = { getProjectProfiles: vi.fn(() => []) };
+    const mockMcpManager = {
+      getConnectors: vi.fn(() => []),
+      createToolset: vi.fn(() => Promise.resolve({})),
+    };
+    const mockMcpConfigManager = { getMergedServers: vi.fn(() => ({})) };
+    const mockModelManager = {
+      getProviders: vi.fn(() => [provider]),
+      createLlm: vi.fn(() => Promise.resolve({ modelId: 'test-model' })),
+      getProviderOptions: vi.fn(() => ({})),
+      getProviderParameters: vi.fn(() => ({})),
+      getCacheControl: vi.fn(() => undefined),
+      getModelSettings: vi.fn(() => undefined),
+      getProviderTools: vi.fn(() => Promise.resolve({})),
+      isStreamingDisabled: vi.fn(() => false),
+      isToolCallStreamingDisabled: vi.fn(() => false),
+      normalizeMessages: vi.fn((_p: any, _m: any, messages: any) => messages),
+      getUsageReport: vi.fn(() => undefined),
+      isRetryable: vi.fn(() => false),
+    };
+    const mockTelemetryManager = { captureAgentRun: vi.fn() };
+    const mockMemoryManager = {};
+    const mockPromptsManager = { getSystemPrompt: vi.fn(() => Promise.resolve('system prompt')) };
+    mockExtensionManager = {
+      isInitialized: vi.fn(() => false),
+      createExtensionToolset: vi.fn(() => ({})),
+      dispatchEvent: vi.fn(async (event: string, data: any) => {
+        if (event === 'onAgentStarted') {
+          return { ...data };
+        }
+        if (event === 'onAgentStepFinished') {
+          return { responseMessages: data.responseMessages, finishReason: data.finishReason };
+        }
+        if (event === 'onAgentFinished') {
+          return { resultMessages: data.resultMessages };
+        }
+        return {};
+      }),
+    };
+
+    agent = new AgentClass(
+      mockStore as any,
+      mockAgentProfileManager as any,
+      mockMcpManager as any,
+      mockMcpConfigManager as any,
+      mockModelManager as any,
+      mockTelemetryManager as any,
+      mockMemoryManager as any,
+      mockPromptsManager as any,
+      mockExtensionManager as any,
+    );
+
+    let uuidCounter = 1;
+    vi.mocked(uuidv4).mockImplementation(() => `uuid-${uuidCounter++}` as any);
+  });
+
+  /**
+   * Builds a deterministic fake AI SDK step result. The `response.messages`
+   * array is what `processStep` turns into persisted context messages.
+   */
+  function makeStepResult(overrides: any = {}) {
+    return {
+      finishReason: 'stop',
+      rawFinishReason: 'stop',
+      content: [{ type: 'text', text: 'Hello from assistant' }],
+      text: 'Hello from assistant',
+      reasoningText: undefined,
+      toolCalls: [],
+      toolResults: [],
+      usage: undefined,
+      providerMetadata: undefined,
+      response: {
+        messages: [{ role: 'assistant', content: 'Hello from assistant' }],
+      },
+      ...overrides,
+    };
+  }
+
+  /**
+   * Installs a single-step `streamText` mock. `onStepEnd` is invoked with the
+   * fake step result and awaited inside the stream so persistence completes
+   * before the run resolves, mirroring the real SDK's step lifecycle.
+   */
+  function mockSingleStepStream(stepResult: any) {
+    mockStreamText.mockImplementation((options: any) => {
+      persistenceLog.push('model-execution');
+      const stepEndPromise = options.onStepEnd(stepResult);
+      return {
+        stream: (async function* () {
+          yield { type: 'text-start' };
+          yield { type: 'text-delta', text: 'Hello' };
+          await stepEndPromise;
+          yield { type: 'text-end' };
+        })(),
+      };
+    });
+  }
+
+  it('persists and flushes the initial user request before model execution when includeInContext is true', async () => {
+    const prompt = 'Implement the feature';
+    const promptContext = { id: 'pc-1' };
+
+    mockSingleStepStream(makeStepResult());
+
+    const result = await agent.runAgent(mockTask, mockProfile, prompt, 'agent', promptContext);
+
+    // The initial user request is passed to addContextMessage
+    expect(mockTask.addContextMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'pc-1', role: 'user', content: prompt }),
+    );
+
+    // The user request is persisted and flushed before any model execution begins
+    expect(persistenceLog[0]).toBe('add:user');
+    expect(persistenceLog[1]).toBe('flush:1');
+    expect(persistenceLog.indexOf('model-execution')).toBeGreaterThan(persistenceLog.indexOf('flush:1'));
+
+    // The user request is also returned to the caller
+    expect(result.some((m: ContextMessage) => m.role === 'user' && m.content === prompt)).toBe(true);
+  });
+
+  it('appends and flushes the completed assistant step before the run resolves', async () => {
+    mockSingleStepStream(makeStepResult());
+
+    const result = await agent.runAgent(mockTask, mockProfile, 'Do it', 'agent', { id: 'pc-1' });
+
+    const assistantMessage = result.find((m: ContextMessage) => m.role === 'assistant');
+    expect(assistantMessage).toBeDefined();
+
+    // The completed step message is appended to the task context and flushed
+    expect(mockTask.addContextMessage).toHaveBeenCalledWith(assistantMessage);
+    expect(mockTask.flushContext).toHaveBeenCalledTimes(2);
+
+    // Deterministic persistence order: user add -> user flush -> model execution -> step add -> step flush
+    expect(persistenceLog).toEqual(['add:user', 'flush:1', 'model-execution', 'add:assistant', 'flush:2']);
+  });
+
+  it('persists one completed assistant message exactly once and returns it exactly once', async () => {
+    mockSingleStepStream(makeStepResult());
+
+    const result = await agent.runAgent(mockTask, mockProfile, 'Do it', 'agent', { id: 'pc-1' });
+
+    const assistantMessages = result.filter((m: ContextMessage) => m.role === 'assistant');
+    expect(assistantMessages).toHaveLength(1);
+
+    const persistedAssistant = mockTask.addContextMessage.mock.calls
+      .map(([message]: [ContextMessage]) => message)
+      .filter((message: ContextMessage) => message.role === 'assistant');
+    expect(persistedAssistant).toHaveLength(1);
+    // The exact same message object is persisted and returned
+    expect(persistedAssistant[0]).toBe(assistantMessages[0]);
+  });
+
+  it('flushes a completed tool-call step before a subsequent iteration begins', async () => {
+    const firstStep = makeStepResult({
+      finishReason: 'tool-calls',
+      rawFinishReason: 'tool-calls',
+      content: [{ type: 'text', text: 'First step' }],
+      text: 'First step',
+      response: { messages: [{ role: 'assistant', content: 'First step' }] },
+    });
+    const secondStep = makeStepResult();
+
+    mockStreamText
+      .mockImplementationOnce((options: any) => {
+        persistenceLog.push('model-execution');
+        const stepEndPromise = options.onStepEnd(firstStep);
+        return { stream: (async function* () { await stepEndPromise; })() };
+      })
+      .mockImplementationOnce((options: any) => {
+        persistenceLog.push('model-execution');
+        const stepEndPromise = options.onStepEnd(secondStep);
+        return { stream: (async function* () { await stepEndPromise; })() };
+      });
+
+    const result = await agent.runAgent(mockTask, mockProfile, 'Do it', 'agent', { id: 'pc-1' });
+
+    const assistantMessages = result.filter((m: ContextMessage) => m.role === 'assistant');
+    expect(assistantMessages).toHaveLength(2);
+    expect(assistantMessages[0].content).toBe('First step');
+    expect(assistantMessages[1].content).toBe('Hello from assistant');
+
+    // The first step's flush happens before the second model execution begins
+    const firstStepFlushIndex = persistenceLog.indexOf('flush:2');
+    const secondModelExecutionIndex = persistenceLog.lastIndexOf('model-execution');
+    expect(firstStepFlushIndex).toBeGreaterThanOrEqual(0);
+    expect(firstStepFlushIndex).toBeLessThan(secondModelExecutionIndex);
+  });
+
+  it('persists and accumulates only extension-replaced step messages, not the originals', async () => {
+    const replacementMessage = { role: 'assistant', content: 'Replacement response' };
+
+    mockExtensionManager.dispatchEvent.mockImplementation(async (event: string, data: any) => {
+      if (event === 'onAgentStarted') {
+        return { ...data };
+      }
+      if (event === 'onAgentStepFinished') {
+        return { responseMessages: [replacementMessage], finishReason: data.finishReason };
+      }
+      if (event === 'onAgentFinished') {
+        return { resultMessages: data.resultMessages };
+      }
+      return {};
+    });
+
+    mockSingleStepStream(makeStepResult());
+
+    const result = await agent.runAgent(mockTask, mockProfile, 'Do it', 'agent', { id: 'pc-1' });
+
+    const persisted = mockTask.addContextMessage.mock.calls.map(([message]: [ContextMessage]) => message);
+    // The original step message produced by processStep is neither persisted nor accumulated
+    expect(persisted.some((m: ContextMessage) => m.role === 'assistant' && m.content === 'Hello from assistant')).toBe(false);
+    expect(result.some((m: ContextMessage) => m.role === 'assistant' && m.content === 'Hello from assistant')).toBe(false);
+
+    // Only the replacement message is persisted and accumulated
+    expect(persisted.some((m: ContextMessage) => m.role === 'assistant' && m.content === 'Replacement response')).toBe(true);
+    const assistantMessages = result.filter((m: ContextMessage) => m.role === 'assistant');
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].content).toBe('Replacement response');
+  });
+
+  it('does not persist or accumulate helper-only tool-call/result messages', async () => {
+    const helperToolName = 'helpers---no_such_tool';
+    const helperToolCallId = 'tc-helper-1';
+
+    const helperStep = makeStepResult({
+      finishReason: 'tool-calls',
+      rawFinishReason: 'tool-calls',
+      content: [{ type: 'tool-call', toolCallId: helperToolCallId, toolName: helperToolName, input: { toolName: 'x', availableTools: [] } }],
+      toolCalls: [{ toolCallId: helperToolCallId, toolName: helperToolName, input: { toolName: 'x', availableTools: [] } }],
+      toolResults: [{ toolCallId: helperToolCallId, toolName: helperToolName, input: { toolName: 'x', availableTools: [] }, output: 'Error: no such tool' }],
+      response: {
+        messages: [
+          { role: 'assistant', content: [{ type: 'tool-call', toolCallId: helperToolCallId, toolName: helperToolName, input: { toolName: 'x', availableTools: [] } }] },
+          { role: 'tool', content: [{ type: 'tool-result', toolCallId: helperToolCallId, toolName: helperToolName, output: 'Error: no such tool' }] },
+        ],
+      },
+    });
+    const finalStep = makeStepResult();
+
+    mockStreamText
+      .mockImplementationOnce((options: any) => {
+        const stepEndPromise = options.onStepEnd(helperStep);
+        return { stream: (async function* () { await stepEndPromise; })() };
+      })
+      .mockImplementationOnce((options: any) => {
+        const stepEndPromise = options.onStepEnd(finalStep);
+        return { stream: (async function* () { await stepEndPromise; })() };
+      });
+
+    const result = await agent.runAgent(mockTask, mockProfile, 'Do it', 'agent', { id: 'pc-1' });
+
+    const persisted = mockTask.addContextMessage.mock.calls.map(([message]: [ContextMessage]) => message);
+    const isHelperMessage = (m: ContextMessage) =>
+      m.role === 'tool' ||
+      (m.role === 'assistant' && Array.isArray(m.content) && (m.content as any[]).some((p: any) => p.type === 'tool-call' && p.toolName === helperToolName));
+
+    // Helper-only messages are neither persisted nor accumulated
+    expect(persisted.some(isHelperMessage)).toBe(false);
+    expect(result.some(isHelperMessage)).toBe(false);
+
+    // Only the user request and the final non-helper assistant message are persisted
+    expect(persisted).toHaveLength(2);
+    expect(mockTask.flushContext).toHaveBeenCalledTimes(2);
+    expect(result.filter((m: ContextMessage) => m.role === 'assistant')).toHaveLength(1);
+  });
+
+  it('keeps filterResultMessages dropping helper-only messages while preserving normal ones', () => {
+    const helperToolName = 'helpers---no_such_tool';
+    const helperAssistant = { role: 'assistant', content: [{ type: 'tool-call', toolCallId: 'tc-1', toolName: helperToolName, input: {} }] };
+    const helperTool = { role: 'tool', content: [{ type: 'tool-result', toolCallId: 'tc-1', toolName: helperToolName, output: 'Error' }] };
+    const normalAssistant = { role: 'assistant', content: 'Normal response' };
+
+    const filtered = agent['filterResultMessages']([helperAssistant, helperTool, normalAssistant] as ContextMessage[]);
+
+    expect(filtered).toEqual([normalAssistant]);
+  });
+
+  it('does not append or flush context for completed steps when includeInContext is false', async () => {
+    mockSingleStepStream(makeStepResult());
+
+    const result = await agent.runAgent(mockTask, mockProfile, 'Do it', 'agent', { id: 'pc-1' }, undefined, undefined, undefined, false);
+
+    // No context append or flush is performed at all
+    expect(mockTask.addContextMessage).not.toHaveBeenCalled();
+    expect(mockTask.flushContext).not.toHaveBeenCalled();
+
+    // Returned messages remain available to the caller
+    expect(result.some((m: ContextMessage) => m.role === 'user' && m.content === 'Do it')).toBe(true);
+    expect(result.some((m: ContextMessage) => m.role === 'assistant' && m.content === 'Hello from assistant')).toBe(true);
+  });
+
+  it('surfaces a flushContext rejection and does not treat the step as durable', async () => {
+    // First flush (user request) succeeds; the step flush fails
+    mockTask.flushContext.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('flush failed'));
+
+    mockSingleStepStream(makeStepResult());
+
+    const result = await agent.runAgent(mockTask, mockProfile, 'Do it', 'agent', { id: 'pc-1' });
+
+    // The error is surfaced, not swallowed
+    expect(mockTask.addLogMessage).toHaveBeenCalledWith('error', 'flush failed', false, expect.anything());
+    // The run is marked interrupted rather than completing successfully
+    expect(mockTask.updateTask).toHaveBeenCalledWith({ state: DefaultTaskState.Interrupted });
+    // The failed step is not treated as durable: it is not accumulated in resultMessages
+    expect(result.some((m: ContextMessage) => m.role === 'assistant')).toBe(false);
+    // No further model execution happens after the failed flush
+    expect(mockStreamText).toHaveBeenCalledTimes(1);
   });
 });
 

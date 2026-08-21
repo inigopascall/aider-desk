@@ -126,6 +126,7 @@ import { CompactionLevel, extractSummary, smartCompactMessages } from '@/agent/c
 export const INTERNAL_TASK_ID = 'internal';
 export const RESPONSE_CHUNK_FLUSH_INTERVAL_MS = 2500;
 export const TOOL_INPUT_FLUSH_INTERVAL_MS = 2500;
+export const TASK_STATE_DETERMINATION_TIMEOUT_MS = 30_000;
 
 export const EMPTY_TASK_DATA: TaskData = {
   id: '',
@@ -253,6 +254,25 @@ export class Task {
 
   public async waitForTaskDataLoad(): Promise<void> {
     await this.taskDataLoadPromise;
+  }
+
+  public async flushContext(): Promise<void> {
+    await this.contextManager.flush();
+  }
+
+  public async recoverStaleInProgressState(): Promise<boolean> {
+    await this.waitForTaskDataLoad();
+
+    if (this.isInternal() || this.task.state !== DefaultTaskState.InProgress) {
+      return false;
+    }
+
+    await this.saveTask({
+      state: DefaultTaskState.Interrupted,
+      interruptedAt: new Date().toISOString(),
+    });
+
+    return true;
   }
 
   public async getTaskAgentProfile(): Promise<AgentProfile | null> {
@@ -1279,6 +1299,18 @@ export class Task {
   private async determineTaskState(resultMessages: ContextMessage[]): Promise<string | null> {
     this.isDeterminingTaskState = true;
 
+    const abortController = new AbortController();
+    const timeout = setTimeout(() => {
+      abortController.abort();
+      logger.warn('Task state determination timed out', {
+        baseDir: this.project.baseDir,
+        taskId: this.taskId,
+        timeoutMs: TASK_STATE_DETERMINATION_TIMEOUT_MS,
+      });
+    }, TASK_STATE_DETERMINATION_TIMEOUT_MS);
+
+    let loadingLogOpened = false;
+
     try {
       // Find the last assistant message from result messages
       const lastAssistantMessage = [...resultMessages].reverse().find((msg) => msg.role === MessageRole.Assistant) as ContextAssistantMessage | undefined;
@@ -1314,10 +1346,22 @@ export class Task {
       const modelId = this.getAuxiliaryModelId(agentProfile, settings.taskSettings.taskStateModel);
 
       this.addLogMessage('loading', 'Updating task state...');
+      loadingLogOpened = true;
 
-      const answer = await this.agent.generateText(modelId, await this.promptsManager.getUpdateTaskStatePrompt(this), wrappedMessage, this.getProjectDir());
+      const answer = await this.agent.generateText(
+        modelId,
+        await this.promptsManager.getUpdateTaskStatePrompt(this),
+        wrappedMessage,
+        this.getProjectDir(),
+        [],
+        false,
+        abortController.signal,
+      );
 
-      this.addLogMessage('loading', undefined, true);
+      if (abortController.signal.aborted) {
+        return null;
+      }
+
       if (!answer) {
         logger.warn('Task state determination interrupted');
         return null;
@@ -1344,6 +1388,10 @@ export class Task {
     } catch (error) {
       logger.error('Error determining task state:', error);
     } finally {
+      clearTimeout(timeout);
+      if (loadingLogOpened) {
+        this.addLogMessage('loading', undefined, true);
+      }
       this.isDeterminingTaskState = false;
     }
 

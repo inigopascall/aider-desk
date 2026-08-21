@@ -244,7 +244,14 @@ export class Project {
       });
 
       for (const taskId of taskDirs) {
-        await this.prepareTask(taskId);
+        const task = await this.prepareTask(taskId);
+        const recovered = await task.recoverStaleInProgressState();
+        if (recovered) {
+          logger.info('Recovered stale in-progress task state', {
+            baseDir: this.baseDir,
+            taskId,
+          });
+        }
       }
 
       logger.info('Successfully loaded tasks', {

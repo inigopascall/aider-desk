@@ -648,6 +648,7 @@ export class Agent {
 
     if (userRequestMessage && includeInContext) {
       await task.addContextMessage(userRequestMessage);
+      await task.flushContext();
     }
 
     // Activate skills after the user message is persisted to context so the
@@ -658,8 +659,13 @@ export class Agent {
         const skillMessages = await task.createSkillMessages(...skillsToActivate);
         if (skillMessages) {
           for (const message of skillMessages) {
-            await task.addContextMessage(message);
+            if (includeInContext) {
+              await task.addContextMessage(message);
+            }
             resultMessages.push(message);
+          }
+          if (includeInContext) {
+            await task.flushContext();
           }
         }
       } catch (error) {
@@ -951,6 +957,7 @@ export class Agent {
         let iterationError: unknown | null = null;
         let finishReason: null | FinishReason = null;
         let currentStepMessages: ContextMessage[] = [];
+        let filteredStepMessages: ContextMessage[] = [];
         let responseMessageIndex: number = 0;
 
         const onStepEnd = async (stepResult: StepResult<typeof toolSet>) => {
@@ -982,6 +989,15 @@ export class Agent {
           );
           currentStepMessages = extensionResult.responseMessages;
           finishReason = extensionResult.finishReason;
+
+          filteredStepMessages = this.filterResultMessages(currentStepMessages);
+
+          if (includeInContext && filteredStepMessages.length > 0) {
+            for (const message of filteredStepMessages) {
+              await task.addContextMessage(message);
+            }
+            await task.flushContext();
+          }
 
           currentResponseId = uuidv4();
           responseMessageIndex = 0;
@@ -1189,23 +1205,8 @@ export class Agent {
           }
         }
 
-        const newMessages = this.filterResultMessages(currentStepMessages);
         messages.push(...(currentStepMessages as ModelMessage[]));
-        resultMessages.push(...newMessages);
-
-        if (includeInContext) {
-          // Persist new messages incrementally after each iteration
-          try {
-            for (const message of newMessages) {
-              await task.addContextMessage(message);
-            }
-          } catch (error) {
-            logger.error('Failed to persist messages incrementally:', {
-              taskId: task.taskId,
-              error,
-            });
-          }
-        }
+        resultMessages.push(...filteredStepMessages);
 
         if (effectiveAbortSignal?.aborted) {
           logger.info('Prompt aborted by user (inside loop)');
