@@ -329,7 +329,11 @@ export const TaskItem = memo(
                   <div
                     className={clsx(
                       'text-xs font-medium truncate transition-colors uppercase',
-                      task.archived && activeTaskId !== task.id ? 'text-text-muted group-hover:text-text-primary' : 'text-text-primary',
+                      task.state === DefaultTaskState.Done
+                        ? 'line-through text-text-muted group-hover:text-text-secondary'
+                        : task.archived && activeTaskId !== task.id
+                          ? 'text-text-muted group-hover:text-text-primary'
+                          : 'text-text-primary',
                     )}
                     style={highlightColor ? { textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)' } : undefined}
                   >
