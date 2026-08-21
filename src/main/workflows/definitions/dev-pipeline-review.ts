@@ -42,7 +42,7 @@ export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<voi
 
     const { assignments, summary: decompositionSummary } = await runDecompositionStage(ctx, journey, report, planText, unknownsResearch);
     let editVerdict = await runAssignmentBatch(ctx, journey, report, git, assignments, 'dev-pipeline-review');
-    await emitCheckpoint(ctx, journey, 'Dev Pipeline + Review', 'Edit Loop');
+    await emitCheckpoint(ctx, journey, 'Dev Pipeline + Review', 'Assignments');
 
     let finalStatus: 'aligned' | 'deficient' = editVerdict === 'ALIGNED' ? 'aligned' : 'deficient';
     report.abortStage = 'arbiter review';

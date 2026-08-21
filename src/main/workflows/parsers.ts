@@ -254,6 +254,10 @@ export interface FileAssignment {
   /** Project-relative normalized path. */
   path: string;
   operation: AssignmentOperation;
+  /** Other files the editor should read before implementing this assignment. */
+  contextFiles: string[];
+  /** Concrete implementation facts distilled from those files and the plan. */
+  relevantContracts: string[];
   /** One short paragraph describing the required end state of the file. */
   objective: string;
   /** Semantic change instructions (no exact anchors or search/replace blocks). */
@@ -361,9 +365,11 @@ export function parseAssignmentsResponse(raw: string): { assignments: FileAssign
 
     let dependsOn: number[] = [];
     let objective = '';
+    const contextFiles: string[] = [];
+    const relevantContracts: string[] = [];
     const instructions: string[] = [];
     const acceptanceCriteria: string[] = [];
-    let currentSection: 'objective' | 'instructions' | 'acceptance' | null = null;
+    let currentSection: 'contextFiles' | 'relevantContracts' | 'objective' | 'instructions' | 'acceptance' | null = null;
 
     for (const rawLine of bodyLines) {
       const line = rawLine.trim();
@@ -383,6 +389,14 @@ export function parseAssignmentsResponse(raw: string): { assignments: FileAssign
         continue;
       }
 
+      if (/^FILES\s+TO\s+READ\s+FIRST\s+FOR\s+CONTEXT\s*:\s*$/i.test(line)) {
+        currentSection = 'contextFiles';
+        continue;
+      }
+      if (/^RELEVANT\s+CONTRACTS\s+AND\s+PATTERNS\s*:\s*$/i.test(line)) {
+        currentSection = 'relevantContracts';
+        continue;
+      }
       if (/^OBJECTIVE\s*:\s*$/i.test(line)) {
         currentSection = 'objective';
         continue;
@@ -396,7 +410,24 @@ export function parseAssignmentsResponse(raw: string): { assignments: FileAssign
         continue;
       }
 
-      if (currentSection === 'objective') {
+      if (currentSection === 'contextFiles') {
+        if (line.startsWith('- ')) {
+          let contextPath = line.slice(2).trim().replace(/\\/g, '/');
+          if (contextPath.startsWith('./')) {
+            contextPath = contextPath.slice(2);
+          }
+          if (contextPath.length > 0 && contextPath.toUpperCase() !== 'NONE' && !contextFiles.includes(contextPath)) {
+            contextFiles.push(contextPath);
+          }
+        }
+      } else if (currentSection === 'relevantContracts') {
+        if (line.startsWith('- ')) {
+          const contract = line.slice(2).trim();
+          if (contract.length > 0 && contract.toUpperCase() !== 'NONE') {
+            relevantContracts.push(contract);
+          }
+        }
+      } else if (currentSection === 'objective') {
         objective = objective.length === 0 ? line : `${objective} ${line}`;
       } else if (currentSection === 'instructions') {
         if (line.startsWith('- ')) {
@@ -417,6 +448,8 @@ export function parseAssignmentsResponse(raw: string): { assignments: FileAssign
       id,
       path: normalizedPath,
       operation,
+      contextFiles,
+      relevantContracts,
       objective: objective.trim(),
       instructions,
       acceptanceCriteria,
@@ -469,6 +502,10 @@ export function serializeAssignment(a: FileAssignment): string {
   return [
     `== ASSIGNMENT ${a.id}: ${a.operation}: ${a.path} ==`,
     `DEPENDS ON: ${a.dependsOn.length > 0 ? a.dependsOn.join(', ') : 'none'}`,
+    'FILES TO READ FIRST FOR CONTEXT:',
+    ...(a.contextFiles.length > 0 ? a.contextFiles.map((filePath) => `- ${filePath}`) : ['- NONE']),
+    'RELEVANT CONTRACTS AND PATTERNS:',
+    ...(a.relevantContracts.length > 0 ? a.relevantContracts.map((contract) => `- ${contract}`) : ['- NONE']),
     'OBJECTIVE:',
     a.objective,
     'INSTRUCTIONS:',
@@ -620,15 +657,32 @@ export function computeWaves(assignments: FileAssignment[]): FileAssignment[][] 
  * `RESULT: BLOCKED: <reason>` line. No match yields `UNKNOWN`. Never throws —
  * structural validation of the actual file state is the real gate.
  */
-export function parseEditorResult(raw: string): { status: 'DONE' | 'BLOCKED' | 'UNKNOWN'; detail?: string } {
+export function parseEditorResult(raw: string): {
+  status: 'DONE' | 'BLOCKED' | 'UNKNOWN';
+  detail?: string;
+  contextComplaint?: string;
+} {
   const lines = raw.split(/\r?\n/);
+  let contextComplaint: string | undefined;
+
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const match = lines[i].trim().match(/^CONTEXT\s+COMPLAINT:\s*(.*)$/i);
+    if (match) {
+      const complaint = match[1].trim();
+      if (complaint.length > 0 && complaint.toUpperCase() !== 'NONE') {
+        contextComplaint = complaint;
+      }
+      break;
+    }
+  }
+
   for (let i = lines.length - 1; i >= 0; i--) {
     const match = lines[i].trim().match(/^RESULT:\s*(DONE|BLOCKED)(?::\s*(.*))?$/i);
     if (match) {
       const status = match[1].toUpperCase() as 'DONE' | 'BLOCKED';
       const detail = match[2]?.trim();
-      return { status, detail: detail || undefined };
+      return { status, detail: detail || undefined, contextComplaint };
     }
   }
-  return { status: 'UNKNOWN' };
+  return { status: 'UNKNOWN', contextComplaint };
 }

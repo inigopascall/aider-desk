@@ -10,6 +10,7 @@ export interface AssignmentOutcome {
   outcome: AssignmentOutcomeStatus;
   detail?: string;
   usedFallback?: boolean;
+  contextComplaint?: string;
 }
 
 export interface FileChangeRow {
@@ -78,6 +79,11 @@ export interface Journey {
   arbiterFailures: string[];
   gitRetries: number;
   gitWarnings: string[];
+  contextComplaints: Array<{
+    assignmentId: number;
+    path: string;
+    complaint: string;
+  }>;
   error?: string;
 }
 
@@ -111,5 +117,6 @@ export function createJourney(modelConfig: WorkflowConfig | undefined, conversat
     arbiterFailures: [],
     gitRetries: 0,
     gitWarnings: [],
+    contextComplaints: [],
   };
 }

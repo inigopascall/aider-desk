@@ -98,6 +98,10 @@ describe('parseAssignmentsResponse', () => {
       '',
       '== ASSIGNMENT 1: MODIFY: src/file.ts ==',
       'DEPENDS ON: none',
+      'FILES TO READ FIRST FOR CONTEXT:',
+      '- src/contracts/fix.ts',
+      'RELEVANT CONTRACTS AND PATTERNS:',
+      '- `fixValue()` returns the mapped result.',
       'OBJECTIVE:',
       'Update the auth handler to use the new token API.',
       'INSTRUCTIONS:',
@@ -127,6 +131,8 @@ describe('parseAssignmentsResponse', () => {
       id: 1,
       path: 'src/file.ts',
       operation: 'MODIFY',
+      contextFiles: [],
+      relevantContracts: [],
       objective: 'Update the auth handler to use the new token API.',
       instructions: ['Replace the token refresh call with refreshToken()', 'Update the error handling to match the new contract'],
       acceptanceCriteria: ['No references to oldToken() remain', 'refreshToken() is called with the session id'],
@@ -151,15 +157,61 @@ describe('parseAssignmentsResponse', () => {
 
     const result = parseAssignmentsResponse(text);
     expect(result.assignments[0].operation).toBe('MODIFY');
+    expect(result.assignments[0].contextFiles).toEqual(['src/contracts/fix.ts']);
+    expect(result.assignments[0].relevantContracts).toEqual(['`fixValue()` returns the mapped result.']);
     expect(result.assignments[1]).toEqual({
       id: 2,
       path: 'src/old.ts',
       operation: 'DELETE',
+      contextFiles: [],
+      relevantContracts: [],
       objective: '',
       instructions: [],
       acceptanceCriteria: [],
       dependsOn: [],
     });
+  });
+
+  it('parses and normalizes contextual files and relevant contracts', () => {
+    const text = [
+      '== ASSIGNMENT 1: MODIFY: src/a.ts ==',
+      'FILES TO READ FIRST FOR CONTEXT:',
+      '- ./src\\contracts\\a.ts',
+      '- src/contracts/a.ts',
+      '- /external/read-only.ts',
+      'RELEVANT CONTRACTS AND PATTERNS:',
+      '- `createA()` accepts one string argument.',
+      '- Tests mock it with `vi.spyOn(...)`.',
+      'OBJECTIVE:',
+      'Update a.',
+    ].join('\n');
+
+    expect(parseAssignmentsResponse(text).assignments[0]).toMatchObject({
+      contextFiles: ['src/contracts/a.ts', '/external/read-only.ts'],
+      relevantContracts: ['`createA()` accepts one string argument.', 'Tests mock it with `vi.spyOn(...)`.'],
+    });
+  });
+
+  it('defaults missing context and contract sections to empty arrays', () => {
+    const result = parseAssignmentsResponse(['== ASSIGNMENT 1: MODIFY: src/a.ts ==', 'OBJECTIVE:', 'Update a.'].join('\n'));
+    expect(result.assignments[0].contextFiles).toEqual([]);
+    expect(result.assignments[0].relevantContracts).toEqual([]);
+  });
+
+  it('treats NONE context and contract bullets as empty arrays', () => {
+    const result = parseAssignmentsResponse(
+      [
+        '== ASSIGNMENT 1: MODIFY: src/a.ts ==',
+        'FILES TO READ FIRST FOR CONTEXT:',
+        '- NONE',
+        'RELEVANT CONTRACTS AND PATTERNS:',
+        '- NONE',
+        'OBJECTIVE:',
+        'Update a.',
+      ].join('\n'),
+    );
+    expect(result.assignments[0].contextFiles).toEqual([]);
+    expect(result.assignments[0].relevantContracts).toEqual([]);
   });
 
   it('defaults missing INSTRUCTIONS and ACCEPTANCE CRITERIA to empty arrays', () => {
@@ -232,11 +284,16 @@ describe('serializeAssignment', () => {
       id: 1,
       path: 'src/file.ts',
       operation: 'MODIFY',
+      contextFiles: ['src/contracts/token.ts', 'src/file.test.ts'],
+      relevantContracts: ['`refreshToken(sessionId: string)` returns the refreshed token', 'Tests mock `refreshToken` with `vi.spyOn`'],
       objective: 'Update the handler.',
       instructions: ['Replace the call', 'Fix the error path'],
       acceptanceCriteria: ['No old calls remain'],
       dependsOn: [2, 3],
     };
+
+    assignment.contextFiles = ['src/contracts/token.ts', 'src/file.test.ts'];
+    assignment.relevantContracts = ['`refreshToken()` accepts the session id', 'Tests use `vi.spyOn(...)`'];
 
     const serialized = serializeAssignment(assignment);
     const parsed = parseAssignmentsResponse(serialized);
@@ -249,6 +306,8 @@ describe('validateAssignments', () => {
     id: 1,
     path: 'src/a.ts',
     operation: 'MODIFY',
+    contextFiles: [],
+    relevantContracts: [],
     objective: 'obj',
     instructions: [],
     acceptanceCriteria: [],
@@ -309,6 +368,8 @@ describe('computeWaves', () => {
     id: 1,
     path: 'src/a.ts',
     operation: 'MODIFY',
+    contextFiles: [],
+    relevantContracts: [],
     objective: 'obj',
     instructions: [],
     acceptanceCriteria: [],
@@ -408,15 +469,30 @@ describe('parseArbiterResponse', () => {
 });
 
 describe('parseEditorResult', () => {
-  it('parses DONE from the final line', () => {
-    expect(parseEditorResult('RESULT: DONE')).toEqual({ status: 'DONE' });
-    expect(parseEditorResult('Some notes.\n\nRESULT: DONE')).toEqual({ status: 'DONE' });
+  it('parses DONE from the final line without a complaint', () => {
+    expect(parseEditorResult('RESULT: DONE')).toEqual({ status: 'DONE', contextComplaint: undefined });
+    expect(parseEditorResult('Some notes.\n\nRESULT: DONE')).toEqual({ status: 'DONE', contextComplaint: undefined });
   });
 
-  it('parses BLOCKED with reason', () => {
-    expect(parseEditorResult('RESULT: BLOCKED: cannot satisfy objective in one file')).toEqual({
+  it('treats CONTEXT COMPLAINT: NONE as no complaint', () => {
+    expect(parseEditorResult('CONTEXT COMPLAINT: NONE\nRESULT: DONE')).toEqual({
+      status: 'DONE',
+      contextComplaint: undefined,
+    });
+  });
+
+  it('parses the final context complaint for a successful result', () => {
+    expect(parseEditorResult('CONTEXT COMPLAINT: missing old file\nCONTEXT COMPLAINT: needed src/helper.ts\nRESULT: DONE')).toEqual({
+      status: 'DONE',
+      contextComplaint: 'needed src/helper.ts',
+    });
+  });
+
+  it('parses BLOCKED with complaint and reason', () => {
+    expect(parseEditorResult('CONTEXT COMPLAINT: omitted src/types.ts\nRESULT: BLOCKED: cannot satisfy objective in one file')).toEqual({
       status: 'BLOCKED',
       detail: 'cannot satisfy objective in one file',
+      contextComplaint: 'omitted src/types.ts',
     });
   });
 
@@ -424,6 +500,14 @@ describe('parseEditorResult', () => {
     const raw = 'RESULT: DONE\n\n(notes after the result line)';
     const result = parseEditorResult(raw);
     expect(result.status).toBe('DONE');
+  });
+
+  it('finds complaint and result lines surrounded by prose', () => {
+    const result = parseEditorResult('Before.\nCONTEXT COMPLAINT: located src/mock.ts via grep\nAfter.\nRESULT: DONE\nTrailing.');
+    expect(result).toEqual({
+      status: 'DONE',
+      contextComplaint: 'located src/mock.ts via grep',
+    });
   });
 
   it('returns UNKNOWN when no RESULT line is present', () => {

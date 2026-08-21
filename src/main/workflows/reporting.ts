@@ -134,7 +134,7 @@ export function formatCheckpointReport(journey: Journey, workflowName: string, l
     ['Evidence rounds', String(journey.evidenceIterations)],
     ['Research documents', String(journey.researchDocs)],
     ['Context files', `+${journey.filesAdded.length} / −${journey.filesRemoved.length}`],
-    ['Edit batches', String(journey.batches.length)],
+    ['Assignment batches', String(journey.batches.length)],
     ['Files touched', String(Object.keys(journey.fileStats).length)],
   ];
 
@@ -270,10 +270,14 @@ export function formatJourneyReport(journey: Journey, report: ReportState, workf
     ['Evidence rounds', String(journey.evidenceIterations)],
     ['Research documents', String(journey.researchDocs)],
     ['Context files', `+${journey.filesAdded.length} / −${journey.filesRemoved.length}${journey.filesSkipped.length ? ` / ${journey.filesSkipped.length} skipped` : ''}`],
-    ['Edit batches', String(journey.batches.length)],
+    ['Assignment batches', String(journey.batches.length)],
     ['Files touched', String(Object.keys(journey.fileStats).length)],
     ['Format retries', String(journey.formatRetries)],
   ];
+
+  if (journey.contextComplaints.length > 0) {
+    summaryRows.push(['Context complaints', String(journey.contextComplaints.length)]);
+  }
 
   if (journey.gitRetries > 0) summaryRows.push(['Git retries', String(journey.gitRetries)]);
 
@@ -354,6 +358,20 @@ export function formatJourneyReport(journey: Journey, report: ReportState, workf
           journey.arbiterFailures.length > 0
             ? section('#### ⚠️ Arbiter failures', journey.arbiterFailures.map((failure) => `- ${failure}`).join('\n'))
             : null,
+        )
+      : null,
+    journey.contextComplaints.length > 0
+      ? section(
+          '### ⚠️ Editor context complaints',
+          markdownTable(
+            ['Assignment', 'File', 'Complaint'],
+            ['right', 'left', 'left'],
+            journey.contextComplaints.map((entry) => [
+              String(entry.assignmentId),
+              entry.path,
+              entry.complaint,
+            ]),
+          ),
         )
       : null,
     journey.gitWarnings.length > 0 ? section('### ⚠️ Git warnings', journey.gitWarnings.map((w) => `- ${w}`).join('\n')) : null,
