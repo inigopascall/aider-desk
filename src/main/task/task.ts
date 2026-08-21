@@ -3816,14 +3816,11 @@ export class Task {
 
     // Compute the cut index: messages before it are distilled into a single
     // decision document, messages at/after it are preserved verbatim.
-    let cutIndex = 0;
+    // Without a preserve count the whole conversation is honed, so the cut
+    // index starts at the end and the preserved region is empty.
+    let cutIndex = contextMessages.length;
     if (preserveCount && preserveCount > 0) {
       cutIndex = Math.max(0, contextMessages.length - preserveCount);
-      // Adjust backward past any leading tool-role message at the cut boundary
-      // so the preserved tail never starts with an orphaned tool result.
-      while (cutIndex > 0 && contextMessages[cutIndex]?.role === 'tool') {
-        cutIndex--;
-      }
     }
 
     const messagesToHone = contextMessages.slice(0, cutIndex);
