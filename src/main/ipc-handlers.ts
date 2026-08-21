@@ -259,6 +259,10 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
     return await eventsHandler.smartCompactConversation(baseDir, taskId);
   });
 
+  ipcMain.handle('hone-conversation', async (_event, baseDir: string, taskId: string, preserveCount?: number) => {
+    return await eventsHandler.honeConversation(baseDir, taskId, preserveCount);
+  });
+
   ipcMain.handle('undo-context-change', async (_event, baseDir: string, taskId: string) => {
     return await eventsHandler.undoContextChange(baseDir, taskId);
   });

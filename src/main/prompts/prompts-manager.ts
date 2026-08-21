@@ -45,6 +45,7 @@ import {
   ConflictResolutionPromptData,
   ConflictResolutionSystemPromptData,
   HandoffPromptData,
+  HoneConversationPromptData,
   InitProjectPromptData,
   PromptTemplateData,
   PromptTemplateName,
@@ -119,6 +120,7 @@ export class PromptsManager {
       'init-project',
       'workflow',
       'compact-conversation',
+      'hone-conversation',
       'commit-message',
       'task-name',
       'conflict-resolution',
@@ -479,6 +481,11 @@ export class PromptsManager {
   public getCompactConversationPrompt = async (task: Task, customInstructions?: string) => {
     const data: CompactConversationPromptData = { customInstructions };
     return await this.render('compact-conversation', data, task.getProjectDir(), task);
+  };
+
+  public getHoneConversationPrompt = async (task: Task, preservedCount?: number) => {
+    const data: HoneConversationPromptData = { preservedCount };
+    return await this.render('hone-conversation', data, task.getProjectDir(), task);
   };
 
   public getGenerateCommitMessageSystemPrompt = async (task: Task) => {

@@ -867,6 +867,14 @@ export class BrowserApi implements ApplicationAPI {
     });
   }
 
+  async honeConversation(baseDir: string, taskId: string, preserveCount?: number): Promise<void> {
+    await this.post('/project/hone-conversation', {
+      projectDir: baseDir,
+      taskId,
+      preserveCount,
+    });
+  }
+
   async undoContextChange(baseDir: string, taskId: string): Promise<boolean> {
     const result = await this.post<{ projectDir: string; taskId: string }, { undone: boolean }>('/project/undo-context-change', {
       projectDir: baseDir,

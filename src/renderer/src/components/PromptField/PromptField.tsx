@@ -74,6 +74,7 @@ const COMMANDS = [
   '/edit-last',
   '/compact',
   '/smart-compact',
+  '/hone',
   '/commit',
   '/handoff',
   '/init',
@@ -888,6 +889,13 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
             prepareForNextPrompt();
             void api.smartCompactConversation(baseDir, taskId);
             break;
+          case '/hone': {
+            const parsedCount = args ? Number(args) : NaN;
+            const preserveCount = Number.isInteger(parsedCount) && parsedCount > 0 ? parsedCount : undefined;
+            prepareForNextPrompt();
+            void api.honeConversation(baseDir, taskId, preserveCount);
+            break;
+          }
           case '/handoff': {
             const focus = args || '';
             if (handoffConversation) {

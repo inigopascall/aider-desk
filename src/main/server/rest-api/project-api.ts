@@ -271,6 +271,12 @@ const SmartCompactConversationSchema = z.object({
   taskId: z.string().min(1, 'Task id is required'),
 });
 
+const HoneConversationSchema = z.object({
+  projectDir: z.string().min(1, 'Project directory is required'),
+  taskId: z.string().min(1, 'Task id is required'),
+  preserveCount: z.number().int().positive().optional(),
+});
+
 const ChangeRequestItemSchema = z.object({
   filename: z.string().min(1, 'Filename is required'),
   lineNumber: z.number().int().min(1, 'Line number is required'),
@@ -885,6 +891,21 @@ export class ProjectApi extends BaseApi {
         const { projectDir, taskId } = parsed;
         await this.eventsHandler.smartCompactConversation(projectDir, taskId);
         res.status(200).json({ message: 'Conversation smart-compacted' });
+      }),
+    );
+
+    // Hone conversation
+    router.post(
+      '/project/hone-conversation',
+      this.handleRequest(async (req, res) => {
+        const parsed = this.validateRequest(HoneConversationSchema, req.body, res);
+        if (!parsed) {
+          return;
+        }
+
+        const { projectDir, taskId, preserveCount } = parsed;
+        await this.eventsHandler.honeConversation(projectDir, taskId, preserveCount);
+        res.status(200).json({ message: 'Conversation honed' });
       }),
     );
 

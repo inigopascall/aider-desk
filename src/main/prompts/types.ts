@@ -50,6 +50,10 @@ export interface CompactConversationPromptData {
   customInstructions?: string;
 }
 
+export interface HoneConversationPromptData {
+  preservedCount?: number;
+}
+
 export interface HandoffPromptData {
   focus?: string;
   contextFiles?: ContextFile[];
@@ -100,6 +104,7 @@ export type PromptTemplateName =
   | 'init-project'
   | 'workflow'
   | 'compact-conversation'
+  | 'hone-conversation'
   | 'commit-message'
   | 'task-name'
   | 'conflict-resolution'

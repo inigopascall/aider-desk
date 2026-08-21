@@ -15,6 +15,7 @@ import {
   ContextFile,
   ContextMessage,
   ContextToolMessage,
+  ContextUserMessage,
   DEFAULT_AUTONOMY_MODE,
   DefaultTaskState,
   EditFormat,
@@ -3803,6 +3804,103 @@ export class Task {
     this.addLogMessage('info', infoMessage, false, undefined, ['undoContextChange']);
 
     return compactedMessages;
+  }
+
+  public async honeConversation(preserveCount?: number): Promise<void> {
+    const contextMessages = await this.contextManager.getContextMessages();
+
+    if (contextMessages.length === 0) {
+      this.addLogMessage('warning', 'No conversation to hone.');
+      return;
+    }
+
+    // Compute the cut index: messages before it are distilled into a single
+    // decision document, messages at/after it are preserved verbatim.
+    let cutIndex = 0;
+    if (preserveCount && preserveCount > 0) {
+      cutIndex = Math.max(0, contextMessages.length - preserveCount);
+      // Adjust backward past any leading tool-role message at the cut boundary
+      // so the preserved tail never starts with an orphaned tool result.
+      while (cutIndex > 0 && contextMessages[cutIndex]?.role === 'tool') {
+        cutIndex--;
+      }
+    }
+
+    const messagesToHone = contextMessages.slice(0, cutIndex);
+    const preservedMessages = contextMessages.slice(cutIndex);
+
+    if (messagesToHone.length === 0) {
+      this.addLogMessage('warning', 'No conversation to hone.');
+      return;
+    }
+
+    const currentTaskState = this.task.state;
+    await this.saveTask({
+      state: DefaultTaskState.InProgress,
+    });
+
+    // Find skill activation messages inside the honed region so they are
+    // preserved rather than silently dropped.
+    const skillMessages = this.findSkillActivationMessages(messagesToHone);
+
+    this.addLogMessage('loading', 'Honing conversation...');
+    this.isCompacting = true;
+
+    try {
+      const profile = await this.getTaskAgentProfile();
+      if (!profile) {
+        throw new Error('No active Agent profile found');
+      }
+
+      const honePrompt = await this.promptsManager.getHoneConversationPrompt(
+        this,
+        preservedMessages.length > 0 ? preservedMessages.length : undefined,
+      );
+
+      const honedText = await this.agent.generateText(
+        `${profile.provider}/${profile.model}`,
+        '',
+        honePrompt,
+        this.getProjectDir(),
+        [...messagesToHone],
+        true,
+      );
+
+      if (!honedText) {
+        throw new Error('Failed to generate honed conversation.');
+      }
+
+      const honedMessage: ContextUserMessage = {
+        id: uuidv4(),
+        role: 'user',
+        content: honedText,
+        timestamp: Date.now(),
+      };
+
+      const finalMessages: ContextMessage[] = [honedMessage, ...skillMessages, ...preservedMessages];
+
+      this.contextManager.setContextMessages(finalMessages);
+
+      await this.contextManager.loadMessages(await this.contextManager.getContextMessages());
+
+      await this.updateContextInfo();
+      this.addLogMessage('info', 'Conversation honed.', false, undefined, ['undoContextChange']);
+    } catch (error) {
+      logger.error('Failed to hone conversation', {
+        baseDir: this.project.baseDir,
+        taskId: this.taskId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      this.addLogMessage('error', 'Failed to hone conversation. Original conversation preserved.');
+    } finally {
+      this.addLogMessage('loading', '', true);
+      this.isCompacting = false;
+      await this.saveTask({
+        state: currentTaskState,
+      });
+
+      await this.runNextQueuedPrompt();
+    }
   }
 
   public async compactConversation(

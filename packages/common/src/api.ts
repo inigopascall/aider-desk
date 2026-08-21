@@ -230,6 +230,7 @@ export interface ApplicationAPI {
   removeMessagesUpTo: (baseDir: string, taskId: string, messageId: string) => Promise<void>;
   compactConversation: (baseDir: string, taskId: string, mode: Mode, customInstructions?: string) => void;
   smartCompactConversation: (baseDir: string, taskId: string) => Promise<void>;
+  honeConversation: (baseDir: string, taskId: string, preserveCount?: number) => Promise<void>;
   handoffConversation: (baseDir: string, taskId: string, focus?: string) => Promise<void>;
   undoContextChange: (baseDir: string, taskId: string) => Promise<boolean>;
   runCodeChangeRequests: (baseDir: string, taskId: string, requests: ChangeRequestItem[], createNewTask?: boolean) => void;

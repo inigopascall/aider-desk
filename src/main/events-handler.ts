@@ -301,6 +301,13 @@ export class EventsHandler {
     }
   }
 
+  async honeConversation(baseDir: string, taskId: string, preserveCount?: number): Promise<void> {
+    const task = this.projectManager.getProject(baseDir).getTask(taskId);
+    if (task) {
+      await task.honeConversation(preserveCount);
+    }
+  }
+
   async undoContextChange(baseDir: string, taskId: string): Promise<boolean> {
     const task = this.projectManager.getProject(baseDir).getTask(taskId);
     if (task) {
