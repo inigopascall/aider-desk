@@ -56,15 +56,15 @@ export const MAX_DIFF_CHARS = 80_000;
 export const MAX_RESEARCH_DOC_CHARS = 30_000;
 export const EDITOR_TIMEOUT_MS = 10 * 60_000;
 
-export interface ResolvedAssignmentContextFile {
-  declaredPath: string;
-  absolutePath: string | null;
-}
-
 export function normalizePath(p: string): string {
   return p.replace(/\\/g, '/');
 }
 
+/**
+ * Resolves a validated project-relative assignment path against the task's
+ * effective working directory for host-side filesystem operations only.
+ * The resolved path must never be exposed to workflow agents.
+ */
 export function resolveAssignmentTarget(taskDir: string, assignmentPath: string): string {
   const normalizedTaskDir = path.resolve(taskDir);
   const normalizedAssignmentPath = normalizePath(assignmentPath.trim());
@@ -84,52 +84,6 @@ export function resolveAssignmentTarget(taskDir: string, assignmentPath: string)
   }
 
   return absolutePath;
-}
-
-export async function resolveAssignmentContextFiles(
-  task: Task,
-  assignment: FileAssignment,
-  producerAssignments: FileAssignment[] = [],
-  successfulAssignmentIds: ReadonlySet<number> = new Set(),
-): Promise<ResolvedAssignmentContextFile[]> {
-  const inventory = await task.getContextFiles();
-  const absoluteInventory = new Set(
-    inventory
-      .map((file) => normalizePath(file.path.trim()))
-      .filter((filePath) => path.isAbsolute(filePath)),
-  );
-  const declaredPaths = [...new Set(assignment.contextFiles.map((filePath) => normalizePath(filePath.trim())).filter(Boolean))];
-
-  return Promise.all(
-    declaredPaths.map(async (declaredPath): Promise<ResolvedAssignmentContextFile> => {
-      if (!path.isAbsolute(declaredPath) && declaredPath.split('/').includes('..')) {
-        return { declaredPath, absolutePath: null };
-      }
-      if (path.isAbsolute(declaredPath) && !absoluteInventory.has(declaredPath)) {
-        return { declaredPath, absolutePath: null };
-      }
-
-      let absolutePath = await task.resolveContextFilePath(declaredPath);
-      if (!absolutePath && !path.isAbsolute(declaredPath)) {
-        const producer = producerAssignments.find((candidate) => normalizePath(candidate.path) === declaredPath);
-        if (producer && assignment.dependsOn.includes(producer.id) && successfulAssignmentIds.has(producer.id)) {
-          try {
-            const producedPath = resolveAssignmentTarget(task.getTaskDir(), producer.path);
-            if (await fileExists(producedPath)) {
-              absolutePath = producedPath;
-            }
-          } catch {
-            // Keep the declaration unresolved and let the editor recover narrowly.
-          }
-        }
-      }
-
-      return {
-        declaredPath,
-        absolutePath: absolutePath ? path.resolve(absolutePath) : null,
-      };
-    }),
-  );
 }
 
 export function parseChangedPaths(raw: string): string[] {
@@ -642,30 +596,18 @@ async function restoreTarget(
  * editor is told to read the live file first and implement the objective
  * semantically — no exact anchors are ever supplied.
  */
-export function buildEditorPrompt(
-  assignment: FileAssignment,
-  targetAbsolutePath: string,
-  contextFiles: ResolvedAssignmentContextFile[],
-): string {
-  const resolved = contextFiles.flatMap((file) => (file.absolutePath ? [`- ${file.absolutePath}`] : []));
-  const unavailable = contextFiles.flatMap((file) => (file.absolutePath ? [] : [`- ${file.declaredPath}`]));
-
+export function buildEditorPrompt(assignment: FileAssignment): string {
   return [
     'You are implementing exactly one file-scoped assignment.',
     '',
-    'TARGET FILE:',
-    `- project-relative: ${assignment.path}`,
-    `- resolved absolute: ${targetAbsolutePath}`,
-    '',
     serializeAssignment(assignment),
     '',
-    'RESOLVED FILES TO READ FIRST FOR CONTEXT:',
-    ...(resolved.length > 0 ? resolved : ['- NONE']),
-    ...(unavailable.length > 0 ? ['', 'UNAVAILABLE DECLARED CONTEXT FILES:', ...unavailable] : []),
-    '',
-    'The resolved absolute target is the only writable path. Context files are read-only.',
-    'Read every available declared evidence file in full before implementation.',
-    'RELEVANT CONTRACTS AND PATTERNS is the decompositor digest, but the files remain authoritative.',
+    `The assignment path '${assignment.path}' is the only writable file.`,
+    'All paths in this assignment are project-relative and must be passed to file tools exactly as written.',
+    "AiderDesk resolves project-relative paths against the task's effective working directory.",
+    'Context files are read-only.',
+    'Read every declared evidence file in full before implementation.',
+    'RELEVANT CONTRACTS AND PATTERNS is the decompositor digest, but the declared files remain authoritative.',
     'Search is allowed only after the declared evidence has been read. If search is needed because essential evidence was omitted, emit a specific CONTEXT COMPLAINT.',
     '',
     'Finish with "CONTEXT COMPLAINT: NONE" or a specific complaint, followed by "RESULT: DONE" or "RESULT: BLOCKED: <reason>".',
@@ -684,7 +626,6 @@ async function runSingleAssignment(
   journey: Journey,
   assignment: FileAssignment,
   abs: string,
-  contextFiles: ResolvedAssignmentContextFile[],
 ): Promise<AssignmentOutcome> {
   const label = `ASSIGNMENT ${assignment.id}: ${assignment.path}`;
   const pre = await readTarget(abs);
@@ -744,7 +685,7 @@ async function runSingleAssignment(
   }> => {
     const raw = await ctx.dispatch.agent(
       AGENTS.editor,
-      buildEditorPrompt(assignment, abs, contextFiles),
+      buildEditorPrompt(assignment),
       label,
       { timeoutMs: EDITOR_TIMEOUT_MS, modelSlot: slot, disableFallback: true },
     );
@@ -951,22 +892,16 @@ export async function runAssignmentBatch(
       }
       return true;
     });
-    const successfulAssignmentIds = new Set(
-      [...outcomes.values()].filter((outcome) => outcome.outcome === 'DONE').map((outcome) => outcome.id),
-    );
-    const prepared = await Promise.all(
-      runnable.map(async (assignment) => ({
-        assignment,
-        target: resolveAssignmentTarget(ctx.task.getTaskDir(), assignment.path),
-        contextFiles: await resolveAssignmentContextFiles(ctx.task, assignment, normalized, successfulAssignmentIds),
-      })),
-    );
+    const prepared = runnable.map((assignment) => ({
+      assignment,
+      target: resolveAssignmentTarget(ctx.task.getTaskDir(), assignment.path),
+    }));
 
     // Wave dependencies are satisfied, writable targets are unique, and shared
     // contextual files are read-only, so concurrent execution is intentional.
     const results = await Promise.all(
-      prepared.map(({ assignment, target, contextFiles }) =>
-        runSingleAssignment(ctx, journey, assignment, target, contextFiles),
+      prepared.map(({ assignment, target }) =>
+        runSingleAssignment(ctx, journey, assignment, target),
       ),
     );
     for (const r of results) {

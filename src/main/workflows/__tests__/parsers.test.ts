@@ -131,8 +131,8 @@ describe('parseAssignmentsResponse', () => {
       id: 1,
       path: 'src/file.ts',
       operation: 'MODIFY',
-      contextFiles: [],
-      relevantContracts: [],
+      contextFiles: ['src/contracts/fix.ts'],
+      relevantContracts: ['`fixValue()` returns the mapped result.'],
       objective: 'Update the auth handler to use the new token API.',
       instructions: ['Replace the token refresh call with refreshToken()', 'Update the error handling to match the new contract'],
       acceptanceCriteria: ['No references to oldToken() remain', 'refreshToken() is called with the session id'],
@@ -157,8 +157,8 @@ describe('parseAssignmentsResponse', () => {
 
     const result = parseAssignmentsResponse(text);
     expect(result.assignments[0].operation).toBe('MODIFY');
-    expect(result.assignments[0].contextFiles).toEqual(['src/contracts/fix.ts']);
-    expect(result.assignments[0].relevantContracts).toEqual(['`fixValue()` returns the mapped result.']);
+    expect(result.assignments[0].contextFiles).toEqual([]);
+    expect(result.assignments[0].relevantContracts).toEqual([]);
     expect(result.assignments[1]).toEqual({
       id: 2,
       path: 'src/old.ts',
@@ -178,7 +178,6 @@ describe('parseAssignmentsResponse', () => {
       'FILES TO READ FIRST FOR CONTEXT:',
       '- ./src\\contracts\\a.ts',
       '- src/contracts/a.ts',
-      '- /external/read-only.ts',
       'RELEVANT CONTRACTS AND PATTERNS:',
       '- `createA()` accepts one string argument.',
       '- Tests mock it with `vi.spyOn(...)`.',
@@ -187,9 +186,26 @@ describe('parseAssignmentsResponse', () => {
     ].join('\n');
 
     expect(parseAssignmentsResponse(text).assignments[0]).toMatchObject({
-      contextFiles: ['src/contracts/a.ts', '/external/read-only.ts'],
+      contextFiles: ['src/contracts/a.ts'],
       relevantContracts: ['`createA()` accepts one string argument.', 'Tests mock it with `vi.spyOn(...)`.'],
     });
+  });
+
+  it.each([
+    '/absolute/file.ts',
+    'C:\\absolute\\file.ts',
+    '../outside.ts',
+    'src/../../outside.ts',
+  ])('rejects invalid context file path %s', (contextPath) => {
+    const text = [
+      '== ASSIGNMENT 1: MODIFY: src/a.ts ==',
+      'FILES TO READ FIRST FOR CONTEXT:',
+      `- ${contextPath}`,
+      'OBJECTIVE:',
+      'Update a.',
+    ].join('\n');
+
+    expect(() => parseAssignmentsResponse(text)).toThrow(/invalid context file path/);
   });
 
   it('defaults missing context and contract sections to empty arrays', () => {
@@ -278,6 +294,32 @@ describe('parseAssignmentsResponse', () => {
   });
 });
 
+describe('buildEditorPrompt path contract', () => {
+  it('exposes only project-relative assignment paths', async () => {
+    const { buildEditorPrompt } = await import('../definitions/dev-pipeline-core');
+    const assignment: FileAssignment = {
+      id: 1,
+      path: 'src/file.ts',
+      operation: 'MODIFY',
+      contextFiles: ['src/contracts/token.ts'],
+      relevantContracts: ['`refreshToken()` accepts a session id.'],
+      objective: 'Update the handler.',
+      instructions: ['Use refreshToken'],
+      acceptanceCriteria: ['No old calls remain'],
+      dependsOn: [],
+    };
+
+    const prompt = buildEditorPrompt(assignment);
+
+    expect(prompt).toContain("The assignment path 'src/file.ts' is the only writable file.");
+    expect(prompt).toContain('- src/contracts/token.ts');
+    expect(prompt).toContain('must be passed to file tools exactly as written');
+    expect(prompt).not.toContain('resolved absolute');
+    expect(prompt).not.toContain('RESOLVED FILES');
+    expect(prompt).not.toContain('.aider-desk/tasks/');
+  });
+});
+
 describe('serializeAssignment', () => {
   it('round-trips through parseAssignmentsResponse', () => {
     const assignment: FileAssignment = {
@@ -291,9 +333,6 @@ describe('serializeAssignment', () => {
       acceptanceCriteria: ['No old calls remain'],
       dependsOn: [2, 3],
     };
-
-    assignment.contextFiles = ['src/contracts/token.ts', 'src/file.test.ts'];
-    assignment.relevantContracts = ['`refreshToken()` accepts the session id', 'Tests use `vi.spyOn(...)`'];
 
     const serialized = serializeAssignment(assignment);
     const parsed = parseAssignmentsResponse(serialized);

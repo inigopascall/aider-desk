@@ -254,7 +254,7 @@ export interface FileAssignment {
   /** Project-relative normalized path. */
   path: string;
   operation: AssignmentOperation;
-  /** Other files the editor should read before implementing this assignment. */
+  /** Project-relative files the editor must read before implementation. */
   contextFiles: string[];
   /** Concrete implementation facts distilled from those files and the plan. */
   relevantContracts: string[];
@@ -272,8 +272,9 @@ export interface FileAssignment {
  * Parses the DECOMPOSITOR's per-file assignment response.
  *
  * Assignment headers match `== ASSIGNMENT <n>: <CREATE|MODIFY|DELETE>: <path> ==`
- * (operation case-insensitive). Everything between headers belongs to that
- * assignment. Within a block, `DEPENDS ON:` (single line), `OBJECTIVE:`,
+ * (operation case-insensitive). Target and context-file paths must be
+ * normalized project-relative paths. Everything between headers belongs to
+ * that assignment. Within a block, `DEPENDS ON:` (single line), `OBJECTIVE:`,
  * `INSTRUCTIONS:` and `ACCEPTANCE CRITERIA:` start sections; `- ` lines under
  * the latter two become array items and the objective is joined free text.
  * Missing INSTRUCTIONS/ACCEPTANCE CRITERIA default to `[]`; a missing
@@ -415,6 +416,15 @@ export function parseAssignmentsResponse(raw: string): { assignments: FileAssign
           let contextPath = line.slice(2).trim().replace(/\\/g, '/');
           if (contextPath.startsWith('./')) {
             contextPath = contextPath.slice(2);
+          }
+          if (
+            contextPath.startsWith('/') ||
+            /^[A-Za-z]:/.test(contextPath) ||
+            contextPath.split('/').includes('..')
+          ) {
+            throw new ParseError(
+              `ASSIGNMENT ${id}: invalid context file path '${line.slice(2).trim()}'`,
+            );
           }
           if (contextPath.length > 0 && contextPath.toUpperCase() !== 'NONE' && !contextFiles.includes(contextPath)) {
             contextFiles.push(contextPath);
