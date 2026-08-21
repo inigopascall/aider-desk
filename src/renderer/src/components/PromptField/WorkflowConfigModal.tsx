@@ -7,9 +7,9 @@ import { getProviderModelId } from '@common/agent';
 import { BaseDialog } from '@/components/common/BaseDialog';
 import { Button } from '@/components/common/Button';
 import { ModelSelectorWrapper } from '@/components/common/ModelSelectorWrapper';
-import { useSettingsStore, useSaveSettings } from '@/stores/settingsStore';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useModelProviders } from '@/contexts/ModelProviderContext';
+import { useProjectSettings } from '@/contexts/ProjectSettingsContext';
 
 type Props = {
   workflow: WorkflowInfo;
@@ -24,18 +24,16 @@ type Props = {
  */
 export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSaveAndGo }: Props) => {
   const { t } = useTranslation();
-  const settings = useSettingsStore((s) => s.settings);
-  const saveSettings = useSaveSettings();
+  const { projectSettings, saveProjectSettings } = useProjectSettings();
   const { getWorkflowAgentProfiles } = useAgents();
   const { providers } = useModelProviders();
 
-  const persisted = settings?.workflowConfigs?.[workflow.id];
+  const persisted = projectSettings?.workflowConfigs?.[workflow.id];
   const [agentModels, setAgentModels] = useState<Record<string, WorkflowAgentModels>>(() => ({ ...(persisted?.agentModels ?? {}) }));
   const [preArbiterCommand, setPreArbiterCommand] = useState(persisted?.preArbiterCommand ?? '');
   const [bashCommand, setBashCommand] = useState(persisted?.bashCommand ?? '');
 
   const workflowProfiles = getWorkflowAgentProfiles();
-  const colorFor = (role: string) => workflowProfiles.find((p) => p.name === role)?.subagent.color ?? DEFAULT_WORKFLOW_COLOR;
 
   const setRoleModel = (role: string, slot: 'primary' | 'fallback', model: Model | null) => {
     setAgentModels((prev) => {
@@ -52,7 +50,7 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
   };
 
   const persist = async () => {
-    if (!settings) return;
+    if (!projectSettings) return;
     const pruned: Record<string, WorkflowAgentModels> = {};
     for (const [role, m] of Object.entries(agentModels)) {
       if (workflow.agents.includes(role) && (m.primary || m.fallback)) pruned[role] = m;
@@ -62,7 +60,9 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
       preArbiterCommand: preArbiterCommand.trim() || undefined,
       bashCommand: bashCommand.trim() || undefined,
     };
-    await saveSettings({ ...settings, workflowConfigs: { ...(settings.workflowConfigs ?? {}), [workflow.id]: config } });
+    await saveProjectSettings({
+      workflowConfigs: { ...(projectSettings.workflowConfigs ?? {}), [workflow.id]: config },
+    });
   };
 
   const handleSaveAndClose = async () => {
@@ -81,16 +81,17 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
       onClose={onCancel}
       closeOnEscape
       closeOnBackdrop
-      width={640}
+      enableFocusTrap={false}
+      width={760}
       footer={
         <>
           <Button variant="text" onClick={onCancel}>
             {t('common.cancel')}
           </Button>
-          <Button variant="text" onClick={handleSaveAndClose} disabled={!settings}>
+          <Button variant="text" onClick={handleSaveAndClose} disabled={!projectSettings}>
             {t('workflowsSettings.saveAndClose')}
           </Button>
-          <Button onClick={handleSaveAndGo} disabled={!settings}>
+          <Button onClick={handleSaveAndGo} disabled={!projectSettings}>
             {t('workflowsSettings.saveAndGo')}
           </Button>
         </>
@@ -106,6 +107,11 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
         </div>
         <div className="space-y-2">
           {workflow.agents.map((role) => {
+            const defaultProfile = workflowProfiles.find((p) => p.name === role);
+            const defaultLabel = defaultProfile?.model
+              ? t('workflowsSettings.defaultModelOption', { model: defaultProfile.model })
+              : t('workflowsSettings.agentProfileDefault');
+
             const primaryValue = agentModels[role]?.primary;
             const [primaryProviderId] = primaryValue ? extractProviderModel(primaryValue) : [''];
             const primaryUnavailable = !!primaryValue && !providers.some((p) => p.id === primaryProviderId);
@@ -116,7 +122,10 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
 
             return (
               <div key={role} className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: colorFor(role) }} />
+                <span
+                  className="w-3 h-3 rounded-sm flex-shrink-0"
+                  style={{ backgroundColor: defaultProfile?.subagent.color ?? DEFAULT_WORKFLOW_COLOR }}
+                />
                 <span className="w-40 flex-shrink-0 text-xs font-medium uppercase truncate text-text-secondary" title={role}>
                   {role}
                 </span>
@@ -125,7 +134,7 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
                     className="w-full justify-between"
                     selectedModelId={agentModels[role]?.primary ?? null}
                     onChange={(model) => setRoleModel(role, 'primary', model)}
-                    labelOnNull={t('workflowsSettings.agentProfileDefault')}
+                    labelOnNull={defaultLabel}
                     skipPreferredModelsUpdate
                     usePortal
                     popupPlacement="bottom"
@@ -144,7 +153,7 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
                     className="w-full justify-between"
                     selectedModelId={agentModels[role]?.fallback ?? null}
                     onChange={(model) => setRoleModel(role, 'fallback', model)}
-                    labelOnNull={t('workflowsSettings.agentProfileDefault')}
+                    labelOnNull={defaultLabel}
                     skipPreferredModelsUpdate
                     usePortal
                     popupPlacement="bottom"

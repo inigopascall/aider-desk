@@ -9,6 +9,7 @@ vi.mock('@/contexts/ProjectSettingsContext', () => ({
     projectSettings: {
       enabledWorkflows: [AVAILABLE_WORKFLOWS[0].id],
       autonomyModeLocked: false,
+      workflowConfigs: {},
     },
     saveProjectSettings: vi.fn(),
   }),

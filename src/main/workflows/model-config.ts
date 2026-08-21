@@ -12,7 +12,7 @@ import type { WorkflowDefinition } from './types';
  * @returns The resolved WorkflowConfig
  */
 export function resolveWorkflowConfig(task: Task, workflow: WorkflowDefinition): WorkflowConfig {
-  return task.getSettings().workflowConfigs?.[workflow.id] ?? { agentModels: {} };
+  return task.getProjectSettings().workflowConfigs?.[workflow.id] ?? { agentModels: {} };
 }
 
 /**

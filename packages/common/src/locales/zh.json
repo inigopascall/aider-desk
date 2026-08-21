@@ -447,6 +447,7 @@
     "noProjects": "当前没有打开的项目。",
     "openSettings": "工作流设置",
     "agentProfileDefault": "代理配置默认值",
+    "defaultModelOption": "{{model}} (默认)",
     "modelUnavailable": "模型不可用",
     "providerNotConfigured": "提供商 '{{provider}}' 未配置。",
     "configModalTitle": "配置 {{name}}",

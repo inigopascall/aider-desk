@@ -449,6 +449,7 @@
     "noProjects": "No projects are currently open.",
     "openSettings": "Workflow settings",
     "agentProfileDefault": "Agent profile default",
+    "defaultModelOption": "{{model}} (default)",
     "modelUnavailable": "Model unavailable",
     "providerNotConfigured": "Provider '{{provider}}' is not configured.",
     "configModalTitle": "Configure {{name}}",

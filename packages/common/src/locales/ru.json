@@ -443,6 +443,7 @@
     "noProjects": "Сейчас нет открытых проектов.",
     "openSettings": "Настройки рабочего процесса",
     "agentProfileDefault": "Модель профиля агента по умолчанию",
+    "defaultModelOption": "{{model}} (по умолчанию)",
     "modelUnavailable": "Модель недоступна",
     "providerNotConfigured": "Провайдер '{{provider}}' не настроен.",
     "configModalTitle": "Настройка {{name}}",

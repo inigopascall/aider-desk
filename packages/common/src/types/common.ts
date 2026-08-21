@@ -120,6 +120,22 @@ export interface WorkflowConfig {
   bashCommand?: string;
 }
 
+/** Zod schema for per-agent model assignment in a workflow. Model ids are "provider/model". Undefined = agent profile default. */
+export const WorkflowAgentModelsSchema = z.object({
+  primary: z.string().optional(),
+  fallback: z.string().optional(),
+});
+
+/** Zod schema for persisted per-workflow configuration set via the workflow configuration modal. */
+export const WorkflowConfigSchema = z.object({
+  /** Keyed by agent role name (e.g. "DIGESTER"). */
+  agentModels: z.record(z.string(), WorkflowAgentModelsSchema),
+  /** Optional shell command run in the task directory before the review stage; its output is passed to the reviewer. */
+  preArbiterCommand: z.string().optional(),
+  /** Optional shell command run in the task directory before the workflow's final git commit. */
+  bashCommand: z.string().optional(),
+});
+
 export const WORKFLOW_AGENT_ROLES: Record<string, string[]> = {
   'dev-pipeline': ['DIGESTER', 'INVESTIGATOR', 'RESEARCHER', 'GRAND-PLANNER', 'DECOMPOSITOR', 'EDITOR'],
   'dev-pipeline-review': ['DIGESTER', 'INVESTIGATOR', 'RESEARCHER', 'GRAND-PLANNER', 'DECOMPOSITOR', 'EDITOR', 'ARBITER'],
@@ -512,6 +528,7 @@ export const ProjectSettingsSchema = z.object({
   contextSidebarSectionsOrder: z.array(z.string()).default([]),
   contextSidebarSectionsHidden: z.array(z.string()).default([]),
   enabledWorkflows: z.array(z.string()).optional(),
+  workflowConfigs: z.record(z.string(), WorkflowConfigSchema).optional(),
 });
 
 export type ProjectSettings = z.infer<typeof ProjectSettingsSchema>;

@@ -724,6 +724,11 @@ export class Task {
     return this.store.getSettings();
   }
 
+  /** Project settings for the task's owning project. Exposed for the workflow layer's configuration resolution. */
+  public getProjectSettings(): ProjectSettings {
+    return this.project.getProjectSettings();
+  }
+
   /**
    * Whether a provider profile with the given id is configured.
    * Mirrors the lookup performed by Agent.runAgent (existence only; `disabled` is not considered).

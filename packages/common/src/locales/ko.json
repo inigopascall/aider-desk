@@ -444,6 +444,7 @@
     "noProjects": "현재 열린 프로젝트가 없습니다.",
     "openSettings": "워크플로 설정",
     "agentProfileDefault": "에이전트 프로필 기본값",
+    "defaultModelOption": "{{model}} (기본값)",
     "modelUnavailable": "모델을 사용할 수 없음",
     "providerNotConfigured": "제공자 '{{provider}}'가 구성되지 않았습니다.",
     "configModalTitle": "{{name}} 구성",

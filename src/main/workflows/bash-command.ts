@@ -32,7 +32,7 @@ export async function runWorkflowBashCommand(
   workflow: WorkflowDefinition,
   log: WorkflowLogger,
 ): Promise<void> {
-  const command = task.getSettings().workflowConfigs?.[workflow.id]?.bashCommand?.trim();
+  const command = task.getProjectSettings().workflowConfigs?.[workflow.id]?.bashCommand?.trim();
   if (!command) {
     return;
   }
@@ -88,7 +88,7 @@ export async function runWorkflowBashCommand(
  * @returns The formatted command output, or null when no command is configured
  */
 export async function runPreArbiterCommand(task: Task, workflowId: string, log: WorkflowLogger): Promise<string | null> {
-  const command = task.getSettings().workflowConfigs?.[workflowId]?.preArbiterCommand?.trim();
+  const command = task.getProjectSettings().workflowConfigs?.[workflowId]?.preArbiterCommand?.trim();
   if (!command) {
     return null;
   }
