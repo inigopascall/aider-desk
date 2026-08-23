@@ -140,6 +140,12 @@ export const WorkflowConfigSchema = z.object({
   enabledAgents: z.record(z.string(), z.boolean()).optional(),
 });
 
+/**
+ * Ordered agent roles per workflow id. Every role here is a configurable model
+ * role: the workflow configuration modal exposes primary/fallback model
+ * selectors for each. Only roles listed in `WORKFLOW_OPTIONAL_AGENT_ROLES`
+ * additionally receive a run toggle; all other roles always run.
+ */
 export const WORKFLOW_AGENT_ROLES: Record<string, string[]> = {
   'dev-pipeline': ['DIGESTER', 'INVESTIGATOR', 'RESEARCHER', 'GRAND-PLANNER', 'DECOMPOSITOR', 'EDITOR', 'CONFIRMER'],
   'dev-pipeline-review': [
@@ -162,9 +168,13 @@ export const WORKFLOW_REVIEWER_ROLES = ['REVIEWER-1', 'REVIEWER-2'];
 /** Arbiter agent role for the review workflow. */
 export const WORKFLOW_ARBITER_ROLE = 'ARBITER';
 
-/** Optional agent roles per workflow id; these can be toggled via `enabledAgents`. */
+/**
+ * Optional agent roles per workflow id; these are the only roles that can be
+ * toggled via `enabledAgents`. Roles absent from this list (e.g. CONFIRMER)
+ * always run and are never controlled by `enabledAgents`.
+ */
 export const WORKFLOW_OPTIONAL_AGENT_ROLES: Record<string, string[]> = {
-  'dev-pipeline-review': [...WORKFLOW_REVIEWER_ROLES, WORKFLOW_ARBITER_ROLE, 'CONFIRMER'],
+  'dev-pipeline-review': [...WORKFLOW_REVIEWER_ROLES, WORKFLOW_ARBITER_ROLE],
 };
 
 /**

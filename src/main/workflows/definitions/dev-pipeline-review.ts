@@ -21,7 +21,7 @@ import {
 } from './dev-pipeline-core';
 import { createJourney, type ReportState } from '../journey';
 import { formatArbiterRound, formatAssignmentTargets, formatReviewerReport } from '../reporting';
-import { parseArbiterResponse } from '../parsers';
+import { parseArbiterResponse, serializeAssignment } from '../parsers';
 import { WorkflowCancelled } from '../dispatch';
 import { buildPrompt, PromptSection } from '../prompt-formatting';
 
@@ -177,12 +177,21 @@ export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<voi
           break;
         }
 
+        // Preserve the latest arbitration evidence before the rectification
+        // batch runs so the confirmer can verify every requested assignment
+        // after the edits have been applied.
+        lastArbiterOutcome = [
+          arbiter.reviewSummary,
+          '',
+          '=== RECTIFICATION ASSIGNMENTS ===',
+          ...arbiter.assignments.map((assignment) => serializeAssignment(assignment)),
+        ].join('\n');
+
         await emitInfo(ctx.log, formatAssignmentTargets(`Arbiter rectification — round ${round}`, arbiter.assignments));
         report.abortStage = `arbiter rectification (round ${round})`;
         editVerdict = await runAssignmentBatch(ctx, journey, report, git, arbiter.assignments, `dev-pipeline-review rectification ${round}`);
         finalStatus = editVerdict === 'ALIGNED' ? 'aligned' : 'deficient';
         journey.reviewTable.push({ round, outcome: 'rectified', rectificationEdits: arbiter.assignments.length, arbitrateAgain: arbiter.arbitrateAgain });
-        lastArbiterOutcome = arbiter.reviewSummary;
         await emitCheckpoint(ctx, journey, 'Dev Pipeline + Review', `Arbiter Round ${round}`);
 
         // Continue only when rectification assignments existed, rectification

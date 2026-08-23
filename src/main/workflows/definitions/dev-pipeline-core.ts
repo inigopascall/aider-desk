@@ -1088,12 +1088,36 @@ export function reviewEvidenceSections(
 }
 
 /**
+ * Extracts the latest rectification assignment evidence from the journey's
+ * batch records. Rectification batches are labelled with the
+ * 'dev-pipeline-review rectification' stage prefix; the last such batch is
+ * the latest rectification the confirmer must verify against. Returns null
+ * when no rectification batch was recorded.
+ */
+function latestRectificationAssignments(journey: Journey): string | null {
+  const rectificationBatches = journey.batches.filter((batch) => batch.stage.startsWith('dev-pipeline-review rectification'));
+  if (rectificationBatches.length === 0) {
+    return null;
+  }
+  const latest = rectificationBatches[rectificationBatches.length - 1];
+  const rows = latest.rows.map((row) => {
+    const detail = row.detail ? ` — ${row.detail}` : '';
+    return `- ${row.path}: ${row.outcome} (${row.alignment})${detail}`;
+  });
+  return [
+    `Latest rectification batch (batch ${latest.batch} — ${latest.stage}):`,
+    ...rows,
+    `Batch verdict: ${latest.verdict}`,
+  ].join('\n');
+}
+
+/**
  * Runs the final confirmer stage. The confirmer verifies the applied changes
  * against the latest arbiter rectification (or the original implementation
- * plan when no rectification was required) and reports per-file
- * additions/changes/removals plus any remaining work. A non-cancellation
- * dispatch failure is recorded and logged as a warning without aborting the
- * workflow.
+ * plan when the arbiter was disabled or not part of the workflow) and reports
+ * per-file additions/changes/removals plus any remaining work. A
+ * non-cancellation dispatch failure is recorded and logged as a warning
+ * without aborting the workflow.
  */
 export async function runConfirmerStage(
   ctx: WorkflowRunContext,
@@ -1107,16 +1131,39 @@ export async function runConfirmerStage(
 ): Promise<void> {
   report.abortStage = 'confirmer review';
   const evidence = await collectReviewEvidence(git, baselineCommit, journey);
+
+  // The arbitration section is built conditionally so the confirmer can
+  // unambiguously select its verification basis: the latest arbiter
+  // rectification when arbitration ran, or the original implementation plan
+  // when the arbiter was disabled or not part of the workflow.
+  const arbitrationSection: PromptSection =
+    lastArbiterOutcome !== null
+      ? {
+          title: 'ARBITRATION OUTCOME',
+          body: [
+            "The Arbiter ran as part of this workflow. The content below is the authoritative latest arbitration outcome: the arbiter's verdict and the rectification assignments that were subsequently executed.",
+            '',
+            lastArbiterOutcome,
+            '',
+            latestRectificationAssignments(journey) ?? 'No rectification assignments were executed — the arbiter required no further edits.',
+          ].join('\n'),
+        }
+      : {
+          title: 'ARBITRATION OUTCOME',
+          body: 'The Arbiter was disabled or was not part of this workflow — no Arbiter ran. Verify the applied changes against the original IMPLEMENTATION PLAN below; it is the verification basis for this run.',
+        };
+
   const prompt = buildPrompt([
     ...reviewEvidenceSections(ctx, decompositionSummary, evidence, journey.lastValidationOutput),
     { title: 'IMPLEMENTATION PLAN', body: planText },
-    { title: 'ARBITRATION OUTCOME', body: lastArbiterOutcome ?? 'No arbiter rectification was required.' },
+    arbitrationSection,
     {
       title: 'CONFIRMER REPORT FORMAT',
       body: [
         'Respond with a brief `# Confirmer Report` that:',
         '- lists per-file additions, changes, and removals against the baseline;',
-        '- verifies each file against the latest arbiter rectification, or the original implementation plan when no rectification was required;',
+        '- verifies each file against the latest arbitration outcome and rectification assignments when present, or against the original implementation plan when the Arbiter did not run;',
+        '- checks every supplied latest rectification assignment against the CUMULATIVE GIT DIFF and VALIDATION COMMAND OUTPUT, and reports any rectification assignment that was skipped or only partially applied under `## Still to do`;',
         '- ends with a `## Still to do` section listing any remaining work.',
       ].join('\n'),
     },
