@@ -1,6 +1,7 @@
 import { clsx } from 'clsx';
 import { RiRobot2Line } from 'react-icons/ri';
-import { ResponseMessage } from '@common/types';
+import { LuWorkflow } from 'react-icons/lu';
+import { ResponseMessage, getWorkflowColor } from '@common/types';
 
 import { MessageBar } from './MessageBar';
 
@@ -35,6 +36,8 @@ export const ResponseMessageBlock = ({
 }: Props) => {
   const baseClasses = 'rounded-md max-w-full text-xs bg-bg-secondary text-text-primary';
 
+  const workflowMeta = message.promptContext?.workflow;
+
   const parsedContent = useParsedContent(baseDir, message.content, allFiles, renderMarkdown, showThinking, message.reasoning);
 
   if (!parsedContent || (Array.isArray(parsedContent) && parsedContent.length === 0)) {
@@ -52,7 +55,11 @@ export const ResponseMessageBlock = ({
     >
       <div className="flex items-start gap-2">
         <div className="mt-[1px] relative">
-          <RiRobot2Line className="text-text-muted w-4 h-4" />
+          {workflowMeta ? (
+            <LuWorkflow className="w-4 h-4" style={{ color: getWorkflowColor(workflowMeta.workflowId) }} />
+          ) : (
+            <RiRobot2Line className="text-text-muted w-4 h-4" />
+          )}
         </div>
         <div className="flex-grow-1 w-full overflow-hidden">{parsedContent}</div>
       </div>

@@ -122,9 +122,13 @@ export const parseMessageContent = (
   const processTextBlock = () => {
     if (currentText.trimEnd()) {
       if (renderMarkdown) {
+        // Normalize path-list lines ending in literal backslashes (e.g. `C:\path\`)
+        // into markdown hard-break spacing so they render as real line breaks
+        // instead of visible backslash text with collapsed lines.
+        const markdownContent = currentText.replace(/\\{1,2}[ \t]*\n/g, '  \n').trimEnd();
         parts.push(
           <ReactMarkdown key={parts.length} remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>
-            {currentText.trimEnd()}
+            {markdownContent}
           </ReactMarkdown>,
         );
       } else {

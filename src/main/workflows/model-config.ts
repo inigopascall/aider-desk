@@ -1,4 +1,10 @@
-import { AgentProfile, WorkflowConfig } from '@common/types';
+import {
+  AgentProfile,
+  WorkflowConfig,
+  WORKFLOW_ARBITER_ROLE,
+  WORKFLOW_REVIEWER_ROLES,
+  isWorkflowAgentEnabled,
+} from '@common/types';
 import { extractProviderModel } from '@common/utils';
 import type { Task } from '@/task';
 import type { WorkflowDefinition } from './types';
@@ -70,10 +76,11 @@ export function applyModelOverride(
 }
 
 /**
- * Generates a human-readable summary of the model overrides in a workflow configuration.
+ * Generates a human-readable summary of the model overrides and optional-agent
+ * enablement in a workflow configuration.
  *
  * @param config The workflow configuration
- * @returns A string summary describing the configured overrides
+ * @returns A string summary describing the configured overrides and optional agents
  */
 export function describeWorkflowConfig(config: WorkflowConfig): string {
   let overrideCount = 0;
@@ -86,9 +93,15 @@ export function describeWorkflowConfig(config: WorkflowConfig): string {
     }
   }
 
-  if (overrideCount === 0) {
-    return 'Agent profile defaults';
+  const summary: string[] = [
+    overrideCount === 0 ? 'Agent profile defaults' : `${overrideCount} role model override(s)`,
+    `Arbiter: ${isWorkflowAgentEnabled(config, WORKFLOW_ARBITER_ROLE) ? 'on' : 'off'}`,
+  ];
+
+  const enabledReviewers = WORKFLOW_REVIEWER_ROLES.filter((role) => isWorkflowAgentEnabled(config, role));
+  if (enabledReviewers.length > 0) {
+    summary.push(`Reviewers: ${enabledReviewers.join(', ')}`);
   }
 
-  return `${overrideCount} role model override(s)`;
+  return summary.join(' · ');
 }

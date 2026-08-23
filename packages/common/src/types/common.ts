@@ -118,6 +118,8 @@ export interface WorkflowConfig {
   preArbiterCommand?: string;
   /** Optional shell command run in the task directory before the workflow's final git commit. */
   bashCommand?: string;
+  /** Per-role enabled flags for optional agents. Absent or false values mean the optional agent is disabled. */
+  enabledAgents?: Record<string, boolean>;
 }
 
 /** Zod schema for per-agent model assignment in a workflow. Model ids are "provider/model". Undefined = agent profile default. */
@@ -134,12 +136,44 @@ export const WorkflowConfigSchema = z.object({
   preArbiterCommand: z.string().optional(),
   /** Optional shell command run in the task directory before the workflow's final git commit. */
   bashCommand: z.string().optional(),
+  /** Per-role enabled flags for optional agents. Absent or false values mean the optional agent is disabled. */
+  enabledAgents: z.record(z.string(), z.boolean()).optional(),
 });
 
 export const WORKFLOW_AGENT_ROLES: Record<string, string[]> = {
-  'dev-pipeline': ['DIGESTER', 'INVESTIGATOR', 'RESEARCHER', 'GRAND-PLANNER', 'DECOMPOSITOR', 'EDITOR'],
-  'dev-pipeline-review': ['DIGESTER', 'INVESTIGATOR', 'RESEARCHER', 'GRAND-PLANNER', 'DECOMPOSITOR', 'EDITOR', 'ARBITER'],
+  'dev-pipeline': ['DIGESTER', 'INVESTIGATOR', 'RESEARCHER', 'GRAND-PLANNER', 'DECOMPOSITOR', 'EDITOR', 'CONFIRMER'],
+  'dev-pipeline-review': [
+    'DIGESTER',
+    'INVESTIGATOR',
+    'RESEARCHER',
+    'GRAND-PLANNER',
+    'DECOMPOSITOR',
+    'EDITOR',
+    'REVIEWER-1',
+    'REVIEWER-2',
+    'ARBITER',
+    'CONFIRMER',
+  ],
 };
+
+/** Reviewer agent roles for the review workflow, ordered after EDITOR. */
+export const WORKFLOW_REVIEWER_ROLES = ['REVIEWER-1', 'REVIEWER-2'];
+
+/** Arbiter agent role for the review workflow. */
+export const WORKFLOW_ARBITER_ROLE = 'ARBITER';
+
+/** Optional agent roles per workflow id; these can be toggled via `enabledAgents`. */
+export const WORKFLOW_OPTIONAL_AGENT_ROLES: Record<string, string[]> = {
+  'dev-pipeline-review': [...WORKFLOW_REVIEWER_ROLES, WORKFLOW_ARBITER_ROLE, 'CONFIRMER'],
+};
+
+/**
+ * Returns true only when the given role is explicitly enabled in the workflow
+ * configuration's `enabledAgents` record. Absent configuration, absent records,
+ * and absent or false flags all mean the optional agent is disabled.
+ */
+export const isWorkflowAgentEnabled = (config: WorkflowConfig | undefined, role: string): boolean =>
+  config?.enabledAgents?.[role] === true;
 
 /** Fallback dot colour for workflows with no explicit identity colour. */
 export const DEFAULT_WORKFLOW_COLOR = '#8A8A8A';

@@ -474,10 +474,19 @@ export function parseAssignmentsResponse(raw: string): { assignments: FileAssign
  * Parses the ARBITER's review report.
  *
  * Requires `=== REVIEW SUMMARY ===` with non-empty content. An optional
- * `=== ASSIGNMENTS ===` section is parsed with the same block parser as the
- * decompositor; absent or empty it yields zero assignments (a clean review).
+ * `=== ARBITRATE AGAIN ===` section between the summary and the assignments
+ * signals a follow-up round; only a trimmed, case-insensitive `YES` body is
+ * treated as true, and a missing marker or any other value is false. An
+ * optional `=== ASSIGNMENTS ===` section is parsed with the same block parser
+ * as the decompositor; absent or empty it yields zero assignments (a clean
+ * review). `arbitrateAgain` is forced to false whenever the parsed assignment
+ * list is empty.
  */
-export function parseArbiterResponse(text: string): { reviewSummary: string; assignments: FileAssignment[] } {
+export function parseArbiterResponse(text: string): {
+  reviewSummary: string;
+  assignments: FileAssignment[];
+  arbitrateAgain: boolean;
+} {
   const t = stripCodeFences(text);
 
   const reviewMarker = findMarker(t, '=== REVIEW SUMMARY ===');
@@ -486,10 +495,24 @@ export function parseArbiterResponse(text: string): { reviewSummary: string; ass
   }
 
   const assignmentsMarker = findMarker(t, '=== ASSIGNMENTS ===');
-  const reviewEnd = assignmentsMarker && assignmentsMarker.start >= reviewMarker.end ? assignmentsMarker.start : t.length;
+  const arbitrateMarker = findMarker(t, '=== ARBITRATE AGAIN ===');
+
+  // The review summary ends at the earliest subsequent arbitration or
+  // assignments marker so marker text never leaks into the summary.
+  const reviewEnd = Math.min(
+    assignmentsMarker && assignmentsMarker.start >= reviewMarker.end ? assignmentsMarker.start : t.length,
+    arbitrateMarker && arbitrateMarker.start >= reviewMarker.end ? arbitrateMarker.start : t.length,
+  );
   const reviewSummary = t.slice(reviewMarker.end, reviewEnd).trim();
   if (reviewSummary.length === 0) {
     throw new ParseError('=== REVIEW SUMMARY === must not be empty');
+  }
+
+  let arbitrateAgain = false;
+  if (arbitrateMarker) {
+    const stopMarker = assignmentsMarker && assignmentsMarker.start > arbitrateMarker.end ? '=== ASSIGNMENTS ===' : null;
+    const body = contentUntilMarker(t, arbitrateMarker.end, stopMarker).trim();
+    arbitrateAgain = body.toUpperCase() === 'YES';
   }
 
   let assignments: FileAssignment[] = [];
@@ -500,7 +523,11 @@ export function parseArbiterResponse(text: string): { reviewSummary: string; ass
     }
   }
 
-  return { reviewSummary, assignments };
+  if (assignments.length === 0) {
+    arbitrateAgain = false;
+  }
+
+  return { reviewSummary, assignments, arbitrateAgain };
 }
 
 /**

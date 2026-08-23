@@ -445,10 +445,13 @@ describe('computeWaves', () => {
 });
 
 describe('parseArbiterResponse', () => {
-  it('parses review summary with assignments', () => {
+  it('parses review summary with assignments and an arbitrate-again marker', () => {
     const text = [
       '=== REVIEW SUMMARY ===',
       'The changes look solid overall but need one fix.',
+      '',
+      '=== ARBITRATE AGAIN ===',
+      'YES',
       '',
       '=== ASSIGNMENTS ===',
       '',
@@ -467,6 +470,9 @@ describe('parseArbiterResponse', () => {
 
     const result = parseArbiterResponse(text);
     expect(result.reviewSummary).toBe('The changes look solid overall but need one fix.');
+    expect(result.reviewSummary).not.toContain('ARBITRATE AGAIN');
+    expect(result.reviewSummary).not.toContain('YES');
+    expect(result.arbitrateAgain).toBe(true);
     expect(result.assignments).toHaveLength(1);
     expect(result.assignments[0].path).toBe('src/fix.ts');
     expect(result.assignments[0].operation).toBe('MODIFY');
@@ -481,6 +487,7 @@ describe('parseArbiterResponse', () => {
     const result = parseArbiterResponse(text);
     expect(result.reviewSummary).toBe('All requirements met and tests pass cleanly.');
     expect(result.assignments).toHaveLength(0);
+    expect(result.arbitrateAgain).toBe(false);
   });
 
   it('parses a clean review with an empty assignments section', () => {
@@ -493,6 +500,43 @@ describe('parseArbiterResponse', () => {
     ].join('\n');
 
     const result = parseArbiterResponse(text);
+    expect(result.assignments).toHaveLength(0);
+    expect(result.arbitrateAgain).toBe(false);
+  });
+
+  it('parses an explicit NO arbitrate-again marker as false', () => {
+    const text = [
+      '=== REVIEW SUMMARY ===',
+      'One issue remains but no follow-up round is needed.',
+      '',
+      '=== ARBITRATE AGAIN ===',
+      'NO',
+      '',
+      '=== ASSIGNMENTS ===',
+      'NONE',
+    ].join('\n');
+
+    const result = parseArbiterResponse(text);
+    expect(result.reviewSummary).toBe('One issue remains but no follow-up round is needed.');
+    expect(result.arbitrateAgain).toBe(false);
+    expect(result.assignments).toHaveLength(0);
+  });
+
+  it('coerces YES arbitrate-again to false when no assignments are present', () => {
+    const text = [
+      '=== REVIEW SUMMARY ===',
+      'Needs another pass, but no concrete assignments were produced.',
+      '',
+      '=== ARBITRATE AGAIN ===',
+      'YES',
+      '',
+      '=== ASSIGNMENTS ===',
+      'NONE',
+    ].join('\n');
+
+    const result = parseArbiterResponse(text);
+    expect(result.reviewSummary).toBe('Needs another pass, but no concrete assignments were produced.');
+    expect(result.arbitrateAgain).toBe(false);
     expect(result.assignments).toHaveLength(0);
   });
 

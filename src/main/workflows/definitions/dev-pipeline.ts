@@ -6,6 +6,7 @@ import {
   emitReport,
   prepareRepository,
   runAssignmentBatch,
+  runConfirmerStage,
   runDecompositionStage,
   runEvidenceStage,
   runPlanningStage,
@@ -18,16 +19,18 @@ export async function runDevPipeline(ctx: WorkflowRunContext): Promise<void> {
   const report: ReportState = { status: 'aborted' };
 
   try {
-    const { git, warnings } = await prepareRepository(task);
+    const { git, baselineCommit, warnings } = await prepareRepository(task);
     journey.gitWarnings.push(...warnings);
     for (const warning of warnings) await ctx.log.warning(warning);
     const researchFindings = await runEvidenceStage(ctx, journey, report);
-    await emitCheckpoint(ctx, journey, 'Dev Pipeline', 'Evidence');
+    await emitCheckpoint(ctx, journey, 'Dev Pipeline', 'Evidence gathered');
     const { planText, unknownsResearch } = await runPlanningStage(ctx, journey, report, researchFindings);
-    await emitCheckpoint(ctx, journey, 'Dev Pipeline', 'Plan');
-    const { assignments } = await runDecompositionStage(ctx, journey, report, planText, unknownsResearch);
+    await emitCheckpoint(ctx, journey, 'Dev Pipeline', 'Implementation Plan created');
+    const { assignments, summary: decompositionSummary } = await runDecompositionStage(ctx, journey, report, planText, unknownsResearch);
     const verdict = await runAssignmentBatch(ctx, journey, report, git, assignments, 'dev-pipeline');
-    await emitCheckpoint(ctx, journey, 'Dev Pipeline', 'Assignments');
+    await emitCheckpoint(ctx, journey, 'Dev Pipeline', 'Edits applied');
+
+    await runConfirmerStage(ctx, journey, report, git, baselineCommit, planText, decompositionSummary, null);
 
     report.status = verdict === 'ALIGNED' ? 'aligned' : 'deficient';
     await emitReport(ctx, journey, report, 'Dev Pipeline');

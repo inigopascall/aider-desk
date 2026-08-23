@@ -139,7 +139,7 @@ export function formatCheckpointReport(journey: Journey, workflowName: string, l
   ];
 
   return [
-    `## ${workflowName} — ${label} Checkpoint`,
+    `## ${workflowName} — ${label}`,
     markdownTable(['Field', 'Value'], ['left', 'left'], rows),
     journey.evidenceRows.length
       ? section('### 🧾 Evidence', markdownTable(['Round', 'Verdict', 'Added', 'Removed', 'Research'], ['right', 'left', 'left', 'left', 'center'], evidenceRows(journey.evidenceRows)))
@@ -221,13 +221,30 @@ export function formatAssignmentBatchSummary(
   );
 }
 
-export function formatArbiterRound(round: number, summary: string, rectificationEdits: number): string {
+export function formatArbiterRound(round: number, summary: string, rectificationEdits: number, arbitrateAgain = false): string {
   return section(
     `### ⚖️ Arbiter review — round ${round}`,
     truncate(summary, 4000),
     rectificationEdits === 0
       ? '_✅ No rectification required._'
       : `_🛠️ ${rectificationEdits} rectification edit(s) queued._`,
+    arbitrateAgain && rectificationEdits > 0
+      ? '_🔁 Another arbiter round requested._'
+      : null,
+  );
+}
+
+export function formatReviewerReport(role: string, report: string): string {
+  return section(
+    `### 🔍 ${role} review`,
+    truncate(report, 4000),
+  );
+}
+
+export function formatConfirmerReport(report: string): string {
+  return section(
+    '### ✅ Confirmer report',
+    truncate(report, 4000),
   );
 }
 
@@ -293,6 +310,12 @@ export function formatJourneyReport(journey: Journey, report: ReportState, workf
     summaryRows.push(['Review rounds', String(journey.reviewRounds)]);
   }
 
+  summaryRows.push(['Arbiter', journey.arbiterEnabled ? '✅ Enabled' : '⛔ Disabled']);
+
+  if (journey.reviewerRoles.length > 0) {
+    summaryRows.push(['Reviewers', journey.reviewerRoles.join(', ')]);
+  }
+
   const blocks: Array<string | null> = [
     `## 🏁 ${workflowName} — Journey Report`,
     markdownTable(['Field', 'Value'], ['left', 'left'], summaryRows),
@@ -340,16 +363,21 @@ export function formatJourneyReport(journey: Journey, report: ReportState, workf
           ),
         )
       : null,
+    ...journey.reviewerReports.map((reviewer) => formatReviewerReport(reviewer.role, reviewer.report)),
+    journey.reviewerFailures.length > 0
+      ? section('### ⚠️ Reviewer failures', journey.reviewerFailures.map((failure) => `- ${failure}`).join('\n'))
+      : null,
     journey.reviewRounds > 0
       ? section(
           '### 🔬 Review',
           markdownTable(
-            ['Round', 'Outcome', 'Rectification edits'],
-            ['right', 'left', 'right'],
+            ['Round', 'Outcome', 'Rectification edits', 'Arbitrate again'],
+            ['right', 'left', 'right', 'center'],
             journey.reviewTable.map((row) => [
               String(row.round),
               row.outcome,
               String(row.rectificationEdits),
+              row.arbitrateAgain ? '✅' : '—',
             ]),
           ),
           ...journey.arbiterSummaries.map((arbiter) =>
@@ -360,6 +388,8 @@ export function formatJourneyReport(journey: Journey, report: ReportState, workf
             : null,
         )
       : null,
+    journey.confirmerReport ? formatConfirmerReport(journey.confirmerReport) : null,
+    journey.confirmerFailure ? section('### ⚠️ Confirmer failure', journey.confirmerFailure) : null,
     journey.contextComplaints.length > 0
       ? section(
           '### ⚠️ Editor context complaints',

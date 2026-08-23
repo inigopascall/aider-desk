@@ -54,6 +54,7 @@ export interface ReviewRoundRow {
   round: number;
   outcome: 'clean' | 'rectified' | 'failed';
   rectificationEdits: number;
+  arbitrateAgain: boolean;
 }
 
 export interface Journey {
@@ -77,6 +78,13 @@ export interface Journey {
   reviewTable: ReviewRoundRow[];
   arbiterSummaries: Array<{ round: number; summary: string }>;
   arbiterFailures: string[];
+  arbiterEnabled: boolean;
+  reviewerRoles: string[];
+  reviewerReports: Array<{ role: string; report: string }>;
+  reviewerFailures: string[];
+  confirmerReport: string | null;
+  confirmerFailure: string | null;
+  lastValidationOutput: string | null;
   gitRetries: number;
   gitWarnings: string[];
   contextComplaints: Array<{
@@ -115,6 +123,13 @@ export function createJourney(modelConfig: WorkflowConfig | undefined, conversat
     reviewTable: [],
     arbiterSummaries: [],
     arbiterFailures: [],
+    arbiterEnabled: false,
+    reviewerRoles: [],
+    reviewerReports: [],
+    reviewerFailures: [],
+    confirmerReport: null,
+    confirmerFailure: null,
+    lastValidationOutput: null,
     gitRetries: 0,
     gitWarnings: [],
     contextComplaints: [],

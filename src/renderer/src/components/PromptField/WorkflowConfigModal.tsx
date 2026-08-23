@@ -1,11 +1,21 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { DEFAULT_WORKFLOW_COLOR, Model, WorkflowAgentModels, WorkflowConfig, WorkflowInfo } from '@common/types';
+import {
+  DEFAULT_WORKFLOW_COLOR,
+  Model,
+  WorkflowAgentModels,
+  WorkflowConfig,
+  WorkflowInfo,
+  WORKFLOW_ARBITER_ROLE,
+  WORKFLOW_OPTIONAL_AGENT_ROLES,
+  WORKFLOW_REVIEWER_ROLES,
+} from '@common/types';
 import { extractProviderModel } from '@common/utils';
 import { getProviderModelId } from '@common/agent';
 
 import { BaseDialog } from '@/components/common/BaseDialog';
 import { Button } from '@/components/common/Button';
+import { Checkbox } from '@/components/common/Checkbox';
 import { ModelSelectorWrapper } from '@/components/common/ModelSelectorWrapper';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useModelProviders } from '@/contexts/ModelProviderContext';
@@ -30,10 +40,29 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
 
   const persisted = projectSettings?.workflowConfigs?.[workflow.id];
   const [agentModels, setAgentModels] = useState<Record<string, WorkflowAgentModels>>(() => ({ ...(persisted?.agentModels ?? {}) }));
+  const [enabledAgents, setEnabledAgents] = useState<Record<string, boolean>>(() => ({ ...(persisted?.enabledAgents ?? {}) }));
   const [preArbiterCommand, setPreArbiterCommand] = useState(persisted?.preArbiterCommand ?? '');
   const [bashCommand, setBashCommand] = useState(persisted?.bashCommand ?? '');
 
   const workflowProfiles = getWorkflowAgentProfiles();
+
+  const optionalRoles = WORKFLOW_OPTIONAL_AGENT_ROLES[workflow.id] ?? [];
+  const arbiterEnabled = enabledAgents[WORKFLOW_ARBITER_ROLE] === true;
+
+  const toggleAgent = (role: string) => {
+    setEnabledAgents((prev) => {
+      const isReviewer = WORKFLOW_REVIEWER_ROLES.includes(role);
+      const arbiterOn = prev[WORKFLOW_ARBITER_ROLE] === true;
+      if (isReviewer && !arbiterOn) return prev;
+      const next = { ...prev, [role]: !prev[role] };
+      if (role === WORKFLOW_ARBITER_ROLE && !next[role]) {
+        for (const reviewer of WORKFLOW_REVIEWER_ROLES) {
+          next[reviewer] = false;
+        }
+      }
+      return next;
+    });
+  };
 
   const setRoleModel = (role: string, slot: 'primary' | 'fallback', model: Model | null) => {
     setAgentModels((prev) => {
@@ -55,10 +84,18 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
     for (const [role, m] of Object.entries(agentModels)) {
       if (workflow.agents.includes(role) && (m.primary || m.fallback)) pruned[role] = m;
     }
+    const optionalRoles = WORKFLOW_OPTIONAL_AGENT_ROLES[workflow.id] ?? [];
+    const arbiterOn = enabledAgents[WORKFLOW_ARBITER_ROLE] === true;
+    const enabledAgentsRecord: Record<string, boolean> = {};
+    for (const role of optionalRoles) {
+      const isReviewer = WORKFLOW_REVIEWER_ROLES.includes(role);
+      enabledAgentsRecord[role] = isReviewer ? arbiterOn && enabledAgents[role] === true : enabledAgents[role] === true;
+    }
     const config: WorkflowConfig = {
       agentModels: pruned,
       preArbiterCommand: preArbiterCommand.trim() || undefined,
       bashCommand: bashCommand.trim() || undefined,
+      enabledAgents: enabledAgentsRecord,
     };
     await saveProjectSettings({
       workflowConfigs: { ...(projectSettings.workflowConfigs ?? {}), [workflow.id]: config },
@@ -82,7 +119,7 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
       closeOnEscape
       closeOnBackdrop
       enableFocusTrap={false}
-      width={760}
+      width={1140}
       footer={
         <>
           <Button variant="text" onClick={onCancel}>
@@ -104,6 +141,7 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
           <div className="w-40 flex-shrink-0" />
           <div className="flex-1 text-2xs text-text-muted">{t('workflowsSettings.primaryModel')}</div>
           <div className="flex-1 text-2xs text-text-muted">{t('workflowsSettings.fallbackModel')}</div>
+          <div className="w-10 flex-shrink-0 text-center text-2xs text-text-muted">{t('workflowsSettings.runColumn')}</div>
         </div>
         <div className="space-y-2">
           {workflow.agents.map((role) => {
@@ -167,6 +205,22 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
                     </span>
                   )}
                 </div>
+                {optionalRoles.includes(role) ? (
+                  <div className="w-10 flex-shrink-0 flex justify-center">
+                    <Checkbox
+                      checked={enabledAgents[role] === true}
+                      onChange={() => toggleAgent(role)}
+                      tooltip={
+                        WORKFLOW_REVIEWER_ROLES.includes(role)
+                          ? t('workflowsSettings.reviewerRequiresArbiter')
+                          : t('workflowsSettings.agentEnabledTooltip')
+                      }
+                      className={WORKFLOW_REVIEWER_ROLES.includes(role) && !arbiterEnabled ? 'pointer-events-none opacity-50' : ''}
+                    />
+                  </div>
+                ) : (
+                  <div className="w-10 flex-shrink-0" />
+                )}
               </div>
             );
           })}

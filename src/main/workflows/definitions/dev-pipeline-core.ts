@@ -23,6 +23,7 @@ import {
   formatEvidenceSufficient,
   formatJourneyReport,
   formatCheckpointReport,
+  formatConfirmerReport,
   formatPlanProduced,
   formatPlanUnknowns,
   formatResearchReceived,
@@ -39,6 +40,7 @@ import {
   validateAssignments,
 } from '../parsers';
 
+import { runValidationCommand } from '../bash-command';
 import { buildPrompt, PromptSection } from '../prompt-formatting';
 import { withGitRetry } from '../git-utils';
 
@@ -49,11 +51,15 @@ export const AGENTS = {
   planner: 'GRAND-PLANNER',
   decompositor: 'DECOMPOSITOR',
   editor: 'EDITOR',
+  reviewer: 'REVIEWER',
+  arbiter: 'ARBITER',
+  confirmer: 'CONFIRMER',
 } as const;
 
 export const MAX_EVIDENCE_ITERATIONS = 3;
 export const MAX_DIFF_CHARS = 80_000;
 export const MAX_RESEARCH_DOC_CHARS = 30_000;
+export const MAX_REVIEW_DIFF_CHARS = 60_000;
 export const EDITOR_TIMEOUT_MS = 10 * 60_000;
 
 export function normalizePath(p: string): string {
@@ -410,7 +416,15 @@ export async function resolvePlanUnknowns(
 
   const [research, codebase] = await Promise.all([researchPromise, codebasePromise]);
   if (codebase) {
-    await reconfigureContext(ctx, journey, `${label} — codebase unknowns`, codebase.add, codebase.remove);
+    if (codebase.remove.length > 0) {
+      await emitInfo(
+        ctx.log,
+        `### ℹ️ ${label} — codebase unknowns\nINVESTIGATOR proposed removing ${codebase.remove.length} context file(s) (${codebase.remove.join(', ')}); removals were discarded to retain planner context.`,
+      );
+    }
+    // Investigator removals are discarded here: the planner's context must be
+    // retained, so only additions are applied.
+    await reconfigureContext(ctx, journey, `${label} — codebase unknowns`, codebase.add, []);
   }
   return research;
 }
@@ -919,6 +933,9 @@ export async function runAssignmentBatch(
     }
   }
 
+  // 6.5 Post-edit validation — record the output before the checkpoint commit
+  journey.lastValidationOutput = await runValidationCommand(ctx.task, ctx.run.workflowId, ctx.log);
+
   // 7. Commit & diff
   const commitMessage = `[${commitLabel} batch ${batch}] ${journey.planTitle.slice(0, 60)}`;
   let commitSucceeded = true;
@@ -977,7 +994,19 @@ export async function runAssignmentBatch(
     entry.passes++;
     journey.fileStats[row.path] = entry;
   }
-  await reconfigureContext(ctx, journey, `${commitLabel} — batch ${batch} outputs`, [...new Set([...expected, ...changedPaths])]);
+
+  // 9.5 Add only genuinely new files to the task context — ordinary edits to
+  // existing files are not context changes. Successfully created assignment
+  // targets and unsolicited changed paths that did not exist before the batch
+  // are labelled as new files.
+  const createdTargets = normalized
+    .filter((a) => a.operation === 'CREATE' && outcomes.get(a.id)?.outcome === 'DONE')
+    .map((a) => a.path);
+  const unsolicitedNewFiles = changedPaths.filter((p) => !expected.has(p) && !existingPaths.has(p));
+  const newFiles = [...new Set([...createdTargets, ...unsolicitedNewFiles])];
+  if (newFiles.length > 0) {
+    await reconfigureContext(ctx, journey, `new file created (batch ${batch})`, newFiles);
+  }
 
   // 10. Record batch & emit summary
   journey.batches.push({
@@ -995,6 +1024,114 @@ export async function runAssignmentBatch(
 
   await emitInfo(ctx.log, formatAssignmentBatchSummary(commitLabel, batch, rows, passed, reason));
   return verdict;
+}
+
+export interface ReviewEvidence {
+  diff: string;
+  changedFilesSummary: string;
+  assignmentSignals: string;
+}
+
+/**
+ * Collects the shared review evidence consumed by reviewers, the arbiter, and
+ * the confirmer: the cumulative diff, the changed-file summary, and the
+ * assignment-signal text derived from the journey's batch records.
+ */
+export async function collectReviewEvidence(
+  git: SimpleGit,
+  baselineCommit: string,
+  journey: Journey,
+  maxDiffChars: number = MAX_REVIEW_DIFF_CHARS,
+): Promise<ReviewEvidence> {
+  const diff = await getCumulativeDiff(git, baselineCommit, maxDiffChars);
+  const changedFilesSummary = Object.entries(journey.fileStats)
+    .map(([filePath, stats]) => `${filePath}: +${stats.insertions} -${stats.deletions} (${stats.passes} ${stats.passes === 1 ? 'batch' : 'batches'})`)
+    .join('\n');
+
+  const signalLines = new Set<string>();
+  for (const b of journey.batches) {
+    if (b.verdict.startsWith('DEFICIENT')) {
+      signalLines.add(`Batch ${b.batch} verdict: ${b.verdict}`);
+    }
+    for (const row of b.rows) {
+      if (row.outcome !== 'DONE' || row.alignment !== 'ok') {
+        signalLines.add(`${row.path} — ${row.outcome}${row.alignment !== 'ok' ? `, ${row.alignment}` : ''} (batch ${b.batch})`);
+      }
+    }
+  }
+  const assignmentSignals = [...signalLines].join('\n');
+
+  return { diff, changedFilesSummary, assignmentSignals };
+}
+
+/**
+ * Builds the prompt sections shared by reviewers, the arbiter, and the
+ * confirmer: conversation, request, decomposition summary, changed-file
+ * summary, assignment signals, validation output, and the fenced cumulative
+ * diff.
+ */
+export function reviewEvidenceSections(
+  ctx: WorkflowRunContext,
+  decompositionSummary: string,
+  evidence: ReviewEvidence,
+  validationOutput: string | null,
+): PromptSection[] {
+  return [
+    conversationSection(ctx),
+    { title: 'USER REQUEST', body: ctx.initialPrompt },
+    { title: 'DECOMPOSITOR ASSIGNMENTS SUMMARY', body: decompositionSummary },
+    { title: 'CHANGED FILES', body: evidence.changedFilesSummary || 'None' },
+    { title: 'ASSIGNMENT SIGNALS', body: evidence.assignmentSignals },
+    { title: 'VALIDATION COMMAND OUTPUT', body: validationOutput ?? 'No validation command configured.' },
+    { title: 'CUMULATIVE GIT DIFF', body: ['```diff', evidence.diff, '```'].join('\n') },
+  ];
+}
+
+/**
+ * Runs the final confirmer stage. The confirmer verifies the applied changes
+ * against the latest arbiter rectification (or the original implementation
+ * plan when no rectification was required) and reports per-file
+ * additions/changes/removals plus any remaining work. A non-cancellation
+ * dispatch failure is recorded and logged as a warning without aborting the
+ * workflow.
+ */
+export async function runConfirmerStage(
+  ctx: WorkflowRunContext,
+  journey: Journey,
+  report: ReportState,
+  git: SimpleGit,
+  baselineCommit: string,
+  planText: string,
+  decompositionSummary: string,
+  lastArbiterOutcome: string | null,
+): Promise<void> {
+  report.abortStage = 'confirmer review';
+  const evidence = await collectReviewEvidence(git, baselineCommit, journey);
+  const prompt = buildPrompt([
+    ...reviewEvidenceSections(ctx, decompositionSummary, evidence, journey.lastValidationOutput),
+    { title: 'IMPLEMENTATION PLAN', body: planText },
+    { title: 'ARBITRATION OUTCOME', body: lastArbiterOutcome ?? 'No arbiter rectification was required.' },
+    {
+      title: 'CONFIRMER REPORT FORMAT',
+      body: [
+        'Respond with a brief `# Confirmer Report` that:',
+        '- lists per-file additions, changes, and removals against the baseline;',
+        '- verifies each file against the latest arbiter rectification, or the original implementation plan when no rectification was required;',
+        '- ends with a `## Still to do` section listing any remaining work.',
+      ].join('\n'),
+    },
+  ]);
+
+  try {
+    const confirmerReport = await ctx.dispatch.agent(AGENTS.confirmer, prompt, 'Final confirmation review');
+    journey.confirmerReport = confirmerReport;
+    await emitInfo(ctx.log, formatConfirmerReport(confirmerReport));
+  } catch (error) {
+    if (error instanceof WorkflowCancelled) throw error;
+    const msg = error instanceof Error ? error.message : String(error);
+    journey.confirmerFailure = msg;
+    await ctx.log.warning(`Confirmer review failed: ${msg}`);
+  }
 }
 
 export async function emitReport(

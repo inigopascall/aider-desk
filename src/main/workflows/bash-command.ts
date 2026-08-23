@@ -78,7 +78,7 @@ export async function runWorkflowBashCommand(
 }
 
 /**
- * Runs the configured optional pre-review validation command in the task
+ * Runs the configured optional post-edit validation command in the task
  * directory and returns its full output for the reviewer. A failing command
  * is valuable arbiter evidence, not a workflow error, so this never throws.
  *
@@ -87,13 +87,13 @@ export async function runWorkflowBashCommand(
  * @param log The workflow logger
  * @returns The formatted command output, or null when no command is configured
  */
-export async function runPreArbiterCommand(task: Task, workflowId: string, log: WorkflowLogger): Promise<string | null> {
+export async function runValidationCommand(task: Task, workflowId: string, log: WorkflowLogger): Promise<string | null> {
   const command = task.getProjectSettings().workflowConfigs?.[workflowId]?.preArbiterCommand?.trim();
   if (!command) {
     return null;
   }
 
-  await log.info(`### 🧪 Pre-review validation command\n\`\`\`bash\n${command}\n\`\`\``);
+  await log.info(`### 🧪 Post-edit validation command\n\`\`\`bash\n${command}\n\`\`\``);
 
   let exitLine = 'Exit: success';
   let stdout = '';
