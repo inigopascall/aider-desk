@@ -156,6 +156,12 @@ export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<voi
             () => {
               journey.formatRetries++;
             },
+            3,
+            {
+              onClaudeBackoffRetry: () => {
+                journey.claudeBackoffRetries++;
+              },
+            },
           );
         } catch (error) {
           if (error instanceof WorkflowCancelled) throw error;

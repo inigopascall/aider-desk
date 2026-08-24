@@ -74,6 +74,7 @@ export interface Journey {
   conversationChars: number;
   editorTimeouts: number;
   fallbackRetries: number;
+  claudeBackoffRetries: number;
   reviewRounds: number;
   reviewTable: ReviewRoundRow[];
   arbiterSummaries: Array<{ round: number; summary: string }>;
@@ -119,6 +120,7 @@ export function createJourney(modelConfig: WorkflowConfig | undefined, conversat
     conversationChars: conversationText.length,
     editorTimeouts: 0,
     fallbackRetries: 0,
+    claudeBackoffRetries: 0,
     reviewRounds: 0,
     reviewTable: [],
     arbiterSummaries: [],

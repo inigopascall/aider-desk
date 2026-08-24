@@ -281,6 +281,12 @@ export async function runEvidenceStage(ctx: WorkflowRunContext, journey: Journey
       () => {
         journey.formatRetries++;
       },
+      3,
+      {
+        onClaudeBackoffRetry: () => {
+          journey.claudeBackoffRetries++;
+        },
+      },
     );
 
     journey.evidenceIterations = iteration;
@@ -701,7 +707,14 @@ async function runSingleAssignment(
       AGENTS.editor,
       buildEditorPrompt(assignment),
       label,
-      { timeoutMs: EDITOR_TIMEOUT_MS, modelSlot: slot, disableFallback: true },
+      {
+        timeoutMs: EDITOR_TIMEOUT_MS,
+        modelSlot: slot,
+        disableFallback: true,
+        onClaudeBackoffRetry: () => {
+          journey.claudeBackoffRetries++;
+        },
+      },
     );
     const hint = parseEditorResult(raw);
     await recordComplaint(hint.contextComplaint);
