@@ -5,12 +5,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   ensureRepositoryMappingsInitialized,
+  getDefaultGenerateRepoMapScript,
   getDefaultMappingsScript,
   listRepositoryMappingFiles,
   runRepositoryMappingsGenerator,
 } from '../repository-mappings';
 
-import { AIDER_DESK_MAPPINGS_SCRIPT, AIDER_DESK_PROJECT_MAPPINGS_DIR } from '@/constants';
+import { AIDER_DESK_GENERATE_REPO_MAP_SCRIPT, AIDER_DESK_MAPPINGS_SCRIPT, AIDER_DESK_PROJECT_MAPPINGS_DIR } from '@/constants';
 import { execWithShellPath } from '@/utils';
 
 vi.mock('fs/promises');
@@ -25,8 +26,8 @@ describe('repository mappings', () => {
     vi.clearAllMocks();
   });
 
-  it('initializes the configured directory and default script without overwriting an existing script', async () => {
-    vi.mocked(fs.access).mockRejectedValueOnce(new Error('missing'));
+  it('initializes the configured directory and default scripts without overwriting existing scripts', async () => {
+    vi.mocked(fs.access).mockRejectedValueOnce(new Error('missing')).mockRejectedValueOnce(new Error('missing'));
     vi.mocked(fs.mkdir).mockResolvedValue(undefined);
     vi.mocked(fs.writeFile).mockResolvedValue(undefined);
 
@@ -34,10 +35,15 @@ describe('repository mappings', () => {
 
     expect(fs.mkdir).toHaveBeenCalledWith(path.join(baseDir, AIDER_DESK_PROJECT_MAPPINGS_DIR), { recursive: true });
     expect(fs.writeFile).toHaveBeenCalledWith(path.join(baseDir, AIDER_DESK_MAPPINGS_SCRIPT), getDefaultMappingsScript(), 'utf8');
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      path.join(baseDir, AIDER_DESK_GENERATE_REPO_MAP_SCRIPT),
+      getDefaultGenerateRepoMapScript(),
+      'utf8',
+    );
 
-    vi.mocked(fs.access).mockResolvedValue(undefined);
+    vi.mocked(fs.access).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined);
     await ensureRepositoryMappingsInitialized(baseDir);
-    expect(fs.writeFile).toHaveBeenCalledTimes(1);
+    expect(fs.writeFile).toHaveBeenCalledTimes(2);
   });
 
   it('discovers recursive non-dot mapping files as sorted project-relative POSIX read-only files', async () => {
@@ -64,6 +70,17 @@ describe('repository mappings', () => {
 
     vi.mocked(execWithShellPath).mockRejectedValueOnce(Object.assign(new Error('generator failed'), { stderr: 'details' }));
     await expect(runRepositoryMappingsGenerator(baseDir)).resolves.toEqual({ success: false, error: 'generator failed\ndetails' });
+  });
+
+  it('keeps the optional Aider map generator separate from the main mappings script', () => {
+    expect(getDefaultMappingsScript()).toContain(`# bash "${AIDER_DESK_GENERATE_REPO_MAP_SCRIPT}"`);
+    expect(getDefaultMappingsScript()).not.toContain('class NonInteractiveIO:');
+
+    expect(getDefaultGenerateRepoMapScript()).toContain('.local/share/aider-desk-nodejs/python-venv/bin/python');
+    expect(getDefaultGenerateRepoMapScript()).toContain('class NonInteractiveIO:');
+    expect(getDefaultGenerateRepoMapScript()).toContain('from aider.repomap import RepoMap');
+    expect(getDefaultGenerateRepoMapScript()).toContain('force_refresh=True');
+    expect(getDefaultGenerateRepoMapScript()).toContain('OUTPUT_FILE="$OUTPUT_DIR/repo-map.txt"');
   });
 
   it('uses the configured mappings directory in the generated script', () => {
