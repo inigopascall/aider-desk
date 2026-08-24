@@ -2255,7 +2255,7 @@ export class Task {
     description?: string,
     abortSignal?: AbortSignal,
     run?: WorkflowRunInfo,
-  ): Promise<{ status: 'success' | 'cancelled' | 'error'; outputText: string }> {
+  ): Promise<{ status: 'success' | 'cancelled' | 'error'; outputText: string; errorDetail?: string }> {
     const toolCallId = uuidv4();
     const fullToolName = `${SUBAGENTS_TOOL_GROUP_NAME}${TOOL_GROUP_NAME_SEPARATOR}${SUBAGENTS_TOOL_RUN_TASK}`;
     const toolInput = { prompt, subagentId: getSubagentId(targetSubagent) };
@@ -2321,7 +2321,30 @@ export class Task {
         result.promptContext,
       );
       this.addLogMessage('loading', undefined, false, result.promptContext);
-      return { status: 'error', outputText: '' };
+      return { status: 'error', outputText: '', errorDetail: result.error };
+    }
+
+    const lastAssistant = [...result.messages].reverse().find((message) => message.role === 'assistant') as ContextAssistantMessage | undefined;
+    const outputText = lastAssistant ? extractTextContent(lastAssistant.content) : '';
+
+    if (!outputText.trim()) {
+      const diagnostic = `Workflow agent '${targetSubagent.name}' completed without producing output.`;
+      logger.error(diagnostic, {
+        baseDir: this.project.baseDir,
+        taskId: this.taskId,
+      });
+
+      this.addToolMessage(
+        toolCallId,
+        SUBAGENTS_TOOL_GROUP_NAME,
+        SUBAGENTS_TOOL_RUN_TASK,
+        toolInput,
+        JSON.stringify({ type: 'error-text', value: diagnostic }),
+        undefined,
+        result.promptContext,
+      );
+      this.addLogMessage('loading', undefined, false, result.promptContext);
+      return { status: 'error', outputText: '', errorDetail: diagnostic };
     }
 
     const toolResultMessage: ContextToolMessage = {
@@ -2374,9 +2397,6 @@ export class Task {
     this.addLogMessage('loading', undefined, false, result.promptContext);
 
     await this.updateContextInfo();
-
-    const lastAssistant = [...result.messages].reverse().find((message) => message.role === 'assistant') as ContextAssistantMessage | undefined;
-    const outputText = lastAssistant ? extractTextContent(lastAssistant.content) : '';
 
     return { status: 'success', outputText };
   }

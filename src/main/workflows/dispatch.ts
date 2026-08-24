@@ -84,12 +84,14 @@ export function createWorkflowDispatcher(task: Task, config?: WorkflowConfig, lo
           controller.abort();
         }, timeoutMs);
         try {
-          const { status, outputText } = await task.dispatchSubagent(target, prompt, description, controller.signal);
+          const { status, outputText, errorDetail } = await task.dispatchSubagent(target, prompt, description, controller.signal);
           if (status === 'cancelled') {
             if (timedOut) throw new WorkflowTimeout(subagentId, timeoutMs);
             throw new WorkflowCancelled();
           }
-          if (status === 'error') throw new WorkflowError(`Workflow agent '${subagentId}' failed to complete its run.`);
+          if (status === 'error') {
+            throw new WorkflowError(errorDetail ?? `Workflow agent '${subagentId}' failed to complete its run.`);
+          }
           return outputText;
         } finally {
           clearTimeout(timer);

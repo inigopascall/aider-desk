@@ -1197,6 +1197,8 @@ export class Agent {
             // try again
             retryCount++;
             continue;
+          } else if (profile.isSubagent) {
+            throw iterationError;
           } else {
             await task.updateTask({
               state: DefaultTaskState.Interrupted,
@@ -1295,6 +1297,11 @@ export class Agent {
       } else {
         task.addLogMessage('error', `${error instanceof Error ? error.message : String(error)}`, false, promptContext);
       }
+
+      if (profile.isSubagent) {
+        throw error;
+      }
+
       await task.updateTask({
         state: DefaultTaskState.Interrupted,
       });
