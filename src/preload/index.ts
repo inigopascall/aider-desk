@@ -103,6 +103,7 @@ const api: ApplicationAPI = {
   getUpdatedFiles: (baseDir, taskId) => ipcRenderer.invoke('get-updated-files', baseDir, taskId),
   getRepositoryMappings: (baseDir) => ipcRenderer.invoke('get-repository-mappings', baseDir),
   regenerateRepositoryMappings: (baseDir, taskId) => ipcRenderer.invoke('regenerate-repository-mappings', baseDir, taskId),
+  deleteRepositoryMapping: (baseDir, filePath) => ipcRenderer.invoke('delete-repository-mapping', baseDir, filePath),
   addFileToGit: (baseDir, taskId, filePath) => ipcRenderer.invoke('add-file-to-git', baseDir, taskId, filePath),
   restoreFile: (baseDir, taskId, filePath) => ipcRenderer.invoke('restore-file', baseDir, taskId, filePath),
   readFile: (baseDir, taskId, filePath) => ipcRenderer.invoke('read-file', baseDir, taskId, filePath),

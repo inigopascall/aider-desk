@@ -1081,6 +1081,8 @@
     "repositoryMappingsEmpty": "尚未生成仓库映射文件。",
     "repositoryMappingsGenerated": "仓库映射已重新生成。",
     "repositoryMappingsFailed": "重新生成仓库映射失败：{{error}}",
+    "removeMappingFile": "删除映射文件",
+    "repositoryMappingsRemoveFailed": "删除仓库映射文件失败：{{error}}",
     "title": "上下文文件",
     "updatedFiles": "已更新文件",
     "uncommittedChanges": "未提交的更改",

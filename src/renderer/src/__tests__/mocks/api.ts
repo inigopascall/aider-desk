@@ -18,8 +18,10 @@ import {
   McpOAuthStatus,
   McpTool,
   CloudflareTunnelStatus,
+  ContextFile,
   BranchInfo,
   WorktreeIntegrationStatus,
+  WorkflowLogsStateData,
   AgentProfile,
   MemoryEntry,
   MemoryEmbeddingProgress,
@@ -103,6 +105,9 @@ export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedOb
     getAllFiles: vi.fn((): Promise<string[]> => Promise.resolve([])),
     refreshContextFiles: vi.fn((): Promise<void> => Promise.resolve()),
     getUpdatedFiles: vi.fn((): Promise<Array<{ path: string; additions: number; deletions: number }>> => Promise.resolve([])),
+    getRepositoryMappings: vi.fn((): Promise<ContextFile[]> => Promise.resolve([])),
+    regenerateRepositoryMappings: vi.fn(() => Promise.resolve({ success: true })),
+    deleteRepositoryMapping: vi.fn((): Promise<ContextFile[]> => Promise.resolve([])),
     addFileToGit: vi.fn((): Promise<void> => Promise.resolve()),
     restoreFile: vi.fn((): Promise<void> => Promise.resolve()),
     generateCommitMessage: vi.fn((): Promise<string> => Promise.resolve('')),
@@ -151,6 +156,7 @@ export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedOb
     forkTask: vi.fn((): Promise<TaskData> => Promise.resolve({ id: 'mock-fork-task-id' } as TaskData)),
     getTasks: vi.fn((): Promise<TaskData[]> => Promise.resolve([])),
     loadTask: vi.fn((): Promise<TaskStateData> => Promise.resolve({} as TaskStateData)),
+    loadWorkflowLogs: vi.fn((): Promise<WorkflowLogsStateData> => Promise.resolve({ hasWorkflowHistory: false, logs: [] })),
     exportTaskToMarkdown: vi.fn((): Promise<string | void> => Promise.resolve()),
 
     // Recent projects operations
@@ -205,6 +211,7 @@ export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedOb
     addContextInfoUpdatedListener: vi.fn(() => vi.fn()),
     addUpdatedFilesUpdatedListener: vi.fn(() => vi.fn()),
     addSkillsUpdatedListener: vi.fn(() => vi.fn()),
+    addRepositoryMappingsUpdatedListener: vi.fn(() => vi.fn()),
     addCommandsUpdatedListener: vi.fn(() => vi.fn()),
     addUpdateAutocompletionListener: vi.fn(() => vi.fn()),
     addAskQuestionListener: vi.fn(() => vi.fn()),
@@ -321,6 +328,7 @@ export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedOb
     getSystemLogs: vi.fn((): Promise<SystemLogsResponse> => Promise.resolve({ logs: [], hasMore: false })),
     clearSystemLogs: vi.fn((): Promise<void> => Promise.resolve()),
     addSystemLogListener: vi.fn(() => vi.fn()),
+    addWorkflowLogListener: vi.fn(() => vi.fn()),
 
     // Aider connector status (Python install + per-task connector lifecycle)
     addAiderConnectorStatusListener: vi.fn(() => vi.fn()),

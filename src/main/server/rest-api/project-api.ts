@@ -419,6 +419,11 @@ const RegenerateRepositoryMappingsSchema = z.object({
   taskId: z.string().min(1, 'Task id is required'),
 });
 
+const DeleteRepositoryMappingSchema = z.object({
+  projectDir: z.string().min(1, 'Project directory is required'),
+  filePath: z.string().min(1, 'File path is required'),
+});
+
 export class ProjectApi extends BaseApi {
   constructor(private readonly eventsHandler: EventsHandler) {
     super();
@@ -612,6 +617,18 @@ export class ProjectApi extends BaseApi {
         }
 
         res.status(200).json(await this.eventsHandler.regenerateRepositoryMappings(parsed.projectDir, parsed.taskId));
+      }),
+    );
+
+    router.post(
+      '/project/repository-mappings/delete',
+      this.handleRequest(async (req, res) => {
+        const parsed = this.validateRequest(DeleteRepositoryMappingSchema, req.body, res);
+        if (!parsed) {
+          return;
+        }
+
+        res.status(200).json(await this.eventsHandler.deleteRepositoryMapping(parsed.projectDir, parsed.filePath));
       }),
     );
 

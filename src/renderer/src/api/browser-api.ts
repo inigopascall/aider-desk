@@ -613,6 +613,9 @@ export class BrowserApi implements ApplicationAPI {
   regenerateRepositoryMappings(baseDir: string, taskId: string): Promise<RegenerateRepositoryMappingsResult> {
     return this.post('/project/repository-mappings/regenerate', { projectDir: baseDir, taskId });
   }
+  deleteRepositoryMapping(baseDir: string, filePath: string): Promise<ContextFile[]> {
+    return this.post('/project/repository-mappings/delete', { projectDir: baseDir, filePath });
+  }
   async generateCommitMessage(baseDir: string, taskId: string): Promise<string> {
     const res = await this.post<{ projectDir: string; taskId: string }, { message: string }>('/project/worktree/generate-commit-message', {
       projectDir: baseDir,

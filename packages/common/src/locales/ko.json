@@ -1135,6 +1135,8 @@
     "repositoryMappingsEmpty": "생성된 저장소 매핑 파일이 없습니다.",
     "repositoryMappingsGenerated": "저장소 매핑이 다시 생성되었습니다.",
     "repositoryMappingsFailed": "저장소 매핑을 다시 생성하지 못했습니다: {{error}}",
+    "removeMappingFile": "매핑 파일 제거",
+    "repositoryMappingsRemoveFailed": "저장소 매핑 파일을 제거하지 못했습니다: {{error}}",
     "title": "컨텍스트 파일",
     "updatedFiles": "업데이트된 파일",
     "uncommittedChanges": "커밋되지 않은 변경 사항",

@@ -185,6 +185,18 @@ export const listRepositoryMappingFiles = async (baseDir: string): Promise<Conte
     .sort((a, b) => a.path.localeCompare(b.path));
 };
 
+export const deleteRepositoryMappingFile = async (baseDir: string, relativePath: string): Promise<void> => {
+  const mappingsDir = path.resolve(baseDir, AIDER_DESK_PROJECT_MAPPINGS_DIR);
+  const target = path.resolve(baseDir, relativePath);
+  const relative = path.relative(mappingsDir, target);
+
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error(`Invalid repository mapping file path: ${relativePath}`);
+  }
+
+  await fs.rm(target, { force: true });
+};
+
 export const runRepositoryMappingsGenerator = async (baseDir: string): Promise<RegenerateRepositoryMappingsResult> => {
   try {
     await ensureRepositoryMappingsInitialized(baseDir);

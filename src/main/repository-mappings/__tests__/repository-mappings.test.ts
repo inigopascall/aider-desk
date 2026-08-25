@@ -4,6 +4,7 @@ import path from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  deleteRepositoryMappingFile,
   ensureRepositoryMappingsInitialized,
   getDefaultGenerateRepoMapScript,
   getDefaultMappingsScript,
@@ -70,6 +71,19 @@ describe('repository mappings', () => {
 
     vi.mocked(execWithShellPath).mockRejectedValueOnce(Object.assign(new Error('generator failed'), { stderr: 'details' }));
     await expect(runRepositoryMappingsGenerator(baseDir)).resolves.toEqual({ success: false, error: 'generator failed\ndetails' });
+  });
+
+  it('deletes a mapping file within the mappings directory and rejects unsafe paths', async () => {
+    vi.mocked(fs.rm).mockResolvedValue(undefined);
+
+    await deleteRepositoryMappingFile(baseDir, `${AIDER_DESK_PROJECT_MAPPINGS_DIR}/repo-map.txt`.replace(/\\/g, '/'));
+    expect(fs.rm).toHaveBeenCalledWith(path.join(baseDir, AIDER_DESK_PROJECT_MAPPINGS_DIR, 'repo-map.txt'), { force: true });
+
+    await expect(deleteRepositoryMappingFile(baseDir, '../outside.txt')).rejects.toThrow('Invalid repository mapping file path');
+    await expect(deleteRepositoryMappingFile(baseDir, `${AIDER_DESK_PROJECT_MAPPINGS_DIR}`.replace(/\\/g, '/'))).rejects.toThrow(
+      'Invalid repository mapping file path',
+    );
+    expect(fs.rm).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the optional Aider map generator separate from the main mappings script', () => {

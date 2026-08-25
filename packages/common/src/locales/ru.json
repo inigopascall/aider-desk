@@ -1142,6 +1142,8 @@
     "repositoryMappingsEmpty": "Файлы сопоставлений репозитория ещё не созданы.",
     "repositoryMappingsGenerated": "Сопоставления репозитория пересозданы.",
     "repositoryMappingsFailed": "Не удалось пересоздать сопоставления репозитория: {{error}}",
+    "removeMappingFile": "Удалить файл сопоставления",
+    "repositoryMappingsRemoveFailed": "Не удалось удалить файл сопоставления репозитория: {{error}}",
     "title": "Файлы контекста",
     "updatedFiles": "Обновлённые файлы",
     "uncommittedChanges": "Незакоммиченные изменения",

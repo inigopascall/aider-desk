@@ -67,7 +67,7 @@ import { AIDER_DESK_TMP_DIR, LOGS_DIR } from '@/constants';
 import { EventManager } from '@/events';
 import { isElectron } from '@/app';
 import { ProxyManager } from '@/proxy-manager';
-import { listRepositoryMappingFiles, runRepositoryMappingsGenerator } from '@/repository-mappings';
+import { deleteRepositoryMappingFile, listRepositoryMappingFiles, runRepositoryMappingsGenerator } from '@/repository-mappings';
 
 export class EventsHandler {
   constructor(
@@ -371,6 +371,13 @@ export class EventsHandler {
     }
 
     return result;
+  }
+
+  async deleteRepositoryMapping(baseDir: string, filePath: string) {
+    await deleteRepositoryMappingFile(baseDir, filePath);
+    const files = await listRepositoryMappingFiles(baseDir);
+    this.eventManager.sendRepositoryMappingsUpdated(baseDir, files);
+    return files;
   }
 
   async addFile(baseDir: string, taskId: string, filePath: string, readOnly = false): Promise<boolean> {

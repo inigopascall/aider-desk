@@ -1180,6 +1180,8 @@
     "repositoryMappingsEmpty": "No repository mapping files have been generated yet.",
     "repositoryMappingsGenerated": "Repository mappings regenerated.",
     "repositoryMappingsFailed": "Failed to regenerate repository mappings: {{error}}",
+    "removeMappingFile": "Remove mapping file",
+    "repositoryMappingsRemoveFailed": "Failed to remove repository mapping file: {{error}}",
     "title": "Context Files",
     "updatedFiles": "Updated Files",
     "uncommittedChanges": "Uncommitted Changes",

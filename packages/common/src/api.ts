@@ -142,6 +142,7 @@ export interface ApplicationAPI {
   getUpdatedFiles: (baseDir: string, taskId: string) => Promise<UpdatedFile[]>;
   getRepositoryMappings: (baseDir: string) => Promise<ContextFile[]>;
   regenerateRepositoryMappings: (baseDir: string, taskId: string) => Promise<RegenerateRepositoryMappingsResult>;
+  deleteRepositoryMapping: (baseDir: string, filePath: string) => Promise<ContextFile[]>;
   addFileToGit: (baseDir: string, taskId: string, filePath: string) => Promise<void>;
   restoreFile: (baseDir: string, taskId: string, filePath: string) => Promise<void>;
   readFile: (baseDir: string, taskId: string, filePath: string) => Promise<string>;

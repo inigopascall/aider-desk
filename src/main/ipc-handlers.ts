@@ -177,6 +177,10 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
     return await eventsHandler.regenerateRepositoryMappings(baseDir, taskId);
   });
 
+  ipcMain.handle('delete-repository-mapping', async (_, baseDir: string, filePath: string) => {
+    return await eventsHandler.deleteRepositoryMapping(baseDir, filePath);
+  });
+
   ipcMain.handle('refresh-context-files', async (_, baseDir: string, taskId: string) => {
     await eventsHandler.refreshContextFiles(baseDir, taskId);
   });

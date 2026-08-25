@@ -1,6 +1,7 @@
 import { ContextFile } from '@common/types';
 import { Activity, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { HiX } from 'react-icons/hi';
 import { MdOutlineRefresh } from 'react-icons/md';
 import { motion } from 'framer-motion';
 import { clsx } from 'clsx';
@@ -11,6 +12,8 @@ import { FileViewerModal } from './FileViewerModal';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { useApi } from '@/contexts/ApiContext';
 import { showErrorNotification } from '@/utils/notifications';
+
+const getFileName = (filePath: string): string => filePath.split(/[\\/]/).pop() ?? filePath;
 
 type Props = {
   baseDir: string;
@@ -79,6 +82,20 @@ export const RepositoryMappingsSection = ({
     }
   }, [api, baseDir, taskId, loadFiles, t]);
 
+  const handleRemoveFile = useCallback(
+    async (filePath: string) => {
+      try {
+        setFiles(await api.deleteRepositoryMapping(baseDir, filePath));
+        if (previewFilePath === filePath) {
+          setPreviewFilePath(null);
+        }
+      } catch (error) {
+        showErrorNotification(t('contextFiles.repositoryMappingsRemoveFailed', { error: String(error) }));
+      }
+    },
+    [api, baseDir, previewFilePath, t],
+  );
+
   const actions = useMemo(
     () => (
       <Tooltip content={isRegenerating ? t('contextFiles.regeneratingMappings') : t('contextFiles.regenerateMappings')}>
@@ -116,13 +133,24 @@ export const RepositoryMappingsSection = ({
               <div className="p-2 text-2xs text-text-muted">{t('common.loading')}</div>
             ) : files.length > 0 ? (
               files.map((file) => (
-                <button
-                  key={file.path}
-                  className="block w-full px-2 py-1 text-left text-2xs text-text-primary hover:bg-bg-secondary rounded truncate"
-                  onClick={() => setPreviewFilePath(file.path)}
-                >
-                  {file.path}
-                </button>
+                <div key={file.path} className="group flex items-center w-full pr-1 rounded hover:bg-bg-secondary">
+                  <Tooltip content={file.path}>
+                    <button
+                      className="flex-grow min-w-0 px-2 py-1 text-left text-2xs text-text-primary truncate"
+                      onClick={() => setPreviewFilePath(file.path)}
+                    >
+                      {getFileName(file.path)}
+                    </button>
+                  </Tooltip>
+                  <Tooltip content={t('contextFiles.removeMappingFile')}>
+                    <button
+                      onClick={() => handleRemoveFile(file.path)}
+                      className="px-1 py-1 rounded hover:bg-bg-primary-light text-text-muted hover:text-error-dark opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                    >
+                      <HiX className="w-4 h-4" />
+                    </button>
+                  </Tooltip>
+                </div>
               ))
             ) : (
               <div className="p-3 text-center text-2xs text-text-muted">{t('contextFiles.repositoryMappingsEmpty')}</div>
