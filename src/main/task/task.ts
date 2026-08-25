@@ -3935,9 +3935,7 @@ export class Task {
       modelId = `${profile.provider}/${profile.model}`;
       const sanitizedMessages = await smartCompactMessages(messagesToHone, 0, CompactionLevel.Max);
       sanitizedMessageCount = sanitizedMessages.length;
-      const sanitizedInputMessages = [...sanitizedMessages];
-
-      logger.debug('Generating honed conversation', {
+      logger.debug('Generating honed conversation via compact-agent streaming', {
         baseDir: this.project.baseDir,
         taskId: this.taskId,
         modelId,
@@ -3947,14 +3945,31 @@ export class Task {
         removedMessageCount: originalMessageCount - sanitizedMessageCount,
       });
 
-      const honedText = await this.agent.generateText(
-        modelId,
-        '',
+      // Build a compact-agent profile that reuses the active task profile's
+      // provider/model so the honed conversation is generated through the same
+      // proven streaming Agent.runAgent path used by compactConversation.
+      const compactConversationAgentProfile: AgentProfile = {
+        ...COMPACT_CONVERSATION_AGENT_PROFILE,
+        provider: profile.provider,
+        model: profile.model,
+      };
+
+      const agentMessages = await this.agent.runAgent(
+        this,
+        compactConversationAgentProfile,
         honePrompt,
-        this.getProjectDir(),
-        sanitizedInputMessages,
-        true,
+        'agent',
+        undefined,
+        sanitizedMessages,
+        [],
+        undefined,
+        false,
       );
+
+      // Scan backward for the last assistant message and use its text as the
+      // honed conversation document.
+      const lastAssistant = [...agentMessages].reverse().find((message) => message.role === MessageRole.Assistant) as ContextAssistantMessage | undefined;
+      const honedText = lastAssistant ? extractTextContent(lastAssistant.content).trim() : '';
 
       if (!honedText) {
         throw new Error('Failed to generate honed conversation.');
