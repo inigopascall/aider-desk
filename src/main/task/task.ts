@@ -3693,6 +3693,58 @@ export class Task {
     return true;
   }
 
+  private serializeHoneGenerationError(error: unknown): unknown {
+    const seen = new WeakSet<object>();
+
+    const serialize = (value: unknown): unknown => {
+      if (value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') {
+        return value;
+      }
+
+      if (typeof value === 'bigint') {
+        return `${value}n`;
+      }
+
+      if (typeof value === 'undefined') {
+        return '[undefined]';
+      }
+
+      if (typeof value === 'function' || typeof value === 'symbol') {
+        return String(value);
+      }
+
+      if (seen.has(value)) {
+        return '[Circular]';
+      }
+      seen.add(value);
+
+      if (Array.isArray(value)) {
+        return value.map((item) => serialize(item));
+      }
+
+      const serialized: Record<string, unknown> = {};
+      let propertyNames: string[] = [];
+
+      try {
+        propertyNames = Object.getOwnPropertyNames(value);
+      } catch {
+        return '[Unable to inspect object]';
+      }
+
+      for (const propertyName of propertyNames) {
+        try {
+          serialized[propertyName] = serialize((value as Record<string, unknown>)[propertyName]);
+        } catch {
+          serialized[propertyName] = '[Unable to serialize property]';
+        }
+      }
+
+      return serialized;
+    };
+
+    return serialize(error);
+  }
+
   private getCurrentMode() {
     return this.task.currentMode || this.store.getProjectSettings(this.project.baseDir).currentMode || 'agent';
   }
@@ -3851,6 +3903,10 @@ export class Task {
       return;
     }
 
+    const originalMessageCount = messagesToHone.length;
+    let sanitizedMessageCount = 0;
+    let modelId: string | undefined;
+
     const currentTaskState = this.task.state;
     await this.saveTask({
       state: DefaultTaskState.InProgress,
@@ -3864,6 +3920,8 @@ export class Task {
     this.isCompacting = true;
 
     try {
+      await this.contextManager.backupContext();
+
       const profile = await this.getTaskAgentProfile();
       if (!profile) {
         throw new Error('No active Agent profile found');
@@ -3874,12 +3932,27 @@ export class Task {
         preservedMessages.length > 0 ? preservedMessages.length : undefined,
       );
 
+      modelId = `${profile.provider}/${profile.model}`;
+      const sanitizedMessages = await smartCompactMessages(messagesToHone, 0, CompactionLevel.Max);
+      sanitizedMessageCount = sanitizedMessages.length;
+      const sanitizedInputMessages = [...sanitizedMessages];
+
+      logger.debug('Generating honed conversation', {
+        baseDir: this.project.baseDir,
+        taskId: this.taskId,
+        modelId,
+        preserveCount,
+        originalMessageCount,
+        sanitizedMessageCount,
+        removedMessageCount: originalMessageCount - sanitizedMessageCount,
+      });
+
       const honedText = await this.agent.generateText(
-        `${profile.provider}/${profile.model}`,
+        modelId,
         '',
         honePrompt,
         this.getProjectDir(),
-        [...messagesToHone],
+        sanitizedInputMessages,
         true,
       );
 
@@ -3906,7 +3979,12 @@ export class Task {
       logger.error('Failed to hone conversation', {
         baseDir: this.project.baseDir,
         taskId: this.taskId,
-        error: error instanceof Error ? error.message : String(error),
+        modelId,
+        preserveCount,
+        originalMessageCount,
+        sanitizedMessageCount,
+        removedMessageCount: originalMessageCount - sanitizedMessageCount,
+        error: this.serializeHoneGenerationError(error),
       });
       this.addLogMessage('error', 'Failed to hone conversation. Original conversation preserved.');
     } finally {
