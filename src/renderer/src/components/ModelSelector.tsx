@@ -26,6 +26,7 @@ type Props = {
   providers: ProviderProfile[];
   popupPlacement?: 'top' | 'bottom';
   labelOnNull?: string;
+  labelOnNullProviderId?: string;
   usePortal?: boolean;
   disabled?: boolean;
 };
@@ -42,6 +43,7 @@ export const ModelSelector = forwardRef<ModelSelectorRef, Props>(
       providers,
       popupPlacement = 'bottom',
       labelOnNull,
+      labelOnNullProviderId,
       usePortal = false,
       disabled = false,
     },
@@ -60,6 +62,7 @@ export const ModelSelector = forwardRef<ModelSelectorRef, Props>(
     };
     const [selectedProviderId, selectedModel] = extractProviderModel(optimisticSelectedModelId || '');
     const selectedProviderName = selectedProviderId ? getProviderName(selectedProviderId) : '';
+    const defaultProviderName = labelOnNullProviderId ? getProviderName(labelOnNullProviderId) : '';
 
     const { isOpen, state, open, close, toggle, updateState } = useDropdownState({
       initialState: { modelSearchTerm: '', highlightedModelIndex: -1 },
@@ -259,12 +262,24 @@ export const ModelSelector = forwardRef<ModelSelectorRef, Props>(
           )}
         >
           {optimisticSelectedModelId === null ? (
-            <div className="flex items-end">
-              <div className="flex items-start justify-between flex-1 min-w-0 gap-0.5">
-                <div className="text-2xs text-text-muted leading-tight">{labelOnNull ?? ''}</div>
-                <MdKeyboardArrowUp className="w-3 h-3 ml-1 flex-shrink-0 transform rotate-180" />
+            defaultProviderName ? (
+              <div className="flex items-end">
+                <div className="flex flex-col items-start flex-1 min-w-0 gap-0.5">
+                  <div className="text-2xs text-text-muted leading-none">{defaultProviderName}</div>
+                  <div className="flex items-center gap-1">
+                    <div className="text-2xs font-medium truncate leading-tight">{labelOnNull ?? ''}</div>
+                    <MdKeyboardArrowUp className="w-3 h-3 ml-1 flex-shrink-0 transform rotate-180" />
+                  </div>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="flex items-end">
+                <div className="flex items-start justify-between flex-1 min-w-0 gap-0.5">
+                  <div className="text-2xs text-text-muted leading-tight truncate">{labelOnNull ?? ''}</div>
+                  <MdKeyboardArrowUp className="w-3 h-3 ml-1 flex-shrink-0 transform rotate-180" />
+                </div>
+              </div>
+            )
           ) : selectedProviderName && selectedModel ? (
             <div className="flex items-end">
               <div className="flex flex-col items-start flex-1 min-w-0 gap-0.5">

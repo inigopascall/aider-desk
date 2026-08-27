@@ -12,12 +12,13 @@ type Props = {
   onChange: (model: Model | null) => void;
   popupPlacement?: 'top' | 'bottom';
   labelOnNull?: string;
+  labelOnNullProviderId?: string;
   skipPreferredModelsUpdate?: boolean;
   usePortal?: boolean;
 };
 
 export const ModelSelectorWrapper = forwardRef<ModelSelectorRef, Props>(
-  ({ className, selectedModelId, onChange, popupPlacement, labelOnNull, skipPreferredModelsUpdate, usePortal }, ref) => {
+  ({ className, selectedModelId, onChange, popupPlacement, labelOnNull, labelOnNullProviderId, skipPreferredModelsUpdate, usePortal }, ref) => {
     const { models, providers } = useModelProviders();
     const preferredModelIds = useSettingsStore((state) => state.settings?.preferredModels) ?? [];
     const saveSettings = useSaveSettings();
@@ -89,6 +90,7 @@ export const ModelSelectorWrapper = forwardRef<ModelSelectorRef, Props>(
         providers={providers}
         popupPlacement={popupPlacement}
         labelOnNull={labelOnNull}
+        labelOnNullProviderId={labelOnNullProviderId}
         usePortal={usePortal}
       />
     );

@@ -208,6 +208,7 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
                     selectedModelId={agentModels[role]?.primary ?? null}
                     onChange={(model) => setRoleModel(role, 'primary', model)}
                     labelOnNull={defaultLabel}
+                    labelOnNullProviderId={defaultProfile?.provider}
                     skipPreferredModelsUpdate
                     usePortal
                     popupPlacement="bottom"
@@ -227,6 +228,7 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
                     selectedModelId={agentModels[role]?.fallback ?? null}
                     onChange={(model) => setRoleModel(role, 'fallback', model)}
                     labelOnNull={defaultLabel}
+                    labelOnNullProviderId={defaultProfile?.provider}
                     skipPreferredModelsUpdate
                     usePortal
                     popupPlacement="bottom"
