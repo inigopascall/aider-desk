@@ -266,7 +266,7 @@ export const ModelSelector = forwardRef<ModelSelectorRef, Props>(
               <div className="flex items-end">
                 <div className="flex flex-col items-start flex-1 min-w-0 gap-0.5">
                   <div className="text-2xs text-text-muted leading-none">{defaultProviderName}</div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 text-text-muted">
                     <div className="text-2xs font-medium truncate leading-tight">{labelOnNull ?? ''}</div>
                     <MdKeyboardArrowUp className="w-3 h-3 ml-1 flex-shrink-0 transform rotate-180" />
                   </div>
