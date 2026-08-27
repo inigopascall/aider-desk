@@ -81,7 +81,8 @@ export function createWorkflowDispatcher(task: Task, config?: WorkflowConfig, lo
   const dispatcher: WorkflowDispatcher = {
     agent: async (subagentId, prompt, description, options) => {
       const base = resolveWorkflowAgent(task, subagentId);
-      const persistPrimary = isWorkflowPersistPrimaryEnabled(config, subagentId);
+      const slot = options?.modelSlot ?? 'primary';
+      const persistPrimary = slot === 'primary' && isWorkflowPersistPrimaryEnabled(config, subagentId);
       const timeoutMs = options?.timeoutMs ?? DEFAULT_DISPATCH_TIMEOUT_MS;
 
       const runOnce = async (target: AgentProfile): Promise<string> => {
@@ -106,7 +107,6 @@ export function createWorkflowDispatcher(task: Task, config?: WorkflowConfig, lo
         }
       };
 
-      const slot = options?.modelSlot ?? 'primary';
       const primary = applyModelOverride(base, subagentId, config, slot);
       let target = primary;
       if (slot === 'fallback') {

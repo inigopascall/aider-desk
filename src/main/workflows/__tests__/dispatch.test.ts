@@ -314,4 +314,117 @@ describe('createWorkflowDispatcher fallback logic', () => {
     expect((error as WorkflowError).message).toBe(errorDetail);
     expect((error as WorkflowError).message).toContain('529');
   });
+
+  it('persist-primary disabled: primary failure goes straight to the distinct fallback with no persist-primary retry', async () => {
+    const profile = baseProfile();
+    const { task, dispatchSubagent } = createStubTask(profile);
+    const onPersistPrimaryRetry = vi.fn();
+    const config: WorkflowConfig = {
+      ...fallbackConfig,
+      persistPrimary: { DIGESTER: false },
+    };
+
+    dispatchSubagent
+      .mockResolvedValueOnce({
+        status: 'error',
+        outputText: '',
+        errorDetail: '529: Provider overloaded. Retry later.',
+      })
+      .mockResolvedValueOnce({
+        status: 'success',
+        outputText: 'output from fallback',
+      });
+
+    const dispatcher = createWorkflowDispatcher(task, config);
+    const result = await dispatcher.agent('DIGESTER', 'test prompt', 'test description', { onPersistPrimaryRetry });
+
+    expect(result).toBe('output from fallback');
+    expect(dispatchSubagent).toHaveBeenCalledTimes(2);
+    expect(onPersistPrimaryRetry).not.toHaveBeenCalled();
+
+    // The second dispatch targets the distinct fallback model — no extra primary retry happened.
+    const secondProfile = dispatchSubagent.mock.calls[1][0] as AgentProfile;
+    expect(secondProfile.provider).toBe('9router');
+    expect(secondProfile.model).toBe('openai-compatible-opencode-go/deepseek-v4-flash');
+    expect(secondProfile.maxIterations).toBe(profile.maxIterations * 3);
+  });
+
+  it('persist-primary enabled: primary failure retries the primary model and invokes the retry telemetry hook', async () => {
+    vi.useFakeTimers();
+    try {
+      const profile = baseProfile();
+      const { task, dispatchSubagent } = createStubTask(profile);
+      const { log, warning } = createStubLogger();
+      const onPersistPrimaryRetry = vi.fn();
+      const config: WorkflowConfig = {
+        ...fallbackConfig,
+        persistPrimary: { DIGESTER: true },
+      };
+
+      dispatchSubagent
+        .mockResolvedValueOnce({
+          status: 'error',
+          outputText: '',
+          errorDetail: '529: Provider overloaded. Retry later.',
+        })
+        .mockResolvedValueOnce({
+          status: 'success',
+          outputText: 'output from primary retry',
+        });
+
+      const dispatcher = createWorkflowDispatcher(task, config, log);
+      const promise = dispatcher.agent('DIGESTER', 'test prompt', 'test description', { onPersistPrimaryRetry });
+
+      // Let the initial failure settle so the persist-primary backoff timer is scheduled.
+      await vi.advanceTimersByTimeAsync(0);
+      // Fire the backoff timer (5s ± 10% jitter) so the primary retry runs without real delay.
+      await vi.advanceTimersByTimeAsync(6_000);
+
+      await expect(promise).resolves.toBe('output from primary retry');
+      expect(dispatchSubagent).toHaveBeenCalledTimes(2);
+      expect(onPersistPrimaryRetry).toHaveBeenCalledTimes(1);
+      expect(warning).toHaveBeenCalledWith(expect.stringContaining('persist-primary retry 1/5'));
+
+      // Both dispatches target the primary model — the fallback was never used.
+      const firstProfile = dispatchSubagent.mock.calls[0][0] as AgentProfile;
+      const secondProfile = dispatchSubagent.mock.calls[1][0] as AgentProfile;
+      expect(firstProfile.provider).toBe('openrouter');
+      expect(firstProfile.model).toBe('primary-model');
+      expect(secondProfile.provider).toBe('openrouter');
+      expect(secondProfile.model).toBe('primary-model');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('persist-primary enabled: a failing explicit fallback-slot dispatch is attempted exactly once', async () => {
+    const profile = baseProfile();
+    const { task, dispatchSubagent } = createStubTask(profile);
+    const onPersistPrimaryRetry = vi.fn();
+    const config: WorkflowConfig = {
+      ...fallbackConfig,
+      persistPrimary: { DIGESTER: true },
+    };
+
+    dispatchSubagent.mockResolvedValueOnce({
+      status: 'error',
+      outputText: '',
+      errorDetail: 'fallback slot unreachable',
+    });
+
+    const dispatcher = createWorkflowDispatcher(task, config);
+    await expect(
+      dispatcher.agent('DIGESTER', 'test prompt', 'test description', {
+        modelSlot: 'fallback',
+        onPersistPrimaryRetry,
+      }),
+    ).rejects.toThrow(/fallback slot unreachable/);
+
+    expect(dispatchSubagent).toHaveBeenCalledTimes(1);
+    expect(onPersistPrimaryRetry).not.toHaveBeenCalled();
+
+    const fallbackProfile = dispatchSubagent.mock.calls[0][0] as AgentProfile;
+    expect(fallbackProfile.provider).toBe('9router');
+    expect(fallbackProfile.model).toBe('openai-compatible-opencode-go/deepseek-v4-flash');
+  });
 });
