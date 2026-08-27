@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   DEFAULT_WORKFLOW_COLOR,
@@ -8,6 +8,7 @@ import {
   WorkflowInfo,
   WORKFLOW_ARBITER_ROLE,
   WORKFLOW_OPTIONAL_AGENT_ROLES,
+  WORKFLOW_PERSIST_PRIMARY_DEFAULT_ROLES,
   WORKFLOW_REVIEWER_ROLES,
 } from '@common/types';
 import { extractProviderModel } from '@common/utils';
@@ -30,7 +31,8 @@ type Props = {
 
 /**
  * Modal dialog for configuring per-workflow settings: primary/fallback models
- * per agent role and an optional post-workflow bash command.
+ * per agent role, persist-primary toggles, the parallel editor count, and
+ * optional pre-arbiter / post-workflow shell commands.
  */
 export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSaveAndGo }: Props) => {
   const { t } = useTranslation();
@@ -41,6 +43,8 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
   const persisted = projectSettings?.workflowConfigs?.[workflow.id];
   const [agentModels, setAgentModels] = useState<Record<string, WorkflowAgentModels>>(() => ({ ...(persisted?.agentModels ?? {}) }));
   const [enabledAgents, setEnabledAgents] = useState<Record<string, boolean>>(() => ({ ...(persisted?.enabledAgents ?? {}) }));
+  const [persistPrimary, setPersistPrimary] = useState<Record<string, boolean>>(() => ({ ...(persisted?.persistPrimary ?? {}) }));
+  const [parallelEditorsText, setParallelEditorsText] = useState(() => String(persisted?.parallelEditors ?? 0));
   const [preArbiterCommand, setPreArbiterCommand] = useState(persisted?.preArbiterCommand ?? '');
   const [bashCommand, setBashCommand] = useState(persisted?.bashCommand ?? '');
 
@@ -78,6 +82,26 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
     });
   };
 
+  const isPersistPrimaryChecked = (role: string): boolean => {
+    const stored = persistPrimary[role];
+    if (stored !== undefined) return stored;
+    return WORKFLOW_PERSIST_PRIMARY_DEFAULT_ROLES.includes(role);
+  };
+
+  const togglePersistPrimary = (role: string) => {
+    setPersistPrimary((prev) => {
+      const current = prev[role] !== undefined ? prev[role] : WORKFLOW_PERSIST_PRIMARY_DEFAULT_ROLES.includes(role);
+      return { ...prev, [role]: !current };
+    });
+  };
+
+  const parseParallelEditors = (text: string): number => {
+    const trimmed = text.trim();
+    if (!/^\d+$/.test(trimmed)) return 0;
+    const value = Number(trimmed);
+    return value > 0 ? value : 0;
+  };
+
   const persist = async () => {
     if (!projectSettings) return;
     const pruned: Record<string, WorkflowAgentModels> = {};
@@ -91,11 +115,17 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
       const isReviewer = WORKFLOW_REVIEWER_ROLES.includes(role);
       enabledAgentsRecord[role] = isReviewer ? arbiterOn && enabledAgents[role] === true : enabledAgents[role] === true;
     }
+    const persistPrimaryRecord: Record<string, boolean> = {};
+    for (const role of workflow.agents) {
+      persistPrimaryRecord[role] = isPersistPrimaryChecked(role);
+    }
     const config: WorkflowConfig = {
       agentModels: pruned,
       preArbiterCommand: preArbiterCommand.trim() || undefined,
       bashCommand: bashCommand.trim() || undefined,
       enabledAgents: enabledAgentsRecord,
+      persistPrimary: persistPrimaryRecord,
+      parallelEditors: parseParallelEditors(parallelEditorsText),
     };
     await saveProjectSettings({
       workflowConfigs: { ...(projectSettings.workflowConfigs ?? {}), [workflow.id]: config },
@@ -119,7 +149,8 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
       closeOnEscape
       closeOnBackdrop
       enableFocusTrap={false}
-      width={1140}
+      width="fit-content"
+      minWidth={1140}
       footer={
         <>
           <Button variant="text" onClick={onCancel}>
@@ -136,14 +167,18 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
     >
       <div>
         <div className="text-xs font-medium text-text-primary mb-2">{t('workflowsSettings.agentModelsTitle')}</div>
-        <div className="flex items-center gap-2 mb-1">
-          <div className="w-3 h-3 flex-shrink-0" />
-          <div className="w-40 flex-shrink-0" />
-          <div className="flex-1 text-2xs text-text-muted">{t('workflowsSettings.primaryModel')}</div>
-          <div className="flex-1 text-2xs text-text-muted">{t('workflowsSettings.fallbackModel')}</div>
-          <div className="w-10 flex-shrink-0 text-center text-2xs text-text-muted">{t('workflowsSettings.runColumn')}</div>
-        </div>
-        <div className="space-y-2">
+        <div
+          className="grid gap-2 items-center"
+          style={{ gridTemplateColumns: '12px 160px minmax(320px, 1fr) minmax(320px, 1fr) auto 40px' }}
+        >
+          <Fragment>
+            <div className="w-3 h-3 flex-shrink-0" />
+            <div />
+            <div className="text-2xs text-text-muted">{t('workflowsSettings.primaryModel')}</div>
+            <div className="text-2xs text-text-muted">{t('workflowsSettings.fallbackModel')}</div>
+            <div className="text-2xs text-text-muted text-center">{t('workflowsSettings.persistPrimaryColumn')}</div>
+            <div className="text-2xs text-text-muted text-center">{t('workflowsSettings.runColumn')}</div>
+          </Fragment>
           {workflow.agents.map((role) => {
             const defaultProfile = workflowProfiles.find((p) => p.name === role);
             const defaultLabel = defaultProfile?.model
@@ -159,7 +194,7 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
             const fallbackUnavailable = !!fallbackValue && !providers.some((p) => p.id === fallbackProviderId);
 
             return (
-              <div key={role} className="flex items-center gap-2">
+              <Fragment key={role}>
                 <span
                   className="w-3 h-3 rounded-sm flex-shrink-0"
                   style={{ backgroundColor: defaultProfile?.subagent.color ?? DEFAULT_WORKFLOW_COLOR }}
@@ -167,7 +202,7 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
                 <span className="w-40 flex-shrink-0 text-xs font-medium uppercase truncate text-text-secondary" title={role}>
                   {role}
                 </span>
-                <div className="flex-1 min-w-0 p-2 bg-bg-secondary-light border-2 border-border-default rounded focus-within:border-border-light">
+                <div className="min-w-0 p-2 bg-bg-secondary-light border-2 border-border-default rounded focus-within:border-border-light">
                   <ModelSelectorWrapper
                     className="w-full justify-between"
                     selectedModelId={agentModels[role]?.primary ?? null}
@@ -186,7 +221,7 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
                     </span>
                   )}
                 </div>
-                <div className="flex-1 min-w-0 p-2 bg-bg-secondary-light border-2 border-border-default rounded focus-within:border-border-light">
+                <div className="min-w-0 p-2 bg-bg-secondary-light border-2 border-border-default rounded focus-within:border-border-light">
                   <ModelSelectorWrapper
                     className="w-full justify-between"
                     selectedModelId={agentModels[role]?.fallback ?? null}
@@ -205,6 +240,13 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
                     </span>
                   )}
                 </div>
+                <div className="flex justify-center">
+                  <Checkbox
+                    checked={isPersistPrimaryChecked(role)}
+                    onChange={() => togglePersistPrimary(role)}
+                    tooltip={t('workflowsSettings.persistPrimaryTooltip')}
+                  />
+                </div>
                 {optionalRoles.includes(role) ? (
                   <div className="w-10 flex-shrink-0 flex justify-center">
                     <Checkbox
@@ -221,10 +263,23 @@ export const WorkflowConfigModal = ({ workflow, onCancel, onSaveAndClose, onSave
                 ) : (
                   <div className="w-10 flex-shrink-0" />
                 )}
-              </div>
+              </Fragment>
             );
           })}
         </div>
+      </div>
+
+      <div className="border-t border-border-default pt-3 mt-3">
+        <label className="text-xs font-medium text-text-primary block mb-1">{t('workflowsSettings.parallelEditorsTitle')}</label>
+        <p className="text-2xs text-text-muted mb-2">{t('workflowsSettings.parallelEditorsInfo')}</p>
+        <input
+          type="text"
+          inputMode="numeric"
+          value={parallelEditorsText}
+          onChange={(e) => setParallelEditorsText(e.target.value)}
+          placeholder="0"
+          className="w-full px-2 py-1 text-xs font-mono bg-bg-secondary-light border border-border-default rounded focus:outline-none focus:border-border-light text-text-primary"
+        />
       </div>
 
       <div className="border-t border-border-default pt-3 mt-3">

@@ -158,8 +158,8 @@ export async function runDevPipelineReview(ctx: WorkflowRunContext): Promise<voi
             },
             3,
             {
-              onClaudeBackoffRetry: () => {
-                journey.claudeBackoffRetries++;
+              onPersistPrimaryRetry: () => {
+                journey.persistPrimaryRetries++;
               },
             },
           );

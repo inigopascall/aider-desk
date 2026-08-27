@@ -1,5 +1,5 @@
 import { FocusTrap } from 'focus-trap-react';
-import { ReactNode, useId, useRef } from 'react';
+import { CSSProperties, ReactNode, useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { twMerge } from 'tailwind-merge';
 import { useHotkeys } from 'react-hotkeys-hook';
@@ -10,7 +10,8 @@ type Props = {
   children: ReactNode;
   contentClass?: string;
   footer?: ReactNode;
-  width?: number;
+  width?: number | 'fit-content';
+  minWidth?: number;
   closeOnEscape?: boolean;
   closeOnBackdrop?: boolean;
   closeButtonText?: string;
@@ -24,6 +25,7 @@ export const BaseDialog = ({
   contentClass,
   footer,
   width = 500,
+  minWidth,
   closeOnEscape = true,
   closeOnBackdrop = false,
   closeButtonText,
@@ -43,12 +45,21 @@ export const BaseDialog = ({
     { enabled: closeOnEscape, enableOnFormTags: true, enableOnContentEditable: true, scopes: 'dialog' },
   );
 
+  const dialogStyle: CSSProperties =
+    width === 'fit-content'
+      ? {
+          width: 'fit-content',
+          maxWidth: '100%',
+          ...(minWidth !== undefined ? { minWidth: `min(${minWidth}px, 100%)` } : {}),
+        }
+      : { width: `${width}px` };
+
   const dialogContent = (
     <div
       role="dialog"
       aria-modal="true"
       aria-labelledby={headingId}
-      style={{ width: `${width}px` }}
+      style={dialogStyle}
       className="bg-bg-secondary-light-strongest shadow-2xl rounded-xl border border-bg-tertiary-strong max-h-[90vh] flex flex-col"
       ref={dialogRef}
     >

@@ -283,8 +283,8 @@ export async function runEvidenceStage(ctx: WorkflowRunContext, journey: Journey
       },
       3,
       {
-        onClaudeBackoffRetry: () => {
-          journey.claudeBackoffRetries++;
+        onPersistPrimaryRetry: () => {
+          journey.persistPrimaryRetries++;
         },
       },
     );
@@ -711,8 +711,8 @@ async function runSingleAssignment(
         timeoutMs: EDITOR_TIMEOUT_MS,
         modelSlot: slot,
         disableFallback: true,
-        onClaudeBackoffRetry: () => {
-          journey.claudeBackoffRetries++;
+        onPersistPrimaryRetry: () => {
+          journey.persistPrimaryRetries++;
         },
       },
     );
@@ -901,7 +901,13 @@ export async function runAssignmentBatch(
   const waveSet = valid.filter((a) => !blockedIds.has(a.id) && !failedIds.has(a.id));
   const waves = computeWaves(waveSet);
 
-  // 5. Execute waves sequentially; within a wave run concurrently
+  // 5. Execute waves sequentially; within a wave run concurrently, chunked by
+  // the optional editor concurrency cap. Only a positive integer cap limits
+  // concurrency; every other value (absent, zero, negative, decimal,
+  // non-numeric) leaves the wave unlimited.
+  const rawCap = ctx.modelConfig?.parallelEditors;
+  const editorCap = typeof rawCap === 'number' && Number.isInteger(rawCap) && rawCap > 0 ? rawCap : 0;
+
   for (const wave of waves) {
     const runnable = wave.filter((a) => {
       for (const dep of a.dependsOn) {
@@ -926,13 +932,20 @@ export async function runAssignmentBatch(
 
     // Wave dependencies are satisfied, writable targets are unique, and shared
     // contextual files are read-only, so concurrent execution is intentional.
-    const results = await Promise.all(
-      prepared.map(({ assignment, target }) =>
-        runSingleAssignment(ctx, journey, assignment, target),
-      ),
-    );
-    for (const r of results) {
-      outcomes.set(r.id, r);
+    // With a positive cap, dispatch the wave in consecutive chunks no larger
+    // than the cap and await every assignment in a chunk before starting the
+    // next; with an unlimited cap the whole wave runs concurrently as before.
+    const chunkSize = editorCap > 0 ? editorCap : prepared.length;
+    for (let start = 0; start < prepared.length; start += chunkSize) {
+      const chunk = prepared.slice(start, start + chunkSize);
+      const results = await Promise.all(
+        chunk.map(({ assignment, target }) =>
+          runSingleAssignment(ctx, journey, assignment, target),
+        ),
+      );
+      for (const r of results) {
+        outcomes.set(r.id, r);
+      }
     }
   }
 

@@ -15,8 +15,8 @@ export interface WorkflowDispatchOptions {
   modelSlot?: 'primary' | 'fallback';
   /** When true, the dispatcher's built-in automatic fallback retry is suppressed. */
   disableFallback?: boolean;
-  /** Internal workflow telemetry hook invoked for each Claude back-off retry. */
-  onClaudeBackoffRetry?: () => void;
+  /** Internal workflow telemetry hook invoked for each persist-primary back-off retry. */
+  onPersistPrimaryRetry?: () => void;
 }
 
 export interface WorkflowDispatcher {

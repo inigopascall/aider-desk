@@ -120,6 +120,14 @@ export interface WorkflowConfig {
   bashCommand?: string;
   /** Per-role enabled flags for optional agents. Absent or false values mean the optional agent is disabled. */
   enabledAgents?: Record<string, boolean>;
+  /**
+   * Per-role persist-primary flags. When true, the role's primary model is
+   * retried with backoff before falling back to the fallback model. Roles
+   * without an explicit value fall back to `WORKFLOW_PERSIST_PRIMARY_DEFAULT_ROLES`.
+   */
+  persistPrimary?: Record<string, boolean>;
+  /** Maximum number of parallel editor agents. Zero or absent means unlimited. */
+  parallelEditors?: number;
 }
 
 /** Zod schema for per-agent model assignment in a workflow. Model ids are "provider/model". Undefined = agent profile default. */
@@ -138,6 +146,10 @@ export const WorkflowConfigSchema = z.object({
   bashCommand: z.string().optional(),
   /** Per-role enabled flags for optional agents. Absent or false values mean the optional agent is disabled. */
   enabledAgents: z.record(z.string(), z.boolean()).optional(),
+  /** Per-role persist-primary flags. When true, the role's primary model is retried with backoff before falling back to the fallback model. */
+  persistPrimary: z.record(z.string(), z.boolean()).optional(),
+  /** Maximum number of parallel editor agents. Zero or absent means unlimited. */
+  parallelEditors: z.number().optional(),
 });
 
 /**
@@ -184,6 +196,25 @@ export const WORKFLOW_OPTIONAL_AGENT_ROLES: Record<string, string[]> = {
  */
 export const isWorkflowAgentEnabled = (config: WorkflowConfig | undefined, role: string): boolean =>
   config?.enabledAgents?.[role] === true;
+
+/**
+ * Roles that default to persist-primary behavior (primary-model backoff before
+ * falling back to the fallback model) when no explicit `persistPrimary` flag is
+ * stored for them in the workflow configuration.
+ */
+export const WORKFLOW_PERSIST_PRIMARY_DEFAULT_ROLES = ['GRAND-PLANNER', 'ARBITER'];
+
+/**
+ * Returns whether the given role should persist with its primary model (backing
+ * off) before falling back to the fallback model. An explicitly stored value in
+ * the configuration's `persistPrimary` record wins; otherwise the role defaults
+ * to enabled when listed in `WORKFLOW_PERSIST_PRIMARY_DEFAULT_ROLES`.
+ */
+export const isWorkflowPersistPrimaryEnabled = (config: WorkflowConfig | undefined, role: string): boolean => {
+  const stored = config?.persistPrimary?.[role];
+  if (stored !== undefined) return stored;
+  return WORKFLOW_PERSIST_PRIMARY_DEFAULT_ROLES.includes(role);
+};
 
 /** Fallback dot colour for workflows with no explicit identity colour. */
 export const DEFAULT_WORKFLOW_COLOR = '#8A8A8A';

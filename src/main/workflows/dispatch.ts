@@ -1,4 +1,4 @@
-import { AgentProfile, WorkflowConfig } from '@common/types';
+import { AgentProfile, WorkflowConfig, isWorkflowPersistPrimaryEnabled } from '@common/types';
 
 import { findEnabledSubagent } from '@/agent/subagent';
 import type { Task } from '@/task';
@@ -42,12 +42,10 @@ export class WorkflowTimeout extends WorkflowError {
 
 /** Default hard timeout applied to every workflow subagent dispatch. */
 export const DEFAULT_DISPATCH_TIMEOUT_MS = 15 * 60_000;
-export const CLAUDE_BACKOFF_RETRY_DELAYS_MS = [5_000, 10_000, 20_000, 40_000, 60_000] as const;
-export const CLAUDE_BACKOFF_MAX_RETRIES = CLAUDE_BACKOFF_RETRY_DELAYS_MS.length;
+export const PERSIST_PRIMARY_RETRY_DELAYS_MS = [5_000, 10_000, 20_000, 40_000, 60_000] as const;
+export const PERSIST_PRIMARY_MAX_RETRIES = PERSIST_PRIMARY_RETRY_DELAYS_MS.length;
 
-const isClaudeModel = (profile: AgentProfile): boolean => profile.model.toLowerCase().includes('claude');
-
-const waitForClaudeBackoff = (delayMs: number): Promise<void> => {
+const waitForPersistPrimaryBackoff = (delayMs: number): Promise<void> => {
   const jitter = delayMs * (0.9 + Math.random() * 0.2);
   return new Promise((resolve) => setTimeout(resolve, jitter));
 };
@@ -83,6 +81,7 @@ export function createWorkflowDispatcher(task: Task, config?: WorkflowConfig, lo
   const dispatcher: WorkflowDispatcher = {
     agent: async (subagentId, prompt, description, options) => {
       const base = resolveWorkflowAgent(task, subagentId);
+      const persistPrimary = isWorkflowPersistPrimaryEnabled(config, subagentId);
       const timeoutMs = options?.timeoutMs ?? DEFAULT_DISPATCH_TIMEOUT_MS;
 
       const runOnce = async (target: AgentProfile): Promise<string> => {
@@ -115,22 +114,22 @@ export function createWorkflowDispatcher(task: Task, config?: WorkflowConfig, lo
         target = { ...primary, maxIterations: primary.maxIterations > 0 ? primary.maxIterations * 3 : 0 };
       }
 
-      const runWithClaudeBackoff = async (): Promise<string> => {
+      const runWithPersistPrimaryRetry = async (): Promise<string> => {
         try {
           return await runOnce(target);
         } catch (error) {
-          if (!isClaudeModel(target) || error instanceof WorkflowCancelled || error instanceof WorkflowTimeout || !(error instanceof WorkflowError)) {
+          if (!persistPrimary || error instanceof WorkflowCancelled || error instanceof WorkflowTimeout || !(error instanceof WorkflowError)) {
             throw error;
           }
 
           let lastError: WorkflowError = error;
-          for (let retry = 0; retry < CLAUDE_BACKOFF_MAX_RETRIES; retry++) {
-            const delayMs = CLAUDE_BACKOFF_RETRY_DELAYS_MS[retry];
+          for (let retry = 0; retry < PERSIST_PRIMARY_MAX_RETRIES; retry++) {
+            const delayMs = PERSIST_PRIMARY_RETRY_DELAYS_MS[retry];
             await log?.warning(
-              `Workflow agent '${subagentId}' failed with ${target.provider}/${target.model} (${lastError.message}); Claude back-off retry ${retry + 1}/${CLAUDE_BACKOFF_MAX_RETRIES} in ${Math.round(delayMs / 1000)}s before fallback.`,
+              `Workflow agent '${subagentId}' failed with ${target.provider}/${target.model} (${lastError.message}); persist-primary retry ${retry + 1}/${PERSIST_PRIMARY_MAX_RETRIES} in ${Math.round(delayMs / 1000)}s before fallback.`,
             );
-            options?.onClaudeBackoffRetry?.();
-            await waitForClaudeBackoff(delayMs);
+            options?.onPersistPrimaryRetry?.();
+            await waitForPersistPrimaryBackoff(delayMs);
             try {
               return await runOnce(target);
             } catch (retryError) {
@@ -145,7 +144,7 @@ export function createWorkflowDispatcher(task: Task, config?: WorkflowConfig, lo
       };
 
       try {
-        return await runWithClaudeBackoff();
+        return await runWithPersistPrimaryRetry();
       } catch (error) {
         if (error instanceof WorkflowCancelled) {
           throw error;

@@ -455,6 +455,8 @@
     "primaryModel": "主模型",
     "fallbackModel": "备用模型",
     "runColumn": "运行",
+    "persistPrimaryColumn": "持久化主模型",
+    "persistPrimaryTooltip": "当主模型失败时，将按退避策略重试主模型，然后再回退到备用模型。",
     "agentEnabledTooltip": "启用或禁用此代理在工作流中的使用。",
     "reviewerRequiresArbiter": "审查者要求启用 Arbiter。",
     "preArbiterCommandTitle": "验证命令（编辑后）",
@@ -463,6 +465,8 @@
     "bashCommandTitle": "工作流后命令",
     "bashCommandInfo": "在工作流编辑完成后、最终 git 提交之前，于任务目录中运行。",
     "bashCommandPlaceholder": "例如 npm run lint && npm test",
+    "parallelEditorsTitle": "并行编辑器",
+    "parallelEditorsInfo": "设置为 0 表示不限制并行编辑器数量。",
     "saveAndClose": "保存并关闭",
     "saveAndGo": "保存并运行"
   },

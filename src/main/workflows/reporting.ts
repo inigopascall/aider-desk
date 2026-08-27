@@ -306,8 +306,8 @@ export function formatJourneyReport(journey: Journey, report: ReportState, workf
     summaryRows.push(['Fallback retries', String(journey.fallbackRetries)]);
   }
 
-  if (journey.claudeBackoffRetries > 0) {
-    summaryRows.push(['Claude back-off retries', String(journey.claudeBackoffRetries)]);
+  if (journey.persistPrimaryRetries > 0) {
+    summaryRows.push(['Persist-primary retries', String(journey.persistPrimaryRetries)]);
   }
 
   if (journey.reviewRounds > 0) {
