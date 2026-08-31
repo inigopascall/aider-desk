@@ -195,22 +195,89 @@ export function parseInvestigatorResponse(text: string): { add: string[]; remove
 }
 
 /**
+ * Module-level set of "nothing here" tokens that mark an unknowns section as
+ * absent. Compared against the uppercased, normalized form of each line.
+ */
+const ABSENT_SECTION_TOKENS = new Set([
+  'NONE',
+  'N/A',
+  'NA',
+  'NIL',
+  'NOTHING',
+  'NO UNKNOWNS',
+  'NOT APPLICABLE',
+  'EMPTY',
+]);
+
+/**
+ * Returns `true` when every non-empty line of `content` is a "nothing here"
+ * placeholder (e.g. `NONE`, `(none)`, `n/a`, `-`, or an unfilled `<…>`
+ * template placeholder). A section containing even one real line is treated
+ * as present, so a stray placeholder line never hides genuine unknowns.
+ */
+export function isAbsentSectionValue(content: string): boolean {
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  if (lines.length === 0) {
+    return true;
+  }
+
+  return lines.every((line) => {
+    let value = line.replace(/^[-*•]\s*/, '');
+
+    // The unfilled `<specific external questions…>` placeholder copied
+    // verbatim from the output contract is always "nothing here".
+    if (/^<[\s\S]*>$/.test(value)) {
+      return true;
+    }
+
+    // Strip wrapping parentheses/brackets and markdown emphasis until the
+    // value stops changing, so `(none)`, `[N/A]`, `*none*` etc. all reduce
+    // to their bare token.
+    let previous: string;
+    do {
+      previous = value;
+      value = value.replace(/^\(([\s\S]*)\)$/, '$1').replace(/^\[([\s\S]*)\]$/, '$1');
+      value = value.replace(/^[*_`]+/, '').replace(/[*_`]+$/, '');
+      value = value.trim();
+    } while (value !== previous);
+
+    // Trailing sentence punctuation is incidental.
+    value = value.replace(/[.!]+$/, '').trim();
+
+    return (
+      value.length === 0 ||
+      /^[-–—_]+$/.test(value) ||
+      ABSENT_SECTION_TOKENS.has(value.toUpperCase())
+    );
+  });
+}
+
+/**
  * Extracts the content of a `## UNKNOWNS: ...` section from a plan. The
- * content runs to the next `## ` heading or the end of the text. Returns
- * `null` when the section is absent, empty, or literally `NONE`.
+ * heading is matched line-anchored and hash-tolerant (with or without the
+ * leading `##`), and the content runs to the next heading or the end of the
+ * text. Returns `null` when the section is absent, empty, or filled only
+ * with placeholder values (`NONE`, `(none)`, `n/a`, `-`, an unfilled `<…>`
+ * template placeholder); a non-null return is what causes RESEARCHER /
+ * INVESTIGATOR to be dispatched with that body.
  */
 export function extractUnknownsSection(text: string, heading: string): string | null {
-  const marker = findMarker(text, heading);
-  if (!marker) {
+  const bare = heading.replace(/^#+\s*/, '');
+  const escaped = bare.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const flexible = escaped.replace(/\s+/g, '\\s+');
+  const re = new RegExp(`^[ \\t]*#{0,6}[ \\t]*${flexible}`, 'im');
+  const match = re.exec(text);
+  if (!match) {
     return null;
   }
-  const rest = text.slice(marker.end);
-  const nextHeading = rest.search(/^##\s/m);
+  const rest = text.slice(match.index + match[0].length);
+  const nextHeading = rest.search(/^[ \t]*(?:#{1,6}\s|UNKNOWNS:\s)/im);
   const content = (nextHeading === -1 ? rest : rest.slice(0, nextHeading)).trim();
-  if (content.length === 0 || content.toUpperCase() === 'NONE') {
-    return null;
-  }
-  return content;
+  return isAbsentSectionValue(content) ? null : content;
 }
 
 /**

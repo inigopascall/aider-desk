@@ -3,10 +3,12 @@ import { describe, expect, it } from 'vitest';
 import {
   ParseError,
   computeWaves,
+  isAbsentSectionValue,
   parseArbiterResponse,
   parseAssignmentsResponse,
   parseDigesterResponse,
   parseEditorResult,
+  parsePlanUnknowns,
   serializeAssignment,
   validateAssignments,
   type FileAssignment,
@@ -88,6 +90,133 @@ describe('parseDigesterResponse', () => {
   it('throws on NO without investigation brief', () => {
     const text = 'VERDICT: NO';
     expect(() => parseDigesterResponse(text)).toThrow(ParseError);
+  });
+});
+
+describe('parsePlanUnknowns', () => {
+  it('suppresses (none) in both sections', () => {
+    const plan = [
+      '# IMPLEMENTATION PLAN: Example',
+      '',
+      '## File list',
+      '### Files to modify',
+      '- src/a.ts',
+      '',
+      '## UNKNOWNS: RESEARCH REQUIRED',
+      '(none)',
+      '',
+      '## UNKNOWNS: CODEBASE EVIDENCE REQUIRED',
+      '(none)',
+    ].join('\n');
+    expect(parsePlanUnknowns(plan)).toEqual({
+      researchUnknowns: null,
+      codebaseUnknowns: null,
+      title: 'Example',
+    });
+  });
+
+  it.each(['NONE', 'none', 'N/A', '-', '- none', '(NONE)', '*none*', '<specific external questions, one per bullet>'])(
+    'suppresses placeholder research body %s',
+    (body) => {
+      const plan = [
+        '# IMPLEMENTATION PLAN: Example',
+        '',
+        '## UNKNOWNS: RESEARCH REQUIRED',
+        body,
+      ].join('\n');
+      expect(parsePlanUnknowns(plan).researchUnknowns).toBeNull();
+    },
+  );
+
+  it('suppresses an empty section body', () => {
+    const plan = [
+      '# IMPLEMENTATION PLAN: Example',
+      '',
+      '## UNKNOWNS: RESEARCH REQUIRED',
+      '## UNKNOWNS: CODEBASE EVIDENCE REQUIRED',
+    ].join('\n');
+    expect(parsePlanUnknowns(plan)).toEqual({
+      researchUnknowns: null,
+      codebaseUnknowns: null,
+      title: 'Example',
+    });
+  });
+
+  it('retains genuine research unknowns while suppressing a placeholder codebase section', () => {
+    const plan = [
+      '# IMPLEMENTATION PLAN: Example',
+      '',
+      '## UNKNOWNS: RESEARCH REQUIRED',
+      '- What is the current React 19 hooks API?',
+      '- Which auth library does the project use?',
+      '',
+      '## UNKNOWNS: CODEBASE EVIDENCE REQUIRED',
+      '(none)',
+    ].join('\n');
+    const result = parsePlanUnknowns(plan);
+    expect(result.researchUnknowns).toContain('What is the current React 19 hooks API?');
+    expect(result.researchUnknowns).toContain('Which auth library does the project use?');
+    expect(result.codebaseUnknowns).toBeNull();
+  });
+
+  it('retains genuine codebase unknowns while suppressing a placeholder research section', () => {
+    const plan = [
+      '# IMPLEMENTATION PLAN: Example',
+      '',
+      '## UNKNOWNS: RESEARCH REQUIRED',
+      '(none)',
+      '',
+      '## UNKNOWNS: CODEBASE EVIDENCE REQUIRED',
+      '- Where is the mock factory for the test suite?',
+    ].join('\n');
+    const result = parsePlanUnknowns(plan);
+    expect(result.researchUnknowns).toBeNull();
+    expect(result.codebaseUnknowns).toContain('Where is the mock factory for the test suite?');
+  });
+
+  it('retains a section that mixes a real bullet with a stray dash line', () => {
+    const plan = [
+      '# IMPLEMENTATION PLAN: Example',
+      '',
+      '## UNKNOWNS: RESEARCH REQUIRED',
+      '- Which mock factory does the suite use?',
+      '-',
+    ].join('\n');
+    const result = parsePlanUnknowns(plan);
+    expect(result.researchUnknowns).toContain('Which mock factory does the suite use?');
+  });
+
+  it('matches a heading emitted without ##', () => {
+    const plan = [
+      '# IMPLEMENTATION PLAN: Example',
+      '',
+      'UNKNOWNS: RESEARCH REQUIRED',
+      '- Which mock factory does the suite use?',
+    ].join('\n');
+    const result = parsePlanUnknowns(plan);
+    expect(result.researchUnknowns).toContain('Which mock factory does the suite use?');
+  });
+
+  it('falls back to the default title when no plan heading is present', () => {
+    const plan = [
+      '## UNKNOWNS: RESEARCH REQUIRED',
+      '- Which mock factory does the suite use?',
+    ].join('\n');
+    expect(parsePlanUnknowns(plan).title).toBe('Implementation Plan');
+  });
+});
+
+describe('isAbsentSectionValue', () => {
+  it.each(['', '(none)', 'NONE', '- n/a', '—', '<placeholder text>'])('treats %j as absent', (body) => {
+    expect(isAbsentSectionValue(body)).toBe(true);
+  });
+
+  it('treats a real question as present', () => {
+    expect(isAbsentSectionValue('- Which mock factory does the suite use?')).toBe(false);
+  });
+
+  it('treats a mix of a real bullet and a placeholder as present', () => {
+    expect(isAbsentSectionValue('- Which mock factory does the suite use?\n- none')).toBe(false);
   });
 });
 

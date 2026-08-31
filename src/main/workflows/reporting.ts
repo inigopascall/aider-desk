@@ -130,11 +130,12 @@ export function formatWorkflowStart(workflowName: string, modelsSummary: string,
 }
 
 export function formatCheckpointReport(journey: Journey, workflowName: string, label: string): string {
+  const batchRows = journey.batches.map((b) => [String(b.batch), b.stage, String(b.assignmentCount), String(b.waves), b.verdict]);
   const rows = [
     ['Evidence rounds', String(journey.evidenceIterations)],
     ['Research documents', String(journey.researchDocs)],
     ['Context files', `+${journey.filesAdded.length} / −${journey.filesRemoved.length}`],
-    ['Assignment batches', String(journey.batches.length)],
+    ['Assignment batches so far', String(batchRows.length)],
     ['Files touched', String(Object.keys(journey.fileStats).length)],
   ];
 
@@ -144,8 +145,8 @@ export function formatCheckpointReport(journey: Journey, workflowName: string, l
     journey.evidenceRows.length
       ? section('### 🧾 Evidence', markdownTable(['Round', 'Verdict', 'Added', 'Removed', 'Research'], ['right', 'left', 'left', 'left', 'center'], evidenceRows(journey.evidenceRows)))
       : null,
-    journey.batches.length
-      ? section('### ✍️ Assignment batches', markdownTable(['Batch', 'Stage', 'Assignments', 'Waves', 'Verdict'], ['right', 'left', 'right', 'right', 'left'], journey.batches.map((b) => [String(b.batch), b.stage, String(b.assignmentCount), String(b.waves), b.verdict])))
+    batchRows.length
+      ? section('### ✍️ Assignment batches', markdownTable(['Batch', 'Stage', 'Assignments', 'Waves', 'Verdict'], ['right', 'left', 'right', 'right', 'left'], batchRows))
       : null,
   ]
     .filter((block): block is string => !!block && block.trim().length > 0)
@@ -280,6 +281,18 @@ export function formatJourneyReport(journey: Journey, report: ReportState, workf
           .map(([role, m]) => `${role}: ${m.primary ?? 'default'}${m.fallback ? ` (fallback: ${m.fallback})` : ''}`)
           .join('; ');
 
+  const batchRows = journey.batches.map((batch) => [
+    String(batch.batch),
+    batch.stage,
+    String(batch.assignmentCount),
+    String(batch.waves),
+    String(batch.done),
+    batch.failed.length ? batch.failed.join(', ') : '—',
+    batch.blocked.length ? batch.blocked.join(', ') : '—',
+    batch.verdict,
+    code(batch.commit),
+  ]);
+
   const summaryRows = [
     ['Status', status],
     ['Plan', journey.planTitle || '—'],
@@ -287,7 +300,7 @@ export function formatJourneyReport(journey: Journey, report: ReportState, workf
     ['Evidence rounds', String(journey.evidenceIterations)],
     ['Research documents', String(journey.researchDocs)],
     ['Context files', `+${journey.filesAdded.length} / −${journey.filesRemoved.length}${journey.filesSkipped.length ? ` / ${journey.filesSkipped.length} skipped` : ''}`],
-    ['Assignment batches', String(journey.batches.length)],
+    ['Assignment batches', String(batchRows.length)],
     ['Files touched', String(Object.keys(journey.fileStats).length)],
     ['Format retries', String(journey.formatRetries)],
   ];
@@ -335,23 +348,13 @@ export function formatJourneyReport(journey: Journey, report: ReportState, workf
           markdownTable(['Stage', 'Change', 'Path'], ['left', 'center', 'left'], contextRows(journey.contextChanges)),
         )
       : null,
-    journey.batches.length > 0
+    batchRows.length > 0
       ? section(
           '### ✍️ Assignment batches',
           markdownTable(
             ['Batch', 'Stage', 'Assignments', 'Waves', 'DONE', 'FAILED', 'BLOCKED', 'Verdict', 'Commit'],
             ['right', 'left', 'right', 'right', 'right', 'right', 'right', 'left', 'left'],
-            journey.batches.map((batch) => [
-              String(batch.batch),
-              batch.stage,
-              String(batch.assignmentCount),
-              String(batch.waves),
-              String(batch.done),
-              batch.failed.length ? batch.failed.join(', ') : '—',
-              batch.blocked.length ? batch.blocked.join(', ') : '—',
-              batch.verdict,
-              code(batch.commit),
-            ]),
+            batchRows,
           ),
         )
       : null,
