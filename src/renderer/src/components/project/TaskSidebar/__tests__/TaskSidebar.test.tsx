@@ -244,6 +244,7 @@ describe('TaskSidebar', () => {
     await waitFor(() => {
       expect(updateTask).toHaveBeenCalledWith(task.id, { state: 'done' });
     });
+    expect(screen.getByText('taskSidebar.changeState')).toBeInTheDocument();
     expect(screen.getByText('taskSidebar.highlightTask')).toBeInTheDocument();
 
     const colorCell = screen.getByTestId('task-highlight-color-#E74C3C');
@@ -258,6 +259,71 @@ describe('TaskSidebar', () => {
     fireEvent.mouseDown(document.body);
     await waitFor(() => {
       expect(screen.queryByText('taskSidebar.changeState')).not.toBeInTheDocument();
+    });
+  });
+
+  it('closes the task menu when Rename is clicked', async () => {
+    const task = {
+      id: 'task-1',
+      name: 'Task 1',
+      createdAt: '2023-01-01T00:00:00Z',
+      updatedAt: '2023-01-01T00:00:00Z',
+      state: 'todo',
+    } as TaskData;
+
+    render(
+      <TaskSidebar
+        loading={false}
+        tasks={[task]}
+        activeTaskId={task.id}
+        onTaskSelect={vi.fn()}
+        updateTask={vi.fn().mockResolvedValue(undefined)}
+        isCollapsed={false}
+        onToggleCollapse={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('task-menu-trigger-task-1'));
+
+    expect(screen.getByText('taskSidebar.rename')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('taskSidebar.rename'));
+
+    await waitFor(() => {
+      expect(screen.queryByText('taskSidebar.rename')).not.toBeInTheDocument();
+    });
+  });
+
+  it('closes the task menu when Delete task is clicked', async () => {
+    const task = {
+      id: 'task-1',
+      name: 'Task 1',
+      createdAt: '2023-01-01T00:00:00Z',
+      updatedAt: '2023-01-01T00:00:00Z',
+      state: 'todo',
+    } as TaskData;
+
+    render(
+      <TaskSidebar
+        loading={false}
+        tasks={[task]}
+        activeTaskId={task.id}
+        onTaskSelect={vi.fn()}
+        updateTask={vi.fn().mockResolvedValue(undefined)}
+        deleteTask={vi.fn().mockResolvedValue(undefined)}
+        isCollapsed={false}
+        onToggleCollapse={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('task-menu-trigger-task-1'));
+
+    expect(screen.getByText('taskSidebar.deleteTask')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('taskSidebar.deleteTask'));
+
+    await waitFor(() => {
+      expect(screen.queryByText('taskSidebar.deleteTask')).not.toBeInTheDocument();
     });
   });
 });

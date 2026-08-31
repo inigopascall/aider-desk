@@ -123,11 +123,13 @@ export const TaskMenuButton = memo(
 
     const handleEditClick = (e: MouseEvent) => {
       e.stopPropagation();
+      setIsMenuOpen(false);
       onEdit();
     };
 
     const handleDeleteClick = (e: MouseEvent) => {
       e.stopPropagation();
+      setIsMenuOpen(false);
       onDelete?.();
     };
 
