@@ -64,6 +64,7 @@ export const useSaveSettings = () => {
   const api = useApi();
   return useCallback(
     async (settings: SettingsData) => {
+      const previousSettings = useSettingsStore.getState().settings;
       try {
         useSettingsStore.getState().setSettingsState(settings);
         const updatedSettings = await api.saveSettings(settings);
@@ -71,6 +72,10 @@ export const useSaveSettings = () => {
       } catch (error) {
         // eslint-disable-next-line no-console
         console.error('Failed to save settings:', error);
+        if (previousSettings) {
+          useSettingsStore.getState().setSettingsState(previousSettings);
+        }
+        throw error;
       }
     },
     [api],

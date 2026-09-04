@@ -97,6 +97,7 @@ describe('SettingsPage', () => {
       deleteProfile: vi.fn(),
       refreshProfiles: vi.fn(),
       updateProfilesOrder: vi.fn(),
+      getWorkflowAgentProfiles: vi.fn(() => []),
     });
 
     vi.mocked(useApi).mockReturnValue(mockApi as unknown as ApplicationAPI);
@@ -149,7 +150,7 @@ describe('SettingsPage', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
 
     await waitFor(() => {
-      expect(showErrorNotification).toHaveBeenCalledWith('settings.saveError');
+      expect(showErrorNotification).toHaveBeenCalledWith('settings.saveError (settings): boom', 15000);
     });
     expect(showSuccessNotification).not.toHaveBeenCalled();
   });

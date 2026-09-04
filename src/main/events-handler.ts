@@ -595,16 +595,16 @@ export class EventsHandler {
     if (!serverConfig) {
       return null;
     }
-    return await this.mcpManager.getMcpServerTools(serverName, serverConfig);
+    return await this.mcpManager.getMcpServerTools(serverName, serverConfig, projectDir ?? null);
   }
 
   async reloadMcpServers(projectDir?: string, force = false): Promise<void> {
     const mcpServers = this.mcpConfigManager.getMergedServers(projectDir);
-    await this.mcpManager.reloadAllServers(mcpServers, force);
+    await this.mcpManager.reloadAllServers(mcpServers, force, projectDir ?? null);
   }
 
-  async reloadMcpServer(serverName: string, config: McpServerConfig): Promise<McpTool[]> {
-    return await this.mcpManager.reloadSingleServer(serverName, config);
+  async reloadMcpServer(serverName: string, config: McpServerConfig, projectDir?: string): Promise<McpTool[]> {
+    return await this.mcpManager.reloadSingleServer(serverName, config, projectDir ?? null);
   }
 
   async getMcpOAuthStatus(serverName: string, config?: McpServerConfig, projectDir?: string): Promise<McpOAuthStatusData> {
@@ -645,22 +645,46 @@ export class EventsHandler {
 
   async addMcpServer(name: string, config: McpServerConfig, projectDir?: string): Promise<void> {
     await this.mcpConfigManager.addServer(projectDir, name, config);
-    await this.mcpManager.reloadSingleServer(name, this.mcpConfigManager.getMergedServers(projectDir)[name]);
+    // A connection failure is logged and does not reject the save.
+    try {
+      await this.mcpManager.reloadSingleServer(name, this.mcpConfigManager.getMergedServers(projectDir)[name], projectDir ?? null);
+    } catch (error) {
+      logger.warn(`Failed to connect MCP server '${name}' (scope: ${projectDir ?? 'global'}): ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async updateMcpServer(oldName: string, name: string, config: McpServerConfig, projectDir?: string): Promise<void> {
     await this.mcpConfigManager.updateServer(projectDir, oldName, name, config);
-    await this.mcpManager.reloadSingleServer(name, this.mcpConfigManager.getMergedServers(projectDir)[name]);
+    const mergedServers = this.mcpConfigManager.getMergedServers(projectDir);
+    // If the server was renamed and the old name is no longer configured, drop its running connector.
+    if (oldName !== name && !(oldName in mergedServers)) {
+      await this.mcpManager.removeServer(oldName);
+    }
+    // A connection failure is logged and does not reject the save.
+    try {
+      await this.mcpManager.reloadSingleServer(name, mergedServers[name], projectDir ?? null);
+    } catch (error) {
+      logger.warn(`Failed to connect MCP server '${name}' (scope: ${projectDir ?? 'global'}): ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async removeMcpServer(name: string, projectDir?: string): Promise<void> {
     await this.mcpConfigManager.removeServer(projectDir, name);
+    if (!(name in this.mcpConfigManager.getMergedServers(projectDir))) {
+      await this.mcpManager.removeServer(name);
+    }
   }
 
   async replaceMcpServers(servers: Record<string, McpServerConfig>, projectDir?: string): Promise<void> {
+    const previousServers = projectDir ? this.mcpConfigManager.getProjectServers(projectDir) : this.mcpConfigManager.getGlobalServers();
     await this.mcpConfigManager.replaceServers(projectDir, servers);
     const mergedServers = this.mcpConfigManager.getMergedServers(projectDir);
-    await this.mcpManager.reloadAllServers(mergedServers, true);
+    for (const name of Object.keys(previousServers)) {
+      if (!(name in mergedServers)) {
+        await this.mcpManager.removeServer(name);
+      }
+    }
+    await this.mcpManager.reloadAllServers(mergedServers, false);
   }
 
   async createTerminal(baseDir: string, taskId: string, cols?: number, rows?: number): Promise<string> {

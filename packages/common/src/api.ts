@@ -172,7 +172,7 @@ export interface ApplicationAPI {
 
   loadMcpServerTools: (serverName: string, config?: McpServerConfig, projectDir?: string) => Promise<McpTool[] | null>;
   reloadMcpServers: (projectDir?: string, force?: boolean) => Promise<void>;
-  reloadMcpServer: (serverName: string, config: McpServerConfig) => Promise<McpTool[]>;
+  reloadMcpServer: (serverName: string, config: McpServerConfig, projectDir?: string) => Promise<McpTool[]>;
   getMcpOAuthStatus: (serverName: string, config?: McpServerConfig, projectDir?: string) => Promise<McpOAuthStatusData>;
   startMcpOAuth: (serverName: string, config?: McpServerConfig, projectDir?: string) => Promise<string>;
   disconnectMcpOAuth: (serverName: string, config?: McpServerConfig, projectDir?: string) => Promise<void>;

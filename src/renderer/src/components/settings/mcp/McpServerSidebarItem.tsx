@@ -1,4 +1,5 @@
 import { BiPencil, BiRefresh, BiTrash } from 'react-icons/bi';
+import { FaExclamationTriangle } from 'react-icons/fa';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 
@@ -45,10 +46,10 @@ export const McpServerSidebarItem = ({ serverName, isSelected, error, onClick, o
           isSelected ? 'bg-bg-secondary-light text-text-primary' : 'text-text-primary hover:bg-bg-secondary-light',
         )}
       >
-        <span className="flex-1 truncate">{serverName}</span>
+        <span className={clsx('flex-1 truncate', error && 'opacity-60 text-text-muted')}>{serverName}</span>
         {error && (
           <Tooltip content={error} maxWidth={400}>
-            <div className="w-2.5 h-2.5 rounded-full bg-error flex-shrink-0 ml-2" />
+            <FaExclamationTriangle className="w-3 h-3 text-error flex-shrink-0 ml-2" />
           </Tooltip>
         )}
         <VerticalDotsMenu options={menuOptions} className="ml-1" />

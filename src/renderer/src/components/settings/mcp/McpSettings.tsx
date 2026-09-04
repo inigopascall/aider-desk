@@ -14,6 +14,8 @@ import { getPathBasename } from '@/utils/path-utils';
 import { Button } from '@/components/common/Button';
 import { IconButton } from '@/components/common/IconButton';
 
+const TOOLS_LOAD_DEBOUNCE_MS = 300;
+
 type ServerToolsState = {
   tools: McpTool[] | null;
   loading: boolean;
@@ -87,26 +89,45 @@ export const McpSettings = ({ mcpServers, setMcpServers, openProjects = [], sele
         : null;
   const activeServerName = selectedServer?.name ?? null;
 
-  // Load tools for all servers in the current context to reflect their status
+  // Load tools for all servers in the current context to reflect their status.
+  // Debounced so rapid state changes do not launch overlapping probes.
   useEffect(() => {
     let cancelled = false;
-    void Promise.all(
-      Object.entries(servers).map(async ([name, config]) => {
-        try {
-          const loadedTools = await api.loadMcpServerTools(name, config, projectDir);
-          if (!cancelled) {
-            setServersTools((prev) => ({ ...prev, [name]: { tools: loadedTools, loading: false, error: null } }));
-          }
-        } catch (loadError) {
-          if (!cancelled) {
-            const errorMessage = extractIpcErrorMessage(loadError);
-            setServersTools((prev) => ({ ...prev, [name]: { tools: null, loading: false, error: errorMessage } }));
-          }
+    let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+    debounceTimer = setTimeout(() => {
+      if (cancelled) {
+        return;
+      }
+      setServersTools((prev) => {
+        const next = { ...prev };
+        for (const [name] of Object.entries(servers)) {
+          next[name] = { tools: null, loading: true, error: null };
         }
-      }),
-    );
+        return next;
+      });
+      void Promise.all(
+        Object.entries(servers).map(async ([name, config]) => {
+          try {
+            const loadedTools = await api.loadMcpServerTools(name, config, projectDir);
+            if (!cancelled) {
+              setServersTools((prev) => ({ ...prev, [name]: { tools: loadedTools, loading: false, error: null } }));
+            }
+          } catch (loadError) {
+            if (!cancelled) {
+              const errorMessage = extractIpcErrorMessage(loadError);
+              setServersTools((prev) => ({ ...prev, [name]: { tools: null, loading: false, error: errorMessage } }));
+            }
+          }
+        }),
+      );
+    }, TOOLS_LOAD_DEBOUNCE_MS);
+
     return () => {
       cancelled = true;
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
     };
   }, [api, projectDir, servers, toolsReloadTrigger]);
 
@@ -188,7 +209,7 @@ export const McpSettings = ({ mcpServers, setMcpServers, openProjects = [], sele
       }
       setServersTools((prev) => ({ ...prev, [name]: { tools: null, loading: true, error: null } }));
       void api
-        .reloadMcpServer(name, config)
+        .reloadMcpServer(name, config, projectDir)
         .then((loadedTools) => {
           setServersTools((prev) => ({ ...prev, [name]: { tools: loadedTools, loading: false, error: null } }));
         })
@@ -197,13 +218,24 @@ export const McpSettings = ({ mcpServers, setMcpServers, openProjects = [], sele
           setServersTools((prev) => ({ ...prev, [name]: { tools: null, loading: false, error: errorMessage } }));
         });
     },
-    [api, servers],
+    [api, servers, projectDir],
   );
 
-  const handleReload = () => {
-    void api.reloadMcpServers(projectDir, true);
+  const handleReload = async () => {
     setServersTools(Object.fromEntries(serverEntries.map(([name]) => [name, { tools: null, loading: true, error: null }])));
-    setToolsReloadTrigger((prev) => prev + 1);
+    try {
+      await api.reloadMcpServers(projectDir, true);
+      setToolsReloadTrigger((prev) => prev + 1);
+    } catch (reloadError) {
+      const errorMessage = extractIpcErrorMessage(reloadError);
+      setServersTools((prev) => {
+        const next = { ...prev };
+        for (const [name] of serverEntries) {
+          next[name] = { tools: null, loading: false, error: errorMessage };
+        }
+        return next;
+      });
+    }
   };
 
   const handleRemove = (name: string) => {

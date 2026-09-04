@@ -4,9 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMCPClient, type JSONRPCMessage, type ListToolsResult, type MCPClient, type MCPTransport } from '@ai-sdk/mcp';
 import { type Tool, type ToolExecutionOptions } from 'ai';
 import { TOOL_GROUP_NAME_SEPARATOR } from '@common/tools';
-import { ToolApprovalState, type AgentProfile, type McpTool } from '@common/types';
+import { ToolApprovalState, type AgentProfile, type McpServerConfig, type McpTool } from '@common/types';
 
-import { McpManager } from '../mcp-manager';
+import { McpManager, type McpServerFailure } from '../mcp-manager';
 import { type ApprovalManager } from '../tools/approval-manager';
 
 import { type Task } from '@/task';
@@ -20,7 +20,26 @@ type Connector = {
 };
 
 type TestableMcpManager = {
-  initMcpConnectors: () => Promise<Connector[]>;
+  initMcpConnectors: () => Promise<{ connectors: Connector[]; failures: [] }>;
+};
+
+type TestableMcpManagerWithFailures = {
+  initMcpConnectors: (
+    mcpServers: Record<string, McpServerConfig>,
+    projectDir: string | null,
+    taskDir: string | null,
+    forceReload: boolean,
+    enabledServers: string[],
+  ) => Promise<{ connectors: Connector[]; failures: McpServerFailure[] }>;
+  initMcpConnector: (
+    projectDir: string | null,
+    taskDir: string | null,
+    serverName: string,
+    config: McpServerConfig,
+    forceReload?: boolean,
+    initId?: string,
+    scope?: string,
+  ) => Promise<Connector>;
 };
 
 const createProfile = (): AgentProfile =>
@@ -126,7 +145,7 @@ describe('McpManager - AI SDK MCP integration', () => {
         inputSchema: tool.inputSchema,
       })),
     };
-    vi.spyOn(manager as unknown as TestableMcpManager, 'initMcpConnectors').mockResolvedValue([connector]);
+    vi.spyOn(manager as unknown as TestableMcpManager, 'initMcpConnectors').mockResolvedValue({ connectors: [connector], failures: [] });
     const toolsFromDefinitions = vi.spyOn(client, 'toolsFromDefinitions');
     const task = createTask();
     const approvalManager = createApprovalManager();
@@ -201,7 +220,7 @@ describe('McpManager - AI SDK MCP integration', () => {
         },
       ],
     };
-    vi.spyOn(manager as unknown as TestableMcpManager, 'initMcpConnectors').mockResolvedValue([connector]);
+    vi.spyOn(manager as unknown as TestableMcpManager, 'initMcpConnectors').mockResolvedValue({ connectors: [connector], failures: [] });
     const profile = createProfile();
     profile.toolApprovals[`test-server${TOOL_GROUP_NAME_SEPARATOR}delete_file`] = ToolApprovalState.Never;
 
@@ -209,5 +228,90 @@ describe('McpManager - AI SDK MCP integration', () => {
 
     expect(toolSet).toEqual({});
     await client.close();
+  });
+});
+
+describe('McpManager - connector initialization and quarantine', () => {
+  let manager: McpManager;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    manager = new McpManager();
+  });
+
+  it('returns the healthy connector and records one failure when one connector rejects', async () => {
+    const { client } = await createTestClient();
+    const healthyConnector: Connector = {
+      client,
+      serverName: 'healthy-server',
+      serverConfig: {},
+      toolDefinitions: { tools: [] },
+      tools: [],
+    };
+    const initMcpConnectorSpy = vi
+      .spyOn(manager as unknown as TestableMcpManagerWithFailures, 'initMcpConnector')
+      .mockImplementation(async (_projectDir, _taskDir, serverName) => {
+        if (serverName === 'broken-server') {
+          throw new Error('connection refused');
+        }
+        return healthyConnector;
+      });
+    vi.spyOn(manager, 'saveToolsCache').mockResolvedValue(undefined);
+
+    const config: McpServerConfig = { command: 'fake-command' };
+    const result = await (manager as unknown as TestableMcpManagerWithFailures).initMcpConnectors(
+      { 'healthy-server': config, 'broken-server': config },
+      '/project',
+      '/project',
+      false,
+      ['healthy-server', 'broken-server'],
+    );
+
+    expect(initMcpConnectorSpy).toHaveBeenCalledTimes(2);
+    expect(result.connectors).toEqual([healthyConnector]);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]?.serverName).toBe('broken-server');
+    expect(result.failures[0]?.message).toBe('connection refused');
+    await client.close();
+  });
+
+  it('does not invoke a new connector initialization during active quarantine', async () => {
+    const initMcpConnectorSpy = vi
+      .spyOn(manager as unknown as TestableMcpManagerWithFailures, 'initMcpConnector')
+      .mockImplementation(async () => {
+        throw new Error('connection refused');
+      });
+
+    const config: McpServerConfig = { command: 'fake-command' };
+    const servers = { 'broken-server': config };
+
+    const first = await (manager as unknown as TestableMcpManagerWithFailures).initMcpConnectors(servers, '/project', '/project', false, ['broken-server']);
+    expect(first.failures).toHaveLength(1);
+    expect(first.connectors).toEqual([]);
+
+    const second = await (manager as unknown as TestableMcpManagerWithFailures).initMcpConnectors(servers, '/project', '/project', false, ['broken-server']);
+    expect(second.failures).toHaveLength(1);
+    expect(second.connectors).toEqual([]);
+    expect(initMcpConnectorSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('force reload clears quarantine and retries initialization', async () => {
+    const initMcpConnectorSpy = vi
+      .spyOn(manager as unknown as TestableMcpManagerWithFailures, 'initMcpConnector')
+      .mockImplementation(async () => {
+        throw new Error('connection refused');
+      });
+
+    const config: McpServerConfig = { command: 'fake-command' };
+    const servers = { 'broken-server': config };
+
+    const first = await (manager as unknown as TestableMcpManagerWithFailures).initMcpConnectors(servers, '/project', '/project', false, ['broken-server']);
+    expect(first.failures).toHaveLength(1);
+    expect(initMcpConnectorSpy).toHaveBeenCalledTimes(1);
+
+    const retried = await (manager as unknown as TestableMcpManagerWithFailures).initMcpConnectors(servers, '/project', '/project', true, ['broken-server']);
+    expect(initMcpConnectorSpy).toHaveBeenCalledTimes(2);
+    expect(retried.failures).toHaveLength(1);
+    expect(retried.connectors).toEqual([]);
   });
 });

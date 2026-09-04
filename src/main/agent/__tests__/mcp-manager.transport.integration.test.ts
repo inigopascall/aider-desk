@@ -14,7 +14,7 @@ type TestableMcpManager = {
     taskDir: string | null,
     forceReload: boolean,
     enabledServers: string[],
-  ) => Promise<unknown[]>;
+  ) => Promise<{ connectors: unknown[]; failures: [] }>;
 };
 
 type ClientMessage = {
@@ -161,7 +161,7 @@ describe('McpManager remote transport fallback', () => {
         headers: { 'X-Test-Header': 'test-value' },
       };
       const tools = await manager.getMcpServerTools('legacy-sse-server', config);
-      const connectors = await (manager as unknown as TestableMcpManager).initMcpConnectors({ 'legacy-sse-server': config }, '/project', '/project', false, [
+      const { connectors } = await (manager as unknown as TestableMcpManager).initMcpConnectors({ 'legacy-sse-server': config }, '/project', '/project', false, [
         'legacy-sse-server',
       ]);
 

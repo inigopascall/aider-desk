@@ -728,8 +728,8 @@ export class BrowserApi implements ApplicationAPI {
   reloadMcpServers(projectDir?: string, force = false): Promise<void> {
     return this.post('/mcp/reload', { projectDir, force });
   }
-  reloadMcpServer(serverName: string, config: McpServerConfig): Promise<McpTool[]> {
-    return this.post('/mcp/reload-single', { serverName, config });
+  reloadMcpServer(serverName: string, config: McpServerConfig, projectDir?: string): Promise<McpTool[]> {
+    return this.post('/mcp/reload-single', { serverName, config, projectDir });
   }
   getMcpOAuthStatus(serverName: string, config?: McpServerConfig, projectDir?: string): Promise<McpOAuthStatusData> {
     return this.post('/mcp/oauth/status', { serverName, config, projectDir });

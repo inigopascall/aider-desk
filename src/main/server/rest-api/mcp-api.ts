@@ -27,6 +27,7 @@ const ReloadMcpServersSchema = z.object({
 const ReloadMcpServerSchema = z.object({
   serverName: z.string().min(1, 'Server name is required'),
   config: McpServerConfigSchema,
+  projectDir: z.string().optional(),
 });
 
 const OAuthCallbackSchema = z.object({
@@ -175,8 +176,8 @@ export class McpApi extends BaseApi {
           return;
         }
 
-        const { serverName, config } = parsed;
-        const tools = await this.eventsHandler.reloadMcpServer(serverName, config);
+        const { serverName, config, projectDir } = parsed;
+        const tools = await this.eventsHandler.reloadMcpServer(serverName, config, projectDir);
         res.status(200).json(tools);
       }),
     );

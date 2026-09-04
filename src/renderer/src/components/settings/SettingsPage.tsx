@@ -1,4 +1,5 @@
 import { McpServersData, ProjectData, ProviderProfile, SettingsData } from '@common/types';
+import { extractIpcErrorMessage } from '@common/utils';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { isEqual } from 'lodash';
 import { useTranslation } from 'react-i18next';
@@ -19,6 +20,8 @@ type Props = {
   openProjects?: ProjectData[];
   onShowLogs?: () => void;
 };
+
+type SaveResult = { ok: true } | { ok: false; errors: Array<{ stage: string; message: string }> };
 
 export const SettingsPage = ({ onClose, initialPageId, initialOptions, openProjects, onShowLogs }: Props) => {
   const { t, i18n } = useTranslation();
@@ -135,110 +138,127 @@ export const SettingsPage = ({ onClose, initialPageId, initialOptions, openProje
     onClose,
   ]);
 
-  const performSave = async (): Promise<boolean> => {
+  const performSave = async (): Promise<SaveResult> => {
+    const errors: Array<{ stage: string; message: string }> = [];
+
+    // Save settings.
     try {
       if (localSettings) {
         await saveSettings(localSettings);
       }
-
-      // Save provider changes.
-      try {
-        if (!isEqual(providers, originalProviders)) {
-          const updatedProviders = await api.updateProviders(providers);
-          setProviders(updatedProviders);
-          setOriginalProviders(updatedProviders);
-        }
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('Failed to save providers:', error);
-        return false;
-      }
-
-      // Save workflow availability changes (per-project enabledWorkflows).
-      try {
-        const changedBaseDirs = Object.keys(workflowsByProject).filter(
-          (baseDir) => !isEqual(workflowsByProject[baseDir], originalWorkflowsByProject[baseDir]),
-        );
-        for (const baseDir of changedBaseDirs) {
-          await api.patchProjectSettings(baseDir, { enabledWorkflows: workflowsByProject[baseDir] });
-        }
-        setOriginalWorkflowsByProject(workflowsByProject);
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('Failed to save workflow availability:', error);
-        return false;
-      }
-
-      // Save MCP server changes.
-      try {
-        if (!isEqual(mcpServers, originalMcpServers)) {
-          const scopes = new Set<string | undefined>([undefined, ...Object.keys(originalMcpServers.projectServers), ...Object.keys(mcpServers.projectServers)]);
-          for (const projectDir of scopes) {
-            const originalScope = projectDir ? originalMcpServers.projectServers[projectDir] || {} : originalMcpServers.global;
-            const draftScope = projectDir ? mcpServers.projectServers[projectDir] || {} : mcpServers.global;
-            if (!isEqual(originalScope, draftScope)) {
-              await api.replaceMcpServers(draftScope, projectDir);
-            }
-          }
-          setOriginalMcpServers(mcpServers);
-        }
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('Failed to save MCP servers:', error);
-        return false;
-      }
-
-      // Save agent profile changes.
-      try {
-        const originalProfileIds = new Set(originalAgentProfiles.map((p) => p.id));
-        const currentProfileIds = new Set(agentProfiles.map((p) => p.id));
-
-        for (const profileId of originalProfileIds) {
-          if (!currentProfileIds.has(profileId)) {
-            await deleteProfile(profileId, originalAgentProfiles.find((p) => p.id === profileId)?.projectDir);
-          }
-        }
-
-        for (const profile of agentProfiles) {
-          if (!originalProfileIds.has(profile.id)) {
-            await createProfile(profile, profile.projectDir);
-          } else {
-            const originalProfile = originalAgentProfiles.find((p) => p.id === profile.id);
-            if (originalProfile && !isEqual(originalProfile, profile)) {
-              await updateProfile(profile, profile.projectDir);
-            }
-          }
-        }
-
-        if (
-          !isEqual(
-            agentProfiles.map((p) => p.id),
-            originalAgentProfiles.map((p) => p.id),
-          )
-        ) {
-          await updateProfilesOrder(agentProfiles);
-        }
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('Failed to save agent profiles:', error);
-        return false;
-      }
-
-      return true;
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error('Failed to save settings:', error);
-      return false;
+      errors.push({ stage: 'settings', message: extractIpcErrorMessage(error) });
     }
+
+    // Save provider changes.
+    try {
+      if (!isEqual(providers, originalProviders)) {
+        const updatedProviders = await api.updateProviders(providers);
+        setProviders(updatedProviders);
+        setOriginalProviders(updatedProviders);
+      }
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to save providers:', error);
+      errors.push({ stage: 'providers', message: extractIpcErrorMessage(error) });
+    }
+
+    // Save workflow availability changes (per-project enabledWorkflows).
+    try {
+      const changedBaseDirs = Object.keys(workflowsByProject).filter(
+        (baseDir) => !isEqual(workflowsByProject[baseDir], originalWorkflowsByProject[baseDir]),
+      );
+      for (const baseDir of changedBaseDirs) {
+        await api.patchProjectSettings(baseDir, { enabledWorkflows: workflowsByProject[baseDir] });
+      }
+      setOriginalWorkflowsByProject(workflowsByProject);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to save workflow availability:', error);
+      errors.push({ stage: 'workflows', message: extractIpcErrorMessage(error) });
+    }
+
+    // Save MCP server changes.
+    try {
+      if (!isEqual(mcpServers, originalMcpServers)) {
+        const scopes = new Set<string | undefined>([undefined, ...Object.keys(originalMcpServers.projectServers), ...Object.keys(mcpServers.projectServers)]);
+        let mcpStageFailed = false;
+        for (const projectDir of scopes) {
+          const originalScope = projectDir ? originalMcpServers.projectServers[projectDir] || {} : originalMcpServers.global;
+          const draftScope = projectDir ? mcpServers.projectServers[projectDir] || {} : mcpServers.global;
+          if (!isEqual(originalScope, draftScope)) {
+            try {
+              await api.replaceMcpServers(draftScope, projectDir);
+            } catch (error) {
+              mcpStageFailed = true;
+              // eslint-disable-next-line no-console
+              console.error('Failed to save MCP servers:', error);
+              errors.push({ stage: projectDir ? `MCP servers (${projectDir})` : 'MCP servers (global)', message: extractIpcErrorMessage(error) });
+            }
+          }
+        }
+        if (!mcpStageFailed) {
+          setOriginalMcpServers(mcpServers);
+        }
+      }
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to save MCP servers:', error);
+      errors.push({ stage: 'MCP servers', message: extractIpcErrorMessage(error) });
+    }
+
+    // Save agent profile changes.
+    try {
+      const originalProfileIds = new Set(originalAgentProfiles.map((p) => p.id));
+      const currentProfileIds = new Set(agentProfiles.map((p) => p.id));
+
+      for (const profileId of originalProfileIds) {
+        if (!currentProfileIds.has(profileId)) {
+          await deleteProfile(profileId, originalAgentProfiles.find((p) => p.id === profileId)?.projectDir);
+        }
+      }
+
+      for (const profile of agentProfiles) {
+        if (!originalProfileIds.has(profile.id)) {
+          await createProfile(profile, profile.projectDir);
+        } else {
+          const originalProfile = originalAgentProfiles.find((p) => p.id === profile.id);
+          if (originalProfile && !isEqual(originalProfile, profile)) {
+            await updateProfile(profile, profile.projectDir);
+          }
+        }
+      }
+
+      if (
+        !isEqual(
+          agentProfiles.map((p) => p.id),
+          originalAgentProfiles.map((p) => p.id),
+        )
+      ) {
+        await updateProfilesOrder(agentProfiles);
+      }
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to save agent profiles:', error);
+      errors.push({ stage: 'agent profiles', message: extractIpcErrorMessage(error) });
+    }
+
+    if (errors.length > 0) {
+      return { ok: false, errors };
+    }
+    return { ok: true };
   };
 
   const handleSave = () => {
     onClose();
-    void performSave().then((success) => {
-      if (success) {
+    void performSave().then((result) => {
+      if (result.ok) {
         showSuccessNotification(t('settings.savedSuccessfully'));
       } else {
-        showErrorNotification(t('settings.saveError'));
+        const details = result.errors.map((error) => `(${error.stage}): ${error.message}`).join('; ');
+        showErrorNotification(`${t('settings.saveError')} ${details}`, 15000);
       }
     });
   };

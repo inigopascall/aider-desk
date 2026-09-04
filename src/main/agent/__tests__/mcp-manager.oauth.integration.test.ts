@@ -127,6 +127,10 @@ describe('McpManager OAuth integration', () => {
     const config: McpServerConfig = { url: testServer.url };
 
     try {
+      // The authentication-required error is not quarantined: a second request
+      // before OAuth completes surfaces the same error instead of a backoff
+      // "unavailable" message, so the OAuth flow can recover immediately.
+      await expect(manager.getMcpServerTools('sentry', config)).rejects.toBeInstanceOf(McpAuthenticationRequiredError);
       await expect(manager.getMcpServerTools('sentry', config)).rejects.toBeInstanceOf(McpAuthenticationRequiredError);
       expect(await manager.getOAuthStatus(config)).toEqual({ status: McpOAuthStatus.AuthenticationRequired });
 

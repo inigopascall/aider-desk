@@ -323,8 +323,8 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
     await eventsHandler.reloadMcpServers(projectDir, force);
   });
 
-  ipcMain.handle('reload-mcp-server', async (_, serverName: string, config: McpServerConfig) => {
-    return await eventsHandler.reloadMcpServer(serverName, config);
+  ipcMain.handle('reload-mcp-server', async (_, serverName: string, config: McpServerConfig, projectDir?: string) => {
+    return await eventsHandler.reloadMcpServer(serverName, config, projectDir);
   });
 
   ipcMain.handle('get-mcp-oauth-status', async (_, serverName: string, config?: McpServerConfig, projectDir?: string) => {

@@ -34,7 +34,32 @@ export interface ManagersResult {
   projectManager: ProjectManager;
 }
 
+let processCrashGuardsInstalled = false;
+
+const describeError = (value: unknown): { message: string; stack?: string } =>
+  value instanceof Error ? { message: value.message, stack: value.stack } : { message: String(value) };
+
+/**
+ * Last-resort backstop for rejected async work that escapes any try/catch.
+ * Without this handler Node exits the process on the first unhandled rejection,
+ * taking every project, task and MCP connection down with it. Uncaught exceptions
+ * are deliberately not handled here: continuing after one is unsafe, so they are
+ * left to Node's default behaviour.
+ */
+const installProcessCrashGuards = (): void => {
+  if (processCrashGuardsInstalled) {
+    return;
+  }
+  processCrashGuardsInstalled = true;
+
+  process.on('unhandledRejection', (reason) => {
+    logger.error('Unhandled promise rejection; process kept alive', describeError(reason));
+  });
+};
+
 export const initManagers = async (store: Store, windowManager?: WindowManager): Promise<ManagersResult> => {
+  installProcessCrashGuards();
+
   // Initialize proxy manager FIRST — must be before any network calls
   const proxyManager = new ProxyManager();
   proxyManager.init(store.getSettings());

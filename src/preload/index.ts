@@ -134,7 +134,7 @@ const api: ApplicationAPI = {
   loadMcpServerTools: (serverName, config?: McpServerConfig, projectDir?: string) =>
     ipcRenderer.invoke('load-mcp-server-tools', serverName, config, projectDir),
   reloadMcpServers: (projectDir?: string, force = false) => ipcRenderer.invoke('reload-mcp-servers', projectDir, force),
-  reloadMcpServer: (serverName: string, config: McpServerConfig) => ipcRenderer.invoke('reload-mcp-server', serverName, config),
+  reloadMcpServer: (serverName: string, config: McpServerConfig, projectDir?: string) => ipcRenderer.invoke('reload-mcp-server', serverName, config, projectDir),
   getMcpOAuthStatus: (serverName: string, config?: McpServerConfig, projectDir?: string) =>
     ipcRenderer.invoke('get-mcp-oauth-status', serverName, config, projectDir),
   startMcpOAuth: (serverName: string, config?: McpServerConfig, projectDir?: string) => ipcRenderer.invoke('start-mcp-oauth', serverName, config, projectDir),
