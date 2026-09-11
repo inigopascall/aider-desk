@@ -21,20 +21,24 @@ export const ProjectSettingsProvider = ({ baseDir, children }: ProjectSettingsPr
   const api = useApi();
 
   const saveProjectSettings = useCallback(
-    async (updated: Partial<ProjectSettings>) => {
-      // Optimistically update the state
-      startTransition(() => {
-        setOptimisticProjectSettings((prev) => (prev ? { ...prev, ...updated } : null));
-      });
-      try {
-        const updatedSettings = await api.patchProjectSettings(baseDir, updated);
-        setProjectSettings(updatedSettings); // Ensure state is in sync with backend
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error(`Failed to save project settings for ${baseDir}:`, error);
-        throw error;
-      }
-    },
+    (updated: Partial<ProjectSettings>) =>
+      new Promise<void>((resolve, reject) => {
+        startTransition(async () => {
+          // Optimistically update the state
+          setOptimisticProjectSettings((prev) => (prev ? { ...prev, ...updated } : null));
+          try {
+            const updatedSettings = await api.patchProjectSettings(baseDir, updated);
+            startTransition(() => {
+              setProjectSettings(updatedSettings); // Ensure state is in sync with backend
+            });
+            resolve();
+          } catch (error) {
+            // eslint-disable-next-line no-console
+            console.error(`Failed to save project settings for ${baseDir}:`, error);
+            reject(error);
+          }
+        });
+      }),
     [api, baseDir, setOptimisticProjectSettings],
   );
 

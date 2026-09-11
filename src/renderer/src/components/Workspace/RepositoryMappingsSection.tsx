@@ -156,32 +156,35 @@ export const RepositoryMappingsSection = ({
               <div className="p-2 text-2xs text-text-muted">{t('common.loading')}</div>
             ) : files.length > 0 ? (
               files.map((file) => (
-                <div key={file.path} className="group flex items-center w-full pr-1 rounded hover:bg-bg-secondary">
-                  <Tooltip content={t('contextFiles.repositoryMappingFile')}>
-                    <MdOutlineMap className="w-4 h-4 mx-1 text-text-muted flex-shrink-0" />
-                  </Tooltip>
-                  <TriStateCheckbox
-                    state={disabledFiles.includes(file.path) ? 'unchecked' : 'checked'}
-                    onChange={(shiftKey) => void handleToggleFile(file.path, shiftKey)}
-                    aria-label={file.path}
-                    className="mr-1"
-                  />
-                  <Tooltip content={file.path}>
-                    <button
-                      className={clsx('flex-grow min-w-0 px-2 py-1 text-left text-2xs truncate', disabledFiles.includes(file.path) ? 'text-text-muted' : 'text-text-primary')}
-                      onClick={() => setPreviewFilePath(file.path)}
-                    >
-                      {getFileName(file.path)}
-                    </button>
-                  </Tooltip>
-                  <Tooltip content={t('contextFiles.removeMappingFile')}>
-                    <button
-                      onClick={() => handleRemoveFile(file.path)}
-                      className="px-1 py-1 rounded hover:bg-bg-primary-light text-text-muted hover:text-error-dark opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                    >
-                      <HiX className="w-4 h-4" />
-                    </button>
-                  </Tooltip>
+                <div key={file.path} className="flex items-center w-full px-1 h-6 group/item">
+                  <div className="flex items-center flex-grow min-w-0 gap-1">
+                    <Tooltip content={file.path} delayDuration={1000}>
+                      <span
+                        className={clsx(
+                          'select-none text-2xs overflow-hidden whitespace-nowrap overflow-ellipsis cursor-pointer hover:text-text-tertiary',
+                          disabledFiles.includes(file.path) ? 'text-text-muted' : 'text-text-primary',
+                        )}
+                        onClick={() => setPreviewFilePath(file.path)}
+                      >
+                        {getFileName(file.path)}
+                      </span>
+                    </Tooltip>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <Tooltip content={t('contextFiles.repositoryMappingFile')}>
+                      <MdOutlineMap className="w-4 h-4 text-text-muted flex-shrink-0" />
+                    </Tooltip>
+                    <TriStateCheckbox
+                      state={disabledFiles.includes(file.path) ? 'unchecked' : 'checked'}
+                      onChange={(shiftKey) => void handleToggleFile(file.path, shiftKey)}
+                      aria-label={file.path}
+                    />
+                    <Tooltip content={t('contextFiles.removeMappingFile')}>
+                      <button onClick={() => handleRemoveFile(file.path)} className="px-1 py-1 rounded hover:bg-bg-primary-light text-text-muted hover:text-error-dark">
+                        <HiX className="w-4 h-4" />
+                      </button>
+                    </Tooltip>
+                  </div>
                 </div>
               ))
             ) : (

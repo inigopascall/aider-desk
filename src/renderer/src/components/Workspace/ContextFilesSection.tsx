@@ -8,7 +8,7 @@ import { clsx } from 'clsx';
 import { WorkspaceSection } from './WorkspaceSection';
 import { EmptyContextInfo } from './EmptyContextInfo';
 import { FileViewerModal } from './FileViewerModal';
-import { collectVisibleFilePaths, createFileTree } from './types';
+import { applyContextFilesDisabled, collectVisibleFilePaths, createFileTree } from './types';
 
 import type { TreeItem } from './types';
 
@@ -16,6 +16,8 @@ import { Tooltip } from '@/components/ui/Tooltip';
 import { useShiftRangeSelection } from '@/hooks/useShiftRangeSelection';
 import { useApi } from '@/contexts/ApiContext';
 import { useContextFilesClipboard, useHasCopiedFiles } from '@/stores/contextFilesClipboardStore';
+import { updateTaskState, useTaskStore } from '@/stores/taskStore';
+import { showErrorNotification } from '@/utils/notifications';
 
 const areSameProject = (first: string, second: string): boolean => {
   const normalize = (value: string): string => {
@@ -103,7 +105,14 @@ export const ContextFilesSection = ({
     (filePaths: string[], disabled: boolean, shiftKey: boolean) => {
       if (filePaths.length === 0) return;
       const paths = filePaths.length === 1 ? resolveRange(filePaths[0], shiftKey) : filePaths;
-      void api.setContextFilesDisabled(baseDir, taskId, paths, disabled);
+      const originalContextFiles = useTaskStore.getState().taskStateMap.get(taskId)?.contextFiles ?? [];
+      const optimisticContextFiles = applyContextFilesDisabled(originalContextFiles, paths, disabled);
+      updateTaskState(taskId, { contextFiles: optimisticContextFiles });
+
+      void api.setContextFilesDisabled(baseDir, taskId, paths, disabled).catch((error) => {
+        updateTaskState(taskId, { contextFiles: originalContextFiles });
+        showErrorNotification(error instanceof Error ? error.message : String(error));
+      });
     },
     [api, baseDir, taskId, resolveRange],
   );

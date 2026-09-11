@@ -100,3 +100,15 @@ export const collectVisibleFilePaths = (
   visit(rootId, true);
   return visiblePaths;
 };
+
+export const applyContextFilesDisabled = (
+  files: ContextFile[],
+  paths: string[],
+  disabled: boolean,
+): ContextFile[] => {
+  const normalizedPaths = new Set(paths.map(normalizePath));
+
+  return files.map((file) =>
+    normalizedPaths.has(normalizePath(file.path)) ? { ...file, disabled } : file,
+  );
+};

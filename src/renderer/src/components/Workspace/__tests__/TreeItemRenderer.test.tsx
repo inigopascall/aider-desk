@@ -115,6 +115,24 @@ describe('TreeItemRenderer context files', () => {
     expect(onToggleContextFiles).toHaveBeenCalledWith(['src/file.ts'], true, false);
   });
 
+  it('orders context row controls as icon, checkbox, then remove button', () => {
+    const props = createContextProps(true);
+    const onToggleContextFiles = vi.fn();
+    props.item.file!.readOnly = true;
+
+    render(<TreeItemRenderer {...props} onToggleContextFiles={onToggleContextFiles} />);
+
+    const checkbox = screen.getByRole('checkbox');
+    const removeButton = screen.getByRole('button');
+    const rightGroup = removeButton.parentElement;
+    const readOnlyIcon = rightGroup?.querySelector('svg');
+
+    expect(rightGroup).not.toBeNull();
+    expect(readOnlyIcon).not.toBeNull();
+    expect(readOnlyIcon!.compareDocumentPosition(checkbox) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(checkbox.compareDocumentPosition(removeButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('renders an indeterminate context folder and toggles all descendant paths', () => {
     const folder: TreeItem = { index: 'src', data: 'src', isFolder: true, children: ['src/a.ts', 'src/b.ts'] };
     const first: TreeItem = { index: 'src/a.ts', data: 'a.ts', file: { path: 'src/a.ts' } };
