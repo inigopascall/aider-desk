@@ -1,5 +1,5 @@
 import { ContextFile, Mode, OS, TokensCost } from '@common/types';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HiOutlineTrash, HiPlus } from 'react-icons/hi';
 import { BiCopy, BiPaste } from 'react-icons/bi';
 import { useTranslation } from 'react-i18next';
@@ -8,7 +8,7 @@ import { clsx } from 'clsx';
 import { WorkspaceSection } from './WorkspaceSection';
 import { EmptyContextInfo } from './EmptyContextInfo';
 import { FileViewerModal } from './FileViewerModal';
-import { applyContextFilesDisabled, collectVisibleFilePaths, createFileTree } from './types';
+import { collectVisibleFilePaths, createFileTree, normalizePath } from './types';
 
 import type { TreeItem } from './types';
 
@@ -16,8 +16,16 @@ import { Tooltip } from '@/components/ui/Tooltip';
 import { useShiftRangeSelection } from '@/hooks/useShiftRangeSelection';
 import { useApi } from '@/contexts/ApiContext';
 import { useContextFilesClipboard, useHasCopiedFiles } from '@/stores/contextFilesClipboardStore';
-import { updateTaskState, useTaskStore } from '@/stores/taskStore';
+import { useTaskStore } from '@/stores/taskStore';
 import { showErrorNotification } from '@/utils/notifications';
+
+// A single pending optimistic toggle for one context file path. `opId` is the
+// operation that owns this entry so an older request/event cannot revert a
+// newer pending selection.
+type PendingToggle = {
+  disabled: boolean;
+  opId: number;
+};
 
 const areSameProject = (first: string, second: string): boolean => {
   const normalize = (value: string): string => {
@@ -86,9 +94,55 @@ export const ContextFilesSection = ({
   const [contextExpandedItems, setContextExpandedItems] = useState<string[]>([]);
   const [previewFilePath, setPreviewFilePath] = useState<string | null>(null);
 
+  // Pending optimistic toggles, scoped to this baseDir/taskId instance. The
+  // authoritative store is never mutated optimistically; instead we overlay
+  // these pending entries on top of the authoritative context files so the
+  // tree, context map, enabled count and folder aggregates all share the same
+  // effective state.
+  const [pendingMap, setPendingMapState] = useState<Map<string, PendingToggle>>(new Map());
+  const pendingMapRef = useRef<Map<string, PendingToggle>>(new Map());
+  const opIdRef = useRef(0);
+  const scopeRef = useRef<string>(`${baseDir}\u0000${taskId}`);
+  scopeRef.current = `${baseDir}\u0000${taskId}`;
+
+  const setPendingMap = useCallback((updater: (prev: Map<string, PendingToggle>) => Map<string, PendingToggle>) => {
+    setPendingMapState((prev) => {
+      const next = updater(prev);
+      pendingMapRef.current = next;
+      return next;
+    });
+  }, []);
+
+  // Reset pending bookkeeping whenever the scope changes so completions from a
+  // previous baseDir/taskId can never modify the current scope.
+  useEffect(() => {
+    setPendingMap(new Map());
+    opIdRef.current = 0;
+  }, [baseDir, taskId, setPendingMap]);
+
+  const effectiveUserContextFiles = useMemo(() => {
+    if (pendingMap.size === 0) return userContextFiles;
+    return userContextFiles.map((file) => {
+      const pending = pendingMap.get(normalizePath(file.path));
+      return pending ? { ...file, disabled: pending.disabled } : file;
+    });
+  }, [userContextFiles, pendingMap]);
+
+  const effectiveContextFilesMap = useMemo(() => {
+    if (pendingMap.size === 0) return contextFilesMap;
+    const map = new Map(contextFilesMap);
+    for (const [path, pending] of pendingMap) {
+      const existing = map.get(path);
+      if (existing) {
+        map.set(path, { ...existing, disabled: pending.disabled });
+      }
+    }
+    return map;
+  }, [contextFilesMap, pendingMap]);
+
   const sortedUserFiles = useMemo(() => {
-    return [...userContextFiles].sort((a, b) => a.path.localeCompare(b.path));
-  }, [userContextFiles]);
+    return [...effectiveUserContextFiles].sort((a, b) => a.path.localeCompare(b.path));
+  }, [effectiveUserContextFiles]);
 
   const contextTreeData = useMemo(() => {
     return createFileTree(sortedUserFiles, 'root');
@@ -99,23 +153,92 @@ export const ContextFilesSection = ({
     [contextTreeData, contextExpandedItems],
   );
   const { resolveRange } = useShiftRangeSelection(visibleFilePaths);
-  const enabledFileCount = useMemo(() => userContextFiles.filter((file) => !file.disabled).length, [userContextFiles]);
+  const enabledFileCount = useMemo(
+    () => effectiveUserContextFiles.filter((file) => !file.disabled).length,
+    [effectiveUserContextFiles],
+  );
 
   const handleToggleContextFiles = useCallback(
     (filePaths: string[], disabled: boolean, shiftKey: boolean) => {
       if (filePaths.length === 0) return;
       const paths = filePaths.length === 1 ? resolveRange(filePaths[0], shiftKey) : filePaths;
-      const originalContextFiles = useTaskStore.getState().taskStateMap.get(taskId)?.contextFiles ?? [];
-      const optimisticContextFiles = applyContextFilesDisabled(originalContextFiles, paths, disabled);
-      updateTaskState(taskId, { contextFiles: optimisticContextFiles });
+      const scope = `${baseDir}\u0000${taskId}`;
+      const opId = ++opIdRef.current;
 
-      void api.setContextFilesDisabled(baseDir, taskId, paths, disabled).catch((error) => {
-        updateTaskState(taskId, { contextFiles: originalContextFiles });
-        showErrorNotification(error instanceof Error ? error.message : String(error));
+      // Record the optimistic intent for every affected path. The authoritative
+      // store is left untouched; rendering overlays these pending entries.
+      setPendingMap((prev) => {
+        const next = new Map(prev);
+        for (const path of paths) {
+          next.set(normalizePath(path), { disabled, opId });
+        }
+        return next;
       });
+
+      void api.setContextFilesDisabled(baseDir, taskId, paths, disabled).then(
+        () => {
+          if (scopeRef.current !== scope) return;
+          // Success: keep the optimistic overlay until the authoritative event
+          // reflects the change (the reconciliation effect clears it). If the
+          // store has not caught up yet, request a fresh authoritative snapshot
+          // so we never leave a permanent optimistic override.
+          const currentFiles = useTaskStore.getState().taskStateMap.get(taskId)?.contextFiles ?? [];
+          const stillPending = paths.some((path) => {
+            const norm = normalizePath(path);
+            const pending = pendingMapRef.current.get(norm);
+            if (!pending || pending.opId !== opId) return false;
+            const authoritative = currentFiles.find((f) => normalizePath(f.path) === norm);
+            return !authoritative || authoritative.disabled !== pending.disabled;
+          });
+          if (stillPending) {
+            void api.refreshContextFiles(baseDir, taskId).catch(() => {});
+          }
+        },
+        (error) => {
+          if (scopeRef.current !== scope) return;
+          // Failure: for paths still owned by this operation, drop the
+          // optimistic overlay so the authoritative (prior) state is shown.
+          // Newer operations on the same path are left untouched, and unrelated
+          // files/additions/removals are preserved.
+          setPendingMap((prev) => {
+            const next = new Map(prev);
+            let changed = false;
+            for (const path of paths) {
+              const norm = normalizePath(path);
+              const pending = next.get(norm);
+              if (pending && pending.opId === opId) {
+                next.delete(norm);
+                changed = true;
+              }
+            }
+            return changed ? next : prev;
+          });
+          showErrorNotification(error instanceof Error ? error.message : String(error));
+        },
+      );
     },
-    [api, baseDir, taskId, resolveRange],
+    [api, baseDir, taskId, resolveRange, setPendingMap],
   );
+
+  // Reconcile the pending overlay with authoritative state: once the store
+  // reflects a pending disabled value (or the file no longer exists), drop the
+  // overlay entry so no permanent optimistic override remains.
+  useEffect(() => {
+    setPendingMap((prev) => {
+      if (prev.size === 0) return prev;
+      const currentFiles = useTaskStore.getState().taskStateMap.get(taskId)?.contextFiles ?? [];
+      const next = new Map(prev);
+      let changed = false;
+      for (const [path, pending] of prev) {
+        const authoritative = currentFiles.find((f) => normalizePath(f.path) === path);
+        if (!authoritative || authoritative.disabled === pending.disabled) {
+          next.delete(path);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [userContextFiles, taskId, setPendingMap]);
 
   useEffect(() => {
     const expandFolders = (treeData: Record<string, TreeItem>, files: ContextFile[]) => {
@@ -141,8 +264,8 @@ export const ContextFilesSection = ({
       setContextExpandedItems((prevState) => Array.from(new Set([...prevState, ...foldersToExpand])));
     };
 
-    expandFolders(contextTreeData, userContextFiles);
-  }, [contextTreeData, userContextFiles]);
+    expandFolders(contextTreeData, effectiveUserContextFiles);
+  }, [contextTreeData, effectiveUserContextFiles]);
 
   const addFile = useCallback((_item: TreeItem) => (_event: React.MouseEvent<HTMLButtonElement>) => {}, []);
 
@@ -255,7 +378,7 @@ export const ContextFilesSection = ({
         treeData={contextTreeData}
         expandedItems={contextExpandedItems}
         setExpandedItems={setContextExpandedItems}
-        contextFilesMap={contextFilesMap}
+        contextFilesMap={effectiveContextFilesMap}
         updatedFiles={[]}
         fileTokensInfo={fileTokensInfo}
         os={os}

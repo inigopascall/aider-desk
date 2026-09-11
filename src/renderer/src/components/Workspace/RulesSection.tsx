@@ -177,7 +177,7 @@ export const RulesSection = ({
                     </Tooltip>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
-                    {file.source && getRuleSourceIcon(file.source, t)}
+                    <span className="flex items-center justify-center w-4 h-4 flex-shrink-0">{file.source && getRuleSourceIcon(file.source, t)}</span>
                     <TriStateCheckbox
                       state={isDisabled ? 'unchecked' : 'checked'}
                       onChange={(shiftKey) => {
@@ -185,6 +185,8 @@ export const RulesSection = ({
                         handleToggleRuleFile(range, !isDisabled);
                       }}
                     />
+                    {/* Rules have no delete action: reserve the trailing delete slot so the checkbox column aligns with context and mapping rows. */}
+                    <span aria-hidden="true" className="w-6 h-6 flex-shrink-0 pointer-events-none" />
                   </div>
                 </div>
               );

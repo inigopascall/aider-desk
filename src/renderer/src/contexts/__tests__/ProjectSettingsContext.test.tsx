@@ -7,19 +7,26 @@ import { createMockApi } from '@/__tests__/mocks/api';
 import { ApiContext } from '@/contexts/ApiContext';
 import { ProjectSettingsProvider, useProjectSettings } from '@/contexts/ProjectSettingsContext';
 
-const Consumer = () => {
+const Consumer = ({ onSaveError }: { onSaveError?: (error: unknown) => void }) => {
   const { projectSettings, saveProjectSettings } = useProjectSettings();
 
   return (
     <>
+      <span data-testid="loaded">{projectSettings === null ? 'false' : 'true'}</span>
       <span data-testid="rules">{projectSettings ? projectSettings.disabledRuleFiles.join(',') : 'none'}</span>
-      <button onClick={() => void saveProjectSettings({ disabledRuleFiles: ['a'] })}>save</button>
+      <button
+        onClick={() => {
+          void saveProjectSettings({ disabledRuleFiles: ['a'] }).catch(onSaveError ?? (() => undefined));
+        }}
+      >
+        save
+      </button>
     </>
   );
 };
 
 describe('ProjectSettingsProvider', () => {
-  it('keeps optimistic value while patch is pending', async () => {
+  it('keeps optimistic value while patch is pending and reconciles on success', async () => {
     const initialSettings = { disabledRuleFiles: [] } as unknown as ProjectSettings;
     const savedSettings = { disabledRuleFiles: ['a'] } as unknown as ProjectSettings;
     let resolvePatch: (settings: ProjectSettings) => void = () => undefined;
@@ -39,11 +46,22 @@ describe('ProjectSettingsProvider', () => {
       </ApiContext.Provider>,
     );
 
-    await waitFor(() => expect(screen.getByTestId('rules')).toHaveTextContent(''));
+    // Wait until settings are demonstrably loaded (distinct from the null state).
+    await waitFor(() => expect(screen.getByTestId('loaded')).toHaveTextContent('true'));
+    expect(screen.getByTestId('rules')).toHaveTextContent('');
 
     fireEvent.click(screen.getByRole('button', { name: 'save' }));
 
+    // Optimistic value is displayed while the patch is pending.
     await waitFor(() => expect(screen.getByTestId('rules')).toHaveTextContent('a'));
+    expect(screen.getByTestId('rules')).toHaveTextContent('a');
+
+    // An unrelated settings event while the patch is pending must not bounce
+    // the optimistic value back to the base value.
+    const listener = vi.mocked(mockApi.addProjectSettingsUpdatedListener).mock.calls[0][1];
+    act(() => {
+      listener({ baseDir: '/project', settings: { ...initialSettings, disabledRuleFiles: [] } });
+    });
     expect(screen.getByTestId('rules')).toHaveTextContent('a');
 
     await act(async () => {
@@ -51,6 +69,45 @@ describe('ProjectSettingsProvider', () => {
       await patchPromise;
     });
 
+    // After the patch resolves, the base state reconciles to the saved value.
     expect(screen.getByTestId('rules')).toHaveTextContent('a');
+  });
+
+  it('reverts to the base value when the save is rejected', async () => {
+    const initialSettings = { disabledRuleFiles: [] } as unknown as ProjectSettings;
+    let rejectPatch: (error: Error) => void = () => undefined;
+    const patchPromise = new Promise<ProjectSettings>((_, reject) => {
+      rejectPatch = reject;
+    });
+    const saveError = new Error('save failed');
+    const onSaveError = vi.fn();
+    const mockApi = createMockApi({
+      getProjectSettings: vi.fn().mockResolvedValue(initialSettings),
+      patchProjectSettings: vi.fn().mockReturnValue(patchPromise),
+    });
+
+    render(
+      <ApiContext.Provider value={mockApi}>
+        <ProjectSettingsProvider baseDir="/project">
+          <Consumer onSaveError={onSaveError} />
+        </ProjectSettingsProvider>
+      </ApiContext.Provider>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId('loaded')).toHaveTextContent('true'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'save' }));
+
+    await waitFor(() => expect(screen.getByTestId('rules')).toHaveTextContent('a'));
+
+    await act(async () => {
+      rejectPatch(saveError);
+      await patchPromise.catch(() => undefined);
+    });
+
+    // The optimistic value is reverted to the base value and the rejection is
+    // surfaced to the consumer (no unhandled rejection).
+    expect(screen.getByTestId('rules')).toHaveTextContent('');
+    expect(onSaveError).toHaveBeenCalledWith(saveError);
   });
 });

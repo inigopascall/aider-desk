@@ -151,7 +151,7 @@ export const RepositoryMappingsSection = ({
           actions={actions}
         />
         <Activity mode={isOpen ? 'visible' : 'hidden'}>
-          <div className="flex-grow overflow-y-auto bg-bg-primary-light-strong p-1">
+          <div className="flex-grow overflow-y-auto bg-bg-primary-light-strong pl-1 py-1">
             {isLoading ? (
               <div className="p-2 text-2xs text-text-muted">{t('common.loading')}</div>
             ) : files.length > 0 ? (
@@ -159,20 +159,21 @@ export const RepositoryMappingsSection = ({
                 <div key={file.path} className="flex items-center w-full px-1 h-6 group/item">
                   <div className="flex items-center flex-grow min-w-0 gap-1">
                     <Tooltip content={file.path} delayDuration={1000}>
-                      <span
+                      <button
+                        type="button"
                         className={clsx(
-                          'select-none text-2xs overflow-hidden whitespace-nowrap overflow-ellipsis cursor-pointer hover:text-text-tertiary',
+                          'select-none text-2xs overflow-hidden whitespace-nowrap overflow-ellipsis cursor-pointer hover:text-text-tertiary text-left bg-transparent border-0 p-0',
                           disabledFiles.includes(file.path) ? 'text-text-muted' : 'text-text-primary',
                         )}
                         onClick={() => setPreviewFilePath(file.path)}
                       >
                         {getFileName(file.path)}
-                      </span>
+                      </button>
                     </Tooltip>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <Tooltip content={t('contextFiles.repositoryMappingFile')}>
-                      <MdOutlineMap className="w-4 h-4 text-text-muted flex-shrink-0" />
+                      <MdOutlineMap className="w-4 h-4 text-text-muted-light flex-shrink-0" />
                     </Tooltip>
                     <TriStateCheckbox
                       state={disabledFiles.includes(file.path) ? 'unchecked' : 'checked'}

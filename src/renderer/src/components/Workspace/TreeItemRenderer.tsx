@@ -15,6 +15,15 @@ import type { SectionType, TreeItem } from './types';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { TriState, TriStateCheckbox } from '@/components/common/TriStateCheckbox';
 
+// Fixed-width control slots shared with the mapping/rule flat lists: a 16px
+// icon area, a 16px checkbox slot, and a 24px trailing delete slot, separated
+// by 4px gaps (gap-1) with a 4px right inset (pr-1 on the row). Reserving the
+// slots keeps the checkbox/delete columns aligned whether or not optional
+// leading icons (e.g. read-only) are present.
+const ICON_SLOT_CLASS = 'w-4 h-4 flex items-center justify-center flex-shrink-0';
+const CHECKBOX_SLOT_CLASS = 'w-4 h-4 flex items-center justify-center flex-shrink-0';
+const DELETE_SLOT_CLASS = 'w-6 h-6 flex-shrink-0';
+
 const getDescendantFiles = (treeData: Record<string, TreeItem>, nodeId: string | number): ContextFile[] => {
   const node = treeData[String(nodeId)];
   if (!node?.children) {
@@ -92,6 +101,7 @@ export const TreeItemRenderer = ({
   const showFolderCheckbox = type === 'rules' && item.isFolder && onToggleRuleFile;
   const showContextCheckbox = type === 'context' && !item.isFolder && !!onToggleContextFiles;
   const showContextFolderCheckbox = type === 'context' && item.isFolder && !!onToggleContextFiles;
+  const useAlignedControlSlots = type === 'context' || type === 'rules';
 
   const descendantFiles = useMemo(() => getDescendantFiles(treeData, item.index), [treeData, item.index]);
   const folderRuleFiles = descendantFiles.filter((file) => file.source === 'global-rule' || file.source === 'project-rule' || file.source === 'agent-rule').map((file) => file.path);
@@ -246,6 +256,60 @@ export const TreeItemRenderer = ({
     return renderFile();
   };
 
+  const leadingIcons = (
+    <>
+      {isRuleFile && (
+        <>
+          {source === 'global-rule' && (
+            <Tooltip content={t('contextFiles.globalRule')}>
+              <MdOutlinePublic className="w-4 h-4 text-text-muted-light" />
+            </Tooltip>
+          )}
+          {source === 'project-rule' && (
+            <Tooltip content={t('contextFiles.projectRule')}>
+              <VscFileCode className="w-4 h-4 text-text-muted-light" />
+            </Tooltip>
+          )}
+          {source === 'agent-rule' && (
+            <Tooltip content={t('contextFiles.agentRule')}>
+              <RiRobot2Line className="w-4 h-4 text-text-muted-light" />
+            </Tooltip>
+          )}
+        </>
+      )}
+      {source === 'repo-mapping' && (
+        <Tooltip content={t('contextFiles.repositoryMappingFile')}>
+          <MdOutlineMap className="w-4 h-4 text-text-muted-light" />
+        </Tooltip>
+      )}
+      {showConflictWarning && (
+        <Tooltip content={t('contextFiles.fileHasConflicts')}>
+          <RiAlertLine className="w-4 h-4 text-warning" />
+        </Tooltip>
+      )}
+      {item.file?.readOnly && !isRuleFile && (
+        <Tooltip content={t('contextFiles.readOnly')}>
+          <TbPencilOff className="w-4 h-4 text-text-muted-light" />
+        </Tooltip>
+      )}
+    </>
+  );
+
+  const checkboxControls = (
+    <>
+      {showFolderCheckbox && folderRuleFiles.length > 0 && <TriStateCheckbox state={folderCheckState} onChange={handleFolderCheckboxToggle} />}
+      {showContextFolderCheckbox && folderContextFiles.length > 0 && <TriStateCheckbox state={folderCheckState} onChange={handleFolderCheckboxToggle} />}
+      {showRuleCheckbox && <TriStateCheckbox state={isRuleDisabled ? 'unchecked' : 'checked'} onChange={handleFileCheckboxToggle} />}
+      {showContextCheckbox && <TriStateCheckbox state={item.file?.disabled ? 'unchecked' : 'checked'} onChange={handleFileCheckboxToggle} />}
+    </>
+  );
+
+  const removeControl = showRemove ? (
+    <button onClick={onDropFile(item)} className="px-1 py-1 rounded hover:bg-bg-primary-light text-text-muted hover:text-error-dark">
+      <HiX className="w-4 h-4" />
+    </button>
+  ) : null;
+
   return (
     <>
       <div className="flex space-between items-center w-full pr-1 h-6 group/item">
@@ -255,50 +319,18 @@ export const TreeItemRenderer = ({
         </div>
 
         <div className="flex items-center gap-1 flex-shrink-0 group">
-          {isRuleFile && (
+          {useAlignedControlSlots ? (
             <>
-              {source === 'global-rule' && (
-                <Tooltip content={t('contextFiles.globalRule')}>
-                  <MdOutlinePublic className="w-4 h-4 text-text-muted-light" />
-                </Tooltip>
-              )}
-              {source === 'project-rule' && (
-                <Tooltip content={t('contextFiles.projectRule')}>
-                  <VscFileCode className="w-4 h-4 text-text-muted-light" />
-                </Tooltip>
-              )}
-              {source === 'agent-rule' && (
-                <Tooltip content={t('contextFiles.agentRule')}>
-                  <RiRobot2Line className="w-4 h-4 text-text-muted-light" />
-                </Tooltip>
-              )}
+              <span className={ICON_SLOT_CLASS}>{leadingIcons}</span>
+              <span className={CHECKBOX_SLOT_CLASS}>{checkboxControls}</span>
+              {removeControl ?? <span className={DELETE_SLOT_CLASS} aria-hidden="true" />}
             </>
-          )}
-          {source === 'repo-mapping' && (
-            <Tooltip content={t('contextFiles.repositoryMappingFile')}>
-              <MdOutlineMap className="w-4 h-4 text-text-muted-light" />
-            </Tooltip>
-          )}
-          {showConflictWarning && (
-            <Tooltip content={t('contextFiles.fileHasConflicts')}>
-              <RiAlertLine className="w-4 h-4 text-warning" />
-            </Tooltip>
-          )}
-          {item.file?.readOnly && !isRuleFile && (
-            <Tooltip content={t('contextFiles.readOnly')}>
-              <TbPencilOff className="w-4 h-4 text-text-muted-light" />
-            </Tooltip>
-          )}
-          {showFolderCheckbox && folderRuleFiles.length > 0 && <TriStateCheckbox state={folderCheckState} onChange={handleFolderCheckboxToggle} />}
-          {showContextFolderCheckbox && folderContextFiles.length > 0 && <TriStateCheckbox state={folderCheckState} onChange={handleFolderCheckboxToggle} />}
-          {showRuleCheckbox && <TriStateCheckbox state={isRuleDisabled ? 'unchecked' : 'checked'} onChange={handleFileCheckboxToggle} />}
-          {showContextCheckbox && (
-            <TriStateCheckbox state={item.file?.disabled ? 'unchecked' : 'checked'} onChange={handleFileCheckboxToggle} />
-          )}
-          {showRemove && (
-            <button onClick={onDropFile(item)} className="px-1 py-1 rounded hover:bg-bg-primary-light text-text-muted hover:text-error-dark">
-              <HiX className="w-4 h-4" />
-            </button>
+          ) : (
+            <>
+              {leadingIcons}
+              {checkboxControls}
+              {removeControl}
+            </>
           )}
           {showAdd && (
             <Tooltip content={t('contextFiles.addFileTooltip.cmd')}>
