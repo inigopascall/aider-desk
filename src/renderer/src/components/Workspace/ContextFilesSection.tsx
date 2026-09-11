@@ -9,11 +9,11 @@ import { WorkspaceSection } from './WorkspaceSection';
 import { EmptyContextInfo } from './EmptyContextInfo';
 import { FileViewerModal } from './FileViewerModal';
 import { collectVisibleFilePaths, createFileTree } from './types';
-import { useShiftRangeSelection } from '@/hooks/useShiftRangeSelection';
 
 import type { TreeItem } from './types';
 
 import { Tooltip } from '@/components/ui/Tooltip';
+import { useShiftRangeSelection } from '@/hooks/useShiftRangeSelection';
 import { useApi } from '@/contexts/ApiContext';
 import { useContextFilesClipboard, useHasCopiedFiles } from '@/stores/contextFilesClipboardStore';
 
@@ -102,7 +102,7 @@ export const ContextFilesSection = ({
   const handleToggleContextFiles = useCallback(
     (filePaths: string[], disabled: boolean, shiftKey: boolean) => {
       if (filePaths.length === 0) return;
-      const paths = shiftKey ? resolveRange(filePaths[0], shiftKey) : filePaths;
+      const paths = filePaths.length === 1 ? resolveRange(filePaths[0], shiftKey) : filePaths;
       void api.setContextFilesDisabled(baseDir, taskId, paths, disabled);
     },
     [api, baseDir, taskId, resolveRange],

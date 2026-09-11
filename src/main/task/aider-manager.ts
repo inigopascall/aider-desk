@@ -139,7 +139,27 @@ export class AiderManager {
 
     const rulesDir = path.join(this.task.getProjectDir(), AIDER_DESK_PROJECT_RULES_DIR);
     if (settings.aider.addRuleFiles && (await fileExists(rulesDir))) {
-      args.push('--read', rulesDir);
+      try {
+        const ruleFiles = await fs.readdir(rulesDir);
+        const disabledRuleFiles = projectSettings.disabledRuleFiles ?? [];
+        for (const fileName of ruleFiles) {
+          if (!fileName.endsWith('.md')) {
+            continue;
+          }
+
+          const relativeKey = path.join(AIDER_DESK_PROJECT_RULES_DIR, fileName);
+          if (disabledRuleFiles.includes(relativeKey)) {
+            continue;
+          }
+
+          args.push('--read', path.join(rulesDir, fileName));
+        }
+      } catch (error) {
+        logger.debug('Failed to read project rule files:', {
+          rulesDir,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     if (!optionsArgsSet.has('--auto-commits') && !optionsArgsSet.has('--no-auto-commits')) {

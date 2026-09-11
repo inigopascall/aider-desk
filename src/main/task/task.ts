@@ -2403,11 +2403,16 @@ export class Task {
   }
 
   public updateContextFiles(contextFiles: ContextFile[]) {
-    const locallyDisabled = new Set(this.contextManager.getContextFiles(true).filter((file) => file.disabled).map((file) => file.path));
-    this.contextManager.setContextFiles(
-      contextFiles.map((file) => (locallyDisabled.has(file.path) && file.disabled !== false ? { ...file, disabled: true } : file)),
-      false,
-    );
+    const locallyDisabled = this.contextManager.getContextFiles(true).filter((file) => file.disabled);
+    const incomingPaths = new Set(contextFiles.map((file) => file.path));
+    const mergedFiles = [
+      ...contextFiles.map((file) => {
+        const locallyDisabledFile = locallyDisabled.find((disabledFile) => disabledFile.path === file.path);
+        return locallyDisabledFile && file.disabled !== false ? { ...file, disabled: true } : file;
+      }),
+      ...locallyDisabled.filter((file) => !incomingPaths.has(file.path)),
+    ];
+    this.contextManager.setContextFiles(mergedFiles, false);
     void this.sendContextFilesUpdated();
     void this.updateContextInfo(true, true);
   }
@@ -4305,7 +4310,7 @@ export class Task {
   }, 500);
 
   private async sendRequestContextInfo() {
-    const contextFiles = await this.getContextFiles(false, true);
+    const contextFiles = await this.getContextFiles();
     this.findMessageConnectors('request-context-info').forEach((connector) =>
       connector.sendRequestTokensInfoMessage(this.contextManager.toConnectorMessages(), contextFiles),
     );
@@ -4421,12 +4426,32 @@ export class Task {
     const modeChanged = oldSettings.currentMode !== newSettings.currentMode;
     const agentProfileIdChanged = oldSettings.agentProfileId !== newSettings.agentProfileId;
     const disabledRulesChanged = JSON.stringify(oldSettings.disabledRuleFiles) !== JSON.stringify(newSettings.disabledRuleFiles);
+    const disabledMappingsChanged = JSON.stringify(oldSettings.disabledRepositoryMappingFiles) !== JSON.stringify(newSettings.disabledRepositoryMappingFiles);
 
     if (agentProfileIdChanged || modeChanged || disabledRulesChanged) {
       void this.sendContextFilesUpdated();
     }
-    if (disabledRulesChanged) {
+    if (disabledRulesChanged || disabledMappingsChanged) {
       void this.updateAgentEstimatedTokens();
+    }
+
+    if (disabledRulesChanged && this.store.getSettings().aider.addRuleFiles && this.aiderManager.isStarted()) {
+      const oldDisabled = new Set(oldSettings.disabledRuleFiles || []);
+      const newDisabled = new Set(newSettings.disabledRuleFiles || []);
+      const newlyDisabled = [...newDisabled].filter((filePath) => !oldDisabled.has(filePath) && filePath.startsWith(AIDER_DESK_PROJECT_RULES_DIR));
+      const newlyEnabled = [...oldDisabled].filter((filePath) => !newDisabled.has(filePath) && filePath.startsWith(AIDER_DESK_PROJECT_RULES_DIR));
+      const changes = [
+        ...newlyDisabled.map((filePath) => ({ type: 'drop' as const, filePath })),
+        ...newlyEnabled.map((filePath) => ({ type: 'add' as const, filePath })),
+      ];
+      changes.forEach((change, index) => {
+        const notLast = index !== changes.length - 1;
+        if (change.type === 'drop') {
+          this.sendDropFile(change.filePath, true, notLast);
+        } else {
+          this.sendAddFile({ path: path.join(this.project.baseDir, change.filePath), readOnly: true }, notLast);
+        }
+      });
     }
   }
 
@@ -4532,7 +4557,7 @@ export class Task {
     this.addLogMessage('loading', 'Analyzing project to create AGENTS.md...');
 
     const messages = await this.contextManager.getContextMessages();
-    const files = this.contextManager.getContextFiles();
+    const files = this.contextManager.getContextFiles(true);
     // clear context before execution
     this.contextManager.clearMessages(false);
     this.contextManager.setContextFiles([], false);

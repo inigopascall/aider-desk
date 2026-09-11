@@ -1,7 +1,5 @@
 import { ContextFile } from '@common/types';
 import { Activity, useCallback, useMemo, useState } from 'react';
-
-import { useShiftRangeSelection } from '@/hooks/useShiftRangeSelection';
 import { useTranslation } from 'react-i18next';
 import { MdOutlinePublic, MdOutlineRefresh } from 'react-icons/md';
 import { RiRobot2Line } from 'react-icons/ri';
@@ -15,6 +13,7 @@ import { FileViewerModal } from './FileViewerModal';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { TriStateCheckbox } from '@/components/common/TriStateCheckbox';
 import { useProjectSettings } from '@/contexts/ProjectSettingsContext';
+import { useShiftRangeSelection } from '@/hooks/useShiftRangeSelection';
 
 const getFileName = (filePath: string) => {
   const parts = filePath.split(/[\\/]/);

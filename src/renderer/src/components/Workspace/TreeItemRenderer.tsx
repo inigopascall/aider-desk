@@ -107,12 +107,12 @@ export const TreeItemRenderer = ({
   const handleFileCheckboxToggle = useCallback((shiftKey = false) => {
     if (filePath && onToggleRuleFile) onToggleRuleFile([filePath], !isRuleDisabled);
     else if (filePath && onToggleContextFiles) {
-      const file = contextFilesMap.get(normalizePath(filePath));
-      onToggleContextFiles([filePath], !!file?.disabled, shiftKey);
+      const file = contextFilesMap.get(normalizePath(filePath)) ?? item.file;
+      onToggleContextFiles([filePath], !file?.disabled, shiftKey);
     }
-  }, [filePath, onToggleRuleFile, onToggleContextFiles, isRuleDisabled, contextFilesMap]);
+  }, [filePath, onToggleRuleFile, onToggleContextFiles, isRuleDisabled, contextFilesMap, item.file]);
 
-  const handleFolderCheckboxToggle = useCallback((shiftKey = false) => {
+  const handleFolderCheckboxToggle = useCallback(() => {
     if (showFolderCheckbox && folderRuleFiles.length > 0) onToggleRuleFile?.(folderRuleFiles, folderCheckState === 'checked');
     else if (showContextFolderCheckbox && folderContextFiles.length > 0) onToggleContextFiles?.(folderContextFiles.map((file) => file.path), folderCheckState === 'checked', false);
   }, [showFolderCheckbox, folderRuleFiles, folderCheckState, onToggleRuleFile, showContextFolderCheckbox, folderContextFiles, onToggleContextFiles]);

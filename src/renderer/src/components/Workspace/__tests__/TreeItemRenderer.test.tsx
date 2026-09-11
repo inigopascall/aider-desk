@@ -94,7 +94,7 @@ describe('TreeItemRenderer context files', () => {
     render(<TreeItemRenderer {...props} onToggleContextFiles={onToggleContextFiles} />);
 
     fireEvent.click(screen.getByRole('checkbox'));
-    expect(onToggleContextFiles).toHaveBeenCalledWith(['src/file.ts'], true, false);
+    expect(onToggleContextFiles).toHaveBeenCalledWith(['src/file.ts'], false, false);
   });
 
   it('passes true for shift-click context toggles', () => {
@@ -103,7 +103,16 @@ describe('TreeItemRenderer context files', () => {
     render(<TreeItemRenderer {...props} onToggleContextFiles={onToggleContextFiles} />);
 
     fireEvent.click(screen.getByRole('checkbox'), { shiftKey: true });
-    expect(onToggleContextFiles).toHaveBeenCalledWith(['src/file.ts'], true, true);
+    expect(onToggleContextFiles).toHaveBeenCalledWith(['src/file.ts'], false, true);
+  });
+
+  it('requests disabling when an enabled file checkbox is clicked', () => {
+    const props = createContextProps();
+    const onToggleContextFiles = vi.fn();
+    render(<TreeItemRenderer {...props} onToggleContextFiles={onToggleContextFiles} />);
+
+    fireEvent.click(screen.getByRole('checkbox'));
+    expect(onToggleContextFiles).toHaveBeenCalledWith(['src/file.ts'], true, false);
   });
 
   it('renders an indeterminate context folder and toggles all descendant paths', () => {
@@ -134,6 +143,3 @@ describe('TreeItemRenderer context files', () => {
     expect(onToggleContextFiles).toHaveBeenCalledWith(['src/a.ts', 'src/b.ts'], false, false);
   });
 });
-EOF
- 񟿿 񟿿
-} nul
