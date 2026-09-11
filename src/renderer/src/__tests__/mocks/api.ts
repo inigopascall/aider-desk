@@ -104,6 +104,7 @@ export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedOb
     getAddableFiles: vi.fn((): Promise<string[]> => Promise.resolve([])),
     getAllFiles: vi.fn((): Promise<string[]> => Promise.resolve([])),
     refreshContextFiles: vi.fn((): Promise<void> => Promise.resolve()),
+    setContextFilesDisabled: vi.fn((): Promise<void> => Promise.resolve()),
     getUpdatedFiles: vi.fn((): Promise<Array<{ path: string; additions: number; deletions: number }>> => Promise.resolve([])),
     getRepositoryMappings: vi.fn((): Promise<ContextFile[]> => Promise.resolve([])),
     regenerateRepositoryMappings: vi.fn(() => Promise.resolve({ success: true })),

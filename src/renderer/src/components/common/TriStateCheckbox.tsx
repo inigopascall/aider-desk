@@ -2,21 +2,21 @@ import { InputHTMLAttributes } from 'react';
 
 export type TriState = 'checked' | 'unchecked' | 'indeterminate';
 
-type Props = InputHTMLAttributes<HTMLInputElement> & {
+type Props = Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange'> & {
   label?: string;
   state: TriState;
-  onChange: () => void;
+  onChange: (shiftKey: boolean) => void;
   className?: string;
 };
 
 export const TriStateCheckbox = ({ label, state, onChange, className = '', ...props }: Props) => {
   return (
-    <div className={`flex items-center ${className}`}>
+    <div className={`flex items-center select-none ${className}`}>
       <div
         className="relative flex items-center justify-center cursor-pointer"
         onClick={(e) => {
           e.stopPropagation();
-          onChange();
+          onChange(e.shiftKey);
         }}
       >
         <input
@@ -27,7 +27,7 @@ export const TriStateCheckbox = ({ label, state, onChange, className = '', ...pr
               el.indeterminate = state === 'indeterminate';
             }
           }}
-          onChange={onChange}
+          onChange={() => undefined}
           className="sr-only"
           {...props}
         />

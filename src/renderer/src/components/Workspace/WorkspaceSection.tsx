@@ -32,6 +32,7 @@ type Props = {
   onToggle: () => void;
   onToggleHidden?: () => void;
   onToggleRuleFile?: (filePaths: string[], disabled: boolean) => void;
+  onToggleContextFiles?: (filePaths: string[], disabled: boolean, shiftKey: boolean) => void;
   onFileDiffClick: (file: UpdatedFile) => void;
   onFilePreviewClick?: (filePath: string) => void;
   onRevertFile: (filePath: string) => void;
@@ -63,6 +64,7 @@ export const WorkspaceSection = ({
   onToggle,
   onToggleHidden,
   onToggleRuleFile,
+  onToggleContextFiles,
   onFileDiffClick,
   onFilePreviewClick,
   onRevertFile,
@@ -103,6 +105,7 @@ export const WorkspaceSection = ({
           emptyContent={emptyContent}
           disabledRuleFiles={disabledRuleFiles}
           onToggleRuleFile={onToggleRuleFile}
+          onToggleContextFiles={onToggleContextFiles}
           onFileDiffClick={onFileDiffClick}
           onFilePreviewClick={onFilePreviewClick}
           onRevertFile={onRevertFile}

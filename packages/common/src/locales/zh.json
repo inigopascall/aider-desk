@@ -1080,6 +1080,7 @@
   "contextFiles": {
     "workspaceTitle": "工作区",
     "repositoryMappings": "仓库映射",
+    "repositoryMappingFile": "仓库映射文件",
     "regenerateMappings": "重新生成映射",
     "regeneratingMappings": "正在重新生成映射...",
     "repositoryMappingsEmpty": "尚未生成仓库映射文件。",

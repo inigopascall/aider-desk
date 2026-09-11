@@ -116,6 +116,8 @@ const api: ApplicationAPI = {
   isValidPath: (baseDir, path) => ipcRenderer.invoke('is-valid-path', baseDir, path),
   isProjectPath: (path) => ipcRenderer.invoke('is-project-path', path),
   dropFile: (baseDir, taskId, path) => ipcRenderer.send('drop-file', baseDir, taskId, path),
+  setContextFilesDisabled: (baseDir, taskId, filePaths, disabled) =>
+    ipcRenderer.invoke('set-context-files-disabled', baseDir, taskId, filePaths, disabled),
   runCommand: (baseDir, taskId, command) => ipcRenderer.send('run-command', baseDir, taskId, command),
   pasteImage: (baseDir, taskId) => ipcRenderer.send('paste-image', baseDir, taskId),
   scrapeWeb: (baseDir, taskId, url, filePath) => ipcRenderer.invoke('scrape-web', baseDir, taskId, url, filePath),

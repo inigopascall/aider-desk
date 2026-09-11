@@ -1091,6 +1091,63 @@ describe('ContextManager - removeMessageById', () => {
   });
 });
 
+describe('ContextManager - context file disabled state', () => {
+  let ContextManager: any;
+  let mockTask: any;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockTask = {
+      taskId: 'test-task-id',
+      getProjectDir: vi.fn(() => '/test/project'),
+      getTaskDir: vi.fn(() => '/test/project'),
+      resolveContextFilePath: vi.fn(async (filePath: string) => `/test/project/${filePath}`),
+    };
+
+    ContextManager = (await import('../context-manager')).ContextManager;
+  });
+
+  it('returns only changed files when toggling disabled state', () => {
+    const files = [
+      { path: 'enabled.ts', readOnly: false },
+      { path: 'disabled.ts', readOnly: false },
+    ];
+    const manager = new ContextManager(mockTask, 'test-task', [], files);
+
+    expect(manager.setContextFilesDisabled(['disabled.ts', 'missing.ts'], true)).toEqual([
+      { path: 'disabled.ts', readOnly: false, disabled: true },
+    ]);
+    expect(manager.setContextFilesDisabled(['disabled.ts', 'enabled.ts'], true)).toEqual([
+      { path: 'enabled.ts', readOnly: false, disabled: true },
+    ]);
+  });
+
+  it('hides disabled files by default and retains them with includeDisabled', () => {
+    const manager = new ContextManager(mockTask, 'test-task', [], [
+      { path: 'enabled.ts', readOnly: false },
+      { path: 'disabled.ts', readOnly: false, disabled: true },
+    ]);
+
+    expect(manager.getContextFiles()).toEqual([{ path: 'enabled.ts', readOnly: false }]);
+    expect(manager.getContextFiles(true)).toEqual([
+      { path: 'enabled.ts', readOnly: false },
+      { path: 'disabled.ts', readOnly: false, disabled: true },
+    ]);
+  });
+
+  it('re-enables an existing disabled file when it is added again without disabled state', async () => {
+    const disabledFile = { path: 'disabled.ts', readOnly: false, disabled: true };
+    const manager = new ContextManager(mockTask, 'test-task', [], [disabledFile]);
+
+    const added = await manager.addContextFile({ path: 'disabled.ts' });
+
+    expect(added).toHaveLength(1);
+    expect(added[0]).toEqual({ path: 'disabled.ts', readOnly: false });
+    expect(manager.getContextFiles()).toEqual([{ path: 'disabled.ts', readOnly: false }]);
+    expect(manager.getContextFiles(true)).toEqual([{ path: 'disabled.ts', readOnly: false }]);
+  });
+});
+
 describe('ContextManager - flush', () => {
   let ContextManager: any;
   let mockTask: any;

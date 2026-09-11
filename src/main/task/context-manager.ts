@@ -134,8 +134,17 @@ export class ContextManager {
     const existingContextFile = this.findExistingContextFile(absolutePath);
     if (existingContextFile) {
       const readOnly = contextFile.readOnly ?? false;
+      let changed = false;
       if (existingContextFile.readOnly !== readOnly) {
         existingContextFile.readOnly = readOnly;
+        changed = true;
+      }
+      // Re-adding a disabled file without an explicit disabled state enables it.
+      if (contextFile.disabled === undefined && existingContextFile.disabled) {
+        delete existingContextFile.disabled;
+        changed = true;
+      }
+      if (changed) {
         this.autosave();
         return [existingContextFile];
       }
@@ -254,15 +263,44 @@ export class ContextManager {
     }
   }
 
-  getContextFiles(): ContextFile[] {
-    return [...this.files];
+  getContextFiles(includeDisabled = false): ContextFile[] {
+    return [...this.files].filter((file) => includeDisabled || !file.disabled);
   }
 
-  async getContextFilesEnsureLoaded(): Promise<ContextFile[]> {
+  async getContextFilesEnsureLoaded(includeDisabled = false): Promise<ContextFile[]> {
     if (!this.loaded) {
       await this.load();
     }
-    return [...this.files];
+    return [...this.files].filter((file) => includeDisabled || !file.disabled);
+  }
+
+  setContextFilesDisabled(filePaths: string[], disabled: boolean): ContextFile[] {
+    const changedFiles: ContextFile[] = [];
+    const paths = new Set(filePaths);
+
+    for (const file of this.files) {
+      if (paths.has(file.path) && Boolean(file.disabled) !== disabled) {
+        if (disabled) {
+          file.disabled = true;
+        } else {
+          delete file.disabled;
+        }
+        changedFiles.push(file);
+      }
+    }
+
+    logger.debug('Updated disabled state for task context files', {
+      taskId: this.taskId,
+      disabled,
+      filePaths,
+      changedFiles: changedFiles.map((file) => file.path),
+    });
+
+    if (changedFiles.length > 0) {
+      this.autosave();
+    }
+
+    return changedFiles;
   }
 
   setContextMessages(contextMessages: ContextMessage[], save = true) {

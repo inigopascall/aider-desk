@@ -649,7 +649,7 @@ export class Task {
     const mode = this.getCurrentMode();
     return {
       messages: this.contextManager.getContextMessagesData(),
-      files: await this.getContextFiles(!AIDER_MODES.includes(mode)),
+      files: await this.getContextFiles(!AIDER_MODES.includes(mode), true),
       todoItems: await this.getTodos(),
       question: this.currentQuestion,
       queuedPrompts: this.queuedPrompts,
@@ -1429,7 +1429,7 @@ export class Task {
         contextMessages = await this.getContextMessages();
       }
       if (!contextFiles) {
-        contextFiles = await this.getContextFiles();
+        contextFiles = await this.getContextFiles(false, true);
       }
 
       const extensionResult = await this.extensionManager.dispatchEvent(
@@ -1877,9 +1877,10 @@ export class Task {
       return false;
     }
 
-    // Send add file message for each added file
-    for (const addedFile of addedFiles) {
-      this.sendAddFile(addedFile);
+    // Send add file message for enabled files only
+    const enabledAddedFiles = addedFiles.filter((file) => !file.disabled);
+    for (let index = 0; index < enabledAddedFiles.length; index++) {
+      this.sendAddFile(enabledAddedFiles[index], index !== enabledAddedFiles.length - 1);
     }
 
     await this.sendContextFilesUpdated();
@@ -1950,7 +1951,7 @@ export class Task {
 
   private async sendContextFilesUpdated() {
     const mode = this.getCurrentMode();
-    const allFiles = await this.getContextFiles(!AIDER_MODES.includes(mode));
+    const allFiles = await this.getContextFiles(!AIDER_MODES.includes(mode), true);
 
     this.eventManager.sendContextFilesUpdated(this.project.baseDir, this.taskId, allFiles);
   }
@@ -2402,9 +2403,27 @@ export class Task {
   }
 
   public updateContextFiles(contextFiles: ContextFile[]) {
-    this.contextManager.setContextFiles(contextFiles, false);
+    const locallyDisabled = new Set(this.contextManager.getContextFiles(true).filter((file) => file.disabled).map((file) => file.path));
+    this.contextManager.setContextFiles(
+      contextFiles.map((file) => (locallyDisabled.has(file.path) && file.disabled !== false ? { ...file, disabled: true } : file)),
+      false,
+    );
     void this.sendContextFilesUpdated();
     void this.updateContextInfo(true, true);
+  }
+
+  public async setContextFilesDisabled(filePaths: string[], disabled: boolean): Promise<void> {
+    const changedFiles = this.contextManager.setContextFilesDisabled(filePaths, disabled);
+    for (let index = 0; index < changedFiles.length; index++) {
+      const file = changedFiles[index];
+      if (disabled) {
+        this.sendDropFile(file.path, file.readOnly, index !== changedFiles.length - 1);
+      } else {
+        this.sendAddFile(file, index !== changedFiles.length - 1);
+      }
+    }
+    await this.sendContextFilesUpdated();
+    await this.updateContextInfo(true, false);
   }
 
   public async askQuestion(questionData: QuestionData, awaitAnswer = true): Promise<[string, string | undefined]> {
@@ -2589,7 +2608,7 @@ export class Task {
 
   private async detectAndAddFilesFromPrompt(prompt: string): Promise<void> {
     try {
-      const contextFiles = await this.getContextFiles();
+      const contextFiles = await this.getContextFiles(false, true);
       const contextFilePaths = new Set(contextFiles.map((file) => file.path.replace(/\\/g, '/')));
       const allFiles = await getAllFiles(this.getTaskDir());
       const addableFiles = allFiles.filter((file) => !contextFilePaths.has(file));
@@ -2740,8 +2759,8 @@ export class Task {
     return await this.worktreeManager.getUpdatedFiles(this.getTaskDir(), this.task.workingMode, mainBranch, groupMode);
   }
 
-  public async getContextFiles(includeRuleFiles = false): Promise<ContextFile[]> {
-    const contextFiles = await this.contextManager.getContextFilesEnsureLoaded();
+  public async getContextFiles(includeRuleFiles = false, includeDisabled = false): Promise<ContextFile[]> {
+    const contextFiles = await this.contextManager.getContextFilesEnsureLoaded(includeDisabled);
 
     if (!includeRuleFiles) {
       return contextFiles;
@@ -2845,8 +2864,13 @@ export class Task {
     return includeDisabled ? extensionResult.files : extensionResult.files.filter((f) => !disabledRuleFiles.includes(f.path));
   }
 
-  public async getRepositoryMappingFiles(): Promise<ContextFile[]> {
-    return listRepositoryMappingFiles(this.project.baseDir);
+  public async getRepositoryMappingFiles(includeDisabled = false): Promise<ContextFile[]> {
+    const files = await listRepositoryMappingFiles(this.project.baseDir);
+    if (includeDisabled) {
+      return files;
+    }
+    const disabledFiles = new Set(this.project.getProjectSettings().disabledRepositoryMappingFiles ?? []);
+    return files.filter((file) => !disabledFiles.has(file.path));
   }
 
   public getRepoMap(): string {
@@ -4171,7 +4195,7 @@ export class Task {
     this.addLogMessage('loading', loadingMessage, false, undefined, ['interrupt']);
 
     // Get context files to transfer
-    const contextFiles = await this.getContextFiles();
+    const contextFiles = await this.getContextFiles(false, true);
 
     let generatedPrompt: string | undefined;
 
@@ -4281,7 +4305,7 @@ export class Task {
   }, 500);
 
   private async sendRequestContextInfo() {
-    const contextFiles = await this.getContextFiles();
+    const contextFiles = await this.getContextFiles(false, true);
     this.findMessageConnectors('request-context-info').forEach((connector) =>
       connector.sendRequestTokensInfoMessage(this.contextManager.toConnectorMessages(), contextFiles),
     );
@@ -5679,7 +5703,7 @@ ${error.stderr}`,
     });
 
     // Copy context files
-    const contextFiles = await sourceTask.getContextFiles();
+    const contextFiles = await sourceTask.getContextFiles(false, true);
     await this.addFiles(...contextFiles);
 
     // Copy messages
@@ -5711,7 +5735,7 @@ ${error.stderr}`,
     });
 
     // Copy ALL context files from source task (not just up to fork point)
-    const contextFiles = await sourceTask.getContextFiles();
+    const contextFiles = await sourceTask.getContextFiles(false, true);
     await this.addFiles(...contextFiles);
 
     // Get messages up to and including the specified message

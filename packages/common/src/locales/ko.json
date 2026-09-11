@@ -1134,6 +1134,7 @@
   "contextFiles": {
     "workspaceTitle": "워크스페이스",
     "repositoryMappings": "저장소 매핑",
+    "repositoryMappingFile": "저장소 매핑 파일",
     "regenerateMappings": "매핑 다시 생성",
     "regeneratingMappings": "매핑을 다시 생성하는 중...",
     "repositoryMappingsEmpty": "생성된 저장소 매핑 파일이 없습니다.",

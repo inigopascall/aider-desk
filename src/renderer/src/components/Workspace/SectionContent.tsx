@@ -21,6 +21,7 @@ type Props = {
   emptyContent?: React.ReactNode;
   disabledRuleFiles?: string[];
   onToggleRuleFile?: (filePaths: string[], disabled: boolean) => void;
+  onToggleContextFiles?: (filePaths: string[], disabled: boolean, shiftKey: boolean) => void;
   onFileDiffClick: (file: UpdatedFile) => void;
   onFilePreviewClick?: (filePath: string) => void;
   onAddFileToGit?: (filePath: string) => void;
@@ -43,6 +44,7 @@ export const SectionContent = ({
   emptyContent,
   disabledRuleFiles,
   onToggleRuleFile,
+  onToggleContextFiles,
   onFileDiffClick,
   onFilePreviewClick,
   onAddFileToGit,
@@ -69,6 +71,7 @@ export const SectionContent = ({
         os={os}
         disabledRuleFiles={disabledRuleFiles}
         onToggleRuleFile={onToggleRuleFile}
+        onToggleContextFiles={onToggleContextFiles}
         onFileDiffClick={onFileDiffClick}
         onFilePreviewClick={onFilePreviewClick}
         onAddFileToGit={onAddFileToGit}
@@ -91,6 +94,7 @@ export const SectionContent = ({
       os,
       disabledRuleFiles,
       onToggleRuleFile,
+      onToggleContextFiles,
       onFileDiffClick,
       onFilePreviewClick,
       onAddFileToGit,

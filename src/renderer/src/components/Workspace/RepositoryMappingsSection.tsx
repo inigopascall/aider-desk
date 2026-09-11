@@ -2,12 +2,15 @@ import { ContextFile } from '@common/types';
 import { Activity, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { HiX } from 'react-icons/hi';
-import { MdOutlineRefresh } from 'react-icons/md';
+import { MdOutlineMap, MdOutlineRefresh } from 'react-icons/md';
 import { motion } from 'framer-motion';
 import { clsx } from 'clsx';
 
 import { SectionHeader } from './SectionHeader';
 import { FileViewerModal } from './FileViewerModal';
+import { TriStateCheckbox } from '@/components/common/TriStateCheckbox';
+import { useProjectSettings } from '@/contexts/ProjectSettingsContext';
+import { useShiftRangeSelection } from '@/hooks/useShiftRangeSelection';
 
 import { Tooltip } from '@/components/ui/Tooltip';
 import { useApi } from '@/contexts/ApiContext';
@@ -42,7 +45,12 @@ export const RepositoryMappingsSection = ({
 }: Props) => {
   const { t } = useTranslation();
   const api = useApi();
+  const { projectSettings, saveProjectSettings } = useProjectSettings();
   const [files, setFiles] = useState<ContextFile[]>([]);
+  const disabledFiles = projectSettings?.disabledRepositoryMappingFiles ?? [];
+  const orderedKeys = useMemo(() => files.map((file) => file.path), [files]);
+  const { resolveRange } = useShiftRangeSelection(orderedKeys);
+  const enabledCount = files.length - files.filter((file) => disabledFiles.includes(file.path)).length;
   const [isLoading, setIsLoading] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [previewFilePath, setPreviewFilePath] = useState<string | null>(null);
@@ -82,10 +90,24 @@ export const RepositoryMappingsSection = ({
     }
   }, [api, baseDir, taskId, loadFiles, t]);
 
+  const handleToggleFile = useCallback(
+    async (filePath: string, shiftKey: boolean) => {
+      const paths = resolveRange(filePath, shiftKey);
+      const disabled = new Set(disabledFiles);
+      const shouldEnable = disabled.has(filePath);
+      paths.forEach((path) => (shouldEnable ? disabled.delete(path) : disabled.add(path)));
+      await saveProjectSettings({ disabledRepositoryMappingFiles: Array.from(disabled) });
+    },
+    [disabledFiles, resolveRange, saveProjectSettings],
+  );
+
   const handleRemoveFile = useCallback(
     async (filePath: string) => {
       try {
         setFiles(await api.deleteRepositoryMapping(baseDir, filePath));
+        if (disabledFiles.includes(filePath)) {
+          await saveProjectSettings({ disabledRepositoryMappingFiles: disabledFiles.filter((path) => path !== filePath) });
+        }
         if (previewFilePath === filePath) {
           setPreviewFilePath(null);
         }
@@ -93,7 +115,7 @@ export const RepositoryMappingsSection = ({
         showErrorNotification(t('contextFiles.repositoryMappingsRemoveFailed', { error: String(error) }));
       }
     },
-    [api, baseDir, previewFilePath, t],
+    [api, baseDir, disabledFiles, previewFilePath, saveProjectSettings, t],
   );
 
   const actions = useMemo(
@@ -118,7 +140,8 @@ export const RepositoryMappingsSection = ({
         <SectionHeader
           section="mappings"
           title={t('contextFiles.repositoryMappings')}
-          count={files.length}
+          count={enabledCount}
+          totalCount={files.length}
           isOpen={isOpen}
           totalStats={totalStats}
           onToggle={onToggle}
@@ -134,9 +157,18 @@ export const RepositoryMappingsSection = ({
             ) : files.length > 0 ? (
               files.map((file) => (
                 <div key={file.path} className="group flex items-center w-full pr-1 rounded hover:bg-bg-secondary">
+                  <Tooltip content={t('contextFiles.repositoryMappingFile')}>
+                    <MdOutlineMap className="w-4 h-4 mx-1 text-text-muted flex-shrink-0" />
+                  </Tooltip>
+                  <TriStateCheckbox
+                    state={disabledFiles.includes(file.path) ? 'unchecked' : 'checked'}
+                    onChange={(shiftKey) => void handleToggleFile(file.path, shiftKey)}
+                    aria-label={file.path}
+                    className="mr-1"
+                  />
                   <Tooltip content={file.path}>
                     <button
-                      className="flex-grow min-w-0 px-2 py-1 text-left text-2xs text-text-primary truncate"
+                      className={clsx('flex-grow min-w-0 px-2 py-1 text-left text-2xs truncate', disabledFiles.includes(file.path) ? 'text-text-muted' : 'text-text-primary')}
                       onClick={() => setPreviewFilePath(file.path)}
                     >
                       {getFileName(file.path)}

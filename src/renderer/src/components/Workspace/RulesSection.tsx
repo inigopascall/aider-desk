@@ -1,5 +1,7 @@
 import { ContextFile } from '@common/types';
 import { Activity, useCallback, useMemo, useState } from 'react';
+
+import { useShiftRangeSelection } from '@/hooks/useShiftRangeSelection';
 import { useTranslation } from 'react-i18next';
 import { MdOutlinePublic, MdOutlineRefresh } from 'react-icons/md';
 import { RiRobot2Line } from 'react-icons/ri';
@@ -84,13 +86,18 @@ export const RulesSection = ({
     return [...rulesFiles].sort((a, b) => a.path.localeCompare(b.path));
   }, [rulesFiles]);
 
+  const rulePaths = useMemo(() => sortedRulesFiles.map((file) => file.path), [sortedRulesFiles]);
+  const { resolveRange } = useShiftRangeSelection(rulePaths);
+
   const handleToggleRuleFile = useCallback(
-    (filePath: string, disable: boolean) => {
+    (filePaths: string[], disable: boolean) => {
       const current = new Set(disabledRuleFiles);
-      if (disable) {
-        current.add(filePath);
-      } else {
-        current.delete(filePath);
+      for (const filePath of filePaths) {
+        if (disable) {
+          current.add(filePath);
+        } else {
+          current.delete(filePath);
+        }
       }
       void saveProjectSettings({ disabledRuleFiles: Array.from(current) });
     },
@@ -160,7 +167,10 @@ export const RulesSection = ({
                   <div className="flex items-center flex-grow min-w-0 gap-1">
                     <Tooltip content={file.path} delayDuration={1000}>
                       <span
-                        className="select-none text-2xs overflow-hidden whitespace-nowrap overflow-ellipsis text-text-primary cursor-pointer hover:text-text-tertiary"
+                        className={clsx(
+                          'select-none text-2xs overflow-hidden whitespace-nowrap overflow-ellipsis cursor-pointer hover:text-text-tertiary',
+                          isDisabled ? 'text-text-muted' : 'text-text-primary',
+                        )}
                         onClick={() => setPreviewFilePath(file.path)}
                       >
                         {getFileName(file.path)}
@@ -169,7 +179,13 @@ export const RulesSection = ({
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     {file.source && getRuleSourceIcon(file.source, t)}
-                    <TriStateCheckbox state={isDisabled ? 'unchecked' : 'checked'} onChange={() => handleToggleRuleFile(file.path, !isDisabled)} />
+                    <TriStateCheckbox
+                      state={isDisabled ? 'unchecked' : 'checked'}
+                      onChange={(shiftKey) => {
+                        const range = resolveRange(file.path, shiftKey);
+                        handleToggleRuleFile(range, !isDisabled);
+                      }}
+                    />
                   </div>
                 </div>
               );

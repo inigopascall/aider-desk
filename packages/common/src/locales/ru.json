@@ -1141,6 +1141,7 @@
   "contextFiles": {
     "workspaceTitle": "Рабочая область",
     "repositoryMappings": "Сопоставления репозитория",
+    "repositoryMappingFile": "Файл сопоставления репозитория",
     "regenerateMappings": "Пересоздать сопоставления",
     "regeneratingMappings": "Пересоздание сопоставлений...",
     "repositoryMappingsEmpty": "Файлы сопоставлений репозитория ещё не созданы.",

@@ -656,6 +656,9 @@ export class BrowserApi implements ApplicationAPI {
   dropFile(baseDir: string, taskId: string, path: string): void {
     this.post('/drop-context-file', { projectDir: baseDir, taskId, path });
   }
+  setContextFilesDisabled(baseDir: string, taskId: string, filePaths: string[], disabled: boolean): Promise<void> {
+    return this.post('/set-context-files-disabled', { projectDir: baseDir, taskId, paths: filePaths, disabled });
+  }
   runCommand(baseDir: string, taskId: string, command: string): void {
     this.post('/project/run-command', { projectDir: baseDir, taskId, command });
   }

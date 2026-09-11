@@ -153,6 +153,7 @@ export interface ApplicationAPI {
   isValidPath: (baseDir: string, path: string) => Promise<boolean>;
   isProjectPath: (path: string) => Promise<boolean>;
   dropFile: (baseDir: string, taskId: string, path: string) => void;
+  setContextFilesDisabled: (baseDir: string, taskId: string, filePaths: string[], disabled: boolean) => Promise<void>;
   runCommand: (baseDir: string, taskId: string, command: string) => void;
   pasteImage: (baseDir: string, taskId: string, imageBuffer?: ArrayBuffer) => void;
   scrapeWeb: (baseDir: string, taskId: string, url: string, filePath?: string) => Promise<void>;

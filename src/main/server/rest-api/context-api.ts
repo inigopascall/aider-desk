@@ -40,6 +40,13 @@ const RefreshContextFilesSchema = z.object({
   taskId: z.string().min(1, 'Task ID is required'),
 });
 
+const SetContextFilesDisabledSchema = z.object({
+  projectDir: z.string().min(1, 'Project directory is required'),
+  taskId: z.string().min(1, 'Task ID is required'),
+  paths: z.array(z.string().min(1, 'File path is required')).min(1, 'At least one file path is required'),
+  disabled: z.boolean(),
+});
+
 export class ContextApi extends BaseApi {
   constructor(
     private readonly projectManager: ProjectManager,
@@ -76,6 +83,21 @@ export class ContextApi extends BaseApi {
         const { projectDir, taskId, path } = parsed;
         this.eventsHandler.dropFile(projectDir, taskId, path);
         res.status(200).json({ message: 'File dropped from context' });
+      }),
+    );
+
+    // Set context files disabled state
+    router.post(
+      '/set-context-files-disabled',
+      this.handleRequest(async (req, res) => {
+        const parsed = this.validateRequest(SetContextFilesDisabledSchema, req.body, res);
+        if (!parsed) {
+          return;
+        }
+
+        const { projectDir, taskId, paths, disabled } = parsed;
+        await this.eventsHandler.setContextFilesDisabled(projectDir, taskId, paths, disabled);
+        res.status(200).json({ message: 'Context files updated' });
       }),
     );
 

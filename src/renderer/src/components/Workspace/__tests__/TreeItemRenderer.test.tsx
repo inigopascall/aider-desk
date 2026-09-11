@@ -61,3 +61,79 @@ describe('TreeItemRenderer updated files', () => {
     expect(onAddFileToGit).not.toHaveBeenCalled();
   });
 });
+
+describe('TreeItemRenderer context files', () => {
+  const createContextProps = (disabled = false) => {
+    const contextItem: TreeItem = { ...item, file: { path: 'src/file.ts', disabled } };
+    return {
+      ...createProps(),
+      item: contextItem,
+      title: 'file.ts',
+      type: 'context' as const,
+      treeData: { 'src/file.ts': contextItem },
+      contextFilesMap: new Map([['src/file.ts', contextItem.file]]),
+    };
+  };
+
+  it('renders enabled and disabled context checkboxes and dims disabled files', () => {
+    const enabledProps = createContextProps();
+    const onToggleContextFiles = vi.fn();
+    const { unmount } = render(<TreeItemRenderer {...enabledProps} onToggleContextFiles={onToggleContextFiles} />);
+    expect(screen.getByRole('checkbox')).toBeChecked();
+    unmount();
+
+    const disabledProps = createContextProps(true);
+    render(<TreeItemRenderer {...disabledProps} onToggleContextFiles={onToggleContextFiles} />);
+    expect(screen.getByRole('checkbox')).not.toBeChecked();
+    expect(screen.getByText('file.ts')).toHaveClass('context-dimmed');
+  });
+
+  it('passes the context path and ordinary-click shift flag when toggled', () => {
+    const props = createContextProps(true);
+    const onToggleContextFiles = vi.fn();
+    render(<TreeItemRenderer {...props} onToggleContextFiles={onToggleContextFiles} />);
+
+    fireEvent.click(screen.getByRole('checkbox'));
+    expect(onToggleContextFiles).toHaveBeenCalledWith(['src/file.ts'], true, false);
+  });
+
+  it('passes true for shift-click context toggles', () => {
+    const props = createContextProps(true);
+    const onToggleContextFiles = vi.fn();
+    render(<TreeItemRenderer {...props} onToggleContextFiles={onToggleContextFiles} />);
+
+    fireEvent.click(screen.getByRole('checkbox'), { shiftKey: true });
+    expect(onToggleContextFiles).toHaveBeenCalledWith(['src/file.ts'], true, true);
+  });
+
+  it('renders an indeterminate context folder and toggles all descendant paths', () => {
+    const folder: TreeItem = { index: 'src', data: 'src', isFolder: true, children: ['src/a.ts', 'src/b.ts'] };
+    const first: TreeItem = { index: 'src/a.ts', data: 'a.ts', file: { path: 'src/a.ts' } };
+    const second: TreeItem = { index: 'src/b.ts', data: 'b.ts', file: { path: 'src/b.ts', disabled: true } };
+    const onToggleContextFiles = vi.fn();
+    render(
+      <TreeItemRenderer
+        {...createProps()}
+        item={folder}
+        title="src"
+        type="context"
+        treeData={{ src: folder, 'src/a.ts': first, 'src/b.ts': second }}
+        contextFilesMap={new Map([
+          ['src/a.ts', first.file!],
+          ['src/b.ts', second.file!],
+        ])}
+        onToggleContextFiles={onToggleContextFiles}
+      >
+        <TreeItemRenderer {...createProps()} item={first} title="a.ts" type="context" treeData={{}} contextFilesMap={new Map()} />
+      </TreeItemRenderer>,
+    );
+
+    const checkbox = screen.getByRole('checkbox');
+    expect(checkbox).toHaveProperty('indeterminate', true);
+    fireEvent.click(checkbox);
+    expect(onToggleContextFiles).toHaveBeenCalledWith(['src/a.ts', 'src/b.ts'], false, false);
+  });
+});
+EOF
+ 񟿿 񟿿
+} nul

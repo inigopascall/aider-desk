@@ -229,6 +229,8 @@ export interface ConnectorMessage {
 export interface ContextFile {
   path: string;
   readOnly?: boolean;
+  /** Whether the file remains listed but is excluded from active context. */
+  disabled?: boolean;
   source?: 'global-rule' | 'project-rule' | 'agent-rule' | 'repo-mapping';
 }
 

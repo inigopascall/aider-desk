@@ -69,3 +69,34 @@ export const createFileTree = (files: ContextFile[], rootId = 'root') => {
 
   return tree;
 };
+
+export const collectVisibleFilePaths = (
+  tree: Record<string, TreeItem>,
+  expandedItems: string[],
+  rootId = 'root',
+): string[] => {
+  const visiblePaths: string[] = [];
+
+  const visit = (nodeId: string, isRoot = false) => {
+    const node = tree[nodeId];
+    if (!node) {
+      return;
+    }
+
+    if (!node.isFolder) {
+      if (node.file?.path) {
+        visiblePaths.push(node.file.path);
+      }
+      return;
+    }
+
+    if (!isRoot && !expandedItems.includes(nodeId)) {
+      return;
+    }
+
+    node.children?.forEach((childId) => visit(String(childId)));
+  };
+
+  visit(rootId, true);
+  return visiblePaths;
+};

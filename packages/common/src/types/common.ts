@@ -600,6 +600,7 @@ export const ProjectSettingsSchema = z.object({
   autonomyModeLocked: z.boolean().optional(),
   updatedFilesGroupMode: z.enum(['grouped', 'flat']).default('flat'),
   disabledRuleFiles: z.array(z.string()).default([]),
+  disabledRepositoryMappingFiles: z.array(z.string()).default([]),
   contextSidebarSectionsOrder: z.array(z.string()).default([]),
   contextSidebarSectionsHidden: z.array(z.string()).default([]),
   enabledWorkflows: z.array(z.string()).optional(),

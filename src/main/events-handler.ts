@@ -391,6 +391,15 @@ export class EventsHandler {
     return (await task.addFiles({ path: expandTilde(filePath), readOnly })) === true;
   }
 
+  async setContextFilesDisabled(baseDir: string, taskId: string, filePaths: string[], disabled: boolean): Promise<void> {
+    const project = this.projectManager.getProject(baseDir);
+    const task = project.getTask(taskId);
+    if (!task) {
+      throw new Error(`Task ${taskId} not found in project ${baseDir}`);
+    }
+    await task.setContextFilesDisabled(filePaths, disabled);
+  }
+
   dropFile(baseDir: string, taskId: string, filePath: string): void {
     void this.projectManager.getProject(baseDir).getTask(taskId)?.dropFile(filePath);
   }

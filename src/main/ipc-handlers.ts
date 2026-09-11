@@ -77,6 +77,10 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
     void eventsHandler.addFile(baseDir, taskId, filePath, readOnly);
   });
 
+  ipcMain.handle('set-context-files-disabled', async (_, baseDir: string, taskId: string, filePaths: string[], disabled: boolean) => {
+    await eventsHandler.setContextFilesDisabled(baseDir, taskId, filePaths, disabled);
+  });
+
   ipcMain.handle('start-project', (_, baseDir: string) => {
     return eventsHandler.startProject(baseDir);
   });

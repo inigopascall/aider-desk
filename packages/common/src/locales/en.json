@@ -1179,6 +1179,7 @@
   "contextFiles": {
     "workspaceTitle": "Workspace",
     "repositoryMappings": "Repository Mappings",
+    "repositoryMappingFile": "Repository mapping file",
     "regenerateMappings": "Regenerate mappings",
     "regeneratingMappings": "Regenerating mappings...",
     "repositoryMappingsEmpty": "No repository mapping files have been generated yet.",
