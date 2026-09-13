@@ -106,6 +106,7 @@ export const DEFAULT_SETTINGS: SettingsData = {
     smartTaskState: true,
     autoGenerateTaskName: true,
     showTaskStateActions: true,
+    allowSubSubTasks: false,
     worktreeSymlinkFolders: ['node_modules', 'vendor', '__pycache__', '.venv', 'venv'],
     contextCompactingThreshold: { percentage: 90, tokens: 100000 },
     contextCompactionType: ContextCompactionType.Compact,

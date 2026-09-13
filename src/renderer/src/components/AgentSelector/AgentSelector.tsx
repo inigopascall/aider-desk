@@ -236,14 +236,11 @@ export const AgentSelector = memo(
 
       const isCurrentlyEnabled = isSubagentEnabled(subagentProfile, activeGlobalProfile);
 
-      let newEnabledSubagentIds: string[];
+      const currentEnabled = activeGlobalProfile.enabledSubagentIds ?? allSubagentIds;
 
-      if (isCurrentlyEnabled) {
-        newEnabledSubagentIds = allSubagentIds.filter((id) => id !== subagentProfile.id);
-      } else {
-        const currentEnabled = activeGlobalProfile.enabledSubagentIds || allSubagentIds;
-        newEnabledSubagentIds = [...currentEnabled, subagentProfile.id];
-      }
+      const newEnabledSubagentIds = isCurrentlyEnabled
+        ? currentEnabled.filter((id) => id !== subagentProfile.id)
+        : [...new Set([...currentEnabled, subagentProfile.id])];
 
       const updatedProfile = {
         ...activeGlobalProfile,

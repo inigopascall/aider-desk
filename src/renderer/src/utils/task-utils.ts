@@ -47,13 +47,26 @@ export const getSortedVisibleTasks = (
       return task.name.toLowerCase().includes(searchText);
     });
 
-  const tasksWithValidParents = filteredTasks.filter((task) => {
-    if (!task.parentId) {
-      return true;
+  // A task is hidden along with any archived ancestor, not just an archived
+  // direct parent, so deeper descendants do not surface at the root.
+  const hasArchivedAncestor = (task: TaskData): boolean => {
+    const seen = new Set<string>([task.id]);
+    let parentId = task.parentId;
+    while (parentId && !seen.has(parentId)) {
+      const parent = tasks.find((t) => t.id === parentId);
+      if (!parent) {
+        return false;
+      }
+      if (parent.archived) {
+        return true;
+      }
+      seen.add(parent.id);
+      parentId = parent.parentId;
     }
-    const parentTask = tasks.find((t) => t.id === task.parentId);
-    return showArchived || !parentTask || !parentTask.archived;
-  });
+    return false;
+  };
+
+  const tasksWithValidParents = showArchived ? filteredTasks : filteredTasks.filter((task) => !hasArchivedAncestor(task));
 
   const topLevelTasks = tasksWithValidParents.filter((t) => !t.parentId || !tasksWithValidParents.some((p) => p.id === t.parentId));
   const subtasks = tasksWithValidParents.filter((t) => t.parentId && tasksWithValidParents.some((p) => p.id === t.parentId));

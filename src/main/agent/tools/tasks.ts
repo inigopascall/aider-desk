@@ -361,8 +361,10 @@ export const createTasksToolset = (settings: SettingsData, task: Task, profile: 
     }),
     execute: async (input, { toolCallId }) => {
       const { prompt, name, agentProfileId, modelId, mode = 'agent', asSubtask = false, autonomyMode, worktree, executeAndWait, executeInBackground } = input;
+      // `Project.createNewTask` clamps this to the configured maximum nesting
+      // depth, so pass through the caller's actual intent.
       const parentTaskId: string | null | undefined = asSubtask
-        ? task.task.parentId || task.taskId
+        ? task.taskId
         : 'parentTaskId' in input
           ? (input.parentTaskId as string | null)
           : undefined;

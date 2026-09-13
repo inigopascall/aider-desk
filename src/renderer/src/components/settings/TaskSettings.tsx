@@ -69,6 +69,16 @@ export const TaskSettings = ({ settings, setSettings }: Props) => {
     });
   };
 
+  const handleAllowSubSubTasksChange = (checked: boolean) => {
+    setSettings({
+      ...settings,
+      taskSettings: {
+        ...settings.taskSettings,
+        allowSubSubTasks: checked,
+      },
+    });
+  };
+
   const handleAddSymlinkFolder = (folder: string) => {
     const currentFolders = settings.taskSettings.worktreeSymlinkFolders || [];
     setSettings({
@@ -261,6 +271,16 @@ export const TaskSettings = ({ settings, setSettings }: Props) => {
               label={t('settings.tasks.showTaskStateActions')}
             />
             <InfoIcon tooltip={t('settings.tasks.showTaskStateActionsTooltip')} />
+          </div>
+
+          <div className="flex items-start gap-1">
+            <Checkbox
+              id="allow-sub-sub-tasks"
+              checked={settings.taskSettings?.allowSubSubTasks ?? false}
+              onChange={handleAllowSubSubTasksChange}
+              label={t('settings.tasks.allowSubSubTasks')}
+            />
+            <InfoIcon tooltip={t('settings.tasks.allowSubSubTasksTooltip')} />
           </div>
         </div>
       </Section>

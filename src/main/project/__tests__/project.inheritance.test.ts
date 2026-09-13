@@ -154,7 +154,7 @@ describe('Project Inheritance', () => {
     expect(task.parentId).toBeNull();
   });
 
-  it('should flatten subtask-of-subtask to use top-level parent', async () => {
+  it('should flatten subtask-of-subtask to top-level parent when sub-subtasks are disabled', async () => {
     const parentTask = {
       task: {
         id: 'top-level-parent',

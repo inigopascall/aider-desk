@@ -900,6 +900,8 @@ export interface TaskSettings {
   smartTaskState: boolean;
   autoGenerateTaskName: boolean;
   showTaskStateActions: boolean;
+  /** Allow a third tier of tasks: a subtask may itself have subtasks. */
+  allowSubSubTasks: boolean;
   worktreeSymlinkFolders: string[];
   contextCompactingThreshold: { percentage: number; tokens: number };
   contextCompactionType: ContextCompactionType;

@@ -133,6 +133,7 @@ describe('Project - createNewTask', () => {
               smartTaskState: true,
               autoGenerateTaskName: true,
               showTaskStateActions: true,
+              allowSubSubTasks: false,
               worktreeSymlinkFolders: [],
               contextCompactingThreshold: { percentage: 90, tokens: 100000 },
               contextCompactionType: ContextCompactionType.Compact,
@@ -328,7 +329,7 @@ describe('Project - createNewTask', () => {
       expect(storedTask?.task.parentId).toBe(parentTask.id);
     });
 
-    it('should flatten subtask-of-subtask to use top-level parent', async () => {
+    it('should flatten subtask-of-subtask to top-level parent when sub-subtasks are disabled', async () => {
       // Setup: Create a two-level hierarchy
       const grandparentTask = await project.createNewTask();
       const parentTask = await project.createNewTask({ parentId: grandparentTask.id });
@@ -347,6 +348,39 @@ describe('Project - createNewTask', () => {
 
       // Assert: Event manager should be called for each task
       expect(mockEventManager.sendTaskCreated).toHaveBeenCalledTimes(3);
+    });
+
+    describe('when sub-subtasks are enabled', () => {
+      beforeEach(() => {
+        const baseSettings = mockStore.getSettings!();
+        (mockStore.getSettings as unknown as Mock).mockReturnValue({
+          ...baseSettings,
+          taskSettings: {
+            ...baseSettings.taskSettings,
+            allowSubSubTasks: true,
+          },
+        });
+      });
+
+      it('should create a third tier instead of flattening', async () => {
+        const topLevelTask = await project.createNewTask();
+        const subtask = await project.createNewTask({ parentId: topLevelTask.id });
+
+        const subSubtask = await project.createNewTask({ parentId: subtask.id });
+
+        expect(subSubtask.parentId).toBe(subtask.id);
+        expect(subSubtask.parentId).not.toBe(topLevelTask.id);
+      });
+
+      it('should clamp a fourth tier back to the third tier', async () => {
+        const topLevelTask = await project.createNewTask();
+        const subtask = await project.createNewTask({ parentId: topLevelTask.id });
+        const subSubtask = await project.createNewTask({ parentId: subtask.id });
+
+        const tooDeep = await project.createNewTask({ parentId: subSubtask.id });
+
+        expect(tooDeep.parentId).toBe(subtask.id);
+      });
     });
 
     it('should allow creating multiple subtasks with the same parent', async () => {
@@ -586,6 +620,49 @@ describe('Project - createNewTask', () => {
 
       // Assert: sendTaskCreated should be called with the exact same task data
       expect(mockEventManager.sendTaskCreated).toHaveBeenCalledWith(task, undefined);
+    });
+  });
+
+  describe('resolveReparentTarget', () => {
+    it('returns null when the requested parent is null', async () => {
+      const task = await project.createNewTask();
+
+      expect(project.resolveReparentTarget(task.id, null)).toBeNull();
+    });
+
+    it('refuses to move a task under itself or one of its own descendants', async () => {
+      const parent = await project.createNewTask();
+      const child = await project.createNewTask({ parentId: parent.id });
+
+      expect(() => project.resolveReparentTarget(parent.id, parent.id)).toThrow();
+      expect(() => project.resolveReparentTarget(parent.id, child.id)).toThrow();
+    });
+
+    it('keeps a task with children at the top level when sub-subtasks are disabled', async () => {
+      const parent = await project.createNewTask();
+      await project.createNewTask({ parentId: parent.id });
+      const other = await project.createNewTask();
+
+      expect(project.resolveReparentTarget(parent.id, other.id)).toBeNull();
+    });
+
+    it('clamps a task with children to a top-level parent when sub-subtasks are enabled', async () => {
+      const baseSettings = mockStore.getSettings!();
+      (mockStore.getSettings as unknown as Mock).mockReturnValue({
+        ...baseSettings,
+        taskSettings: {
+          ...baseSettings.taskSettings,
+          allowSubSubTasks: true,
+        },
+      });
+
+      const parent = await project.createNewTask();
+      await project.createNewTask({ parentId: parent.id });
+      const other = await project.createNewTask();
+      const otherChild = await project.createNewTask({ parentId: other.id });
+
+      expect(project.resolveReparentTarget(parent.id, other.id)).toBe(other.id);
+      expect(project.resolveReparentTarget(parent.id, otherChild.id)).toBe(other.id);
     });
   });
 });

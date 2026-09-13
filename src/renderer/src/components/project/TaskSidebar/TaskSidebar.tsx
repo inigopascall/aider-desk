@@ -16,6 +16,7 @@ import { TaskItem } from './TaskItem';
 
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
 import { flattenTasksForVirtualization } from '@/utils/task-utils';
+import { useSettingsStore } from '@/stores/settingsStore';
 import { Input } from '@/components/common/Input';
 import { useClickOutside } from '@/hooks/useClickOutside';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
@@ -84,6 +85,8 @@ const TaskSidebarComponent = ({
   const [isSearchVisible, setIsSearchVisible] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [expandedIds, setExpandedIds] = useLocalStorage<string[]>('aider-desk-expanded-tasks', []);
+  const allowSubSubTasks = useSettingsStore((state) => state.settings?.taskSettings?.allowSubSubTasks ?? false);
+  const maxTaskLevel = allowSubSubTasks ? 2 : 1;
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const listContainerRef = useRef<HTMLDivElement>(null);
@@ -252,23 +255,22 @@ const TaskSidebarComponent = ({
     prevActiveTaskIdRef.current = activeTaskId;
 
     if (activeTaskId && tasks.length > 0) {
-      const hasActiveSubtask = (taskId: string): boolean => {
-        const childTasks = tasks.filter((t) => t.parentId === taskId);
-        if (childTasks.some((t) => t.id === activeTaskId)) {
-          return true;
-        }
-        return childTasks.some((child) => hasActiveSubtask(child.id));
-      };
-
-      const parentWithActiveSubtask = tasks.find((task) => hasActiveSubtask(task.id));
-      const parentId = parentWithActiveSubtask?.id;
-      if (parentId) {
+      // Walk up the parent chain so every ancestor is expanded and the active
+      // task is actually visible.
+      const ancestorIds: string[] = [];
+      const seen = new Set<string>([activeTaskId]);
+      let currentId: string | null | undefined = tasks.find((t) => t.id === activeTaskId)?.parentId;
+      while (currentId && !seen.has(currentId)) {
+        const ancestorId: string = currentId;
+        seen.add(ancestorId);
+        ancestorIds.push(ancestorId);
+        currentId = tasks.find((t) => t.id === ancestorId)?.parentId;
+      }
+      if (ancestorIds.length > 0) {
         setExpandedIds((prev) => {
           const prevArr = prev ?? [];
-          if (prevArr.includes(parentId)) {
-            return prevArr;
-          }
-          return [...prevArr, parentId];
+          const missing = ancestorIds.filter((id) => !prevArr.includes(id));
+          return missing.length > 0 ? [...prevArr, ...missing] : prevArr;
         });
       }
     }
@@ -477,6 +479,40 @@ const TaskSidebarComponent = ({
     [tasks],
   );
 
+  /** Depth of a task in the tree: 0 for top-level, 1 for a subtask, and so on. */
+  const getTaskLevel = useCallback(
+    (taskId: string): number => {
+      let level = 0;
+      let parentId = tasks.find((t) => t.id === taskId)?.parentId ?? null;
+      while (parentId) {
+        level++;
+        parentId = tasks.find((t) => t.id === parentId)?.parentId ?? null;
+      }
+      return level;
+    },
+    [tasks],
+  );
+
+  /** How many levels of descendants hang below a task. Zero when it is a leaf. */
+  const getSubtreeHeight = useCallback(
+    (taskId: string): number => {
+      const children = tasks.filter((t) => t.parentId === taskId);
+      if (children.length === 0) {
+        return 0;
+      }
+      return 1 + Math.max(...children.map((child) => getSubtreeHeight(child.id)));
+    },
+    [tasks],
+  );
+
+  /** Tallest subtree among the tasks currently being dragged. Zero when nothing is dragged. */
+  const draggedSubtreeHeight = useMemo(() => {
+    if (effectiveDraggedIds.size === 0) {
+      return 0;
+    }
+    return Math.max(...Array.from(effectiveDraggedIds).map((id) => getSubtreeHeight(id)));
+  }, [effectiveDraggedIds, getSubtreeHeight]);
+
   const handleDragStart = useCallback((taskId: string) => {
     setDraggedTaskId(taskId);
   }, []);
@@ -489,8 +525,13 @@ const TaskSidebarComponent = ({
 
   const handleDropOnTask = useCallback(
     async (targetId: string) => {
+      const targetLevel = getTaskLevel(targetId);
       const idsToMove = Array.from(effectiveDraggedIds).filter(
-        (id) => id !== targetId && !isDescendantOf(targetId, id) && tasks.find((t) => t.id === id)?.parentId !== targetId,
+        (id) =>
+          id !== targetId &&
+          !isDescendantOf(targetId, id) &&
+          tasks.find((t) => t.id === id)?.parentId !== targetId &&
+          targetLevel + 1 + getSubtreeHeight(id) <= maxTaskLevel,
       );
       const clearDragState = () => {
         setDraggedTaskId(null);
@@ -511,7 +552,7 @@ const TaskSidebarComponent = ({
       }
       clearDragState();
     },
-    [effectiveDraggedIds, isDescendantOf, tasks, updateTask],
+    [effectiveDraggedIds, isDescendantOf, getTaskLevel, getSubtreeHeight, maxTaskLevel, tasks, updateTask],
   );
 
   const handleListDragOver = useCallback(
@@ -934,6 +975,7 @@ const TaskSidebarComponent = ({
                           tasks={tasks}
                           readonly={readonly}
                           level={item.level}
+                          maxTaskLevel={maxTaskLevel}
                           selectedTasks={selectedTasks}
                           deleteConfirmTaskId={deleteConfirmTaskId}
                           isMultiselectMode={isMultiselectMode}
@@ -962,6 +1004,7 @@ const TaskSidebarComponent = ({
                           onToggleExpand={handleToggleExpand}
                           hasChildren={subtasks.length > 0}
                           draggedTaskIds={effectiveDraggedIds}
+                          draggedSubtreeHeight={draggedSubtreeHeight}
                           dragOverTaskId={dragOverTaskId}
                           onDragStart={handleDragStart}
                           onDragEnd={handleDragEnd}

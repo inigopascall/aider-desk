@@ -639,6 +639,8 @@
       "autoGenerateTaskNameTooltip": "When enabled, the model generates a concise task name from your prompt. When disabled, the first 5 words of your prompt will be used as the task name.",
       "showTaskStateActions": "Show Task State Actions",
       "showTaskStateActionsTooltip": "When enabled, task state actions are displayed at the bottom of messages. Disable to hide these actions.",
+      "allowSubSubTasks": "Allow Sub-Subtasks",
+      "allowSubSubTasksTooltip": "When enabled, a subtask can itself have subtasks, giving three levels of nesting. When disabled, creating a subtask of a subtask places it alongside that subtask under the same top-level task instead. Turning this off later keeps any existing sub-subtasks where they are; it only prevents new ones from being created.",
       "contextManagement": "Context Management",
       "contextCompactingThreshold": "Auto-compact Threshold",
       "contextCompactingThresholdTooltip": "When token usage exceeds this threshold, the conversation will be automatically managed according to the selected compaction type. Set to 0 to disable.",

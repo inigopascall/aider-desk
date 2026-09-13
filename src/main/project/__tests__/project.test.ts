@@ -112,6 +112,7 @@ describe('Project - createNewTask', () => {
               smartTaskState: true,
               autoGenerateTaskName: true,
               showTaskStateActions: true,
+              allowSubSubTasks: false,
               worktreeSymlinkFolders: [],
               contextCompactingThreshold: { percentage: 90, tokens: 100000 },
               contextCompactionType: ContextCompactionType.Compact,
@@ -255,7 +256,7 @@ describe('Project - createNewTask', () => {
       expect(mockEventManager.sendTaskCreated).toHaveBeenCalledWith(newTask, undefined);
     });
 
-    it('should flatten subtask-of-subtask to use top-level parent', async () => {
+    it('should flatten subtask-of-subtask to top-level parent when sub-subtasks are disabled', async () => {
       // Setup: Create a two-level hierarchy
       const grandparentTask = await project.createNewTask();
       const parentTask = await project.createNewTask({ parentId: grandparentTask.id });
@@ -487,6 +488,7 @@ describe('Project - deleteTask', () => {
               smartTaskState: true,
               autoGenerateTaskName: true,
               showTaskStateActions: true,
+              allowSubSubTasks: false,
               worktreeSymlinkFolders: [],
               contextCompactingThreshold: { percentage: 90, tokens: 100000 },
               contextCompactionType: ContextCompactionType.Compact,
@@ -637,6 +639,30 @@ describe('Project - deleteTask', () => {
 
     const tasks = await project.getTasks();
     expect(tasks.length).toBe(0);
+  });
+
+  it('should cascade delete through three levels of nesting', async () => {
+    const baseSettings = mockStore.getSettings();
+    (mockStore.getSettings as unknown as Mock).mockReturnValue({
+      ...baseSettings,
+      taskSettings: {
+        ...baseSettings.taskSettings,
+        allowSubSubTasks: true,
+      },
+    });
+
+    const topLevelTask = await project.createNewTask({ name: 'Top Level Task' });
+    const subtask = await project.createNewTask({ parentId: topLevelTask.id, name: 'Subtask' });
+    const subSubtask = await project.createNewTask({ parentId: subtask.id, name: 'Sub-subtask' });
+
+    expect(subSubtask.parentId).toBe(subtask.id);
+
+    await project.deleteTask(topLevelTask.id);
+
+    const tasks = await project.getTasks();
+    expect(tasks.find((t) => t.id === topLevelTask.id)).toBeUndefined();
+    expect(tasks.find((t) => t.id === subtask.id)).toBeUndefined();
+    expect(tasks.find((t) => t.id === subSubtask.id)).toBeUndefined();
   });
 
   it('should emit taskDeleted events for all deleted tasks', async () => {

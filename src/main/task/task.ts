@@ -4255,7 +4255,7 @@ export class Task {
 
     // Create new task without sending event (sendEvent flag defaults to true)
     const newTaskData = await this.project.createNewTask({
-      parentId: this.task.parentId || this.taskId,
+      parentId: this.taskId,
       sendEvent: false,
       autonomyMode: execute ? this.task.autonomyMode : undefined,
       activate: true,
@@ -4769,6 +4769,12 @@ ${error.stderr}`,
         taskId: this.taskId,
       });
       void this.aiderManager.start();
+    }
+
+    // Re-parenting must respect the configured maximum nesting depth and may
+    // never attach a task to itself or to one of its own descendants.
+    if ('parentId' in updates) {
+      updates = { ...updates, parentId: this.project.resolveReparentTarget(this.taskId, updates.parentId) };
     }
 
     for (const key of Object.keys(updates)) {
@@ -5874,7 +5880,7 @@ ${error.stderr}`,
       autonomyMode: AutonomyMode.Autonomous,
       activate: true,
       mode,
-      parentId: this.task.parentId || this.taskId,
+      parentId: this.taskId,
       addInitialContextFiles: false,
     });
 

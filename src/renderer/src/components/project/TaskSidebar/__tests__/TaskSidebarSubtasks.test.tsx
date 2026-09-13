@@ -121,4 +121,31 @@ describe('TaskSidebar Subtasks', () => {
     // Verify the chevron exists for the parent
     expect(screen.getByTestId('chevron-parent-1')).toBeInTheDocument();
   });
+
+  it('expands every ancestor when activeTaskId is a sub-subtask', async () => {
+    const tasks = [
+      { id: 'parent-1', name: 'Parent 1', createdAt: '2023-01-01T00:00:00Z', updatedAt: '2023-01-01T00:00:00Z', parentId: null },
+      { id: 'child-1', name: 'Child 1', createdAt: '2023-01-02T00:00:00Z', updatedAt: '2023-01-02T00:00:00Z', parentId: 'parent-1' },
+      { id: 'grandchild-1', name: 'Grandchild 1', createdAt: '2023-01-03T00:00:00Z', updatedAt: '2023-01-03T00:00:00Z', parentId: 'child-1' },
+    ] as TaskData[];
+
+    const { rerender } = render(
+      <TaskSidebar loading={false} tasks={tasks} activeTaskId="parent-1" onTaskSelect={vi.fn()} isCollapsed={false} onToggleCollapse={vi.fn()} />,
+    );
+
+    rerender(
+      <TaskSidebar loading={false} tasks={tasks} activeTaskId="grandchild-1" onTaskSelect={vi.fn()} isCollapsed={false} onToggleCollapse={vi.fn()} />,
+    );
+
+    // Both the parent and the intermediate child must be expanded for the grandchild to render
+    expect(screen.getByText('Parent 1')).toBeInTheDocument();
+    expect(screen.getByText('Child 1')).toBeInTheDocument();
+    expect(screen.getByText('Grandchild 1')).toBeInTheDocument();
+
+    const stored = localStorage.getItem('aider-desk-expanded-tasks');
+    expect(stored).not.toBeNull();
+    const expandedIds = JSON.parse(stored!) as string[];
+    expect(expandedIds).toContain('parent-1');
+    expect(expandedIds).toContain('child-1');
+  });
 });

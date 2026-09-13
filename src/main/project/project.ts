@@ -95,15 +95,12 @@ export class Project {
 
     let parentTask: Task | null = null;
     if (normalizedParams.parentId) {
-      parentTask = this.getTask(normalizedParams.parentId);
+      const resolvedParentId = this.resolveParentId(normalizedParams.parentId);
+      parentTask = resolvedParentId ? this.getTask(resolvedParentId) : null;
       if (!parentTask) {
         throw new Error(`Parent task with id ${normalizedParams.parentId} not found`);
       }
-
-      // Flatten: if the parent is itself a subtask, use its parent instead for parentId
-      if (parentTask.task.parentId) {
-        normalizedParams.parentId = parentTask.task.parentId;
-      }
+      normalizedParams.parentId = parentTask.task.id;
 
       if (!parentTask.task.createdAt) {
         // when a subtask for non-saved task is created we need to save the parent task first
@@ -171,6 +168,100 @@ export class Project {
     }
 
     return task.task;
+  }
+
+  /**
+   * Number of ancestors above the given task. A top-level task has depth 0, a
+   * subtask depth 1, a sub-subtask depth 2. Guards against cycles.
+   */
+  private getTaskDepth(taskData: TaskData): number {
+    let depth = 0;
+    let currentParentId = taskData.parentId ?? null;
+    const seen = new Set<string>([taskData.id]);
+
+    while (currentParentId && !seen.has(currentParentId)) {
+      seen.add(currentParentId);
+      depth++;
+      currentParentId = this.getTask(currentParentId)?.task.parentId ?? null;
+    }
+
+    return depth;
+  }
+
+  /** Number of levels of descendants below the given task. Zero for a leaf. */
+  public getSubtreeHeight(taskId: string): number {
+    const tasks = Array.from(this.tasks.values()).map((task) => task.task);
+    const heightOf = (id: string, seen: Set<string>): number => {
+      const children = tasks.filter((t) => t.parentId === id && !seen.has(t.id));
+      if (children.length === 0) {
+        return 0;
+      }
+      children.forEach((child) => seen.add(child.id));
+      return 1 + Math.max(...children.map((child) => heightOf(child.id, seen)));
+    };
+    return heightOf(taskId, new Set([taskId]));
+  }
+
+  private isTaskDescendantOf(taskId: string, ancestorId: string): boolean {
+    const seen = new Set<string>([taskId]);
+    let currentParentId = this.getTask(taskId)?.task.parentId ?? null;
+    while (currentParentId && !seen.has(currentParentId)) {
+      if (currentParentId === ancestorId) {
+        return true;
+      }
+      seen.add(currentParentId);
+      currentParentId = this.getTask(currentParentId)?.task.parentId ?? null;
+    }
+    return false;
+  }
+
+  /**
+   * Resolve the parent a task can actually be attached to under the configured
+   * maximum nesting depth. Walks up from the requested parent until it reaches
+   * an ancestor shallow enough that the task, together with `subtreeHeight`
+   * levels of its own descendants, fits within the limit. Returns null when the
+   * task can only live at the top level. Throws when the requested parent does
+   * not exist.
+   */
+  public resolveParentId(requestedParentId: string | null | undefined, subtreeHeight = 0): string | null {
+    if (!requestedParentId) {
+      return null;
+    }
+
+    let parentTask = this.getTask(requestedParentId);
+    if (!parentTask) {
+      throw new Error(`Parent task with id ${requestedParentId} not found`);
+    }
+
+    const maxParentDepth = (this.store.getSettings().taskSettings?.allowSubSubTasks ? 1 : 0) - subtreeHeight;
+    if (maxParentDepth < 0) {
+      return null;
+    }
+
+    while (parentTask.task.parentId && this.getTaskDepth(parentTask.task) > maxParentDepth) {
+      const ancestor = this.getTask(parentTask.task.parentId);
+      if (!ancestor) {
+        break;
+      }
+      parentTask = ancestor;
+    }
+
+    return parentTask.task.id;
+  }
+
+  /**
+   * Resolve the parent an existing task may be moved under. Refuses to attach a
+   * task to itself or to one of its own descendants, and clamps the requested
+   * parent so the task's whole subtree stays within the maximum nesting depth.
+   */
+  public resolveReparentTarget(taskId: string, requestedParentId: string | null | undefined): string | null {
+    if (!requestedParentId) {
+      return null;
+    }
+    if (requestedParentId === taskId || this.isTaskDescendantOf(requestedParentId, taskId)) {
+      throw new Error(`Task ${taskId} cannot be moved under itself or one of its own subtasks`);
+    }
+    return this.resolveParentId(requestedParentId, this.getSubtreeHeight(taskId));
   }
 
   private generateShortTaskId(): string {
@@ -465,26 +556,34 @@ export class Project {
 
   public async deleteTask(taskId: string): Promise<void> {
     try {
-      // First, find and delete all subtasks recursively
+      // Collect every descendant, deepest first, so children are always removed
+      // before their parent.
       const allTasks = await this.getTasks();
-      const subtasks = allTasks.filter((t) => t.parentId === taskId);
+      const descendants: TaskData[] = [];
+      const collectDescendants = (parentId: string) => {
+        for (const candidate of allTasks.filter((t) => t.parentId === parentId)) {
+          collectDescendants(candidate.id);
+          descendants.push(candidate);
+        }
+      };
+      collectDescendants(taskId);
 
-      for (const subtask of subtasks) {
-        await this.deleteTaskInternal(subtask.id);
+      for (const descendant of descendants) {
+        await this.deleteTaskInternal(descendant.id);
         logger.info('Successfully deleted subtask', {
           baseDir: this.baseDir,
-          parentTaskId: taskId,
-          subtaskId: subtask.id,
+          parentTaskId: descendant.parentId,
+          subtaskId: descendant.id,
         });
       }
 
-      // Then delete the parent task
+      // Then delete the task itself
       await this.deleteTaskInternal(taskId);
 
       logger.info('Successfully deleted task with subtasks', {
         baseDir: this.baseDir,
         taskId,
-        subtaskCount: subtasks.length,
+        subtaskCount: descendants.length,
       });
     } catch (error) {
       logger.error('Failed to delete task:', {
@@ -508,7 +607,7 @@ export class Project {
       ...sourceTask.task,
       // When the source task has a worktree, make the duplicate a subtask
       // so both tasks sharing the same worktree are clearly related
-      ...(hasWorktree ? { parentId: sourceTask.task.parentId || taskId } : {}),
+      ...(hasWorktree ? { parentId: this.resolveParentId(taskId) } : {}),
       state: sourceTask.task.state === DefaultTaskState.InProgress ? DefaultTaskState.Todo : sourceTask.task.state,
     });
     await newTask.init();
@@ -526,7 +625,7 @@ export class Project {
 
     const newTask = await this.prepareTask(undefined, {
       ...sourceTask.task,
-      parentId: sourceTask.task.parentId || sourceTask.task.id,
+      parentId: this.resolveParentId(sourceTask.task.id),
       state: sourceTask.task.state === DefaultTaskState.InProgress ? DefaultTaskState.Todo : sourceTask.task.state,
     });
     await newTask.init();

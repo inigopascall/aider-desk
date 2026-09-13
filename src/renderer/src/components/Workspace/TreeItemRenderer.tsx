@@ -321,7 +321,7 @@ export const TreeItemRenderer = ({
         <div className="flex items-center gap-1 flex-shrink-0 group">
           {useAlignedControlSlots ? (
             <>
-              <span className={ICON_SLOT_CLASS}>{leadingIcons}</span>
+              <span className={`${ICON_SLOT_CLASS} mr-[2px]`}>{leadingIcons}</span>
               <span className={CHECKBOX_SLOT_CLASS}>{checkboxControls}</span>
               {removeControl ?? <span className={DELETE_SLOT_CLASS} aria-hidden="true" />}
             </>
