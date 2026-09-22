@@ -13,6 +13,7 @@ import { MessagesTaskProvider } from '@/contexts/MessagesTaskContext';
 import { useProcessedMessages } from '@/hooks/useProcessedMessages';
 import { composeMessagesWithWorkflowRuns } from '@/utils/workflow-messages';
 import { EMPTY_WORKFLOW_RUNS, WorkflowRunState } from '@/stores/taskStore';
+import { IconButton } from '@/components/common/IconButton';
 
 export type MessagesRef = {
   exportToImage: () => void;

@@ -121,7 +121,7 @@ const createMockProfile = (): AgentProfile => ({
   toolApprovals: {},
   toolSettings: {},
   includeContextFiles: true,
-  includeRepoMap: true,
+  includeRepoMappings: true,
   useAiderTools: true,
   usePowerTools: true,
   useSubagents: false,

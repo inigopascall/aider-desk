@@ -1,6 +1,6 @@
 import { AutonomyMode, InputHistoryData, ProjectStartMode, TaskCreatedData, TaskData, DefaultTaskState } from '@common/types';
 import { useTranslation } from 'react-i18next';
-import { Activity, startTransition, useCallback, useEffect, useLayoutEffect, useOptimistic, useRef, useState, useTransition } from 'react';
+import { startTransition, useCallback, useEffect, useLayoutEffect, useOptimistic, useRef, useState } from 'react';
 import { useLocalStorage } from '@reactuses/core';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { clsx } from 'clsx';

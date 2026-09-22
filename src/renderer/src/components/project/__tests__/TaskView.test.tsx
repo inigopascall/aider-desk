@@ -191,7 +191,6 @@ describe('TaskView', () => {
     contextFiles: [],
     question: null,
     aiderModelsData: null,
-    lastActiveAt: null,
     canUndoContextChange: false,
   };
   const mockMessages: Message[] = [];
@@ -223,7 +222,7 @@ describe('TaskView', () => {
     vi.mocked(useOptimizedTaskState).mockReturnValue(mockTaskState);
     vi.mocked(useTaskMessages).mockReturnValue(mockMessages);
     vi.mocked(useModelProviders).mockReturnValue(createMockModelProviderContext());
-    vi.mocked(useAgents).mockReturnValue(createMockAgentsContext());
+    vi.mocked(useAgents).mockReturnValue(createMockAgentsContext() as ReturnType<typeof useAgents>);
     vi.mocked(useResponsive).mockReturnValue(createMockResponsive());
   });
 

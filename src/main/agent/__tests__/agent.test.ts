@@ -1031,7 +1031,7 @@ describe('Agent - prepareMessages sanitisation', () => {
     );
     expect(mappingToolCallIndex).toBeGreaterThanOrEqual(0);
     const mappingToolResult = messages.find(
-      (message: any) => message.role === 'tool' && Array.isArray(message.content) && message.content.some((part: any) => part.type === 'tool-result' && String(part.output).includes('mapping content')),
+      (message: any) => message.role === 'tool' && Array.isArray(message.content) && message.content.some((part: any) => part.type === 'tool-result' && JSON.stringify(part.output).includes('mapping content')),
     );
     expect(mappingToolResult).toBeDefined();
 
@@ -1042,7 +1042,7 @@ describe('Agent - prepareMessages sanitisation', () => {
     expect(workingFilesMessage).toBeDefined();
 
     // 3. Mappings are injected before the working-files listing.
-    const workingFilesIndex = messages.indexOf(workingFilesMessage);
+    const workingFilesIndex = messages.indexOf(workingFilesMessage!);
     expect(mappingToolCallIndex).toBeLessThan(workingFilesIndex);
   });
 });
@@ -1098,7 +1098,12 @@ describe('Agent - runAgent lifecycle persistence', () => {
     });
 
     const mockStore = {
-      getSettings: vi.fn(() => ({})),
+      getSettings: vi.fn(() => ({
+        taskSettings: {
+          contextCompactingThreshold: { percentage: 0, tokens: 0 },
+          contextCompactionType: ContextCompactionType.Compact,
+        },
+      })),
       getUserId: vi.fn(() => 'test-user'),
     };
     const mockAgentProfileManager = { getProjectProfiles: vi.fn(() => []) };

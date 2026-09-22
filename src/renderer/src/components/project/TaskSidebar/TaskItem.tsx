@@ -18,7 +18,6 @@ import { LoadingText } from '@/components/common/LoadingText';
 import { TaskStateChip } from '@/components/common/TaskStateChip';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
 import { Tooltip } from '@/components/ui/Tooltip';
-import { countAllSubtasks } from '@/utils/task-utils';
 
 type Props = {
   task: TaskData;
@@ -315,7 +314,6 @@ export const TaskItem = memo(
           }}
           onClick={(e) => onTaskClick(e, task.id)}
           data-task-id={task.id}
-          style={level > 0 ? { marginLeft: `${level * 8}px` } : undefined}
         >
           {isSubtask && <div className="absolute left-[-1px] top-[-1px] bottom-[-1px] w-px bg-bg-secondary" />}
 

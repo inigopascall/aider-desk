@@ -42,6 +42,7 @@ type Props = {
   onRevert: () => void;
   onRenameBranch: (newBranchName: string) => Promise<void>;
   isMerging: boolean;
+  disabled?: boolean;
 };
 
 export const TaskGitControls = ({
@@ -56,6 +57,7 @@ export const TaskGitControls = ({
   onRevert,
   onRenameBranch,
   isMerging,
+  disabled = false,
 }: Props) => {
   const { t } = useTranslation();
   const api = useApi();
@@ -332,9 +334,9 @@ export const TaskGitControls = ({
         </span>
       ) : (
         <>
-          {task.workingMode === 'worktree' && task.lastMergeState && <WorktreeRevertButton onRevert={onRevert} disabled={isMerging} />}
+          {task.workingMode === 'worktree' && task.lastMergeState && <WorktreeRevertButton onRevert={onRevert} disabled={isMerging || disabled} />}
           {isGitRepo === false ? (
-            <GitInitButton baseDir={task.baseDir} taskId={task.id} disabled={isMerging} onInitialized={handleGitInitialized} />
+            <GitInitButton baseDir={task.baseDir} taskId={task.id} disabled={isMerging || disabled} onInitialized={handleGitInitialized} />
           ) : (
             isGitRepo && (
               <GitBranchesButton
@@ -343,7 +345,7 @@ export const TaskGitControls = ({
                 worktreePath={task.workingMode === 'worktree' ? task.worktree?.path : undefined}
                 status={worktreeStatus}
                 taskName={task.name}
-                disabled={isMerging}
+                disabled={isMerging || disabled}
                 onSwitchToLocal={handleSwitchToLocal}
                 onSwitchToWorktree={handleSwitchToWorktree}
                 willShowConfirmDialog={willShowConfirmDialog}

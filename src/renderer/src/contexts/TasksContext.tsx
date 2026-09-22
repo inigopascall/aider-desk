@@ -15,8 +15,6 @@ import { useTaskMessageHandlers } from '@/hooks/useTaskMessageHandlers';
 import { useTaskLifecycleHandlers } from '@/hooks/useTaskLifecycleHandlers';
 import { useTaskWorkflowLogHandlers } from '@/hooks/useTaskWorkflowLogHandlers';
 import { useTaskActions } from '@/hooks/useTaskActions';
-import { useApi } from '@/contexts/ApiContext';
-import { convertTaskStateMessages } from '@/utils/task-messages';
 
 const TASK_INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const INACTIVITY_CHECK_INTERVAL_MS = 60 * 1000; // Check every minute
@@ -102,7 +100,6 @@ type Props = {
 
 export const TasksProvider = ({ baseDir, tasks, activeTaskId, children }: Props) => {
   const taskActions = useTaskActions({ baseDir });
-  const api = useApi();
 
   const inactivityCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 

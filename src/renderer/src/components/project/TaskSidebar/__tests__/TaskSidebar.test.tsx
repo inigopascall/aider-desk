@@ -173,8 +173,8 @@ describe('TaskSidebar', () => {
 
   it('sorts tasks by updatedAt descending', () => {
     const tasks = [
-      { id: 'task-1', name: 'Task 1', updatedAt: '2023-01-01T00:00:00Z' },
-      { id: 'task-2', name: 'Task 2', updatedAt: '2023-01-02T00:00:00Z' },
+      { id: 'task-1', name: 'Task 1', createdAt: '2023-01-01T00:00:00Z', updatedAt: '2023-01-01T00:00:00Z' },
+      { id: 'task-2', name: 'Task 2', createdAt: '2023-01-02T00:00:00Z', updatedAt: '2023-01-02T00:00:00Z' },
     ] as TaskData[];
 
     const { container } = render(
@@ -203,9 +203,13 @@ describe('TaskSidebar', () => {
     const task = {
       id: 'task-1',
       name: 'Task 1',
+      baseDir: '/test/project',
+      aiderTotalCost: 0,
+      agentTotalCost: 0,
+      mainModel: 'test-provider/test-model',
       createdAt: '2023-01-01T00:00:00Z',
       updatedAt: '2023-01-01T00:00:00Z',
-      state: 'todo',
+      state: 'TODO',
       metadata: { existing: 'value' },
     } as TaskData;
 
@@ -230,19 +234,19 @@ describe('TaskSidebar', () => {
       return matches[matches.length - 1];
     };
 
-    expect(getMenuStateText('todo')).toBeInTheDocument();
-    expect(getMenuStateText('readyForImplementation')).toBeInTheDocument();
-    expect(getMenuStateText('readyForReview')).toBeInTheDocument();
-    expect(getMenuStateText('moreInfoNeeded')).toBeInTheDocument();
-    expect(getMenuStateText('done')).toBeInTheDocument();
+    expect(getMenuStateText('TODO')).toBeInTheDocument();
+    expect(getMenuStateText('READY_FOR_IMPLEMENTATION')).toBeInTheDocument();
+    expect(getMenuStateText('READY_FOR_REVIEW')).toBeInTheDocument();
+    expect(getMenuStateText('MORE_INFO_NEEDED')).toBeInTheDocument();
+    expect(getMenuStateText('DONE')).toBeInTheDocument();
     expect(screen.queryByText('#E74C3C')).not.toBeInTheDocument();
-    expect(getMenuStateText('readyForReview')).toHaveClass('text-success-light');
-    expect(getMenuStateText('moreInfoNeeded')).toHaveClass('text-error');
-    expect(getMenuStateText('readyForReview')).toHaveClass('border-border-dark-light', 'bg-bg-tertiary-emphasis');
+    expect(getMenuStateText('READY_FOR_REVIEW')).toHaveClass('text-success-light');
+    expect(getMenuStateText('MORE_INFO_NEEDED')).toHaveClass('text-error');
+    expect(getMenuStateText('READY_FOR_REVIEW')).toHaveClass('border-border-dark-light', 'bg-bg-tertiary-emphasis');
 
-    fireEvent.click(getMenuStateText('done'));
+    fireEvent.click(getMenuStateText('DONE'));
     await waitFor(() => {
-      expect(updateTask).toHaveBeenCalledWith(task.id, { state: 'done' });
+      expect(updateTask).toHaveBeenCalledWith(task.id, { state: 'DONE' });
     });
     expect(screen.getByText('taskSidebar.changeState')).toBeInTheDocument();
     expect(screen.getByText('taskSidebar.highlightTask')).toBeInTheDocument();

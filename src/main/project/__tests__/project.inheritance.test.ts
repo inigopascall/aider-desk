@@ -54,6 +54,7 @@ describe('Project Inheritance', () => {
 
     mockModelManager = {
       getProviderModels: vi.fn().mockResolvedValue({ models: [] }),
+      getProviders: vi.fn(() => []),
     };
 
     mockGitManager = {
@@ -221,6 +222,6 @@ describe('Project Inheritance', () => {
 
     const newTask = await project.createNewTask({ parentId: 'subtask-id' });
 
-    expect(newTask.parentId).toBe('subtask-id');
+    expect(newTask.parentId).toBe('top-level-parent');
   });
 });

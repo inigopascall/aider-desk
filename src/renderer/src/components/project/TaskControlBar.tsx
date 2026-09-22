@@ -15,6 +15,7 @@ import { WorkflowConfigModal } from '@/components/PromptField/WorkflowConfigModa
 import { Button } from '@/components/common/Button';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
 import { useProjectSettings } from '@/contexts/ProjectSettingsContext';
+import { openSettingsPage } from '@/stores/settingsNavigationStore';
 
 export type TaskControlBarRef = {
   openAgentProfileSelector: () => void;
@@ -55,7 +56,6 @@ export const TaskControlBar = forwardRef<TaskControlBarRef, Props>(
       onToggleTaskInfoPanel,
       onExpandEditor,
       onAutonomyModeChanged,
-      showSettingsPage,
       canUndoContextChange,
       onUndoContextChange,
       selectedWorkflowId,
@@ -133,7 +133,6 @@ export const TaskControlBar = forwardRef<TaskControlBarRef, Props>(
             projectDir={baseDir}
             task={task}
             isActive={isActive}
-            showSettingsPage={showSettingsPage}
             disabled={isWorkflowSelected}
           />
         )}
@@ -149,21 +148,19 @@ export const TaskControlBar = forwardRef<TaskControlBarRef, Props>(
         />
         {onWorkflowChange && availableWorkflows.length > 0 && (
           <>
-          {showSettingsPage && (
             <Tooltip content={t('workflowsSettings.openSettings')}>
               <Button
                 variant="text"
                 color="tertiary"
                 size="xs"
-                onClick={() => showSettingsPage('workflows')}
+                onClick={() => openSettingsPage('workflows')}
                 aria-label={t('workflowsSettings.openSettings')}
                 title={t('workflowsSettings.openSettings')}
               >
                 <FaCog className="w-3.5 h-3.5 text-text-secondary" />
               </Button>
             </Tooltip>
-          )}
-          <WorkflowSelector
+            <WorkflowSelector
               workflows={availableWorkflows}
               selectedWorkflowId={selectedWorkflowId ?? null}
               onWorkflowClick={handleWorkflowClick}

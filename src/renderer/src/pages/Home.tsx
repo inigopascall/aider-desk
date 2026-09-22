@@ -563,7 +563,7 @@ export const Home = () => {
   // Logs) so the portal never lingers on the destination view.
   useLayoutEffect(() => {
     useMarkdownEditorOverlayStore.getState().requestClose();
-  }, [activeProject, showSettingsInfo, isUsageDashboardVisible, isModelLibraryVisible, isLogsVisible]);
+  }, [activeProject, settingsPage, isUsageDashboardVisible, isModelLibraryVisible, isLogsVisible]);
 
   return (
     <div className="flex flex-col h-full p-[4px] bg-gradient-to-b from-bg-primary to-bg-primary-light">

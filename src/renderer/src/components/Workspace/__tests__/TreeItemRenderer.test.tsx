@@ -71,7 +71,7 @@ describe('TreeItemRenderer context files', () => {
       title: 'file.ts',
       type: 'context' as const,
       treeData: { 'src/file.ts': contextItem },
-      contextFilesMap: new Map([['src/file.ts', contextItem.file]]),
+      contextFilesMap: new Map([['src/file.ts', contextItem.file!]]),
     };
   };
 
@@ -150,9 +150,7 @@ describe('TreeItemRenderer context files', () => {
           ['src/b.ts', second.file!],
         ])}
         onToggleContextFiles={onToggleContextFiles}
-      >
-        <TreeItemRenderer {...createProps()} item={first} title="a.ts" type="context" treeData={{}} contextFilesMap={new Map()} />
-      </TreeItemRenderer>,
+      />,
     );
 
     const checkbox = screen.getByRole('checkbox');

@@ -40,6 +40,8 @@ vi.mock('@/constants', () => ({
   AIDER_DESK_WATCH_FILES_LOCK: '.aider-desk/watch-files.lock',
   WORKTREE_BRANCH_PREFIX: 'aider-desk/task/',
   AIDER_DESK_MEMORY_FILE: '/data/memory.db',
+  AIDER_DESK_DATA_DIR: '/data',
+  AIDER_DESK_CACHE_DIR: '/data/cache',
   LOGS_DIR: '/logs',
 }));
 vi.mock('@/utils');

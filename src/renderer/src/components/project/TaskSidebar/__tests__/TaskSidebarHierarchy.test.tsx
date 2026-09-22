@@ -65,6 +65,17 @@ vi.mock('@/components/extensions/ExtensionComponentWrapper', () => ({
   ExtensionComponentWrapper: () => null,
 }));
 
+// Enable sub-subtasks so hierarchy controls render at every level
+vi.mock('@/stores/settingsStore', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/stores/settingsStore')>();
+  return {
+    ...actual,
+    useSettingsStore: vi.fn((selector: (state: { settings: unknown }) => unknown) =>
+      selector({ settings: { taskSettings: { allowSubSubTasks: true } } }),
+    ),
+  };
+});
+
 // Mock localStorage
 const localStorageMock = (() => {
   let store: Record<string, string> = {};
@@ -165,6 +176,7 @@ describe('TaskSidebar Hierarchy', () => {
     expect(screen.getByText('Grandchild 1')).toBeInTheDocument();
     expect(screen.getByTestId('chevron-child-1')).toBeInTheDocument();
     expect(screen.getByTestId('create-subtask-child-1')).toBeInTheDocument();
-    expect(screen.getByTestId('create-subtask-grandchild-1')).toBeInTheDocument();
+    // A grandchild sits at the maximum nesting depth, so it offers no create-subtask control
+    expect(screen.queryByTestId('create-subtask-grandchild-1')).not.toBeInTheDocument();
   });
 });

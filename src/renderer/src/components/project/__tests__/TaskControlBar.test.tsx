@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { AVAILABLE_WORKFLOWS } from '@common/types';
 
@@ -65,6 +65,7 @@ const task = {
   currentMode: 'agent',
   agentTotalCost: 0,
   aiderTotalCost: 0,
+  mainModel: 'test-provider/test-model',
 };
 
 const renderBar = (
@@ -110,7 +111,7 @@ describe('TaskControlBar workflow controls', () => {
     const onWorkflowChange = vi.fn();
     renderBar(null, onWorkflowChange);
 
-    screen.getByTestId('workflow-selector').click();
+    fireEvent.click(screen.getByTestId('workflow-selector'));
 
     expect(screen.getByTestId('workflow-config-modal')).toBeInTheDocument();
     expect(onWorkflowChange).not.toHaveBeenCalled();
@@ -120,8 +121,8 @@ describe('TaskControlBar workflow controls', () => {
     const onWorkflowChange = vi.fn();
     renderBar(null, onWorkflowChange);
 
-    screen.getByTestId('workflow-selector').click();
-    screen.getByText('Cancel workflow').click();
+    fireEvent.click(screen.getByTestId('workflow-selector'));
+    fireEvent.click(screen.getByText('Cancel workflow'));
 
     expect(screen.queryByTestId('workflow-config-modal')).not.toBeInTheDocument();
     expect(onWorkflowChange).not.toHaveBeenCalled();
@@ -132,8 +133,8 @@ describe('TaskControlBar workflow controls', () => {
     const workflowId = AVAILABLE_WORKFLOWS[0].id;
     renderBar(null, onWorkflowChange);
 
-    screen.getByTestId('workflow-selector').click();
-    screen.getByText('Save workflow').click();
+    fireEvent.click(screen.getByTestId('workflow-selector'));
+    fireEvent.click(screen.getByText('Save workflow'));
 
     expect(onWorkflowChange).toHaveBeenCalledWith(workflowId);
     expect(screen.queryByTestId('workflow-config-modal')).not.toBeInTheDocument();
@@ -145,8 +146,8 @@ describe('TaskControlBar workflow controls', () => {
     const workflowId = AVAILABLE_WORKFLOWS[0].id;
     renderBar(null, onWorkflowChange, onWorkflowRun);
 
-    screen.getByTestId('workflow-selector').click();
-    screen.getByText('Run workflow').click();
+    fireEvent.click(screen.getByTestId('workflow-selector'));
+    fireEvent.click(screen.getByText('Run workflow'));
 
     expect(onWorkflowRun).toHaveBeenCalledWith(workflowId);
     expect(onWorkflowChange).not.toHaveBeenCalled();
@@ -158,7 +159,7 @@ describe('TaskControlBar workflow controls', () => {
     const workflowId = AVAILABLE_WORKFLOWS[0].id;
     renderBar(workflowId, onWorkflowChange);
 
-    screen.getByTestId('workflow-selector').click();
+    fireEvent.click(screen.getByTestId('workflow-selector'));
 
     expect(onWorkflowChange).toHaveBeenCalledWith(null);
     expect(screen.queryByTestId('workflow-config-modal')).not.toBeInTheDocument();

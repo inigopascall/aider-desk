@@ -35,12 +35,11 @@ type Props = {
   projectDir: string;
   task: TaskData;
   isActive: boolean;
-  showSettingsPage?: (pageId?: string, options?: Record<string, unknown>) => void;
   disabled?: boolean;
 };
 
 export const AgentSelector = memo(
-  forwardRef<AgentSelectorRef, Props>(({ projectDir, task, isActive, showSettingsPage, disabled = false }: Props, ref) => {
+  forwardRef<AgentSelectorRef, Props>(({ projectDir, task, isActive, disabled = false }: Props, ref) => {
     const { t } = useTranslation();
     const { getMergedServers } = useMcpServers();
     const mcpServers = useMemo(() => getMergedServers(projectDir), [getMergedServers, projectDir]);
@@ -534,7 +533,6 @@ export const AgentSelector = memo(
       prevProps.task.id === nextProps.task.id &&
       prevProps.task.agentProfileId === nextProps.task.agentProfileId &&
       prevProps.isActive === nextProps.isActive &&
-      prevProps.showSettingsPage === nextProps.showSettingsPage &&
       prevProps.disabled === nextProps.disabled
     );
   },
