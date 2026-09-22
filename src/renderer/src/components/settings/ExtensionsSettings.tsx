@@ -1,5 +1,5 @@
 import { AvailableExtension, InstalledExtension, ProjectData, SettingsData } from '@common/types';
-import { Activity, useCallback, useEffect, useMemo, useState } from 'react';
+import { Activity, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMount } from '@reactuses/core';
 import { useTranslation } from 'react-i18next';
 import { FaChevronDown, FaChevronLeft, FaChevronRight, FaPlus, FaSearch, FaSync, FaTrash } from 'react-icons/fa';
@@ -13,6 +13,7 @@ import { IconButton } from '@/components/common/IconButton';
 import { Input } from '@/components/common/Input';
 import { showErrorNotification, showSuccessNotification } from '@/utils/notifications';
 import { LoadingOverlay } from '@/components/common/LoadingOverlay';
+import { Select } from '@/components/common/Select';
 import { ExtensionCard } from '@/components/settings/ExtensionCard';
 
 // Helper to format repository URL for display
@@ -50,6 +51,11 @@ enum Tab {
   Installed = 'installed',
 }
 
+enum ExtensionSort {
+  MostInstalled = 'most-installed',
+  Name = 'name',
+}
+
 type Props = {
   settings: SettingsData;
   setSettings: (settings: SettingsData) => void;
@@ -62,6 +68,12 @@ export const ExtensionsSettings = ({ settings, setSettings, openProjects = [], s
   const api = useApi();
 
   const [activeTab, setActiveTab] = useState<Tab>(Tab.Installed);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const handleTabChange = (tab: Tab) => {
+    setActiveTab(tab);
+    searchInputRef.current?.focus();
+  };
   const [installedExtensions, setInstalledExtensions] = useState<InstalledExtension[]>([]);
   const [availableExtensions, setAvailableExtensions] = useState<AvailableExtension[]>([]);
   const [loadingInstalled, setLoadingInstalled] = useState(false);
@@ -74,6 +86,11 @@ export const ExtensionsSettings = ({ settings, setSettings, openProjects = [], s
   const [expandedRepositories, setExpandedRepositories] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCapabilities, setSelectedCapabilities] = useState<Set<string>>(new Set());
+  const [availableSort, setAvailableSort] = useState<ExtensionSort>(ExtensionSort.MostInstalled);
+
+  const handleAvailableSortChange = (value: string) => {
+    setAvailableSort(value as ExtensionSort);
+  };
 
   // Track repositories that are currently being loaded
   const [loadingRepositories, setLoadingRepositories] = useState<Set<string>>(new Set());
@@ -173,7 +190,11 @@ export const ExtensionsSettings = ({ settings, setSettings, openProjects = [], s
     try {
       const success = await api.uninstallExtension(extensionFilePath, projectDir);
       if (success) {
-        showSuccessNotification(t('settings.extensions.success.uninstall', { name: extensionFilePath }));
+        showSuccessNotification(
+          t('settings.extensions.success.uninstall', {
+            name: extensionFilePath,
+          }),
+        );
         await loadInstalledExtensions();
         await loadAvailableExtensions();
       } else {
@@ -460,12 +481,22 @@ export const ExtensionsSettings = ({ settings, setSettings, openProjects = [], s
     return true;
   });
 
+  const sortedAvailableExtensions = [...filteredAvailableExtensions].sort((a, b) => {
+    if (availableSort === ExtensionSort.MostInstalled) {
+      const diff = (b.installCount ?? 0) - (a.installCount ?? 0);
+      if (diff !== 0) {
+        return diff;
+      }
+    }
+    return a.name.localeCompare(b.name);
+  });
+
   const renderAvailableTab = () => {
     // Group all extensions by repository URL
     const extensionsByRepository = new Map<string, AvailableExtension[]>();
 
     // Add all available extensions to the map
-    filteredAvailableExtensions.forEach((extension) => {
+    sortedAvailableExtensions.forEach((extension) => {
       const repo = extension.repositoryUrl;
       if (!extensionsByRepository.has(repo)) {
         extensionsByRepository.set(repo, []);
@@ -621,10 +652,10 @@ export const ExtensionsSettings = ({ settings, setSettings, openProjects = [], s
   return (
     <div className="space-y-4">
       {/* Tab Navigation */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex gap-1 p-1 bg-bg-primary rounded-lg border border-border-default">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex gap-1 p-1 bg-bg-primary rounded-lg border border-border-default flex-shrink-0">
           <button
-            onClick={() => setActiveTab(Tab.Installed)}
+            onClick={() => handleTabChange(Tab.Installed)}
             className={clsx(
               'px-4 py-2 text-sm font-medium rounded-md transition-all duration-200',
               activeTab === Tab.Installed ? 'bg-bg-tertiary text-text-primary shadow-sm' : 'text-text-muted hover:text-text-secondary hover:bg-bg-tertiary',
@@ -636,7 +667,7 @@ export const ExtensionsSettings = ({ settings, setSettings, openProjects = [], s
             )}
           </button>
           <button
-            onClick={() => setActiveTab(Tab.Available)}
+            onClick={() => handleTabChange(Tab.Available)}
             className={clsx(
               'px-4 py-2 text-sm font-medium rounded-md transition-all duration-200',
               activeTab === Tab.Available ? 'bg-bg-tertiary text-text-primary shadow-sm' : 'text-text-muted hover:text-text-secondary hover:bg-bg-tertiary',
@@ -646,40 +677,61 @@ export const ExtensionsSettings = ({ settings, setSettings, openProjects = [], s
             {availableExtensions.length > 0 && <span className="ml-2 text-2xs px-1.5 py-0.5 rounded-full bg-bg-tertiary">{availableExtensions.length}</span>}
           </button>
         </div>
-        <div className="flex items-center justify-between w-[200px]">
-          <IconButton
-            icon={<FaChevronLeft className="w-3 h-3" />}
-            onClick={() => navigateContext('prev')}
-            tooltip={t('settings.extensions.previousContext')}
-            disabled={contexts.length <= 1}
-            className="p-1"
-          />
-          <div className="text-xs text-text-secondary truncate flex-1 text-center">{getContextDisplayName()}</div>
-          <IconButton
-            icon={<FaChevronRight className="w-3 h-3" />}
-            onClick={() => navigateContext('next')}
-            tooltip={t('settings.extensions.nextContext')}
-            disabled={contexts.length <= 1}
-            className="p-1"
-          />
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 ml-auto">
+          <div className="flex items-center justify-between flex-1 min-w-[180px] max-w-[200px]">
+            <IconButton
+              icon={<FaChevronLeft className="w-3 h-3" />}
+              onClick={() => navigateContext('prev')}
+              tooltip={t('settings.extensions.previousContext')}
+              disabled={contexts.length <= 1}
+              className="p-1"
+            />
+            <div className="text-xs text-text-secondary truncate flex-1 text-center">{getContextDisplayName()}</div>
+            <IconButton
+              icon={<FaChevronRight className="w-3 h-3" />}
+              onClick={() => navigateContext('next')}
+              tooltip={t('settings.extensions.nextContext')}
+              disabled={contexts.length <= 1}
+              className="p-1"
+            />
+          </div>
+          <Button onClick={handleRefresh} disabled={isLoading} variant="outline" size="sm">
+            <FaSync className={clsx('mr-1.5 w-3 h-3', isLoading && 'animate-spin')} />
+            {t('common.refresh')}
+          </Button>
         </div>
-        <Button onClick={handleRefresh} disabled={isLoading} variant="outline" size="sm">
-          <FaSync className={clsx('mr-1.5 w-3 h-3', isLoading && 'animate-spin')} />
-          {t('common.refresh')}
-        </Button>
       </div>
 
       {/* Search and Filters */}
       <div className="space-y-2">
-        <div className="relative">
-          <FaSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none" />
-          <Input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t('settings.extensions.search.placeholder')}
-            className="pl-10 bg-bg-primary border w-full"
-            wrapperClassName="w-full"
-          />
+        <div className="flex items-center gap-4">
+          <div className="relative flex-1">
+            <FaSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none" />
+            <Input
+              ref={searchInputRef}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              autoFocus
+              placeholder={t('settings.extensions.search.placeholder')}
+              className="pl-10 bg-bg-primary border w-full"
+              wrapperClassName="w-full"
+            />
+          </div>
+          {activeTab === Tab.Available && (
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <span className="text-xs text-text-muted whitespace-nowrap">{t('settings.extensions.sort.label')}</span>
+              <Select
+                value={availableSort}
+                onChange={handleAvailableSortChange}
+                options={[
+                  { label: t('settings.extensions.sort.mostInstalled'), value: ExtensionSort.MostInstalled },
+                  { label: t('settings.extensions.sort.name'), value: ExtensionSort.Name },
+                ]}
+                size="sm"
+                className="min-w-[11rem]"
+              />
+            </div>
+          )}
         </div>
 
         {allCapabilities.length > 0 && (

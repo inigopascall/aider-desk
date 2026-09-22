@@ -56,6 +56,7 @@ export type LlmProviderName =
   | 'openai'
   | 'openai-compatible'
   | 'opencode'
+  | 'opencode-go'
   | 'openrouter'
   | 'requesty'
   | 'synthetic'
@@ -104,6 +105,7 @@ export const AVAILABLE_PROVIDERS: LlmProviderName[] = [
   'openai',
   'openai-compatible',
   'opencode',
+  'opencode-go',
   'openrouter',
   'requesty',
   'synthetic',
@@ -128,6 +130,7 @@ export interface OpenAiProvider extends LlmProviderBase {
   apiKey: string;
   reasoningEffort?: ReasoningEffort;
   useWebSearch: boolean;
+  store?: boolean;
   voice?: Partial<OpenAiVoiceControlSettings>;
 }
 export const isOpenAiProvider = (provider: LlmProviderBase): provider is OpenAiProvider => provider.name === 'openai';
@@ -151,6 +154,8 @@ export interface AnthropicCompatibleProvider extends LlmProviderBase {
   name: 'anthropic-compatible';
   apiKey: string;
   baseUrl?: string;
+  sslVerify?: boolean;
+  caCertPath?: string;
 }
 export const isAnthropicCompatibleProvider = (provider: LlmProviderBase): provider is AnthropicCompatibleProvider => provider.name === 'anthropic-compatible';
 
@@ -169,6 +174,7 @@ export interface AlibabaPlanProvider extends LlmProviderBase {
 export const isAlibabaPlanProvider = (provider: LlmProviderBase): provider is AlibabaPlanProvider => provider.name === 'alibaba-plan';
 
 export enum GeminiVoiceModel {
+  Gemini35TranscribeLive = 'gemini-3.5-transcribe-live',
   Gemini31FlashLivePreview = 'gemini-3.1-flash-live-preview',
   Gemini25FlashNativeAudio = 'gemini-2.5-flash-native-audio-preview-12-2025',
 }
@@ -251,6 +257,8 @@ export interface OpenAiCompatibleProvider extends LlmProviderBase {
   reasoningEffort?: ReasoningEffort;
   trackTokenUsage?: boolean;
   extraBody?: Record<string, unknown>;
+  sslVerify?: boolean;
+  caCertPath?: string;
 }
 export const isOpenAiCompatibleProvider = (provider: LlmProviderBase): provider is OpenAiCompatibleProvider => provider.name === 'openai-compatible';
 
@@ -298,6 +306,12 @@ export interface OpenCodeProvider extends LlmProviderBase {
   apiKey: string;
 }
 export const isOpenCodeProvider = (provider: LlmProviderBase): provider is OpenCodeProvider => provider.name === 'opencode';
+
+export interface OpenCodeGoProvider extends LlmProviderBase {
+  name: 'opencode-go';
+  apiKey: string;
+}
+export const isOpenCodeGoProvider = (provider: LlmProviderBase): provider is OpenCodeGoProvider => provider.name === 'opencode-go';
 
 export interface ZaiPlanProvider extends LlmProviderBase {
   name: 'zai-plan';
@@ -356,6 +370,7 @@ export type LlmProvider =
   | LitellmProvider
   | OllamaProvider
   | OpenCodeProvider
+  | OpenCodeGoProvider
   | OpenRouterProvider
   | RequestyProvider
   | SyntheticProvider
@@ -378,6 +393,7 @@ export const DEFAULT_PROVIDER_MODELS: Partial<Record<LlmProviderName, string>> =
   openai: 'gpt-5.5',
   openrouter: 'anthropic/claude-sonnet-5',
   opencode: 'claude-sonnet-5',
+  'opencode-go': 'grok-4.5',
   requesty: 'anthropic/claude-sonnet-5',
   synthetic: 'hf:zai-org/GLM-5.2',
   'zai-plan': 'glm-5.2',
@@ -670,7 +686,7 @@ export const getDefaultProviderParams = <T extends LlmProvider>(providerName: Ll
         voice: {
           idleTimeoutMs: 5000,
           systemInstructions: DEFAULT_VOICE_SYSTEM_INSTRUCTIONS,
-          model: GeminiVoiceModel.Gemini31FlashLivePreview,
+          model: GeminiVoiceModel.Gemini35TranscribeLive,
           temperature: 0.7,
         },
       } satisfies GeminiProvider;
@@ -780,6 +796,12 @@ export const getDefaultProviderParams = <T extends LlmProvider>(providerName: Ll
         name: 'opencode',
         apiKey: '',
       } satisfies OpenCodeProvider;
+      break;
+    case 'opencode-go':
+      provider = {
+        name: 'opencode-go',
+        apiKey: '',
+      } satisfies OpenCodeGoProvider;
       break;
     case 'lmstudio':
       provider = {

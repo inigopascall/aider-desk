@@ -5,6 +5,48 @@
     "ru": "Русский",
     "ko": "한국어"
   },
+  "commandPalette": {
+    "title": "명령 팔레트",
+    "placeholder": "검색어를 입력하세요...",
+    "noResults": "일치하는 결과가 없습니다",
+    "scrollForMore": "더 많은 결과를 보려면 스크롤하세요",
+    "tabs": {
+      "all": "전체",
+      "file": "파일",
+      "action": "작업",
+      "task": "태스크",
+      "project": "프로젝트"
+    }
+  },
+  "uiActions": {
+    "openModelSelector": "모델 선택기 열기",
+    "changeAgentProfile": "에이전트 프로필 변경",
+    "setAutonomyMode": "자율 모드 전환",
+    "openSettingsPage": "설정 페이지 열기",
+    "showLogs": "로그 표시",
+    "createNewTask": "새 작업 만들기",
+    "createNewSubtask": "새 하위 작업 만들기",
+    "createNewSiblingTask": "새 형제 작업 만들기",
+    "renameTask": "작업 이름 바꾸기",
+    "archiveTask": "작업 보관",
+    "unarchiveTask": "작업 보관 해제",
+    "deleteTask": "작업 삭제",
+    "duplicateTask": "작업 복제",
+    "exportTaskImage": "작업을 이미지로 내보내기",
+    "exportTaskMarkdown": "작업을 Markdown으로 내보내기",
+    "copyTaskMarkdown": "작업을 Markdown으로 복사",
+    "copyTaskId": "작업 ID 복사",
+    "copyTaskIdFailed": "작업 ID 복사 실패",
+    "interruptResponse": "응답 중단",
+    "restartConnector": "Aider 커넥터 재시작",
+    "togglePin": "고정 전환",
+    "moveToTop": "맨 위로 이동",
+    "switchToLocal": "로컬 모드로 전환",
+    "switchToWorktree": "워크트리 모드로 전환",
+    "switchWorkingMode": "작업 모드 전환",
+    "gitAction": "Git 작업",
+    "gitBranches": "Git 브랜치 표시"
+  },
   "common": {
     "settings": "설정",
     "cancel": "취소",
@@ -48,10 +90,16 @@
     "expand": "펼치기",
     "enabled": "사용",
     "noFiles": "파일 없음",
-    "clickToRefresh": "클릭하여 새로고침",
+    "loadingFiles": "파일 로드 중...",
     "closeTasks": "작업 닫기",
     "toggleTasks": "작업 토글",
-    "submit": "제출"
+    "submit": "제출",
+    "inputPrompt": "입력 필요",
+    "rememberSession": "이 세션 동안 기억",
+    "enterPassword": "비밀번호 입력...",
+    "showPassword": "비밀번호 표시",
+    "hidePassword": "비밀번호 숨기기",
+    "clone": "복제"
   },
   "search": {
     "placeholder": "검색...",
@@ -159,7 +207,8 @@
     "openProject": "프로젝트 열기",
     "addFile": "파일 추가",
     "projectView": "프로젝트 보기",
-    "recentProjects": "최근 프로젝트"
+    "recentProjects": "최근 프로젝트",
+    "loadingProjects": "프로젝트를 불러오는 중..."
   },
   "tips": {
     "multipleProjects": "팁: 여러 프로젝트를 열고 상단 탭(또는 CTRL+Tab)을 사용하여 전환할 수 있습니다."
@@ -185,6 +234,13 @@
       "deleteMemoryTitle": "메모리 삭제",
       "deleteMemoryDialogText": "이 메모리를 삭제하시겠습니까?"
     }
+  },
+  "mermaid": {
+    "renderFailed": "다이어그램 렌더링 실패:"
+  },
+  "clinepass": {
+    "getApiKeyLink": "ClinePass API 키 받기",
+    "apiKey": "API 키"
   },
   "modelLibrary": {
     "enableVoiceControl": "음성 제어 사용",
@@ -277,12 +333,15 @@
     "providerDisabled": "이 공급자는 비활성화되어 있습니다. 해당 모델을 사용할 수 없습니다."
   },
   "openai": {
+    "getApiKeyLink": "OpenAI API 키 받기",
     "apiKey": "API 키",
     "baseUrl": "기본 URL",
     "modelName": "모델 이름",
     "baseUrlPlaceholder": "예: http://localhost:8080/v1",
     "useWebSearch": "웹 검색 사용",
-    "useWebSearchTooltip": "활성화하면 모델이 OpenAI의 웹 검색 도구를 사용하여 인터넷에서 최신 정보를 가져옵니다."
+    "useWebSearchTooltip": "활성화하면 모델이 OpenAI의 웹 검색 도구를 사용하여 인터넷에서 최신 정보를 가져옵니다.",
+    "storeResponses": "응답 저장",
+    "storeResponsesTooltip": "활성화하면 OpenAI가 서버 측에 응답을 저장하고, 작업을 재개할 때 대화가 ID로 이를 참조합니다. OpenAI 조직이 제로 데이터 보존(ZDR)을 사용하는 경우 이 옵션을 비활성화하세요. ZDR 조직에서는 저장된 항목이 유지되지 않아 작업 재개 시 \"해당 id의 항목을 찾을 수 없음\" 오류가 발생합니다. 비활성화하면 요청이 상태 비저장 모드로 실행되며 추론은 암호화된 콘텐츠를 통해 재생됩니다."
   },
   "ollama": {
     "baseUrl": "기본 URL",
@@ -294,9 +353,11 @@
     "baseUrlPlaceholder": "예: https://api.anthropic.com"
   },
   "minimax": {
+    "getApiKeyLink": "MiniMax API 키 받기",
     "apiKey": "API 키"
   },
   "gemini": {
+    "getApiKeyLink": "Gemini API 키 받기",
     "apiKey": "API 키",
     "customBaseUrl": "사용자 지정 기본 URL",
     "thinkingBudget": "사고 예산 (토큰)",
@@ -306,16 +367,20 @@
     "useSearchGroundingTooltip": "활성화하면 모델이 검색 결과를 바탕으로 응답 근거를 마련하여 정확성과 관련성을 높입니다."
   },
   "groq": {
+    "getApiKeyLink": "Groq API 키 받기",
     "apiKey": "API 키",
     "modelPlaceholder": "예: moonshotai/kimi-k2-instruct"
   },
   "mistral": {
+    "getApiKeyLink": "Mistral API 키 받기",
     "apiKey": "API 키"
   },
   "kimiPlan": {
+    "getApiKeyLink": "Kimi Coding Plan API 키 받기",
     "apiKey": "API 키"
   },
   "alibabaPlan": {
+    "getApiKeyLink": "Alibaba Coding Plan API 키 받기",
     "apiKey": "API 키",
     "thinkingEnabled": "사고 모드 사용",
     "thinkingEnabledTooltip": "향상된 추론 능력을 위해 사고 모드를 활성화합니다",
@@ -339,19 +404,28 @@
     "sessionTokenTooltip": "임시 자격 증명을 위한 선택적 세션 토큰입니다."
   },
   "cerebras": {
+    "getApiKeyLink": "Cerebras API 키 받기",
     "apiKey": "API 키"
   },
   "neuralwatt": {
+    "getApiKeyLink": "Neuralwatt API 키 받기",
     "apiKey": "API 키"
   },
   "openRouter": {
+    "getApiKeyLink": "OpenRouter API 키 받기",
     "apiKey": "API 키",
     "modelPlaceholder": "예: anthropic/claude-3.7-sonnet"
   },
   "opencode": {
+    "getApiKeyLink": "OpenCode ZEN API 키 받기",
+    "apiKey": "API 키"
+  },
+  "opencodeGo": {
+    "getApiKeyLink": "OpenCode Go API 키 받기",
     "apiKey": "API 키"
   },
   "requesty": {
+    "getApiKeyLink": "Requesty API 키 받기",
     "apiKey": "API 키",
     "modelPlaceholder": "예: claude-4-sonnet",
     "autoCacheLabel": "자동 캐시 사용",
@@ -368,9 +442,11 @@
     "apiKey": "API 키"
   },
   "synthetic": {
+    "getApiKeyLink": "Synthetic API 키 받기",
     "apiKey": "API 키"
   },
   "zaiPlan": {
+    "getApiKeyLink": "Z.AI API 키 받기",
     "apiKey": "API 키",
     "mcp": {
       "title": "MCP 서버",
@@ -424,16 +500,19 @@
     "ollama": "Ollama",
     "openai": "OpenAI",
     "opencode": "OpenCode ZEN",
+    "opencode-go": "OpenCode Go",
     "openai-compatible": "OpenAI 호환",
     "openrouter": "OpenRouter",
     "requesty": "Requesty",
     "synthetic": "Synthetic",
     "vertex-ai": "Vertex AI",
     "zai-plan": "Z.ai Coding Plan",
-    "azure": "Azure"
+    "azure": "Azure",
+    "clinepass": "ClinePass"
   },
   "select": {
-    "placeholder": "옵션 선택"
+    "placeholder": "옵션 선택",
+    "noMatches": "일치 항목 없음"
   },
   "workflowsSettings": {
     "title": "워크플로",
@@ -483,9 +562,11 @@
       "extensions": "확장",
       "server": "서버",
       "network": "네트워크",
-      "about": "정보"
+      "about": "정보",
+      "mcpServers": "MCP 서버"
     },
     "extensions": {
+      "uiErrorIn": "{{component}}에서 오류 발생",
       "loading": "확장을 불러오는 중...",
       "tabs": {
         "installed": "설치됨",
@@ -514,11 +595,17 @@
         "remove": "저장소 제거",
         "default": "기본 저장소"
       },
+      "sort": {
+        "label": "정렬 기준",
+        "mostInstalled": "설치 많은 순",
+        "name": "이름순"
+      },
       "by": "제작자",
       "enabled": "사용",
       "active": "활성",
       "disabled": "비활성",
       "projectSpecific": "프로젝트",
+      "totalInstalls": "총 설치 수",
       "hasDependencies": "종속성 있음",
       "osNotSupported": "지원되지 않음",
       "osNotSupportedTooltip": "이 확장은 현재 운영체제에서 작동하지 않을 수 있습니다. 자세한 내용은 확장 세부 정보를 확인하세요.",
@@ -532,7 +619,8 @@
         "install": "{{name}}을(를) 성공적으로 설치했습니다",
         "update": "{{name}}을(를) 성공적으로 업데이트했습니다",
         "uninstall": "{{name}}을(를) 성공적으로 제거했습니다",
-        "saveSettings": "{{name}}의 설정을 성공적으로 저장했습니다"
+        "saveSettings": "{{name}}의 설정을 성공적으로 저장했습니다",
+        "reload": "{{name}}을(를) 다시 불러왔습니다"
       },
       "errors": {
         "loadInstalled": "설치된 확장을 불러오지 못했습니다",
@@ -545,7 +633,8 @@
         "settingsNotAvailable": "확장 설정을 사용할 수 없습니다",
         "repositoryExists": "이 저장소는 이미 추가되어 있습니다",
         "cannotRemoveDefault": "기본 저장소는 제거할 수 없습니다",
-        "npmNotFound": "시스템에 npm이 설치되어 있지 않습니다. 이 확장은 종속성을 설치하기 위해 npm이 필요합니다. Node.js(npm 포함)를 설치한 후 다시 시도하세요."
+        "npmNotFound": "시스템에 npm이 설치되어 있지 않습니다. 이 확장은 종속성을 설치하기 위해 npm이 필요합니다. Node.js(npm 포함)를 설치한 후 다시 시도하세요.",
+        "reload": "확장을 다시 불러오지 못했습니다"
       },
       "previousContext": "이전 컨텍스트",
       "nextContext": "다음 컨텍스트",
@@ -554,11 +643,14 @@
         "title": "{{name}} 설정"
       },
       "expandReadme": "README 펼치기",
-      "collapseReadme": "README 접기"
+      "collapseReadme": "README 접기",
+      "reload": "다시 불러오기",
+      "reloading": "다시 불러오는 중..."
     },
     "hotkeys": {
       "projectHotkeys": "프로젝트",
       "taskHotkeys": "작업",
+      "gitHotkeys": "Git",
       "dialogHotkeys": "대화 상자",
       "closeProject": "프로젝트 닫기",
       "newProject": "새 프로젝트",
@@ -573,6 +665,7 @@
       "newTask": "새 작업",
       "closeTask": "작업 닫기",
       "browseFolder": "폴더 찾아보기",
+      "commandPalette": "명령 팔레트",
       "enterHotkey": "단축키 입력...",
       "resetToDefaults": "기본값으로 재설정",
       "hotkeyFormat": "단축키 형식:",
@@ -588,7 +681,8 @@
       "recordShortcutDescription": "아래의 기록 버튼을 누른 다음 단축키로 사용할 키 조합을 누르세요.",
       "pressKeysToRecord": "기록할 키를 누르세요...",
       "startRecording": "기록 시작",
-      "stopRecording": "기록 중지"
+      "stopRecording": "기록 중지",
+      "openEditor": "에디터 열기"
     },
     "gui": "모양",
     "voice": {
@@ -648,6 +742,9 @@
       "symlinkFolderPlaceholder": "폴더 이름 (예: node_modules)",
       "addSymlinkFolder": "추가",
       "removeSymlinkFolder": "폴더 제거",
+      "worktreePostCreateCommandLabel": "생성 후 명령어",
+      "worktreePostCreateCommandTooltip": "작업 워크트리 디렉터리가 생성된 후 해당 디렉터리 내에서 실행되는 선택적 셸 명령어입니다. 서브모듈 초기화(예: 'git submodule update --init --recursive')나 데이터 가져오기(예: 'datalad get .')에 유용합니다. 사용 가능한 환경 변수: AIDERDESK_PROJECT_PATH, AIDERDESK_WORKTREE_PATH, AIDERDESK_TASK_ID, AIDERDESK_BRANCH.",
+      "worktreePostCreateCommandPlaceholder": "예: git submodule update --init --recursive",
       "worktreeBranchPrefix": "브랜치 접두사",
       "worktreeBranchPrefixTooltip": "워크트리 브랜치 이름을 만들 때 사용하는 접두사입니다. 예를 들어 'aider-desk/task/'는 'aider-desk/task/my-feature'와 같은 브랜치를 생성합니다.",
       "worktreeBranchPrefixPlaceholder": "예: aider-desk/task/",
@@ -799,7 +896,15 @@
       "resetProfileTitle": "'{{name}}'을(를) 기본값으로 재설정하시겠습니까?",
       "resetProfileConfirm": "'{{name}}'이(가) 원래 기본 설정으로 복원됩니다. 사용자 지정 수정 사항은 모두 사라집니다.",
       "restoreProfile": "복원",
-      "restoreProfileTooltip": "이 기본 프로필 복원"
+      "restoreProfileTooltip": "이 기본 프로필 복원",
+      "configureMcpServers": "MCP 서버 구성",
+      "systemPromptPlaceholders": {
+        "projectDir": "프로젝트 루트 디렉터리의 절대 경로",
+        "taskDir": "이 작업의 작업 디렉터리 (프로젝트 루트 또는 워크트리 사용 시 워크트리 경로)",
+        "currentDate": "현재 날짜 문자열",
+        "osName": "호스트 운영 체제 이름",
+        "projectGitRootDirectory": "작업이 워크트리를 사용하는 경우 프로젝트 git 루트, 그 외에는 비어 있음"
+      }
     },
     "aider": {
       "options": "옵션",
@@ -852,7 +957,8 @@
       "fresh": "Fresh",
       "botanical-garden": "Botanical Garden",
       "botanical-garden-dark": "Botanical Garden (다크)",
-      "obsidian": "Obsidian"
+      "obsidian": "Obsidian",
+      "crimson": "Crimson"
     },
     "aiderRestartConfirm": {
       "title": "재시작 필요",
@@ -953,7 +1059,9 @@
       "corsOrigins": "허용된 출처",
       "corsOriginPlaceholder": "https://example.com",
       "addCorsOrigin": "출처 추가",
-      "corsOriginsDescription": "API에 접근할 수 있는 출처 목록입니다 (예: https://your-dashboard.example.com)."
+      "corsOriginsDescription": "API에 접근할 수 있는 출처 목록입니다 (예: https://your-dashboard.example.com).",
+      "enableReadonlyExtensionUi": "확장 UI 구성 요소 활성화",
+      "enableReadonlyExtensionUiDescription": "읽기 전용 뷰에서 확장 UI 구성 요소를 렌더링합니다. 브라우저를 새로 고치면 적용됩니다."
     },
     "messages": {
       "title": "메시지 표시",
@@ -1014,7 +1122,8 @@
     },
     "notificationsAndFiles": {
       "title": "알림 및 파일"
-    }
+    },
+    "navigation": "탐색"
   },
   "messages": {
     "thinking": "생각하는 중...",
@@ -1059,7 +1168,8 @@
       "empty": "이 대화에 아직 메시지가 없습니다.",
       "emptyBookmarks": "북마크된 메시지가 없습니다.",
       "untitled": "제목 없음"
-    }
+    },
+    "ephemeralGroupTooltip": "이 스레드/그룹은 임시 항목입니다 — 작업과 함께 저장되지 않으며 다시 로드하면 사라집니다"
   },
   "errors": {
     "frozenTitle": "AIDER가 멈췄나요?",
@@ -1088,7 +1198,15 @@
     "openButton": "열기",
     "browseFoldersTooltip": "폴더 찾아보기",
     "projectAlreadyOpenWarning": "이 프로젝트는 이미 열려 있습니다.",
-    "cantOpenProject": "이 프로젝트를 열 수 없습니다."
+    "cantOpenProject": "이 프로젝트를 열 수 없습니다.",
+    "openLocalProject": "로컬 열기",
+    "cloneFromGit": "Git에서 복제",
+    "repositoryUrlPlaceholder": "예: https://github.com/owner/repo.git 또는 git@github.com:owner/repo.git",
+    "cloneDestinationPlaceholder": "기본값: ~/.aider-desk/projects",
+    "repositoryUrlLabel": "저장소 URL",
+    "cloneDestinationLabel": "대상 폴더",
+    "cloningProject": "저장소를 복제하는 중...",
+    "cloneProjectFailed": "프로젝트를 복제하지 못했습니다"
   },
   "mode": {
     "code": "코드",
@@ -1127,9 +1245,23 @@
   "fileChip": {
     "removeFileTooltip": "파일 제거"
   },
-  "filePreview": {
-    "title": "파일 뷰어",
-    "errorLoading": "파일을 불러오지 못했습니다"
+  "fileEditor": {
+    "errorLoading": "파일을 불러오지 못했습니다",
+    "requestChangeOnLine": "이 줄의 변경 요청",
+    "saved": "파일이 저장되었습니다",
+    "errorSaving": "파일을 저장하지 못했습니다: {{error}}",
+    "errorSubmitting": "변경 요청을 제출하지 못했습니다: {{error}}",
+    "saveBeforeSubmitting": "변경 요청을 제출하기 전에 파일을 저장하세요.",
+    "unsavedChanges": "저장되지 않은 변경 사항",
+    "saveShortcut": "저장 (Ctrl+S)",
+    "saveAll": "모두 저장",
+    "saveAllTooltip": "열려 있는 모든 파일 저장",
+    "savedAll": "{{count}}개 파일 저장됨",
+    "closeTab": "탭 닫기 {{file}}",
+    "discardTitle": "저장되지 않은 변경 사항을 취소하시겠습니까?",
+    "discard": "취소",
+    "discardMessage": "저장되지 않은 파일 변경 사항이 손실됩니다.",
+    "title": "에디터"
   },
   "contextFiles": {
     "workspaceTitle": "워크스페이스",
@@ -1191,6 +1323,8 @@
     "useGitEnabled": "Git 사용 중 - 클릭하면 파일 시스템 사용",
     "useGitDisabled": "파일 시스템 사용 중 - 클릭하면 Git 사용",
     "revertFile": "변경 사항 되돌리기",
+    "expandContext": "컨텍스트 펼치기",
+    "collapseContext": "컨텍스트 접기",
     "addFileToGit": "Git에 파일 추가",
     "fileHasConflicts": "파일에 병합 충돌이 있습니다",
     "confirmRevertTitle": "파일 변경 사항을 되돌리시겠습니까?",
@@ -1209,6 +1343,7 @@
     "cancelCommit": "커밋 취소",
     "commitSuccess": "변경 사항이 커밋되었습니다",
     "commitError": "커밋 오류",
+    "selectedFilesToCommit": "{{total}}개 파일 중 {{count}}개가 커밋될 파일로 선택되었습니다",
     "groupByCommit": "커밋별 그룹 보기로 전환",
     "flatView": "평면 보기로 전환 (기준 브랜치와의 diff)",
     "uncommitted": "커밋되지 않음",
@@ -1363,6 +1498,7 @@
       "getTask": "작업 가져오기",
       "getTaskMessage": "작업 메시지 가져오기",
       "createTask": "작업 생성",
+      "createSubtask": "하위 작업 생성",
       "deleteTask": "작업 삭제",
       "runPrompt": "작업에서 프롬프트 실행",
       "searchTask": "작업 검색:",
@@ -1379,6 +1515,10 @@
       "autonomyMode": "자율성 모드",
       "worktree": "워크트리",
       "executeAndWait": "실행 후 대기",
+      "executionMode": "실행 모드",
+      "createOnly": "생성만",
+      "waitForFinish": "완료 대기",
+      "runInBackground": "백그라운드 실행",
       "yes": "예",
       "no": "아니요",
       "taskId": "작업 ID",
@@ -1452,15 +1592,18 @@
         "contextLines": "(컨텍스트 {{count}}줄)",
         "matchesCount": "({{count}}개 일치)",
         "lineLabel": "{{lineNumber}}번째 줄:",
-        "contextLabel": "컨텍스트:"
+        "contextLabel": "컨텍스트:",
+        "ignoreGitignore": "무시된 파일 포함"
       },
       "bash": {
         "title": "명령 실행",
+        "titleWithDescription": "다음을 위해 명령 실행:",
         "exitCode": "종료 코드",
         "stdout": "표준 출력",
         "stderr": "표준 오류",
         "commandFailed": "명령 실패",
-        "timeout": "제한 시간 초과"
+        "timeout": "제한 시간 초과",
+        "workingDir": "작업 디렉터리"
       },
       "semanticSearch": {
         "title": "시맨틱 검색:",
@@ -1521,12 +1664,17 @@
     "errors": {
       "noSuchTool": "알 수 없는 도구를 사용하려고 했습니다: {{toolName}}",
       "invalidToolArguments": "도구의 인수가 잘못되었습니다: {{toolName}}"
-    }
+    },
+    "preparing": "도구를 준비하는 중..."
   },
   "codeBlock": {
     "revertChanges": "변경 사항 되돌리기"
   },
   "diffViewer": {
+    "oldValue": "이전 값",
+    "newValue": "새 값",
+    "error": "오류: {{message}}",
+    "reportIssue": "https://github.com/hotovo/aider-desk/issues에서 문제를 보고해 주세요.",
     "sideBySide": "나란히 보기",
     "unified": "통합 보기",
     "compact": "간략히",
@@ -1582,6 +1730,7 @@
     "editQueuedPrompt": "편집",
     "saveQueuedPrompt": "저장",
     "cancelEditQueuedPrompt": "취소",
+    "queuedPromptImages": "첨부된 이미지 {{count}}개",
     "answers": {
       "yes": "(Y)예",
       "no": "(N)아니요",
@@ -1589,6 +1738,7 @@
       "dontAsk": "(D)다시 묻지 않기"
     },
     "invalidCommand": "잘못된 명령",
+    "skillNotFound": "'{{skill}}' 스킬을 찾을 수 없습니다",
     "stopResponse": "응답 중지",
     "sendMessage": "메시지 전송 (Enter)",
     "clearChat": "채팅 지우기",
@@ -1652,9 +1802,7 @@
     "worktreeOptionCarryOverKeepLabel": "가져오고 프로젝트에도 유지",
     "worktreeOptionCarryOverKeepDescription": "커밋되지 않은 변경 사항을 워크트리로 복사하면서 프로젝트 디렉터리에도 유지합니다",
     "switchToLocal": "로컬로 전환",
-    "switchToWorktree": "워크트리로 전환",
-    "switchToLocalTooltip": "현재 git 워크트리에서 작업 중입니다. 이 작업에 대해 로컬 프로젝트 디렉터리에서 직접 변경하도록 전환합니다.",
-    "switchToWorktreeTooltip": "현재 로컬 프로젝트 디렉터리에서 작업 중입니다. 이 작업에 대해 격리된 변경을 위해 git 워크트리를 사용하도록 전환합니다."
+    "switchToWorktree": "워크트리로 전환"
   },
   "workingModeTooltip": {
     "local": "이 작업에 대해 로컬 프로젝트 디렉터리에서 직접 변경합니다",
@@ -1703,7 +1851,9 @@
     "undo": "Aider가 수행한 것이라면 마지막 git 커밋 실행 취소",
     "web": "웹 페이지를 스크랩하여 파일에 저장합니다. [file]은 선택 사항이며 /web url [file]과 같이 사용하세요.",
     "handoff": "포커스를 지정하여 대화를 새 작업으로 핸드오프",
-    "subtask": "현재 작업의 새 하위 작업을 만들고 전환"
+    "subtask": "현재 작업의 새 하위 작업을 만들고 전환",
+    "skill": "스킬을 활성화합니다. 스킬 이름 뒤의 텍스트는 프롬프트로 사용됩니다",
+    "subagent": "특정 서브에이전트에서 프롬프트를 실행합니다. /subagent <subagent-id> <prompt> 사용"
   },
   "telemetry": {
     "title": "텔레메트리 정보",
@@ -1739,6 +1889,7 @@
       "charts": "차트 보기"
     },
     "charts": {
+      "andMore": "(+{{count}} 더 보기)",
       "tokenUsageTrend": "토큰 사용량 추이",
       "costBreakdown": "비용 분석",
       "messageBreakdown": "메시지 분석",
@@ -1774,9 +1925,12 @@
     }
   },
   "terminal": {
+    "connecting": "터미널에 연결 중...",
+    "tabLabel": "터미널",
     "copyOutput": "터미널 출력을 프롬프트로 복사",
     "minimize": "터미널 최소화",
-    "addTerminal": "새 터미널 추가"
+    "addTerminal": "새 터미널 추가",
+    "restartHint": "세션이 종료되었습니다. 아무 키나 눌러 재시작하세요."
   },
   "contextMenu": {
     "copy": "복사",
@@ -1784,7 +1938,8 @@
     "close": "닫기",
     "closeOtherTabs": "다른 탭 닫기",
     "closeAllTabs": "모든 탭 닫기",
-    "openInNewWindow": "새 창에서 열기"
+    "openInNewWindow": "새 창에서 열기",
+    "copyLink": "링크 복사"
   },
   "menu": {
     "file": {
@@ -1835,7 +1990,9 @@
     "createSubtask": "하위 작업 만들기",
     "deleteConfirmWithSubtasks": "이 작업에는 {{count}}개의 하위 작업이 있습니다. 그래도 삭제하시겠습니까?",
     "highlightTask": "작업 강조",
-    "removeHighlight": "강조 제거"
+    "removeHighlight": "강조 제거",
+    "dropToRoot": "여기에 놓으면 최상위 수준으로 이동합니다",
+    "dropToSubtask": "하위 작업으로 만들기"
   },
   "taskInfo": {
     "createdAt": "생성일",
@@ -1863,8 +2020,83 @@
     "READY_FOR_IMPLEMENTATION": "구현 준비 완료",
     "TODO": "할 일"
   },
+  "git": {
+    "askpass": {
+      "passwordTitle": "Git 인증",
+      "usernameTitle": "Git 사용자 이름",
+      "confirmationTitle": "Git 확인",
+      "rememberSession": "이 세션 동안 기억"
+    },
+    "pullUpToDate": "프로젝트가 이미 최신 상태입니다 — 가져올 변경 사항이 없습니다",
+    "pullSuccess": "프로젝트가 성공적으로 업데이트되었습니다",
+    "confirmPullTitle": "변경 사항 가져오기",
+    "confirmPullMessage": "브랜치가 원격 브랜치와 갈라졌습니다 (보내는 커밋 {{outgoing}}개, 받는 커밋 {{incoming}}개). 브랜치를 조정할 방식을 선택하세요:",
+    "pullRebaseAutostashHint": "커밋하지 않은 변경 사항은 임시 저장 후 가져오기가 완료되면 자동으로 복원됩니다.",
+    "pushSuccess": "변경 사항이 성공적으로 푸시되었습니다",
+    "pushRejectedPullFirst": "푸시가 거부되었습니다: 원격 브랜치에 새 커밋이 있습니다. 먼저 변경 사항을 가져온 후 다시 시도하세요.",
+    "resolveWithAI": "AI로 해결",
+    "outgoingCommitsTooltip": "보낼 커밋 ({{count}}개):",
+    "incomingCommitsTooltip": "가져올 커밋 ({{count}}개):",
+    "gitBranchLabel": "Git 브랜치: {{branch}}",
+    "upToDate": "최신 상태",
+    "noCurrentBranch": "브랜치 없음",
+    "searchBranches": "브랜치 검색",
+    "noBranchesFound": "브랜치를 찾을 수 없습니다",
+    "localBranches": "로컬",
+    "remoteBranches": "원격",
+    "newBranch": "새 브랜치",
+    "newBranchNamePlaceholder": "새 브랜치 이름",
+    "initializeGit": "Git 초기화",
+    "initializeGitTooltip": "이 프로젝트에는 Git 저장소가 없습니다. 초기화하면 브랜치, 워크트리, 버전 관리를 사용할 수 있습니다.",
+    "initializingGit": "초기화 중...",
+    "gitInitialized": "Git 저장소가 초기화되었습니다.",
+    "branchCreated": "'{{branch}}' 브랜치가 생성되었습니다",
+    "checkedOutBranch": "'{{branch}}' 브랜치로 전환했습니다",
+    "confirmCheckoutTitle": "브랜치 체크아웃",
+    "confirmCheckoutMessage": "이 브랜치는 다른 작업의 워크트리에서 체크아웃되어 있습니다. 확인하면 그곳에서 브랜치가 분리되고(해당 워크트리가 detached HEAD로 전환되며 변경 사항은 유지됨) 여기서 체크아웃할 수 있게 됩니다. 계속하시겠습니까?",
+    "checkout": "체크아웃",
+    "mergeIntoCurrent": "현재 브랜치에 병합",
+    "rebaseCurrentOnto": "현재 브랜치를 이 브랜치 위로 리베이스",
+    "merge": "병합",
+    "rebase": "리베이스",
+    "confirmMergeTitle": "브랜치 병합",
+    "confirmMergeMessage": "'{{branch}}' 브랜치를 현재 브랜치에 병합하시겠습니까?",
+    "mergedIntoCurrent": "'{{branch}}' 브랜치를 현재 브랜치에 병합했습니다",
+    "mergeConflicts": "다음 파일에서 병합 충돌 발생: {{files}}",
+    "confirmRebaseTitle": "브랜치 리베이스",
+    "confirmRebaseMessage": "현재 브랜치를 '{{branch}}' 위로 리베이스하시겠습니까?",
+    "rebasedOnto": "'{{branch}}' 위로 리베이스했습니다",
+    "rebaseConflicts": "다음 파일에서 리베이스 충돌 발생: {{files}}. 이전 상태로 돌아가려면 리베이스를 중단하세요.",
+    "deleteBranch": "브랜치 삭제",
+    "deleteForce": "강제 삭제",
+    "confirmDeleteTitle": "브랜치 삭제",
+    "confirmDeleteMessage": "'{{branch}}' 브랜치를 삭제하시겠습니까?",
+    "confirmForceDeleteMessage": "'{{branch}}' 브랜치에 병합되지 않은 커밋이 있습니다. 강제로 삭제하고 해당 커밋을 버리시겠습니까?",
+    "branchDeleted": "'{{branch}}' 브랜치가 삭제되었습니다",
+    "updateProject": "프로젝트 업데이트 (가져오기)",
+    "push": "푸시",
+    "confirmPushTitle": "커밋 푸시",
+    "confirmPushMessage_one": "커밋 {{count}}개를 원격에 푸시하시겠습니까?",
+    "confirmPushMessage_other": "커밋 {{count}}개를 원격에 푸시하시겠습니까?",
+    "noCommitsToPush": "푸시할 커밋이 없습니다",
+    "confirmPushSetUpstreamMessage": "'{{branch}}' 브랜치에 업스트림이 없습니다. 원격에 푸시하고 원격 브랜치를 업스트림으로 설정하시겠습니까?",
+    "force": "강제",
+    "aheadCommits_one": "{{count}}개 커밋 앞섬",
+    "aheadCommits_other": "{{count}}개 커밋 앞섬",
+    "behindCommits_one": "{{count}}개 커밋 뒤처짐",
+    "behindCommits_other": "{{count}}개 커밋 뒤처짐",
+    "recentBranches": "최근",
+    "checkoutBranch": "'{{branch}}' 체크아웃",
+    "newBranchFrom": "'{{branch}}'에서 새 브랜치...",
+    "mergeBranchInto": "'{{branch}}' 브랜치를 '{{current}}'에 병합",
+    "rebaseOnto": "'{{current}}' 브랜치를 '{{branch}}' 위로 리베이스",
+    "deleteBranchName": "'{{branch}}' 삭제",
+    "rebaseWorktreeOnto": "워크트리를 '{{branch}}' 위로 리베이스",
+    "actionNotAvailableInWorktree": "이 작업은 워크트리 모드에서 사용할 수 없습니다",
+    "updateFromRemote": "'{{upstream}}'에서 업데이트",
+    "branchUpdated": "'{{branch}}' 브랜치가 원격에서 업데이트되었습니다"
+  },
   "worktree": {
-    "aheadCommits": "↑ 커밋 {{count}}개",
     "uncommittedFiles": "파일 {{count}}개",
     "conflicts": "충돌",
     "conflictsPredicted": "충돌 예상됨",
@@ -1877,7 +2109,10 @@
     "abortRebase": "리베이스 중단",
     "continueRebase": "리베이스 계속",
     "rebaseConflictsDescription": "다음 파일에서 리베이스 충돌이 감지되었습니다. 직접 해결하고 계속하거나 AI 에이전트의 도움을 받으세요.",
+    "rebasePausedDueToConflicts": "충돌로 인해 리베이스가 일시 중지되었습니다. 충돌을 해결하고 리베이스를 계속하거나 중단하여 워크트리를 복원하세요.",
     "rebaseConflictsResolvedDescription": "충돌이 해결되어 스테이징되었습니다. 이제 리베이스를 계속할 수 있습니다.",
+    "switchToLocalRebaseInProgress": "리베이스가 진행 중일 때는 로컬 모드로 전환할 수 없습니다. 먼저 리베이스를 계속하거나 중단하세요.",
+    "switchToLocalUncommittedChanges": "워크트리에 커밋되지 않은 변경 사항이 있습니다. 로컬 모드로 전환하기 전에 병합하거나 명시적으로 폐기하세요.",
     "confirmRebaseTitle": "워크트리 리베이스",
     "confirmRebaseMessage": "워크트리가 선택한 브랜치를 기준으로 리베이스됩니다. 충돌이 있으면 직접 해결해야 합니다.",
     "confirmAbortRebaseTitle": "리베이스 중단",
@@ -1892,19 +2127,20 @@
     "selectBranch": "브랜치 선택",
     "selectTargetBranchTitle": "대상 브랜치 선택",
     "selectSourceBranchTitle": "소스 브랜치 선택",
-    "branchHasWorktree": "워크트리 있음",
+    "branchCurrent": "현재 브랜치",
     "mergeTooltip": "워크트리 변경 사항을 브랜치로 병합",
     "revertTooltip": "마지막으로 병합된 변경 사항 되돌리기",
     "confirmMerge": "워크트리 변경 사항을 메인 브랜치로 {{action}}하시겠습니까? 커밋되지 않은 변경 사항도 포함됩니다.",
     "confirmRevert": "마지막 병합을 되돌리시겠습니까? 메인 브랜치가 이전 상태로 재설정됩니다.",
     "confirmMergeTitle": "병합 확인",
     "confirmSquashTitle": "스쿼시 확인",
-    "confirmOnlyUncommittedTitle": "커밋되지 않은 변경 사항 적용 확인",
+    "confirmOnlyUncommittedTitle": "커밋되지 않은 변경 사항 적용",
     "confirmMergeMessage": "워크트리 변경 사항을 선택한 브랜치로 병합하시겠습니까?",
     "confirmSquashMessage": "워크트리 변경 사항을 선택한 브랜치로 스쿼시 후 병합하시겠습니까?",
-    "confirmOnlyUncommittedMessage": "워크트리의 커밋되지 않은 변경 사항을 선택한 브랜치에 적용하시겠습니까? git 병합은 수행되지 않습니다.",
+    "confirmOnlyUncommittedMessage": "워크트리의 커밋되지 않은 변경 사항을 프로젝트 디렉토리에 현재 체크아웃된 브랜치 {{branch}}에 적용하시겠습니까? git 병합은 수행되지 않으며 프로젝트 디렉토리는 현재 브랜치에 유지됩니다.",
     "mergeConflicts": "워크트리와 대상 브랜치 간의 충돌로 인해 병합에 실패했습니다. 먼저 워크트리를 리베이스하여 충돌을 해결하세요.",
     "applyUncommittedConflicts": "대상 브랜치와의 충돌로 인해 커밋되지 않은 변경 사항을 적용하지 못했습니다. 먼저 워크트리를 리베이스하여 변경 사항을 맞추세요.",
+    "switchToLocalApplyUncommittedConflicts": "충돌로 인해 워크트리의 커밋되지 않은 변경 사항을 프로젝트 디렉토리에 적용하지 못했습니다. 로컬 모드 전환이 중단되었습니다 - 워크트리와 그 변경 사항은 그대로 유지됩니다.",
     "dontAskAgain": "다시 묻지 않기",
     "confirmRevertTitle": "되돌리기 확인",
     "confirmRevertMessage": "마지막 병합을 되돌리시겠습니까? 워크트리에서 메인 브랜치로 병합되었던 변경 사항이 취소됩니다.",
@@ -1912,7 +2148,18 @@
     "noChanges": "변경 사항 없음",
     "renameBranch": "브랜치 이름 바꾸기",
     "branchNamePlaceholder": "브랜치 이름을 입력하세요...",
-    "basedOn": "기준"
+    "basedOn": "기준",
+    "rebaseFromCurrentBranch": "'{{branch}}'에서 리베이스",
+    "mergeIntoBranch": "브랜치로 병합...",
+    "squashIntoBranch": "브랜치로 스쿼시 후 병합...",
+    "applyUncommittedChanges": "커밋되지 않은 변경 사항 적용",
+    "mergeIntoBranchTooltip": "이 워크트리의 모든 커밋과 커밋되지 않은 변경 사항을 대상 브랜치로 병합합니다(병합 커밋 생성).",
+    "squashIntoBranchTooltip": "모든 워크트리 커밋과 커밋되지 않은 변경 사항을 대상 브랜치의 단일 새 커밋으로 압축하여 결합합니다.",
+    "applyUncommittedChangesTooltip": "커밋을 병합하지 않고 이 워크트리의 커밋되지 않은 변경 사항만 프로젝트 디렉토리에 현재 체크아웃된 브랜치에 적용합니다.",
+    "rebaseFromCurrentBranchTooltip": "'{{branch}}' 브랜치 위로 워크트리 커밋을 다시 적용하고 베이스 참조를 업데이트합니다.",
+    "aheadCommitsTooltip": "'{{branch}}'보다 앞선 커밋 ({{count}}개):",
+    "behindCommitsTooltip": "'{{branch}}'보다 뒤처진 커밋 ({{count}}개):",
+    "behindCommitsSyncHint": "동기화하려면 '{{branch}}'에서 리베이스를 사용하세요"
   },
   "welcomeMessage": {
     "title": "AiderDesk",
@@ -1982,5 +2229,13 @@
     "projectError": "이 프로젝트를 불러올 수 없습니다.",
     "projects": "프로젝트",
     "openTasks": "작업 열기"
+  },
+  "providerTls": {
+    "title": "TLS 설정",
+    "disableCertificateVerification": "인증서 검증 비활성화",
+    "disableCertificateVerificationInfo": "이 공급자 엔드포인트에 대한 TLS 인증서 검증을 건너뜁니다. 자체 서명 인증서를 사용하는 신뢰할 수 있는 서버(예: 로컬 모델 서버)에만 사용하세요.",
+    "caCertPath": "CA 인증서 경로",
+    "caCertPathInfo": "공급자 엔드포인트를 검증하는 데 사용되는 CA 인증서 파일(PEM)의 절대 경로입니다. 자체 서명 또는 사설 CA 인증서를 사용할 때는 검증 비활성화보다 이 방법을 권장합니다.",
+    "caCertPathPlaceholder": "/path/to/ca.pem"
   }
 }

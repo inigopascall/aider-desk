@@ -5,6 +5,48 @@
     "ru": "Русский",
     "ko": "한국어"
   },
+  "commandPalette": {
+    "title": "Палитра команд",
+    "placeholder": "Введите запрос...",
+    "noResults": "Подходящих результатов не найдено",
+    "scrollForMore": "Прокрутите, чтобы увидеть больше результатов",
+    "tabs": {
+      "all": "Все",
+      "file": "Файлы",
+      "action": "Действия",
+      "task": "Задачи",
+      "project": "Проекты"
+    }
+  },
+  "uiActions": {
+    "openModelSelector": "Открыть выбор модели",
+    "changeAgentProfile": "Сменить профиль агента",
+    "setAutonomyMode": "Переключить режим автономности",
+    "openSettingsPage": "Открыть страницу настроек",
+    "showLogs": "Показать логи",
+    "createNewTask": "Создать новую задачу",
+    "createNewSubtask": "Создать новую подзадачу",
+    "createNewSiblingTask": "Создать соседнюю задачу",
+    "renameTask": "Переименовать задачу",
+    "archiveTask": "Архивировать задачу",
+    "unarchiveTask": "Разархивировать задачу",
+    "deleteTask": "Удалить задачу",
+    "duplicateTask": "Дублировать задачу",
+    "exportTaskImage": "Экспортировать задачу как изображение",
+    "exportTaskMarkdown": "Экспортировать задачу как Markdown",
+    "copyTaskMarkdown": "Копировать задачу как Markdown",
+    "copyTaskId": "Копировать ID задачи",
+    "copyTaskIdFailed": "Не удалось скопировать ID задачи",
+    "interruptResponse": "Прервать ответ",
+    "restartConnector": "Перезапустить коннектор Aider",
+    "togglePin": "Переключить закрепление",
+    "moveToTop": "Переместить наверх",
+    "switchToLocal": "Переключить на локальный режим",
+    "switchToWorktree": "Переключить на режим worktree",
+    "switchWorkingMode": "Переключить рабочий режим",
+    "gitAction": "Действие Git",
+    "gitBranches": "Показать ветки Git"
+  },
   "common": {
     "settings": "Настройки",
     "cancel": "Отмена",
@@ -37,6 +79,7 @@
     "retry": "Повторить",
     "open": "Открыть",
     "openProject": "Открыть проект",
+    "clone": "Клонировать",
     "lock": "Заблокировать",
     "default": "По умолчанию",
     "suffix.billion": "Млрд",
@@ -48,10 +91,15 @@
     "expand": "Развернуть",
     "enabled": "Включено",
     "noFiles": "Нет файлов",
-    "clickToRefresh": "Нажмите для обновления",
+    "loadingFiles": "Загрузка файлов...",
     "closeTasks": "Закрыть задачи",
     "toggleTasks": "Переключить задачи",
-    "submit": "Отправить"
+    "submit": "Отправить",
+    "inputPrompt": "Требуется ввод",
+    "rememberSession": "Запомнить на время этой сессии",
+    "enterPassword": "Введите пароль...",
+    "showPassword": "Показать пароль",
+    "hidePassword": "Скрыть пароль"
   },
   "search": {
     "placeholder": "Поиск...",
@@ -187,6 +235,13 @@
       "deleteMemoryDialogText": "Вы уверены, что хотите удалить эту память?"
     }
   },
+  "mermaid": {
+    "renderFailed": "Не удалось отобразить диаграмму:"
+  },
+  "neuralwatt": {
+    "getApiKeyLink": "Получить API-ключ Neuralwatt",
+    "apiKey": "API-ключ"
+  },
   "modelLibrary": {
     "enableVoiceControl": "Включить голосовое управление",
     "enableVoiceControlOnlyOneInfo": "Одновременно может быть включён только один провайдер.",
@@ -273,15 +328,20 @@
     "extraBodyErrorInvalid": "Неверный JSON. Введите корректный JSON-объект.",
     "disable": "Отключить",
     "enable": "Включить",
-    "providerDisabled": "Этот провайдер отключён. Его модели будут недоступны."
+    "providerDisabled": "Этот провайдер отключён. Его модели будут недоступны.",
+    "trackTokenUsage": "Учитывать использование токенов",
+    "trackTokenUsageInfo": "Включать информацию об использовании токенов в потоковые ответы. Отключите, если провайдер не поддерживает поле usage в фрагментах потока."
   },
   "openai": {
+    "getApiKeyLink": "Получить API-ключ OpenAI",
     "apiKey": "API-ключ",
     "baseUrl": "Базовый URL",
     "modelName": "Название модели",
     "baseUrlPlaceholder": "например, http://localhost:8080/v1",
     "useWebSearch": "Использовать веб-поиск",
-    "useWebSearchTooltip": "Когда включено, модель будет использовать инструмент веб-поиска OpenAI для доступа к актуальной информации из интернета."
+    "useWebSearchTooltip": "Когда включено, модель будет использовать инструмент веб-поиска OpenAI для доступа к актуальной информации из интернета.",
+    "storeResponses": "Сохранять ответы",
+    "storeResponsesTooltip": "Когда включено, OpenAI сохраняет ответы на своей стороне, и при возобновлении задач диалог ссылается на них по идентификатору. Отключите, если ваша организация OpenAI использует нулевое удержание данных (ZDR) — для ZDR-организаций сохранённые элементы не хранятся, и возобновление задач будет завершаться ошибкой «Элемент с указанным id не найден». При отключённой опции запросы выполняются в режиме без хранения на сервере, а рассуждения воспроизводятся через зашифрованное содержимое."
   },
   "ollama": {
     "baseUrl": "Базовый URL",
@@ -293,9 +353,11 @@
     "baseUrlPlaceholder": "например, https://api.anthropic.com"
   },
   "minimax": {
+    "getApiKeyLink": "Получить API-ключ MiniMax",
     "apiKey": "API-ключ"
   },
   "gemini": {
+    "getApiKeyLink": "Получить API-ключ Gemini",
     "apiKey": "API-ключ",
     "customBaseUrl": "Пользовательский базовый URL",
     "thinkingBudget": "Бюджет на рассуждение (токены)",
@@ -305,16 +367,20 @@
     "useSearchGroundingTooltip": "Когда включено, модель будет использовать результаты поиска для обоснования своих ответов, повышая точность и релевантность."
   },
   "groq": {
+    "getApiKeyLink": "Получить API-ключ Groq",
     "apiKey": "API-ключ",
     "modelPlaceholder": "например, moonshotai/kimi-k2-instruct"
   },
   "mistral": {
+    "getApiKeyLink": "Получить API-ключ Mistral",
     "apiKey": "API-ключ"
   },
   "kimiPlan": {
+    "getApiKeyLink": "Получить API-ключ Kimi Coding Plan",
     "apiKey": "API-ключ"
   },
   "alibabaPlan": {
+    "getApiKeyLink": "Получить API-ключ Alibaba Coding Plan",
     "apiKey": "API-ключ",
     "thinkingEnabled": "Режим рассуждений",
     "thinkingEnabledTooltip": "Включает режим рассуждений для расширенных возможностей логического вывода",
@@ -338,16 +404,24 @@
     "sessionTokenTooltip": "Необязательный токен сессии для временных учётных данных."
   },
   "cerebras": {
+    "getApiKeyLink": "Получить API-ключ Cerebras",
     "apiKey": "API-ключ"
   },
   "openRouter": {
+    "getApiKeyLink": "Получить API-ключ OpenRouter",
     "apiKey": "API-ключ",
     "modelPlaceholder": "например, anthropic/claude-3.7-sonnet"
   },
   "opencode": {
+    "getApiKeyLink": "Получить API-ключ OpenCode ZEN",
+    "apiKey": "API-ключ"
+  },
+  "opencodeGo": {
+    "getApiKeyLink": "Получить API-ключ OpenCode Go",
     "apiKey": "API-ключ"
   },
   "requesty": {
+    "getApiKeyLink": "Получить API-ключ Requesty",
     "apiKey": "API-ключ",
     "modelPlaceholder": "например, claude-4-sonnet",
     "autoCacheLabel": "Использовать авто-кэш",
@@ -364,9 +438,11 @@
     "apiKey": "API-ключ"
   },
   "synthetic": {
+    "getApiKeyLink": "Получить API-ключ Synthetic",
     "apiKey": "API-ключ"
   },
   "zaiPlan": {
+    "getApiKeyLink": "Получить API-ключ Z.AI",
     "apiKey": "API-ключ",
     "mcp": {
       "title": "MCP-серверы",
@@ -402,6 +478,7 @@
     "addCustomModelInfo": "Модели не могут быть загружены автоматически для провайдера Azure. Вам нужно добавить их вручную с помощью «+ Добавить модель», убедившись, что имя модели соответствует имени развёртывания."
   },
   "clinepass": {
+    "getApiKeyLink": "Получить API-ключ ClinePass",
     "apiKey": "API-ключ"
   },
   "providers": {
@@ -422,6 +499,7 @@
     "ollama": "Ollama",
     "openai": "OpenAI",
     "opencode": "OpenCode ZEN",
+    "opencode-go": "OpenCode Go",
     "openai-compatible": "Совместимый с OpenAI",
     "openrouter": "OpenRouter",
     "requesty": "Requesty",
@@ -429,10 +507,12 @@
     "synthetic": "Синтетический",
     "vertex-ai": "Vertex AI",
     "zai-plan": "Z.ai Coding Plan",
-    "azure": "Azure"
+    "azure": "Azure",
+    "neuralwatt": "Neuralwatt"
   },
   "select": {
-    "placeholder": "Выберите опцию"
+    "placeholder": "Выберите опцию",
+    "noMatches": "Совпадений не найдено"
   },
   "workflowsSettings": {
     "title": "Рабочие процессы",
@@ -470,6 +550,7 @@
     "title": "Настройки",
     "savedSuccessfully": "Настройки сохранены",
     "saveError": "Не удалось сохранить настройки",
+    "navigation": "Навигация",
     "tabs": {
       "general": "Общие",
       "aider": "Aider",
@@ -482,9 +563,11 @@
       "extensions": "Расширения",
       "server": "Сервер",
       "network": "Сеть",
-      "about": "О приложении"
+      "about": "О приложении",
+      "mcpServers": "MCP-серверы"
     },
     "extensions": {
+      "uiErrorIn": "Ошибка в {{component}}",
       "loading": "Загрузка расширений...",
       "tabs": {
         "installed": "Установленные",
@@ -513,11 +596,17 @@
         "remove": "Удалить репозиторий",
         "default": "Репозиторий по умолчанию"
       },
+      "sort": {
+        "label": "Сортировка",
+        "mostInstalled": "Самые установленные",
+        "name": "По названию"
+      },
       "by": "от",
       "enabled": "Включено",
       "active": "Активно",
       "disabled": "Отключено",
       "projectSpecific": "Проектное",
+      "totalInstalls": "Всего установок",
       "hasDependencies": "Имеет зависимости",
       "osNotSupported": "Не поддерживается",
       "osNotSupportedTooltip": "Это расширение может не работать в вашей операционной системе. Проверьте детали расширения для дополнительной информации.",
@@ -562,6 +651,7 @@
     "hotkeys": {
       "projectHotkeys": "Проект",
       "taskHotkeys": "Задача",
+      "gitHotkeys": "Git",
       "dialogHotkeys": "Диалоги",
       "closeProject": "Закрыть проект",
       "newProject": "Новый проект",
@@ -576,6 +666,7 @@
       "newTask": "Новая задача",
       "closeTask": "Закрыть задачу",
       "browseFolder": "Просмотреть папку",
+      "commandPalette": "Палитра команд",
       "enterHotkey": "Введите горячую клавишу...",
       "resetToDefaults": "Сбросить до значений по умолчанию",
       "hotkeyFormat": "Формат горячей клавиши:",
@@ -591,7 +682,8 @@
       "recordShortcutDescription": "Нажмите кнопку записи ниже, а затем нажмите нужную комбинацию клавиш.",
       "pressKeysToRecord": "Нажмите клавиши для записи...",
       "startRecording": "Начать запись",
-      "stopRecording": "Остановить запись"
+      "stopRecording": "Остановить запись",
+      "openEditor": "Открыть редактор"
     },
     "gui": "Внешний вид",
     "voice": {
@@ -651,6 +743,9 @@
       "symlinkFolderPlaceholder": "Имя папки (например, node_modules)",
       "addSymlinkFolder": "Добавить",
       "removeSymlinkFolder": "Удалить папку",
+      "worktreePostCreateCommandLabel": "Команда после создания",
+      "worktreePostCreateCommandTooltip": "Необязательная команда оболочки, выполняемая в каталоге рабочего дерева задачи после его создания. Полезно для инициализации подмодулей (например, 'git submodule update --init --recursive') или загрузки данных (например, 'datalad get .'). Доступные переменные окружения: AIDERDESK_PROJECT_PATH, AIDERDESK_WORKTREE_PATH, AIDERDESK_TASK_ID, AIDERDESK_BRANCH.",
+      "worktreePostCreateCommandPlaceholder": "например, git submodule update --init --recursive",
       "worktreeBranchPrefix": "Префикс ветки",
       "worktreeBranchPrefixTooltip": "Префикс, используемый при создании имён веток рабочего дерева. Например, «aider-desk/task/» создаст ветки вида «aider-desk/task/my-feature».",
       "worktreeBranchPrefixPlaceholder": "например, aider-desk/task/",
@@ -809,7 +904,8 @@
       "resetProfileTitle": "Сбросить «{{name}}» до значений по умолчанию?",
       "resetProfileConfirm": "Это восстановит «{{name}}» до исходных настроек. Все пользовательские изменения будут потеряны.",
       "restoreProfile": "Восстановить",
-      "restoreProfileTooltip": "Восстановить профиль по умолчанию"
+      "restoreProfileTooltip": "Восстановить профиль по умолчанию",
+      "configureMcpServers": "Настроить MCP-серверы"
     },
     "aider": {
       "options": "Параметры",
@@ -862,7 +958,8 @@
       "fresh": "Свежесть",
       "botanical-garden": "Ботанический сад",
       "botanical-garden-dark": "Ботанический сад (тёмная)",
-      "obsidian": "Обсидиан"
+      "obsidian": "Обсидиан",
+      "crimson": "Багровый"
     },
     "aiderRestartConfirm": {
       "title": "Требуется перезапуск",
@@ -1066,7 +1163,8 @@
     "deleteUpToHere": "Удалить до этого места",
     "outline": {
       "title": "Разговор"
-    }
+    },
+    "ephemeralGroupTooltip": "Эта ветка/группа временная — она не сохраняется вместе с задачей и исчезнет после перезагрузки"
   },
   "errors": {
     "frozenTitle": "AIDER ЗАМРОЗЛ?",
@@ -1095,7 +1193,15 @@
     "openButton": "Открыть",
     "browseFoldersTooltip": "Просмотр папок",
     "projectAlreadyOpenWarning": "Этот проект уже открыт.",
-    "cantOpenProject": "Этот проект не может быть открыт."
+    "cantOpenProject": "Этот проект не может быть открыт.",
+    "openLocalProject": "Открыть локальный",
+    "cloneFromGit": "Клонировать из Git",
+    "repositoryUrlPlaceholder": "Например, https://github.com/owner/repo.git или git@github.com:owner/repo.git",
+    "cloneDestinationPlaceholder": "По умолчанию: ~/.aider-desk/projects",
+    "repositoryUrlLabel": "URL репозитория",
+    "cloneDestinationLabel": "Папка назначения",
+    "cloningProject": "Клонирование репозитория...",
+    "cloneProjectFailed": "Не удалось клонировать проект"
   },
   "mode": {
     "code": "Код",
@@ -1134,9 +1240,23 @@
   "fileChip": {
     "removeFileTooltip": "Удалить файл"
   },
-  "filePreview": {
-    "title": "Просмотр файла",
-    "errorLoading": "Не удалось загрузить файл"
+  "fileEditor": {
+    "errorLoading": "Не удалось загрузить файл",
+    "requestChangeOnLine": "Запросить изменение этой строки",
+    "saved": "Файл сохранён",
+    "errorSaving": "Не удалось сохранить файл: {{error}}",
+    "errorSubmitting": "Не удалось отправить запросы на изменение: {{error}}",
+    "saveBeforeSubmitting": "Сохраните файл перед отправкой запросов на изменение.",
+    "unsavedChanges": "Есть несохранённые изменения",
+    "saveShortcut": "Сохранить (Ctrl+S)",
+    "saveAll": "Сохранить все",
+    "saveAllTooltip": "Сохранить все открытые файлы",
+    "savedAll": "Сохранено файлов: {{count}}",
+    "closeTab": "Закрыть вкладку {{file}}",
+    "discardTitle": "Отменить несохранённые изменения?",
+    "discard": "Отменить",
+    "discardMessage": "Несохранённые изменения файла будут потеряны.",
+    "title": "Редактор"
   },
   "contextFiles": {
     "workspaceTitle": "Рабочая область",
@@ -1198,6 +1318,8 @@
     "useGitEnabled": "Git включён — нажмите для использования файловой системы",
     "useGitDisabled": "Файловая система включена — нажмите для использования Git",
     "revertFile": "Отменить изменения",
+    "expandContext": "Развернуть контекст",
+    "collapseContext": "Свернуть контекст",
     "addFileToGit": "Добавить файл в Git",
     "fileHasConflicts": "Файл содержит конфликты слияния",
     "confirmRevertTitle": "Отменить изменения файла?",
@@ -1216,6 +1338,7 @@
     "cancelCommit": "Отменить коммит",
     "commitSuccess": "Изменения закоммичены",
     "commitError": "Ошибка коммита",
+    "selectedFilesToCommit": "Выбрано файлов для коммита: {{count}} из {{total}}",
     "groupByCommit": "Переключить на группировку по коммитам",
     "flatView": "Переключить на плоский вид (различие от базы)",
     "uncommitted": "Незакоммиченные",
@@ -1370,6 +1493,7 @@
       "getTask": "Получить задачу",
       "getTaskMessage": "Получить сообщение задачи",
       "createTask": "Создать задачу",
+      "createSubtask": "Создать подзадачу",
       "deleteTask": "Удалить задачу",
       "searchTask": "Поиск задачи:",
       "inTask": "в",
@@ -1385,6 +1509,10 @@
       "autonomyMode": "Режим автономности",
       "worktree": "Рабочее дерево",
       "executeAndWait": "Выполнить и подождать",
+      "executionMode": "Режим выполнения",
+      "createOnly": "Только создать",
+      "waitForFinish": "Дождаться завершения",
+      "runInBackground": "Запустить в фоне",
       "yes": "Да",
       "no": "Нет",
       "taskId": "Идентификатор задачи",
@@ -1411,7 +1539,9 @@
       "assistant": "Ассистент",
       "readOnly": "Только для чтения",
       "createdAt": "Создана",
-      "updatedAt": "Обновлена"
+      "updatedAt": "Обновлена",
+      "runPrompt": "Запустить запрос на задаче",
+      "result": "Результат"
     },
     "aider": {
       "addContextFiles": "Добавить файл(ы) в контекст Aider:\n{{paths}}",
@@ -1457,10 +1587,12 @@
         "contextLines": "({{count}} строк контекста)",
         "matchesCount": "({{count}} совпадений)",
         "lineLabel": "Строка {{lineNumber}}:",
-        "contextLabel": "Контекст:"
+        "contextLabel": "Контекст:",
+        "ignoreGitignore": "Включая игнорируемые файлы"
       },
       "bash": {
         "title": "Выполнить команду",
+        "titleWithDescription": "Выполнить команду, чтобы",
         "exitCode": "Код выхода",
         "stdout": "Стандартный вывод",
         "stderr": "Стандартный вывод ошибок",
@@ -1527,12 +1659,17 @@
     "errors": {
       "noSuchTool": "Попытка использовать неизвестный инструмент: {{toolName}}",
       "invalidToolArguments": "Недопустимые аргументы для инструмента: {{toolName}}"
-    }
+    },
+    "preparing": "Подготовка инструмента..."
   },
   "codeBlock": {
     "revertChanges": "Отменить изменения"
   },
   "diffViewer": {
+    "oldValue": "Старое значение",
+    "newValue": "Новое значение",
+    "error": "Ошибка: {{message}}",
+    "reportIssue": "Пожалуйста, сообщите о проблеме на https://github.com/hotovo/aider-desk/issues.",
     "sideBySide": "Бок о бок",
     "unified": "Унифицированный",
     "compact": "Компактный",
@@ -1588,6 +1725,7 @@
     "editQueuedPrompt": "Редактировать",
     "saveQueuedPrompt": "Сохранить",
     "cancelEditQueuedPrompt": "Отмена",
+    "queuedPromptImages": "Прикреплено изображений: {{count}}",
     "answers": {
       "yes": "(Д)а",
       "no": "(Н)ет",
@@ -1595,6 +1733,7 @@
       "dontAsk": "(Н)е спрашивать снова"
     },
     "invalidCommand": "Недопустимая команда",
+    "skillNotFound": "Навык «{{skill}}» не найден",
     "stopResponse": "Остановить ответ",
     "sendMessage": "Отправить сообщение (Enter)",
     "clearChat": "Очистить чат",
@@ -1602,7 +1741,8 @@
     "agentModeOnly": "Доступно только в режиме Агент",
     "handoffError": "Передача не удалась: {{error}}",
     "taskInfo": "Показать информацию о задаче",
-    "expandEditor": "Развернуть редактор"
+    "expandEditor": "Развернуть редактор",
+    "pastedImage": "Вставленное изображение {{index}}"
   },
   "agentProfiles": {
     "title": "Агенты",
@@ -1657,9 +1797,7 @@
     "worktreeOptionCarryOverKeepLabel": "Перенести и оставить в проекте",
     "worktreeOptionCarryOverKeepDescription": "Скопировать незакоммиченные изменения в рабочее дерево, также сохранив их в каталоге проекта",
     "switchToLocal": "Перейти в локальный режим",
-    "switchToWorktree": "Перейти в рабочее дерево",
-    "switchToLocalTooltip": "Сейчас работа ведётся в git worktree. Перейти к внесению изменений непосредственно в локальный каталог проекта для этой задачи.",
-    "switchToWorktreeTooltip": "Сейчас работа ведётся в локальном каталоге проекта. Перейти к использованию git worktree для изолированных изменений в этой задаче."
+    "switchToWorktree": "Перейти в рабочее дерево"
   },
   "workingModeTooltip": {
     "local": "Вносить изменения непосредственно в локальный каталог проекта для этой задачи",
@@ -1709,7 +1847,8 @@
     "web": "Скопировать веб-страницу и сохранить в файл. Используйте /web url [файл] с необязательным [файл].",
     "handoff": "Передать разговор в новую задачу с фокусом",
     "subtask": "Создать подзадачу текущей задачи и переключиться на неё",
-    "subagent": "Запустить промпт в указанном субагенте. Используйте /subagent <id-субагента> <промпт>"
+    "subagent": "Запустить промпт в указанном субагенте. Используйте /subagent <id-субагента> <промпт>",
+    "skill": "Активировать навык. Любой текст после названия навыка используется как промпт"
   },
   "telemetry": {
     "title": "Информация о телеметрии",
@@ -1745,6 +1884,7 @@
       "charts": "Графики"
     },
     "charts": {
+      "andMore": "(+ещё {{count}})",
       "tokenUsageTrend": "Динамика использования токенов",
       "costBreakdown": "Детализация затрат",
       "messageBreakdown": "Детализация сообщений",
@@ -1780,9 +1920,12 @@
     }
   },
   "terminal": {
+    "connecting": "Подключение к терминалу...",
+    "tabLabel": "Терминал",
     "copyOutput": "Скопировать вывод терминала в запрос",
     "minimize": "Свернуть терминал",
-    "addTerminal": "Добавить терминал"
+    "addTerminal": "Добавить терминал",
+    "restartHint": "Сессия завершена. Нажмите любую клавишу для перезапуска."
   },
   "contextMenu": {
     "copy": "Копировать",
@@ -1872,8 +2015,83 @@
     "READY_FOR_IMPLEMENTATION": "Готова к реализации",
     "TODO": "К выполнению"
   },
+  "git": {
+    "askpass": {
+      "passwordTitle": "Аутентификация Git",
+      "usernameTitle": "Имя пользователя Git",
+      "confirmationTitle": "Подтверждение Git",
+      "rememberSession": "Запомнить на время этой сессии"
+    },
+    "pullUpToDate": "Проект уже актуален — нет изменений для загрузки",
+    "pullSuccess": "Проект успешно обновлён",
+    "confirmPullTitle": "Загрузка изменений",
+    "confirmPullMessage": "Ваша ветка расходится с удалённой ({{outgoing}} исходящих, {{incoming}} входящих коммитов). Выберите способ согласования веток:",
+    "pullRebaseAutostashHint": "Незакоммиченные изменения будут спрятаны и автоматически восстановлены после загрузки.",
+    "pushSuccess": "Изменения успешно отправлены",
+    "pushRejectedPullFirst": "Отправка отклонена: в удалённой ветке есть новые коммиты. Сначала загрузите изменения и повторите попытку.",
+    "resolveWithAI": "Решить с помощью ИИ",
+    "outgoingCommitsTooltip": "Исходящие коммиты ({{count}}):",
+    "incomingCommitsTooltip": "Входящие коммиты ({{count}}):",
+    "gitBranchLabel": "Git-ветка: {{branch}}",
+    "upToDate": "Актуальна",
+    "noCurrentBranch": "Нет ветки",
+    "searchBranches": "Поиск веток",
+    "noBranchesFound": "Ветки не найдены",
+    "localBranches": "Локальные",
+    "remoteBranches": "Удалённые",
+    "newBranch": "Новая ветка",
+    "newBranchNamePlaceholder": "Имя новой ветки",
+    "initializeGit": "Инициализировать Git",
+    "initializeGitTooltip": "В этом проекте нет git-репозитория. Инициализируйте его, чтобы использовать ветки, worktree и отслеживание версий.",
+    "initializingGit": "Инициализация...",
+    "gitInitialized": "Git-репозиторий инициализирован",
+    "branchCreated": "Ветка '{{branch}}' создана",
+    "checkedOutBranch": "Переключено на '{{branch}}'",
+    "confirmCheckoutTitle": "Переключение ветки",
+    "confirmCheckoutMessage": "Эта ветка уже используется в рабочем дереве другой задачи. После подтверждения она будет отсоединена там (это рабочее дерево перейдёт в состояние detached HEAD с сохранением изменений), чтобы её можно было переключить здесь. Продолжить?",
+    "checkout": "Переключить",
+    "mergeIntoCurrent": "Слить в текущую ветку",
+    "rebaseCurrentOnto": "Перебазировать текущую ветку на эту",
+    "merge": "Слить",
+    "rebase": "Перебазировать",
+    "confirmMergeTitle": "Слияние ветки",
+    "confirmMergeMessage": "Слить '{{branch}}' в текущую ветку?",
+    "mergedIntoCurrent": "'{{branch}}' слита в текущую ветку",
+    "mergeConflicts": "Конфликты слияния в: {{files}}",
+    "confirmRebaseTitle": "Перебазирование ветки",
+    "confirmRebaseMessage": "Перебазировать текущую ветку на '{{branch}}'?",
+    "rebasedOnto": "Перебазировано на '{{branch}}'",
+    "rebaseConflicts": "Конфликты перебазирования в: {{files}}. Прервите перебазирование, чтобы вернуться в предыдущее состояние.",
+    "deleteBranch": "Удалить ветку",
+    "deleteForce": "Удалить принудительно",
+    "confirmDeleteTitle": "Удаление ветки",
+    "confirmDeleteMessage": "Удалить ветку '{{branch}}'?",
+    "confirmForceDeleteMessage": "Ветка '{{branch}}' содержит неслитые коммиты. Удалить её принудительно и потерять эти коммиты?",
+    "branchDeleted": "Ветка '{{branch}}' удалена",
+    "updateProject": "Обновить проект (Pull)",
+    "push": "Отправить",
+    "confirmPushTitle": "Отправка коммитов",
+    "confirmPushMessage_one": "Отправить {{count}} коммит на удалённый репозиторий?",
+    "confirmPushMessage_other": "Отправить {{count}} коммитов на удалённый репозиторий?",
+    "noCommitsToPush": "Нет коммитов для отправки",
+    "confirmPushSetUpstreamMessage": "У ветки '{{branch}}' нет вышестоящей ветки. Отправить её на удалённый репозиторий и назначить удалённую ветку вышестоящей?",
+    "force": "Принудительно",
+    "aheadCommits_one": "На {{count}} коммит впереди",
+    "aheadCommits_other": "На {{count}} коммитов впереди",
+    "behindCommits_one": "На {{count}} коммит позади",
+    "behindCommits_other": "На {{count}} коммитов позади",
+    "recentBranches": "Недавние",
+    "checkoutBranch": "Переключиться на '{{branch}}'",
+    "newBranchFrom": "Новая ветка от '{{branch}}'...",
+    "mergeBranchInto": "Слить '{{branch}}' в '{{current}}'",
+    "rebaseOnto": "Перебазировать '{{current}}' на '{{branch}}'",
+    "deleteBranchName": "Удалить '{{branch}}'",
+    "rebaseWorktreeOnto": "Перебазировать рабочее дерево на '{{branch}}'",
+    "actionNotAvailableInWorktree": "Это действие недоступно в режиме рабочего дерева",
+    "updateFromRemote": "Обновить из '{{upstream}}'",
+    "branchUpdated": "Ветка '{{branch}}' обновлена из удалённого репозитория"
+  },
   "worktree": {
-    "aheadCommits": "↑ {{count}} коммитов",
     "uncommittedFiles": "{{count}} файлов",
     "conflicts": "конфликтов",
     "conflictsPredicted": "Прогнозируемые конфликты",
@@ -1886,7 +2104,10 @@
     "abortRebase": "Прервать перебазирование",
     "continueRebase": "Продолжить перебазирование",
     "rebaseConflictsDescription": "Обнаружены конфликты перебазирования в следующих файлах. Разрешите их вручную и продолжите, или используйте AI-агента для помощи.",
+    "rebasePausedDueToConflicts": "Перебазирование приостановлено из-за конфликтов. Разрешите их и продолжите перебазирование или прервите его, чтобы восстановить рабочее дерево.",
     "rebaseConflictsResolvedDescription": "Конфликты решены и проиндексированы. Теперь можно продолжить перебазирование.",
+    "switchToLocalRebaseInProgress": "Нельзя переключиться в локальный режим во время перебазирования. Сначала продолжите или прервите перебазирование.",
+    "switchToLocalUncommittedChanges": "В рабочем дереве есть незафиксированные изменения. Сначала выполните слияние или явно отклоните изменения перед переключением в локальный режим.",
     "confirmRebaseTitle": "Перебазировать рабочее дерево",
     "confirmRebaseMessage": "Это перебазирует рабочее дерево на выбранную ветку. При наличии конфликтов их нужно будет разрешить.",
     "confirmAbortRebaseTitle": "Прервать перебазирование",
@@ -1901,19 +2122,20 @@
     "selectBranch": "Выбрать ветку",
     "selectTargetBranchTitle": "Выбор целевой ветки",
     "selectSourceBranchTitle": "Выбор исходной ветки",
-    "branchHasWorktree": "имеет рабочее дерево",
+    "branchCurrent": "текущая ветка",
     "mergeTooltip": "Объединить изменения рабочего дерева в ветку",
     "revertTooltip": "Отменить последние объединённые изменения",
     "confirmMerge": "Вы уверены, что хотите {{action}} изменения рабочего дерева в основную ветку? Это включит все незакоммиченные изменения.",
     "confirmRevert": "Вы уверены, что хотите отменить последнее слияние? Это вернёт основную ветку в предыдущее состояние.",
     "confirmMergeTitle": "Подтверждение слияния",
     "confirmSquashTitle": "Подтверждение сквоша",
-    "confirmOnlyUncommittedTitle": "Подтверждение применения незакоммиченных изменений",
+    "confirmOnlyUncommittedTitle": "Применить незакоммиченные изменения",
     "confirmMergeMessage": "Вы уверены, что хотите объединить изменения рабочего дерева с выбранной веткой?",
     "confirmSquashMessage": "Вы уверены, что хотите скомпоновать и объединить изменения рабочего дерева с выбранной веткой?",
-    "confirmOnlyUncommittedMessage": "Вы уверены, что хотите применить незакоммиченные изменения из рабочего дерева к выбранной ветке? Слияние git выполняться не будет.",
+    "confirmOnlyUncommittedMessage": "Вы уверены, что хотите применить незакоммиченные изменения из рабочего дерева к текущей ветке {{branch}}? Слияние git выполняться не будет, проект останется на текущей ветке.",
     "mergeConflicts": "Слияние не удалось из-за конфликтов между рабочим деревом и целевой веткой. Сначала перебазируйте рабочее дерево для разрешения конфликтов.",
     "applyUncommittedConflicts": "Не удалось применить незакоммиченные изменения из-за конфликтов с целевой веткой. Сначала перебазируйте рабочее дерево для согласования изменений.",
+    "switchToLocalApplyUncommittedConflicts": "Не удалось применить незакоммиченные изменения рабочего дерева в директорию проекта из-за конфликтов. Переключение в локальный режим отменено — рабочее дерево и его изменения сохранены.",
     "dontAskAgain": "Не спрашивать снова",
     "confirmRevertTitle": "Подтверждение отмены",
     "confirmRevertMessage": "Вы уверены, что хотите отменить последнее слияние? Это отменит изменения, внесённые из рабочего дерева обратно в основную ветку.",
@@ -1921,7 +2143,18 @@
     "noChanges": "Нет изменений",
     "renameBranch": "Переименовать ветку",
     "branchNamePlaceholder": "Введите название ветки...",
-    "basedOn": "На основе"
+    "basedOn": "На основе",
+    "rebaseFromCurrentBranch": "Перебазировать из '{{branch}}'",
+    "mergeIntoBranch": "Слияние в ветку...",
+    "squashIntoBranch": "Сквош и слияние в ветку...",
+    "applyUncommittedChanges": "Применить незакоммиченные изменения",
+    "mergeIntoBranchTooltip": "Выполняет слияние всех коммитов и незакоммиченных изменений из этого рабочего дерева в целевую ветку (создаёт коммит слияния).",
+    "squashIntoBranchTooltip": "Объединяет все коммиты рабочего дерева и незакоммиченные изменения в один новый коммит в целевой ветке.",
+    "applyUncommittedChangesTooltip": "Применяет только незакоммиченные изменения из этого рабочего дерева к ветке, которая сейчас проверена в директории проекта, без слияния коммитов.",
+    "rebaseFromCurrentBranchTooltip": "Переносит коммиты рабочего дерева поверх '{{branch}}' и обновляет базовую ссылку.",
+    "aheadCommitsTooltip": "Коммиты впереди '{{branch}}' ({{count}}):",
+    "behindCommitsTooltip": "Коммиты позади '{{branch}}' ({{count}}):",
+    "behindCommitsSyncHint": "Используйте «Перебазировать из '{{branch}}'» для синхронизации"
   },
   "welcomeMessage": {
     "title": "AiderDesk",
@@ -1991,5 +2224,13 @@
     "projectError": "Не удалось загрузить проект.",
     "projects": "Проекты",
     "openTasks": "Открыть задачи"
+  },
+  "providerTls": {
+    "title": "Настройки TLS",
+    "disableCertificateVerification": "Отключить проверку сертификата",
+    "disableCertificateVerificationInfo": "Пропустить проверку TLS-сертификата для эндпоинта этого провайдера. Используйте только для доверенных серверов с самоподписанными сертификатами (например, локальные серверы моделей).",
+    "caCertPath": "Путь к CA-сертификату",
+    "caCertPathInfo": "Абсолютный путь к файлу CA-сертификата (PEM) для проверки эндпоинта провайдера. Для самоподписанных или приватных CA-сертификатов предпочтительнее, чем отключение проверки.",
+    "caCertPathPlaceholder": "/path/to/ca.pem"
   }
 }

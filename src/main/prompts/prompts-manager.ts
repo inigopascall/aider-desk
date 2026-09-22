@@ -44,6 +44,8 @@ import {
   CompactConversationPromptData,
   ConflictResolutionPromptData,
   ConflictResolutionSystemPromptData,
+  GitErrorResolutionPromptData,
+  GitErrorResolutionSystemPromptData,
   HandoffPromptData,
   HoneConversationPromptData,
   InitProjectPromptData,
@@ -125,6 +127,8 @@ export class PromptsManager {
       'task-name',
       'conflict-resolution',
       'conflict-resolution-system',
+      'git-error-resolution',
+      'git-error-resolution-system',
       'update-task-state',
       'handoff',
       'code-change-requests',
@@ -523,6 +527,25 @@ export class PromptsManager {
       theirsPath: ctx.theirsPath,
     };
     return await this.render('conflict-resolution', data, task.getProjectDir(), task);
+  };
+
+  public getGitErrorResolutionSystemPrompt = async (task: Task) => {
+    const data: GitErrorResolutionSystemPromptData = {
+      POWER_TOOL_GROUP_NAME,
+      TOOL_GROUP_NAME_SEPARATOR,
+      POWER_TOOL_BASH,
+      POWER_TOOL_FILE_READ,
+      POWER_TOOL_GREP,
+    };
+    return await this.render('git-error-resolution-system', data, task.getProjectDir(), task);
+  };
+
+  public getGitErrorResolutionPrompt = async (task: Task, action: string, error: string) => {
+    const data: GitErrorResolutionPromptData = {
+      action,
+      error,
+    };
+    return await this.render('git-error-resolution', data, task.getProjectDir(), task);
   };
 
   public getUpdateTaskStatePrompt = async (task: Task) => {

@@ -298,6 +298,14 @@ Context object passed to extension methods, providing access to AiderDesk APIs.
 
 ```typescript
 interface ExtensionContext {
+  /** Register a setup function whose returned cleanup function will be called
+   * automatically when the extension is unloaded.
+   * Setup runs immediately. Cleanup runs in reverse order of registration (LIFO).
+   * Cleanup may return a Promise; async cleanups are awaited during unload and
+   * errors are logged without blocking other cleanups.
+   * If setup returns void, no cleanup is registered. */
+  addDisposable(setup: () => (() => void | Promise<void>) | void): void;
+
   /** Log a message prefixed with the extension name. Type defaults to 'info'. */
   log(message: string, type?: 'info' | 'error' | 'warn' | 'debug'): void;
 
@@ -537,7 +545,7 @@ interface TaskContext {
 ```typescript
 interface TaskContext {
   /** Submit a prompt for processing. If a prompt is running, the new one is queued. */
-  runPrompt(prompt: string, mode?: string): Promise<void>;
+  runPrompt(prompt: string, mode?: string, images?: string[]): Promise<void>;
 
   /** Execute a prompt directly using a specific agent profile. Returns array of response completion data. */
   runPromptInAgent(
@@ -1096,8 +1104,8 @@ interface CommandDefinition {
   description: string;
   /** Command arguments */
   arguments?: CommandArgument[];
-  /** Execute function that handles the complete command logic */
-  execute: (args: string[], context: ExtensionContext) => Promise<void>;
+  /** Execute function that handles the complete command logic. Receives images (data URLs) attached to the prompt when the command was executed. */
+  execute: (args: string[], context: ExtensionContext, images?: string[]) => Promise<void>;
 }
 ```
 

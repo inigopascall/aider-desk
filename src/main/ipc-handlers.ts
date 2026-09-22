@@ -16,7 +16,7 @@ import {
   AgentProfile,
   ChangeRequestItem,
 } from '@common/types';
-import { ipcMain, clipboard } from 'electron';
+import { ipcMain, clipboard, ClipboardItem } from 'electron';
 
 import { EventsHandler } from './events-handler';
 
@@ -51,6 +51,10 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
 
   ipcMain.on('answer-question', (_, baseDir: string, taskId: string, answer: string) => {
     void eventsHandler.answerQuestion(baseDir, taskId, answer);
+  });
+
+  ipcMain.handle('respond-input-prompt', (_, id: string, value: string | null, rememberSession?: boolean) => {
+    eventsHandler.respondInputPrompt(id, value, rememberSession);
   });
 
   ipcMain.on('remove-queued-prompt', (_, baseDir: string, taskId: string, promptId: string) => {
@@ -185,12 +189,33 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
     return await eventsHandler.deleteRepositoryMapping(baseDir, filePath);
   });
 
+  ipcMain.handle('get-updated-file-diff', async (_, baseDir: string, taskId: string, filePath: string, commitHash?: string) => {
+    return await eventsHandler.getUpdatedFileDiff(baseDir, taskId, filePath, commitHash);
+  });
+
+  ipcMain.handle('get-updated-file-contents', async (_, baseDir: string, taskId: string, filePath: string, commitHash?: string) => {
+    return await eventsHandler.getUpdatedFileContents(baseDir, taskId, filePath, commitHash);
+  });
+
   ipcMain.handle('refresh-context-files', async (_, baseDir: string, taskId: string) => {
     await eventsHandler.refreshContextFiles(baseDir, taskId);
   });
 
   ipcMain.handle('is-project-path', async (_, path: string) => {
     return await eventsHandler.isProjectPath(path);
+  });
+
+  ipcMain.handle('clone-project', async (_, repositoryUrl: string, targetDir?: string): Promise<{ path?: string; error?: string }> => {
+    try {
+      const path = await eventsHandler.cloneProject(repositoryUrl, targetDir);
+      return { path };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle('cancel-clone-project', async () => {
+    eventsHandler.cancelCloneProject();
   });
 
   ipcMain.handle('is-valid-path', async (_, baseDir: string, path: string) => {
@@ -466,7 +491,7 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
   });
 
   ipcMain.handle('activate-skill', async (_, baseDir: string, taskId: string, skillName: string) => {
-    await eventsHandler.activateSkill(baseDir, taskId, skillName);
+    return await eventsHandler.activateSkill(baseDir, taskId, skillName);
   });
 
   ipcMain.handle('deactivate-skill', async (_, baseDir: string, taskId: string, skillName: string) => {
@@ -525,8 +550,8 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
     return eventsHandler.getCustomModes(baseDir);
   });
 
-  ipcMain.handle('run-custom-command', async (_, baseDir: string, taskId: string, commandName: string, args: string[], mode: Mode) => {
-    await eventsHandler.runCustomCommand(baseDir, taskId, commandName, args, mode);
+  ipcMain.handle('run-custom-command', async (_, baseDir: string, taskId: string, commandName: string, args: string[], mode: Mode, images?: string[]) => {
+    await eventsHandler.runCustomCommand(baseDir, taskId, commandName, args, mode, images);
   });
 
   // Terminal handlers
@@ -546,6 +571,10 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
     return eventsHandler.closeTerminal(terminalId);
   });
 
+  ipcMain.handle('terminal-get-buffer', async (_, terminalId: string) => {
+    return eventsHandler.getTerminalBuffer(terminalId);
+  });
+
   ipcMain.handle('terminal-get-for-task', async (_, taskId: string) => {
     return eventsHandler.getTerminalForTask(taskId);
   });
@@ -561,7 +590,12 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
 
   ipcMain.handle(
     'switch-to-local-working-mode',
-    async (_, baseDir: string, taskId: string, options?: { mergeBeforeSwitch?: boolean; targetBranch?: string; switchAllInWorktree?: boolean }) => {
+    async (
+      _,
+      baseDir: string,
+      taskId: string,
+      options?: { mergeBeforeSwitch?: boolean; targetBranch?: string; switchAllInWorktree?: boolean; discardWorktreeChanges?: boolean },
+    ) => {
       await eventsHandler.switchToLocalWorkingMode(baseDir, taskId, options);
     },
   );
@@ -577,8 +611,8 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
     return await eventsHandler.getLocalUncommittedFiles(baseDir, taskId);
   });
 
-  ipcMain.handle('apply-uncommitted-changes', async (_, baseDir: string, taskId: string, targetBranch?: string) => {
-    await eventsHandler.applyUncommittedChanges(baseDir, taskId, targetBranch);
+  ipcMain.handle('apply-uncommitted-changes', async (_, baseDir: string, taskId: string) => {
+    await eventsHandler.applyUncommittedChanges(baseDir, taskId);
   });
 
   ipcMain.handle('revert-last-merge', async (_, baseDir: string, taskId: string) => {
@@ -597,12 +631,16 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
     return await eventsHandler.readFile(baseDir, taskId, filePath);
   });
 
-  ipcMain.handle('generate-commit-message', async (_, baseDir: string, taskId: string) => {
-    return await eventsHandler.generateCommitMessage(baseDir, taskId);
+  ipcMain.handle('save-file', async (_, baseDir: string, taskId: string, filePath: string, content: string) => {
+    await eventsHandler.saveFile(baseDir, taskId, filePath, content);
   });
 
-  ipcMain.handle('commit-changes', async (_, baseDir: string, taskId: string, message: string, amend: boolean) => {
-    await eventsHandler.commitChanges(baseDir, taskId, message, amend);
+  ipcMain.handle('generate-commit-message', async (_, baseDir: string, taskId: string, filePaths?: string[]) => {
+    return await eventsHandler.generateCommitMessage(baseDir, taskId, filePaths);
+  });
+
+  ipcMain.handle('commit-changes', async (_, baseDir: string, taskId: string, message: string, amend: boolean, filePaths?: string[]) => {
+    await eventsHandler.commitChanges(baseDir, taskId, message, amend, filePaths);
   });
 
   ipcMain.handle('cancel-commit-changes', async (_, baseDir: string, taskId: string) => {
@@ -611,6 +649,59 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
 
   ipcMain.handle('list-branches', async (_, baseDir: string) => {
     return await eventsHandler.listBranches(baseDir);
+  });
+
+  // Git branch operations
+  ipcMain.handle('list-git-branches', async (_, baseDir: string, taskId: string, includeRemote?: boolean) => {
+    return await eventsHandler.listGitBranches(baseDir, taskId, includeRemote);
+  });
+
+  ipcMain.handle('get-sync-commits', async (_, baseDir: string, taskId: string, targetBranch?: string) => {
+    return await eventsHandler.getSyncCommits(baseDir, taskId, targetBranch);
+  });
+
+  ipcMain.handle('create-git-branch', async (_, baseDir: string, taskId: string, name: string, startPoint?: string, checkout?: boolean) => {
+    await eventsHandler.createGitBranch(baseDir, taskId, name, startPoint, checkout);
+  });
+
+  ipcMain.handle('checkout-git-branch', async (_, baseDir: string, taskId: string, branch: string, createTracking?: boolean, takeOver?: boolean) => {
+    await eventsHandler.checkoutGitBranch(baseDir, taskId, branch, createTracking, takeOver);
+  });
+
+  ipcMain.handle('delete-git-branch', async (_, baseDir: string, taskId: string, branch: string, force?: boolean) => {
+    await eventsHandler.deleteGitBranch(baseDir, taskId, branch, force);
+  });
+
+  ipcMain.handle('merge-into-current-branch', async (_, baseDir: string, taskId: string, branch: string) => {
+    return await eventsHandler.mergeIntoCurrentBranch(baseDir, taskId, branch);
+  });
+
+  ipcMain.handle('rebase-onto-branch', async (_, baseDir: string, taskId: string, branch: string) => {
+    return await eventsHandler.rebaseOntoBranch(baseDir, taskId, branch);
+  });
+
+  ipcMain.handle('update-git-branch', async (_, baseDir: string, taskId: string, branchName: string) => {
+    return await eventsHandler.updateGitBranch(baseDir, taskId, branchName);
+  });
+
+  ipcMain.handle('git-is-repo', async (_, baseDir: string, taskId: string) => {
+    return await eventsHandler.isGitRepository(baseDir, taskId);
+  });
+
+  ipcMain.handle('git-init-repo', async (_, baseDir: string, taskId: string) => {
+    return await eventsHandler.initializeGitRepository(baseDir, taskId);
+  });
+
+  ipcMain.handle('git-pull', async (_, baseDir: string, taskId: string, rebase?: boolean) => {
+    return await eventsHandler.gitPull(baseDir, taskId, rebase);
+  });
+
+  ipcMain.handle('git-push', async (_, baseDir: string, taskId: string, force?: boolean, setUpstream?: boolean) => {
+    return await eventsHandler.gitPush(baseDir, taskId, force, setUpstream);
+  });
+
+  ipcMain.handle('resolve-git-error-with-agent', async (_, baseDir: string, taskId: string) => {
+    await eventsHandler.resolveGitErrorWithAgent(baseDir, taskId);
   });
 
   ipcMain.handle('get-worktree-integration-status', async (_, baseDir: string, taskId: string, targetBranch?: string) => {
@@ -633,8 +724,12 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
     await eventsHandler.resolveConflictsWithAgent(baseDir, taskId);
   });
 
+  ipcMain.handle('rename-git-branch', async (_, baseDir: string, taskId: string, newBranchName: string) => {
+    await eventsHandler.renameGitBranch(baseDir, taskId, newBranchName);
+  });
+
   ipcMain.handle('rename-worktree-branch', async (_, baseDir: string, taskId: string, newBranchName: string) => {
-    await eventsHandler.renameWorktreeBranch(baseDir, taskId, newBranchName);
+    await eventsHandler.renameGitBranch(baseDir, taskId, newBranchName);
   });
 
   // Server control handlers
@@ -743,6 +838,11 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
 
   ipcMain.handle('clipboard-write-text', async (_, text: string) => {
     clipboard.writeText(text);
+  });
+
+  ipcMain.handle('clipboard-write-image', async (_, dataUrl: string) => {
+    const blob = await (await fetch(dataUrl)).blob();
+    await clipboard.write([new ClipboardItem({ 'image/png': blob })]);
   });
 
   // System logs handlers

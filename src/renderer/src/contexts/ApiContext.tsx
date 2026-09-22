@@ -1,13 +1,14 @@
 import { createContext, useEffect, useMemo, ReactNode, useContext } from 'react';
 import { ApplicationAPI } from '@common/api';
-import { HotkeysProvider } from 'react-hotkeys-hook';
 
 import { BrowserApi } from '@/api/browser-api';
 
 export const ApiContext = createContext<ApplicationAPI | undefined>(undefined);
 export const ReadonlyViewContext = createContext(false);
 
-export const ApiProvider = ({ children }: { children: ReactNode }) => {
+type Props = { children: ReactNode };
+
+export const ApiProvider = ({ children }: Props) => {
   const api = useMemo<ApplicationAPI>(() => {
     if (window.api) {
       return window.api;
@@ -23,11 +24,7 @@ export const ApiProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [api]);
 
-  return (
-    <ApiContext.Provider value={api}>
-      <HotkeysProvider initiallyActiveScopes={['home', 'task', 'dialog', 'modal']}>{children}</HotkeysProvider>
-    </ApiContext.Provider>
-  );
+  return <ApiContext.Provider value={api}>{children}</ApiContext.Provider>;
 };
 
 export const useOptionalApi = (): ApplicationAPI | undefined => useContext(ApiContext);

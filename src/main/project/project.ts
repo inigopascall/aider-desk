@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 
-import { AgentProfile, CreateTaskParams, DefaultTaskState, ModeDefinition, ProjectSettings, SettingsData, TaskData } from '@common/types';
+import { AgentProfile, BranchInfo, CreateTaskParams, DefaultTaskState, ModeDefinition, ProjectSettings, SettingsData, TaskData } from '@common/types';
 import { fileExists } from '@common/node-utils';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -16,7 +16,7 @@ import { TelemetryManager } from '@/telemetry';
 import { EventManager } from '@/events';
 import { INTERNAL_TASK_ID, Task } from '@/task';
 import { migrateSessionsToTasks } from '@/project/migrations';
-import { WorktreeManager } from '@/worktrees';
+import { GitManager } from '@/git';
 import { MemoryManager } from '@/memory/memory-manager';
 import { PromptsManager } from '@/prompts';
 import { ExtensionManager } from '@/extensions/extension-manager';
@@ -44,7 +44,7 @@ export class Project {
     private readonly dataManager: DataManager,
     private readonly eventManager: EventManager,
     private readonly modelManager: ModelManager,
-    private readonly worktreeManager: WorktreeManager,
+    private readonly gitManager: GitManager,
     private readonly agentProfileManager: AgentProfileManager,
     private readonly memoryManager: MemoryManager,
     private readonly promptsManager: PromptsManager,
@@ -153,6 +153,11 @@ export class Project {
     if (extResult.task) {
       // Apply modifications from extension
       Object.assign(taskData, extResult.task);
+    }
+
+    // Local mode must never carry a worktree (e.g. inherited from parent while workingMode was overridden to local)
+    if (taskData.workingMode === 'local') {
+      taskData.worktree = undefined;
     }
 
     const task = await this.prepareTask(undefined, taskData);
@@ -285,7 +290,7 @@ export class Project {
       this.dataManager,
       this.eventManager,
       this.modelManager,
-      this.worktreeManager,
+      this.gitManager,
       this.memoryManager,
       this.promptsManager,
       this.extensionManager,
@@ -519,7 +524,7 @@ export class Project {
     }
 
     try {
-      await this.worktreeManager.removeWorktree(this.baseDir, taskData.worktree);
+      await this.gitManager.removeWorktree(this.baseDir, taskData.worktree, true);
     } catch (error) {
       logger.warn('Failed to remove worktree during task deletion', {
         baseDir: this.baseDir,
@@ -560,8 +565,10 @@ export class Project {
       // before their parent.
       const allTasks = await this.getTasks();
       const descendants: TaskData[] = [];
+      const visited = new Set<string>();
       const collectDescendants = (parentId: string) => {
-        for (const candidate of allTasks.filter((t) => t.parentId === parentId)) {
+        for (const candidate of allTasks.filter((t) => t.parentId === parentId && !visited.has(t.id))) {
+          visited.add(candidate.id);
           collectDescendants(candidate.id);
           descendants.push(candidate);
         }
@@ -592,6 +599,32 @@ export class Project {
         error: error instanceof Error ? error.message : String(error),
       });
       throw error;
+    }
+  }
+
+  /**
+   * Validates that a task can be assigned the given parent: the parent must exist
+   * and must not be the task itself or one of its descendants (which would create a cycle).
+   */
+  public validateParentAssignment(taskId: string, parentId: string): void {
+    const parentTask = this.getTask(parentId);
+    if (!parentTask) {
+      throw new Error(`Parent task with id ${parentId} not found`);
+    }
+
+    const isDescendantOf = (candidateId: string, ancestorId: string): boolean => {
+      const candidate = this.getTask(candidateId);
+      if (!candidate?.task.parentId) {
+        return false;
+      }
+      if (candidate.task.parentId === ancestorId) {
+        return true;
+      }
+      return isDescendantOf(candidate.task.parentId, ancestorId);
+    };
+
+    if (parentId === taskId || isDescendantOf(parentId, taskId)) {
+      throw new Error(`Cannot move task ${taskId} under itself or one of its subtasks (${parentId})`);
     }
   }
 
@@ -717,6 +750,10 @@ export class Project {
     });
   }
 
+  public listBranches(): Promise<BranchInfo[]> {
+    return this.gitManager.listBranches(this.baseDir);
+  }
+
   async close() {
     await this.startPromise;
     this.startPromise = null;
@@ -729,7 +766,7 @@ export class Project {
     await this.promptsManager.unwatchProject(this.baseDir);
     this.extensionManager.stopProjectWatcher(this.baseDir);
     await Promise.all(Array.from(this.tasks.values()).map((task) => task.close()));
-    await this.worktreeManager.close(this.baseDir);
+    await this.gitManager.close(this.baseDir);
 
     // Remove watch-files lock file if it exists
     const lockFilePath = path.join(this.baseDir, AIDER_DESK_WATCH_FILES_LOCK);

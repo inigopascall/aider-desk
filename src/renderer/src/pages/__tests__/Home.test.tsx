@@ -71,6 +71,22 @@ vi.mock('@/components/common/StyledTooltip', () => ({
   StyledTooltip: () => <div data-testid="styled-tooltip" />,
 }));
 
+// Mock command palette store
+vi.mock('@/stores/commandPaletteStore', () => ({
+  useCommandPaletteStore: vi.fn((selector) =>
+    selector({
+      replaceItems: vi.fn(),
+      clearItems: vi.fn(),
+    }),
+  ),
+  PaletteItemType: {
+    Action: 'action',
+    File: 'file',
+    Task: 'task',
+    Project: 'project',
+  },
+}));
+
 // Mock useExtensions hook
 vi.mock('@/contexts/ExtensionsContext', () => ({
   useExtensions: vi.fn(() => ({
@@ -195,7 +211,7 @@ describe('Home', () => {
     );
 
     await waitFor(() => {
-      expect(screen.queryByTestId('no-projects')).not.toBeInTheDocument();
+      expect(screen.getAllByTestId('project-view').length).toBeGreaterThan(0);
     });
 
     // Simulate Ctrl+Tab
@@ -222,7 +238,7 @@ describe('Home', () => {
     );
 
     await waitFor(() => {
-      expect(screen.queryByTestId('no-projects')).not.toBeInTheDocument();
+      expect(screen.getAllByTestId('project-view').length).toBeGreaterThan(0);
     });
 
     // First switch to Project 2

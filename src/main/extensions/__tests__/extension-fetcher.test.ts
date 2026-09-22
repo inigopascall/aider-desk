@@ -6,6 +6,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { ExtensionFetcher } from '../extension-fetcher';
 
+vi.mock('typescript', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('typescript')>();
+  return {
+    ...actual,
+    createProgram: vi.fn(),
+  };
+});
+
 // Mock the shell utility
 vi.mock('@/utils/shell', () => ({
   execWithShellPath: vi.fn(),
@@ -45,8 +53,8 @@ describe('ExtensionFetcher', () => {
       try {
         const testFetcher = new ExtensionFetcher();
         // Access private method via type assertion
-        const getStaticMetadata = (testFetcher as unknown as { getStaticMetadata: (filePath: string) => unknown }).getStaticMetadata.bind(testFetcher);
-        return getStaticMetadata(extFile);
+        const getStaticMetadata = (testFetcher as unknown as { getStaticMetadata: (filePath: string) => Promise<unknown> }).getStaticMetadata.bind(testFetcher);
+        return await getStaticMetadata(extFile);
       } finally {
         await fsPromises.rm(realTempDir, { recursive: true, force: true });
       }
@@ -283,8 +291,8 @@ describe('ExtensionFetcher', () => {
 
       try {
         const testFetcher = new ExtensionFetcher();
-        const getStaticMetadata = (testFetcher as unknown as { getStaticMetadata: (filePath: string) => unknown }).getStaticMetadata.bind(testFetcher);
-        const metadata = getStaticMetadata(extFile);
+        const getStaticMetadata = (testFetcher as unknown as { getStaticMetadata: (filePath: string) => Promise<unknown> }).getStaticMetadata.bind(testFetcher);
+        const metadata = await getStaticMetadata(extFile);
 
         expect(metadata).toEqual({
           name: 'JS Extension',
@@ -294,6 +302,49 @@ describe('ExtensionFetcher', () => {
       } finally {
         await fsPromises.rm(realTempDir, { recursive: true, force: true });
       }
+    });
+
+    it('should parse with createSourceFile instead of createProgram', async () => {
+      const { createProgram } = (await import('typescript')) as unknown as { createProgram: ReturnType<typeof vi.fn> };
+
+      const mockFileContent = `
+        export class ParseModeExtension implements Extension {
+          static metadata = {
+            name: 'Parse Mode Extension',
+            version: '1.0.0',
+            capabilities: ['tools'],
+          };
+        }
+      `;
+
+      const metadata = await createAndTestMetadata(mockFileContent);
+
+      expect(metadata).toEqual({
+        name: 'Parse Mode Extension',
+        version: '1.0.0',
+        capabilities: ['tools'],
+      });
+      expect(createProgram).not.toHaveBeenCalled();
+    });
+
+    it('should extract metadata from a standalone file without TypeScript program resolution', async () => {
+      const mockFileContent = `
+        export class IndependentExtension implements Extension {
+          static metadata = {
+            name: 'Independent Extension',
+            version: '1.0.0',
+            capabilities: ['commands'],
+          };
+        }
+      `;
+
+      const metadata = await createAndTestMetadata(mockFileContent);
+
+      expect(metadata).toEqual({
+        name: 'Independent Extension',
+        version: '1.0.0',
+        capabilities: ['commands'],
+      });
     });
   });
 
@@ -531,6 +582,89 @@ describe('ExtensionFetcher', () => {
       const rawUrl = fetcher.getRawUrl(nonGithubUrl);
 
       expect(rawUrl).toBeNull();
+    });
+  });
+
+  describe('mergeInstallCounts', () => {
+    const getMergeInstallCounts = () =>
+      (fetcher as unknown as { mergeInstallCounts: (extensions: unknown[], extensionsPath: string, repoDir: string) => Promise<void> }).mergeInstallCounts.bind(
+        fetcher,
+      );
+
+    const createRegistryFile = async (registryContent: string, location: 'sibling' | 'inside') => {
+      const repoDir = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'ext-registry-'));
+      const extensionsPath = path.join(repoDir, 'extensions');
+      await fsPromises.mkdir(extensionsPath, { recursive: true });
+
+      const registryPath = location === 'sibling' ? path.join(repoDir, 'extensions.json') : path.join(extensionsPath, 'extensions.json');
+      await fsPromises.writeFile(registryPath, registryContent);
+      return { repoDir, extensionsPath };
+    };
+
+    it('should merge install counts from sibling extensions.json by id', async () => {
+      const registry = JSON.stringify({
+        extensions: [
+          { id: 'my-ext', name: 'My Ext', installCount: 42 },
+          { id: 'other-ext', name: 'Other Ext', installCount: 7 },
+        ],
+      });
+      const { repoDir, extensionsPath } = await createRegistryFile(registry, 'sibling');
+
+      try {
+        const extensions: { id: string; name: string; version: string; installCount?: number }[] = [{ id: 'my-ext', name: 'My Ext', version: '1.0.0' }];
+        await getMergeInstallCounts()(extensions, extensionsPath, repoDir);
+
+        expect(extensions[0].installCount).toBe(42);
+      } finally {
+        await fsPromises.rm(repoDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should merge install counts from extensions.json inside the scanned folder', async () => {
+      const registry = JSON.stringify({
+        extensions: [{ id: 'my-ext', name: 'My Ext', installCount: 42 }],
+      });
+      const { repoDir, extensionsPath } = await createRegistryFile(registry, 'inside');
+
+      try {
+        const extensions: { id: string; name: string; version: string; installCount?: number }[] = [{ id: 'my-ext', name: 'My Ext', version: '1.0.0' }];
+        await getMergeInstallCounts()(extensions, extensionsPath, repoDir);
+
+        expect(extensions[0].installCount).toBe(42);
+      } finally {
+        await fsPromises.rm(repoDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should not modify extensions without matching registry entries', async () => {
+      const registry = JSON.stringify({
+        extensions: [{ id: 'other-ext', name: 'Other Ext', installCount: 7 }],
+      });
+      const { repoDir, extensionsPath } = await createRegistryFile(registry, 'sibling');
+
+      try {
+        const extensions: { id: string; name: string; version: string; installCount?: number }[] = [{ id: 'my-ext', name: 'My Ext', version: '1.0.0' }];
+        await getMergeInstallCounts()(extensions, extensionsPath, repoDir);
+
+        expect(extensions[0]).not.toHaveProperty('installCount');
+      } finally {
+        await fsPromises.rm(repoDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should leave extensions unchanged when registry file is missing', async () => {
+      const repoDir = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'ext-no-registry-'));
+      const extensionsPath = path.join(repoDir, 'extensions');
+      await fsPromises.mkdir(extensionsPath, { recursive: true });
+
+      try {
+        const extensions: { id: string; name: string; version: string; installCount?: number }[] = [{ id: 'my-ext', name: 'My Ext', version: '1.0.0' }];
+        await getMergeInstallCounts()(extensions, extensionsPath, repoDir);
+
+        expect(extensions[0]).not.toHaveProperty('installCount');
+      } finally {
+        await fsPromises.rm(repoDir, { recursive: true, force: true });
+      }
     });
   });
 }, 10000);

@@ -18,8 +18,8 @@ vi.mock('@/utils/notifications', async (importOriginal) => ({
   showErrorNotification: vi.fn(),
 }));
 
-vi.mock('../FileViewerModal', () => ({
-  FileViewerModal: () => null,
+vi.mock('@/stores/fileEditorStore', () => ({
+  useFileEditorStore: (selector: (state: { openFile: (...args: unknown[]) => void }) => unknown) => selector({ openFile: vi.fn() }),
 }));
 
 vi.mock('../EmptyContextInfo', () => ({

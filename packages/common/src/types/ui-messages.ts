@@ -1,4 +1,4 @@
-import { LogLevel, TaskData, TokensInfoData, WorkflowLogData } from './common';
+import { TaskData, TokensInfoData, WorkflowLogData } from './common';
 import { PromptContext, UsageReportData, Group } from './context';
 
 export interface Message {

@@ -1,10 +1,145 @@
 # Changelog
 
-## [Unreleased]
+## [UNRELEASED]
+
+- added find in file support to the file editor with a themed search panel opened via Ctrl+F / Cmd+F
+- fixed duplicate keys in git branches popup rows causing React rendering issues
+- fixed crash with React error #185 (maximum update depth exceeded) during message streaming by ensuring message list item ids are always unique and updating @legendapp/list to 3.3.11
+- fixed committing deleted files failing to stage by retrying with `git add -A -f`
+- added passing images attached to the prompt to custom extension commands, allowing extensions to include the screenshot in the prompt they run
+
+## [0.84.0]
+
+- improved updated files diff performance by loading diffs lazily on demand instead of computing them with the file list
+- fixed updated files diff modal file ordering to match the sidebar tree order
+- fixed markdown numbered lists starting mid-paragraph being rendered as plain text by inserting required blank lines
+- improved workspace file trees rendering performance by migrating to headless-tree with virtualized rows
+- improved background projects to not load a task until the first activation
+- improved tooltips rendering performance
+- fixed agent stopping when model finished with 'stop' but produced no messages or only reasoning content by retrying the step
+- fixed creating a task worktree when its branch is already checked out in another worktree by creating a unique sibling branch
+- fixed diff viewer showing 'no changes' while streaming by hiding content until diff is complete
+- fixed switching to local mode silently discarding changes by blocking the switch when the worktree has uncommitted changes
+- added OpenAI store responses setting to support Zero Data Retention organizations by running requests in stateless mode
+- fixed model library temperature column being too narrow to fit its values
+- fixed messages scroll container not always detected for in-chat search by reporting it via a dedicated callback instead of the ref
+- added ephemeral indicator for transient message groups
+- added bulk tool approval setting for MCP servers with an "All" select in the server tools list
+- fixed task branch being renamed when its worktree is shared with other tasks
+- improved commit error messages in updated files diff modal by stripping the IPC wrapper prefix and making the error text selectable
+- added initializing a git repository for non-git projects to enable branches, worktrees and version tracking
+- fixed uncommitted diff missing in repositories with no commits yet by diffing against the empty tree and including untracked files
+- fixed React "missing key" console warning when rendering custom command blocks by wrapping parsed content in a keyed fragment
+- added auto-focus to the extensions search field when opening extensions settings
+- added keyboard navigation to the git branches dropdown with arrow keys, submenu controls, and Escape to close
+- added fetching full old and new file contents on demand for the updated files diff modal
+- updated toast notifications styling with a more visible border, using the error color for error toasts
+- fixed ignored files failing to stage by retrying staging with --force
+- updated Electron to 44.3.0
+- added task ID to the messages database for per-task usage tracking
+
+## [0.83.0]
+
+- added Copy Task ID to command palette
+- added optional description for bash tool commands displayed in tool messages
+- improved add file to Git action to update file state optimistically without refetching
+- added task management actions to command palette (create subtask/sibling, rename, change state)
+- fixed Copy Task ID label capitalization
+- fixed worktree rebase silently dropping commits when the tracked base commit is stale
+- fixed unhandled promise rejections crashing the app and prevented checkout from detaching the main repository branch
+- carry over uncommitted changes when switching to local after checkoutless merge
+- added automatic renderer crash recovery with reloading and crash loop protection
+- fixed event delivery errors when sending to destroyed or crashed windows
+- fixed chat auto-scroll to pause only on upward scrolling and reliably resume when returning to the bottom
+- added interactive authentication and passphrase prompts for Git operations
+- fixed queued custom commands appearing as user prompts; they now run directly from the queue and queue correctly while another prompt is running
+- prevent Escape key from interrupting task processing while typing in the prompt field
+- improved terminal sessions to persist when switching tasks or projects, with output replay on reattach, restart after session exit, and touch input support
+- fixed tool message status icons shrinking when the message content is long
+- fixed subtask inheriting parent worktree when working mode is overridden to local
+- added ability to select which changed files to commit in the updated files diff view
+- fixed branches dropdown not refreshing after branch switch or rebase completion
+- added ability to copy chat messages as an image to clipboard
+- improved git branches tooltip with icons and added rebase hint for worktrees behind their base branch
+- using merge-base for worktree flat diff to avoid reverse diffs
+- added optional worktree post-create command executed in the new worktree with project, worktree, task, and branch environment variables
+- improved diffs rendering to limit the worker pool size and AST cache, reducing memory usage
+
+## [0.82.0]
+
+- improved create task tool description and worktree inheritance
+- added git branch management
+- added support for checkoutless merge/squash for worktree operations
+- added x-opencode-session header to OpenCode Go provider
+- fixed worktree commit tracking and operations to use base branch
+- added confirmation dialog and force option for git push
+- fixed working mode switch dialog staying open and appearing frozen while switching
+- added ability to delete stored memories from the store memory tool message
+- added Resolve with AI action for failed git operations to fix errors with agent assistance
+- added automatic retry for transient network errors during window load to prevent blank window
+- added distinct "Create subtask" label when creating subtasks in the create task tool message
+- added git actions to the command palette with configurable hotkeys
+- fixed worktree integration checks failing when worktree directory no longer exists
+- added atomic context saving and corrupt recovery
+- optmized loading of available extensions
+- added ignoreGitignore input parameter for grep tool to search inside gitignored files
+
+## [0.81.0]
+
+- added support for nested subtasks
+- improved worktree pruning
+- workspace sidebar size is now stored on project level instead of task level
+- fixed MCP servers initialization loading message shown without prompt context
+- added /skill: command to activate skills from the prompt field with autocomplete and optional follow-up prompt
+- fixed queued prompts for extension custom agent runs
+- fixed extensions losing project started events on startup race or hot reload, now re-delivered to re-initialized extensions
+- added loading indicators for workspace sections
+- updated task creation tool with more clear create only, wait for finish, and run in background modes
+- added highlighted background for task sidebar filter and search icons when active
+- fixed agent loop silently re-sending the same prompt when step processing failed
+- fixed usage reports failing when provider models failed to load
+- added support for the gemini-3.5-transcribe-live transcription voice model, now the default for Gemini voice
+- fixed worktree merge failing on in-progress rebase and untracked stash files
+- fixed auto-compaction not triggering for models with unknown context window, now falls back to the configured token threshold
+- fixed context size undercounting that skipped compaction when tool results were appended after the last usage report
+- added reading context window from Ollama models' reported context_length, enabling the token usage bar and percentage-based auto-compaction
+- added image support for queued prompts, now shown with an image indicator in the queued prompts list
+- added install counts for available extensions with sorting by most installed or name
+- added support for cloning repositories over SSH
+- fixed conflicted worktree rebases silently orphaning commits when switching to local mode
+
+## [0.80.0]
+
+- added extraction of images and safe serialization for non-text data
+- fixed occasional virtualizd messages not showing up
+- added TLS certificate settings for OpenAI and Anthropic Compatible provider endpoints
+- improved message presentation of the multiline bash tool command
+- added validator script for extension UI component to be used by extension-creator skill
+- added responsive design for Settings
+- fixed providers API not returning data after update and added runtime array checks for provider data
+- fixed task loading state not being reset on error
+- disabled router transitions to prevent UI issues
+- fixed syntax highlighting during tool message streaming
+- added result limits to glob tool to prevent excessive output
+- fixed excessive bottom padding causing empty space under messages in virtualized list
+- added disposable resource management for extensions with automatic cleanup on unload
+- fixed disabled/uninstalled extensions still running their resources; toggling enable/disable now properly calls onUnload/onLoad lifecycle hooks
+- added option to clone git project directly from Open project dialog
+- added OpenCode Go as direct provider
+- correctly handling the project tab selection on trailing '/'
+
+## [0.79.0]
 
 - optimized task state determination when 'proceed (y/n)' is present
 - added support for showing untracked files in Updated Files and add to git action
 - added CodeBlock and ExpandableMessageBlock components to extension UI components API
+- replaced File Viewer with File Editor
+- added Command Palette
+- focusing prompt field after closing overlay dialogs
+- bound tool outputs and stream large file reads to prevent memory exhaustion
+- optimized project and task switching time
+- added crimson theme
+- simplified active project selection by deriving it from the URL parameter
 
 ## [0.78.0]
 

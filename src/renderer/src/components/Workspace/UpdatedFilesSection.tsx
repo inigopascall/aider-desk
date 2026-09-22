@@ -1,5 +1,5 @@
 import { ContextFile, OS, TokensCost, UpdatedFile, UpdatedFilesGroupMode } from '@common/types';
-import React, { Activity, useCallback, useEffect, useMemo, useState } from 'react';
+import { Activity, MouseEvent, ReactNode, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HiChevronDown } from 'react-icons/hi';
 import { MdDragIndicator, MdOutlineDifference, MdOutlineRefresh } from 'react-icons/md';
 import { motion } from 'framer-motion';
@@ -8,7 +8,8 @@ import { useTranslation } from 'react-i18next';
 import { TbGitCommit, TbGitPullRequestDraft } from 'react-icons/tb';
 import { RiEyeLine, RiEyeOffLine } from 'react-icons/ri';
 
-import { createFileTree } from './types';
+import { createFileTree, normalizePath } from './types';
+import { SectionLoading } from './SectionLoading';
 import { SectionContent } from './SectionContent';
 import { UpdatedFilesDiffModal } from './UpdatedFilesDiffModal';
 import { groupFilesByCommit, UNCOMMITTED_GROUP_ID } from './group-files';
@@ -31,25 +32,18 @@ interface CommitGroup {
   deletions: number;
 }
 
-const UpdatedSectionHeader = ({
-  isOpen,
-  title,
-  totalStats,
-  updatedActions,
-  onToggle,
-  editMode,
-  isHidden,
-  onToggleHidden,
-}: {
+type UpdatedSectionHeaderProps = {
   isOpen: boolean;
   title: string;
   totalStats: { additions: number; deletions: number };
-  updatedActions: React.ReactNode;
+  updatedActions: ReactNode;
   onToggle: () => void;
   editMode?: boolean;
   isHidden?: boolean;
   onToggleHidden?: () => void;
-}) => {
+};
+
+const UpdatedSectionHeader = ({ isOpen, title, totalStats, updatedActions, onToggle, editMode, isHidden, onToggleHidden }: UpdatedSectionHeaderProps) => {
   return (
     <div
       className={clsx(
@@ -110,7 +104,7 @@ type Props = {
   showBorderTop?: boolean;
 };
 
-export const UpdatedFilesSection = ({
+export const UpdatedFilesSectionComponent = ({
   baseDir,
   taskId,
   isOpen,
@@ -129,11 +123,14 @@ export const UpdatedFilesSection = ({
   const api = useApi();
   const { projectSettings, saveProjectSettings } = useProjectSettings();
 
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+
   const [updatedFiles, setUpdatedFiles] = useState<UpdatedFile[]>([]);
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
   const [groupExpandedItems, setGroupExpandedItems] = useState<Record<string, string[]>>({});
   const [flatExpandedItems, setFlatExpandedItems] = useState<string[]>([]);
   const [isRefreshingUpdated, setIsRefreshingUpdated] = useState(false);
+  const [isLoadingUpdated, setIsLoadingUpdated] = useState(true);
   const [diffModalOpen, setDiffModalOpen] = useState(false);
   const [diffModalSelectedFile, setDiffModalSelectedFile] = useState<UpdatedFile | null>(null);
   const [fileToRevert, setFileToRevert] = useState<string | null>(null);
@@ -246,12 +243,15 @@ export const UpdatedFilesSection = ({
   }, [commitGroups, commitGroups.length]);
 
   const fetchUpdatedFiles = useCallback(async () => {
+    setIsLoadingUpdated(true);
     try {
       const files = await api.getUpdatedFiles(baseDir, taskId);
       setUpdatedFiles(files);
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error('Failed to fetch updated files:', error);
+    } finally {
+      setIsLoadingUpdated(false);
     }
   }, [api, baseDir, taskId]);
 
@@ -298,13 +298,18 @@ export const UpdatedFilesSection = ({
 
   const handleAddFileToGit = useCallback(
     async (filePath: string) => {
+      // Optimistically mark the file as tracked; authoritative data arrives via the updatedFilesUpdated event
+      const previousFile = updatedFiles.find((file) => normalizePath(file.path) === normalizePath(filePath));
+      setUpdatedFiles((prev) => prev.map((file) => (normalizePath(file.path) === normalizePath(filePath) ? { ...file, isUntracked: false } : file)));
       setAddingFilesToGit((prev) => new Set(prev).add(filePath));
       try {
         await api.addFileToGit(baseDir, taskId, filePath);
-        await fetchUpdatedFiles();
       } catch (error) {
         // eslint-disable-next-line no-console
         console.error('Failed to add file to Git:', error);
+        if (previousFile) {
+          setUpdatedFiles((prev) => prev.map((file) => (normalizePath(file.path) === normalizePath(filePath) ? previousFile : file)));
+        }
       } finally {
         setAddingFilesToGit((prev) => {
           const next = new Set(prev);
@@ -313,7 +318,7 @@ export const UpdatedFilesSection = ({
         });
       }
     },
-    [api, baseDir, taskId, fetchUpdatedFiles],
+    [api, baseDir, taskId, updatedFiles],
   );
 
   const handleRevertFile = useCallback((filePath: string) => {
@@ -342,18 +347,20 @@ export const UpdatedFilesSection = ({
     setFileToRevert(null);
   }, []);
 
+  const noopRevertFile = useCallback(() => {}, []);
+
   const toggleGroup = useCallback((groupId: string) => {
     setExpandedGroups((prev) => (prev.includes(groupId) ? prev.filter((id) => id !== groupId) : [...prev, groupId]));
   }, []);
 
   const dropFile = useCallback(
-    (_item: TreeItem) => (_e: React.MouseEvent<HTMLButtonElement>) => {
+    () => (_e: MouseEvent<HTMLButtonElement>) => {
       _e.stopPropagation();
     },
     [],
   );
 
-  const addFile = useCallback((_item: TreeItem) => (_event: React.MouseEvent<HTMLButtonElement>) => {}, []);
+  const addFile = useCallback(() => (): void => {}, []);
 
   const updatedActions = useMemo(
     () => (
@@ -442,8 +449,13 @@ export const UpdatedFilesSection = ({
 
         {/* Content area */}
         <Activity mode={isOpen ? 'visible' : 'hidden'}>
-          <div className="flex-grow w-full overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-bg-tertiary scrollbar-track-bg-primary-light scrollbar-rounded bg-bg-primary-light-strong relative">
-            {hasAnyContent ? (
+          <div
+            ref={scrollContainerRef}
+            className="flex-grow w-full overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-bg-tertiary scrollbar-track-bg-primary-light scrollbar-rounded bg-bg-primary-light-strong relative"
+          >
+            {isLoadingUpdated ? (
+              <SectionLoading label={t('common.loadingFiles')} />
+            ) : hasAnyContent ? (
               <>
                 {isGrouped
                   ? commitGroups.map((group) => {
@@ -474,13 +486,10 @@ export const UpdatedFilesSection = ({
                               onFileDiffClick={handleFileDiffClick}
                               onAddFileToGit={isUncommitted ? handleAddFileToGit : undefined}
                               addingFilesToGit={addingFilesToGit}
-                              onRevertFile={(filePath) => {
-                                if (isUncommitted) {
-                                  handleRevertFile(filePath);
-                                }
-                              }}
+                              onRevertFile={isUncommitted ? handleRevertFile : noopRevertFile}
                               onDropFile={dropFile}
                               onAddFile={addFile}
+                              scrollContainerRef={scrollContainerRef}
                             />
                           )}
                         </div>
@@ -502,6 +511,7 @@ export const UpdatedFilesSection = ({
                         onRevertFile={handleRevertFile}
                         onDropFile={dropFile}
                         onAddFile={addFile}
+                        scrollContainerRef={scrollContainerRef}
                       />
                     )}
               </>
@@ -541,3 +551,5 @@ export const UpdatedFilesSection = ({
     </>
   );
 };
+
+export const UpdatedFilesSection = memo(UpdatedFilesSectionComponent);

@@ -12,6 +12,7 @@ This file provides guidance to AiderDesk when working with code in this reposito
 - `npm run typecheck` - Run all TypeScript type checks
 - `npm run typecheck:node` - Type check main process files (tsconfig.node.json)
 - `npm run typecheck:web` - Type check renderer process files (tsconfig.web.json)
+
 ### Linting and Formatting
 - `eslint --fix` - Run ESLint with auto-fix and auto-format on specified file(s)
 
@@ -36,6 +37,15 @@ This file provides guidance to AiderDesk when working with code in this reposito
 - `tsc --noEmit -p tsconfig.node.json` - Check main process files
 - `tsc --noEmit -p tsconfig.web.json` - Check renderer process files
 
+## Dependency Management
+
+- All dependency versions in root `package.json`, `packages/app/package.json`, and `packages/extensions/package.json` are pinned to **exact versions** (no `^`/`~` ranges). npm strips `package-lock.json` from published tarballs, so any range would float at install time for consumers.
+- `packages/app/scripts/generate-package.mjs` copies versions verbatim from root `package.json` into the published `@aiderdesk/aiderdesk` package — pinning root propagates to the published package on the next build.
+- To bump a version, change the exact pin (or use the `update-ai-sdk-dependencies.yml` workflow, which writes exact pins) and run `npm install` to sync the lockfile. Never reintroduce `^`/`~` ranges.
+- Exception: the ranged entries under `overrides` (`@tootallnate/once`, `jsondiffpatch`) are intentional — neither package exists in the lockfile, so there is no resolved version to pin.
+- `packages/extensions/package.json` (also published, `@aiderdesk/extensions`) is pinned the same way, except its `peerDependencies` (`zod`) which stays a range — peers declare consumer compatibility and install nothing. Its resolved versions live in the root lockfile: prefer the nested `packages/extensions/node_modules/<name>` resolution when it differs from the hoisted one (e.g. `chalk`, `commander`, `execa`, `ora` have different hoisted majors at root).
+- Remaining workspace packages (`packages/common`, `packages/mcp-server`, `packages/tree-sitter-utils`) are also published and still use ranges; they are not covered by this policy yet.
+
 ## High-Level Architecture
 
 AiderDesk is an Electron-based desktop application that provides a GUI wrapper for the Aider AI coding assistant. The architecture follows Electron's multi-process model with clear separation of concerns:
@@ -54,7 +64,7 @@ AiderDesk is an Electron-based desktop application that provides a GUI wrapper f
 - React-based UI components and pages
 - Project views, chat interface, settings management
 - Context file management and diff viewing
-- Internationalization (i18n) with English/Chinese support
+- Internationalization (i18n) with English/Chinese/Russian/Korean support
 
 **src/preload/** - Electron preload scripts
 - Secure bridge between main and renderer processes
@@ -73,7 +83,7 @@ AiderDesk is an Electron-based desktop application that provides a GUI wrapper f
 **packages/common/src/** - Shared code between processes (published as `@aiderdesk/common`)
 - TypeScript type definitions
 - Utility functions and constants
-- Localization files (en.json, zh.json, ru.json)
+- Localization files (en.json, zh.json, ru.json, ko.json)
 
 **packages/mcp-server/** - MCP server package (`@aiderdesk/mcp-server`)
 - Standalone npm package for external MCP client integration
@@ -102,7 +112,7 @@ AiderDesk is an Electron-based desktop application that provides a GUI wrapper f
 - **AI Integration**: Vercel AI SDK, multiple LLM providers (OpenAI, Anthropic, Gemini, etc.)
 - **Build Tools**: electron-vite, esbuild, TypeScript project references
 - **Testing**: Vitest with React Testing Library, ESLint for linting, Prettier for formatting
-- **Internationalization**: i18next with English and Chinese support
+- **Internationalization**: i18next with English, Chinese, Russian, and Korean support
 
 ## Testing Framework
 

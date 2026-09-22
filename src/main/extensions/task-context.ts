@@ -129,6 +129,14 @@ export class TaskContextImpl implements TaskContext {
     return this.task.getUpdatedFiles();
   }
 
+  async getUpdatedFileDiff(filePath: string, commitHash?: string): Promise<string> {
+    return this.task.getUpdatedFileDiff(filePath, commitHash);
+  }
+
+  async getUpdatedFileContents(filePath: string, commitHash?: string): Promise<{ oldContent: string; newContent: string }> {
+    return this.task.getUpdatedFileContents(filePath, commitHash);
+  }
+
   getRepoMap(): string {
     return this.task.getRepoMap();
   }
@@ -165,8 +173,8 @@ export class TaskContextImpl implements TaskContext {
 
   // Execution
 
-  async runPrompt(prompt: string, mode?: string): Promise<void> {
-    await this.task.runPrompt(prompt, mode);
+  async runPrompt(prompt: string, mode?: string, images?: string[]): Promise<void> {
+    await this.task.runPrompt(prompt, mode as Mode | undefined, true, undefined, true, images ?? this.task.takePendingCommandImages());
   }
 
   async runPromptInAgent(
@@ -191,7 +199,7 @@ export class TaskContextImpl implements TaskContext {
       systemPrompt,
       waitForCurrentAgentToFinish,
       sendNotification,
-      undefined,
+      this.task.takePendingCommandImages(),
       skillsToActivate,
     );
   }
@@ -323,8 +331,8 @@ export class TaskContextImpl implements TaskContext {
     return this.task.getLocalUncommittedFiles();
   }
 
-  async applyUncommittedChanges(targetBranch?: string): Promise<void> {
-    await this.task.applyUncommittedChanges(targetBranch);
+  async applyUncommittedChanges(): Promise<void> {
+    await this.task.applyUncommittedChanges();
   }
 
   async mergeWorktreeToWorktree(targetWorktreeDir: string, includeUncommitted?: boolean): Promise<void> {

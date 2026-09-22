@@ -20,6 +20,7 @@ import {
   CloudflareTunnelStatus,
   ContextFile,
   BranchInfo,
+  GitSyncCommits,
   WorktreeIntegrationStatus,
   WorkflowLogsStateData,
   AgentProfile,
@@ -43,6 +44,9 @@ import {
  */
 export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedObject<ApplicationAPI> => {
   const defaultMock: ApplicationAPI = {
+    // Process operations
+    getRendererProcessMemoryInfo: vi.fn(() => Promise.resolve(null)),
+
     // Directory and logging operations
     isOpenLogsDirectorySupported: vi.fn((): boolean => true),
     openLogsDirectory: vi.fn((): Promise<boolean> => Promise.resolve(true)),
@@ -105,10 +109,12 @@ export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedOb
     getAllFiles: vi.fn((): Promise<string[]> => Promise.resolve([])),
     refreshContextFiles: vi.fn((): Promise<void> => Promise.resolve()),
     setContextFilesDisabled: vi.fn((): Promise<void> => Promise.resolve()),
-    getUpdatedFiles: vi.fn((): Promise<Array<{ path: string; additions: number; deletions: number }>> => Promise.resolve([])),
+    getUpdatedFiles: vi.fn((): Promise<Array<{ path: string; additions: number; deletions: number; diff: string }>> => Promise.resolve([])),
     getRepositoryMappings: vi.fn((): Promise<ContextFile[]> => Promise.resolve([])),
     regenerateRepositoryMappings: vi.fn(() => Promise.resolve({ success: true })),
     deleteRepositoryMapping: vi.fn((): Promise<ContextFile[]> => Promise.resolve([])),
+    getUpdatedFileDiff: vi.fn((): Promise<string> => Promise.resolve('')),
+    getUpdatedFileContents: vi.fn((): Promise<{ oldContent: string; newContent: string }> => Promise.resolve({ oldContent: '', newContent: '' })),
     addFileToGit: vi.fn((): Promise<void> => Promise.resolve()),
     restoreFile: vi.fn((): Promise<void> => Promise.resolve()),
     generateCommitMessage: vi.fn((): Promise<string> => Promise.resolve('')),
@@ -117,16 +123,19 @@ export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedOb
     addFile: vi.fn((): void => undefined),
     isValidPath: vi.fn((): Promise<boolean> => Promise.resolve(true)),
     isProjectPath: vi.fn((): Promise<boolean> => Promise.resolve(true)),
+    cloneProject: vi.fn((): Promise<string> => Promise.resolve('/cloned/project')),
+    cancelCloneProject: vi.fn((): Promise<void> => Promise.resolve()),
     dropFile: vi.fn((): void => undefined),
     runCommand: vi.fn((): void => undefined),
     pasteImage: vi.fn((): void => undefined),
     scrapeWeb: vi.fn((): Promise<void> => Promise.resolve()),
-    initProjectRulesFile: vi.fn((_baseDir?: string, _taskId?: string, _args?: string): Promise<void> => Promise.resolve()),
+    initProjectRulesFile: vi.fn((): Promise<void> => Promise.resolve()),
     readFile: vi.fn((): Promise<string> => Promise.resolve('')),
+    saveFile: vi.fn((): Promise<void> => Promise.resolve()),
 
     // Skills operations
     getSkills: vi.fn((): Promise<never[]> => Promise.resolve([])),
-    activateSkill: vi.fn((): Promise<void> => Promise.resolve()),
+    activateSkill: vi.fn((): Promise<boolean> => Promise.resolve(true)),
     deactivateSkill: vi.fn((): Promise<void> => Promise.resolve()),
 
     // Todo operations
@@ -259,7 +268,8 @@ export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedOb
     resizeTerminal: vi.fn((): Promise<boolean> => Promise.resolve(true)),
     closeTerminal: vi.fn((): Promise<boolean> => Promise.resolve(true)),
     getTerminalForTask: vi.fn((): Promise<string | null> => Promise.resolve(null)),
-    getAllTerminalsForTask: vi.fn((): Promise<Array<{ id: string; taskId: string; cols: number; rows: number }>> => Promise.resolve([])),
+    getTerminalBuffer: vi.fn((): Promise<{ exists: boolean; data: string }> => Promise.resolve({ exists: false, data: '' })),
+    getAllTerminalsForTask: vi.fn((): Promise<Array<{ id: string; taskId: string; baseDir: string; cols: number; rows: number }>> => Promise.resolve([])),
 
     // Worktree merge operations
     mergeWorktreeToMain: vi.fn((): Promise<void> => Promise.resolve()),
@@ -269,12 +279,26 @@ export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedOb
     applyUncommittedChanges: vi.fn((): Promise<void> => Promise.resolve()),
     revertLastMerge: vi.fn((): Promise<void> => Promise.resolve()),
     listBranches: vi.fn((): Promise<BranchInfo[]> => Promise.resolve([])),
+    listGitBranches: vi.fn((): Promise<BranchInfo[]> => Promise.resolve([])),
+    isGitRepository: vi.fn((): Promise<boolean> => Promise.resolve(true)),
+    initializeGitRepository: vi.fn((): Promise<void> => Promise.resolve()),
+    getSyncCommits: vi.fn((): Promise<GitSyncCommits> => Promise.resolve({ outgoing: { count: 0, commits: [] }, incoming: { count: 0, commits: [] } })),
+    createGitBranch: vi.fn((): Promise<void> => Promise.resolve()),
+    checkoutGitBranch: vi.fn((): Promise<void> => Promise.resolve()),
+    deleteGitBranch: vi.fn((): Promise<void> => Promise.resolve()),
+    mergeIntoCurrentBranch: vi.fn((): Promise<{ conflictedFiles?: string[] }> => Promise.resolve({})),
+    rebaseOntoBranch: vi.fn((): Promise<{ conflictedFiles?: string[] }> => Promise.resolve({})),
+    updateGitBranch: vi.fn((): Promise<{ output: string }> => Promise.resolve({ output: 'Branch updated successfully' })),
+    gitPull: vi.fn((): Promise<{ output: string }> => Promise.resolve({ output: '' })),
+    gitPush: vi.fn((): Promise<{ output: string }> => Promise.resolve({ output: '' })),
     getWorktreeIntegrationStatus: vi.fn((): Promise<WorktreeIntegrationStatus | null> => Promise.resolve(null)),
     rebaseWorktreeFromBranch: vi.fn((): Promise<void> => Promise.resolve()),
     abortWorktreeRebase: vi.fn((): Promise<void> => Promise.resolve()),
     continueWorktreeRebase: vi.fn((): Promise<void> => Promise.resolve()),
     resolveWorktreeConflictsWithAgent: vi.fn((): Promise<void> => Promise.resolve()),
+    resolveGitErrorWithAgent: vi.fn((): Promise<void> => Promise.resolve()),
     renameWorktreeBranch: vi.fn((): Promise<void> => Promise.resolve()),
+    renameGitBranch: vi.fn((): Promise<void> => Promise.resolve()),
 
     // Agent profile operations
     getAllAgentProfiles: vi.fn((): Promise<AgentProfile[]> => Promise.resolve([])),
@@ -309,6 +333,7 @@ export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedOb
     deleteMemory: vi.fn((): Promise<boolean> => Promise.resolve(true)),
     deleteProjectMemories: vi.fn((): Promise<number> => Promise.resolve(0)),
     writeToClipboard: vi.fn((): Promise<void> => Promise.resolve()),
+    writeImageToClipboard: vi.fn((): Promise<void> => Promise.resolve()),
     openPath: vi.fn((): Promise<boolean> => Promise.resolve(true)),
     openUrlInWindow: vi.fn((): Promise<void> => Promise.resolve()),
     openUrlExternally: vi.fn((): Promise<void> => Promise.resolve()),
@@ -322,6 +347,8 @@ export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedOb
     editQueuedPrompt: vi.fn((): void => undefined),
     addQueuedPromptsUpdatedListener: vi.fn(() => vi.fn()),
     onModalOverlayUrl: vi.fn(() => vi.fn()),
+    onInputPrompt: vi.fn(() => vi.fn()),
+    respondInputPrompt: vi.fn((): Promise<void> => Promise.resolve()),
     loadExtensionLibrary: vi.fn((): Promise<string> => Promise.resolve('')),
     addShowViewListener: vi.fn(() => vi.fn()),
 

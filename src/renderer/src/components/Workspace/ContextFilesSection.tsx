@@ -1,5 +1,5 @@
 import { ContextFile, Mode, OS, TokensCost } from '@common/types';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { MouseEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HiOutlineTrash, HiPlus } from 'react-icons/hi';
 import { BiCopy, BiPaste } from 'react-icons/bi';
 import { useTranslation } from 'react-i18next';
@@ -7,7 +7,6 @@ import { clsx } from 'clsx';
 
 import { WorkspaceSection } from './WorkspaceSection';
 import { EmptyContextInfo } from './EmptyContextInfo';
-import { FileViewerModal } from './FileViewerModal';
 import { collectVisibleFilePaths, createFileTree, normalizePath } from './types';
 
 import type { TreeItem } from './types';
@@ -18,6 +17,7 @@ import { useApi } from '@/contexts/ApiContext';
 import { useContextFilesClipboard, useHasCopiedFiles } from '@/stores/contextFilesClipboardStore';
 import { useTaskStore } from '@/stores/taskStore';
 import { showErrorNotification } from '@/utils/notifications';
+import { useFileEditorStore } from '@/stores/fileEditorStore';
 
 // UI state for a context file whose disabled flag was changed by a checkbox click and is not yet
 // confirmed by the backend. `opId` is the click that owns the entry; `settled` is set once that
@@ -80,14 +80,14 @@ type Props = {
   onDropAllFiles: () => void;
   onToggle: () => void;
   onFilePreviewClick?: (filePath: string) => void;
-  onDropFile: (item: TreeItem) => (e: React.MouseEvent<HTMLButtonElement>) => void;
+  onDropFile: (item: TreeItem) => (e: MouseEvent<HTMLButtonElement>) => void;
   editMode?: boolean;
   isHidden?: boolean;
   onToggleHidden?: () => void;
   showBorderTop?: boolean;
 };
 
-export const ContextFilesSection = ({
+export const ContextFilesSectionComponent = ({
   mode,
   baseDir,
   taskId,
@@ -108,13 +108,13 @@ export const ContextFilesSection = ({
   showBorderTop,
 }: Props) => {
   const { t } = useTranslation();
+  const openFile = useFileEditorStore((state) => state.openFile);
 
   const api = useApi();
   const hasCopiedFiles = useHasCopiedFiles();
   const copyToClipboard = useContextFilesClipboard((s) => s.copy);
 
   const [contextExpandedItems, setContextExpandedItems] = useState<string[]>([]);
-  const [previewFilePath, setPreviewFilePath] = useState<string | null>(null);
 
   const scope = getScope(baseDir, taskId);
   const [pendingState, setPendingState] = useState<PendingState>(() => ({ scope, toggles: new Map() }));
@@ -267,7 +267,7 @@ export const ContextFilesSection = ({
     expandFolders(contextTreeData, effectiveUserContextFiles);
   }, [contextTreeData, effectiveUserContextFiles]);
 
-  const addFile = useCallback((_item: TreeItem) => (_event: React.MouseEvent<HTMLButtonElement>) => {}, []);
+  const addFile = useCallback(() => (): void => {}, []);
 
   const handleCopy = useCallback(() => {
     // userContextFiles already excludes rule files (computed in Workspace.tsx),
@@ -391,7 +391,7 @@ export const ContextFilesSection = ({
           if (onFilePreviewClick) {
             onFilePreviewClick(filePath);
           } else {
-            setPreviewFilePath(filePath);
+            openFile(baseDir, filePath, taskId);
           }
         }}
         onRevertFile={() => {}}
@@ -402,8 +402,8 @@ export const ContextFilesSection = ({
         onToggleHidden={onToggleHidden}
         showBorderTop={showBorderTop}
       />
-
-      {previewFilePath && <FileViewerModal filePath={previewFilePath} baseDir={baseDir} taskId={taskId} onClose={() => setPreviewFilePath(null)} />}
     </>
   );
 };
+
+export const ContextFilesSection = memo(ContextFilesSectionComponent);

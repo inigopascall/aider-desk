@@ -1,5 +1,5 @@
-import { AgentProfile, AIDER_MODES, DefaultTaskState, EditFormat, Mode, Model, ModelsData, RawModelInfo, TaskData } from '@common/types';
-import React, { ReactNode, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { AgentProfile, AIDER_MODES, EditFormat, Mode, Model, ModelsData, RawModelInfo, TaskData } from '@common/types';
+import { ReactNode, forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { BsCodeSlash, BsFilter, BsLayoutSidebar } from 'react-icons/bs';
 import { CgTerminal } from 'react-icons/cg';
 import { GoProjectRoadmap } from 'react-icons/go';
@@ -16,7 +16,7 @@ import { IconButton } from '@/components/common/IconButton';
 import { ModelSelector, ModelSelectorRef } from '@/components/ModelSelector';
 import { showErrorNotification } from '@/utils/notifications';
 import { EditFormatSelector } from '@/components/PromptField/EditFormatSelector';
-import { TaskWorkingMode } from '@/components/PromptField/TaskWorkingMode';
+import { TaskGitControls } from '@/components/project/TaskGitControls';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { useSaveSettings, useSettingsStore } from '@/stores/settingsStore';
 import { useApi } from '@/contexts/ApiContext';
@@ -45,7 +45,7 @@ type Props = {
   disabled?: boolean;
 };
 
-export const TaskBar = React.forwardRef<TaskBarRef, Props>(
+export const TaskBar = forwardRef<TaskBarRef, Props>(
   (
     {
       baseDir,
@@ -170,10 +170,12 @@ export const TaskBar = React.forwardRef<TaskBarRef, Props>(
 
     useImperativeHandle(ref, () => ({
       openMainModelSelector: (model) => {
-        if (mode === 'architect') {
-          architectModelSelectorRef.current?.open(model);
+        if (mode === 'architect' && architectModelSelectorRef.current) {
+          architectModelSelectorRef.current.open(model);
+        } else if (mainModelSelectorRef.current) {
+          mainModelSelectorRef.current.open(model);
         } else {
-          mainModelSelectorRef.current?.open(model);
+          agentModelSelectorRef.current?.open(model);
         }
       },
       openAgentModelSelector: (model) => {
@@ -387,24 +389,21 @@ export const TaskBar = React.forwardRef<TaskBarRef, Props>(
       }
     }, [api, baseDir, task.id, task.worktree]);
 
-    const handleOnlyUncommitted = useCallback(
-      async (targetBranch?: string) => {
-        if (!task.worktree) {
-          return;
-        }
+    const handleOnlyUncommitted = useCallback(async () => {
+      if (!task.worktree) {
+        return;
+      }
 
-        setIsMerging(true);
-        try {
-          await api.applyUncommittedChanges(baseDir, task.id, targetBranch);
-        } catch (error) {
-          // eslint-disable-next-line no-console
-          console.error('Failed to apply uncommitted changes:', error);
-        } finally {
-          setIsMerging(false);
-        }
-      },
-      [api, baseDir, task.id, task.worktree],
-    );
+      setIsMerging(true);
+      try {
+        await api.applyUncommittedChanges(baseDir, task.id);
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to apply uncommitted changes:', error);
+      } finally {
+        setIsMerging(false);
+      }
+    }, [api, baseDir, task.id, task.worktree]);
 
     const handleRevert = useCallback(async () => {
       setIsMerging(true);
@@ -420,7 +419,7 @@ export const TaskBar = React.forwardRef<TaskBarRef, Props>(
 
     const handleRenameBranch = useCallback(
       async (newBranchName: string) => {
-        await api.renameWorktreeBranch(baseDir, task.id, newBranchName);
+        await api.renameGitBranch(baseDir, task.id, newBranchName);
       },
       [api, baseDir, task.id],
     );
@@ -661,7 +660,7 @@ export const TaskBar = React.forwardRef<TaskBarRef, Props>(
           </div>
           <div className="flex items-center space-x-1 mr-2">
             <ExtensionComponentWrapper placement="task-top-bar-right" />
-            <TaskWorkingMode
+            <TaskGitControls
               task={task}
               disabled={disabled}
               onMerge={handleMergeNormal}

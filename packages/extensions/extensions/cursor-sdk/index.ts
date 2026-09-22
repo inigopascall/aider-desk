@@ -47,6 +47,26 @@ interface CursorConfig {
 
 const CURSOR_PROVIDER_ID = 'cursor-sdk';
 const AGENT_ID_METADATA_KEY = 'cursorAgentId';
+
+const configureVendoredRipgrepPath = (context: ExtensionContext): void => {
+  if (process.env.CURSOR_RIPGREP_PATH) {
+    context.log(`Cursor SDK: using CURSOR_RIPGREP_PATH from env: ${process.env.CURSOR_RIPGREP_PATH}`, 'info');
+    return;
+  }
+  try {
+    const binaryName = process.platform === 'win32' ? 'rg.exe' : 'rg';
+    const platformDir = `sdk-${process.platform}-${process.arch}`;
+    const rgPath = join(__dirname, 'node_modules', '@cursor', platformDir, 'bin', binaryName);
+    if (existsSync(rgPath)) {
+      process.env.CURSOR_RIPGREP_PATH = rgPath;
+      context.log(`Cursor SDK: set CURSOR_RIPGREP_PATH to vendored ripgrep: ${rgPath}`, 'info');
+    } else {
+      context.log(`Cursor SDK: vendored ripgrep not found at ${rgPath}`, 'warn');
+    }
+  } catch (err) {
+    context.log(`Cursor SDK: failed to resolve vendored ripgrep: ${err instanceof Error ? err.message : String(err)}`, 'warn');
+  }
+};
 const POWER_TOOL_SERVER_NAME = 'power';
 const CURSOR_SERVER_NAME = 'cursor';
 const TOOL_SEPARATOR = '---';
@@ -336,7 +356,7 @@ function transformCursorResult(
         ? String((cursorResult as { error: unknown }).error)
         : String(cursorResult ?? '');
     return {
-      resultStr: errorStr,
+      resultStr: JSON.stringify(errorStr),
       output: { type: 'error-text', value: errorStr },
     };
   }
@@ -400,7 +420,8 @@ function transformCursorResult(
         diffString?: string;
       };
       const str = v?.diffString ?? JSON.stringify(v ?? {});
-      return { resultStr: str, output: { type: 'text', value: str } };
+      const resultStr = v?.diffString ? JSON.stringify(str) : str;
+      return { resultStr, output: { type: 'text', value: str } };
     }
     case 'glob': {
       const v = value as { files: string[]; totalFiles: number };
@@ -540,7 +561,7 @@ function transformCursorResult(
       const rawValue = extractResultValue(cursorResult);
       const str = rawValue !== undefined ? (typeof rawValue === 'string' ? rawValue : JSON.stringify(rawValue)) : undefined;
       return {
-        resultStr: str,
+        resultStr: str !== undefined ? JSON.stringify(str) : undefined,
         output: str ? { type: 'text', value: str } : { type: 'text', value: '' },
       };
     }
@@ -559,7 +580,7 @@ const configComponentJsx = readFileSync(join(__dirname, './ConfigComponent.jsx')
 export default class CursorSdkExtension implements Extension {
   static metadata = {
     name: 'Cursor SDK',
-    version: '4.4.0',
+    version: '4.6.1',
     description: 'Integrates the Cursor SDK as a provider with cursor-sdk/ prefix, overriding the agent loop',
     author: 'wladimiiir',
     iconUrl: 'https://raw.githubusercontent.com/hotovo/aider-desk/refs/heads/main/packages/extensions/extensions/cursor-sdk/icon.png',
@@ -655,6 +676,8 @@ export default class CursorSdkExtension implements Extension {
       return undefined;
     }
 
+    configureVendoredRipgrepPath(context);
+
     const prompt = event.prompt || 'Continue where you left off.';
     if (!event.prompt) {
       context.log('Resuming Cursor agent with continuation prompt', 'info');
@@ -716,6 +739,19 @@ export default class CursorSdkExtension implements Extension {
       },
     };
 
+    const abortSignal = event.modelCallSettings?.abortSignal;
+    let activeRun: Run | undefined;
+    let abortListener: (() => void) | undefined;
+    if (abortSignal) {
+      abortListener = () => {
+        if (activeRun?.supports('cancel')) {
+          context.log('Abort requested, cancelling Cursor run', 'info');
+          void activeRun.cancel().catch(() => {});
+        }
+      };
+      abortSignal.addEventListener('abort', abortListener);
+    }
+
     let agent: SDKAgent | undefined;
     const existingAgentId = taskContext.data.metadata?.[AGENT_ID_METADATA_KEY] as string | undefined;
 
@@ -749,16 +785,21 @@ export default class CursorSdkExtension implements Extension {
         onStep: ({ step }: { step: ConversationStep }) => streamProcessor.onStep(step),
       } as SendOptions;
 
+      if (abortSignal?.aborted) {
+        throw new Error('Aborted before the Cursor run started');
+      }
+
       const run = await agent.send(sendMessage, sendOptions);
       context.log(`Cursor run started: ${run.id}`, 'info');
 
+      activeRun = run;
       this.activeRuns.set(taskId, run);
 
       taskContext.addLoadingMessage('Running Cursor agent...');
 
       const result = await run.wait();
       context.log(`Cursor run finished: ${result.status}`, 'info');
-      context.log(`[cursor-sdk] run.wait() result.usage: ${result.usage ? JSON.stringify(result.usage) : 'undefined'}`, 'info');
+      context.log(`[cursor-sdk] run.wait() result.usage: ${result.usage ? JSON.stringify(result.usage) : 'undefined'}`, 'debug');
 
       const contextMessages = await streamProcessor.finish(result.usage ?? undefined);
 
@@ -792,6 +833,9 @@ export default class CursorSdkExtension implements Extension {
       context.log(`Cursor agent error: ${message}`, 'error');
       taskContext.addLogMessage('error', `Cursor SDK error: ${message}`);
     } finally {
+      if (abortSignal && abortListener) {
+        abortSignal.removeEventListener('abort', abortListener);
+      }
       this.activeRuns.delete(taskId);
       taskContext.addLoadingMessage(undefined, true);
 
@@ -1585,20 +1629,20 @@ function createStreamProcessor(
   const onStep = async (step: ConversationStep) => {
     switch (step.type) {
       case 'assistantMessage':
-        context.log(`[cursor-sdk] Step finished. Type: assistantMessage, text: ${step.message.text.substring(0, 100)}`, 'info');
+        context.log(`[cursor-sdk] Step finished. Type: assistantMessage, text: ${step.message.text.substring(0, 100)}`, 'debug');
         break;
 
       case 'thinkingMessage':
         context.log(
           `[cursor-sdk] Step finished. Type: thinkingMessage, text: ${step.message.text.substring(0, 100)}, durationMs: ${step.message.thinkingDurationMs ?? 'n/a'}`,
-          'info',
+          'debug',
         );
         break;
 
       case 'toolCall': {
         const tc = step.message;
         const resultStatus = tc.result?.status ?? 'pending';
-        context.log(`[cursor-sdk] Step finished. Type: toolCall, tool: ${tc.type}, resultStatus: ${resultStatus}, ${JSON.stringify(tc.result)}`, 'info');
+        context.log(`[cursor-sdk] Step finished. Type: toolCall, tool: ${tc.type}, resultStatus: ${resultStatus}, ${JSON.stringify(tc.result)}`, 'debug');
 
         if (tc.type === 'task') {
           const pendingTask = findPendingTask(tc as ToolCall);

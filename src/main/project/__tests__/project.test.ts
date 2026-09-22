@@ -15,7 +15,7 @@ vi.mock('@/custom-commands');
 vi.mock('@/telemetry');
 vi.mock('@/events');
 vi.mock('@/project/migrations');
-vi.mock('@/worktrees');
+vi.mock('@/git');
 vi.mock('@/memory/memory-manager');
 vi.mock('@/prompts');
 vi.mock('@/extensions/extension-manager');
@@ -45,7 +45,7 @@ import { Store } from '@/store';
 import { Task } from '@/task';
 import { TelemetryManager } from '@/telemetry';
 import { determineMainModel, determineWeakModel } from '@/utils';
-import { WorktreeManager } from '@/worktrees';
+import { GitManager } from '@/git';
 import { migrateSessionsToTasks } from '@/project/migrations';
 
 describe('Project - createNewTask', () => {
@@ -56,7 +56,7 @@ describe('Project - createNewTask', () => {
   let mockDataManager: Partial<DataManager>;
   let mockEventManager: Partial<EventManager>;
   let mockModelManager: Partial<ModelManager>;
-  let mockWorktreeManager: Partial<WorktreeManager>;
+  let mockGitManager: Partial<GitManager>;
   let mockAgentProfileManager: Partial<AgentProfileManager>;
   let mockMemoryManager: Partial<MemoryManager>;
   let mockPromptsManager: Partial<PromptsManager>;
@@ -171,7 +171,7 @@ describe('Project - createNewTask', () => {
         environmentVariables: {},
       })),
     };
-    mockWorktreeManager = {
+    mockGitManager = {
       close: vi.fn(() => Promise.resolve()),
       getTaskWorktree: vi.fn(() => Promise.resolve(null)),
       createWorktree: vi.fn(() => Promise.resolve({ path: '/test/worktree' })),
@@ -228,7 +228,7 @@ describe('Project - createNewTask', () => {
       mockDataManager as DataManager,
       mockEventManager as EventManager,
       mockModelManager as ModelManager,
-      mockWorktreeManager as WorktreeManager,
+      mockGitManager as GitManager,
       mockAgentProfileManager as AgentProfileManager,
       mockMemoryManager as MemoryManager,
       mockPromptsManager as PromptsManager,
@@ -432,7 +432,7 @@ describe('Project - deleteTask', () => {
   let mockTelemetryManager: TelemetryManager;
   let mockDataManager: DataManager;
   let mockModelManager: ModelManager;
-  let mockWorktreeManager: WorktreeManager;
+  let mockGitManager: GitManager;
   let mockMemoryManager: MemoryManager;
   let mockPromptsManager: PromptsManager;
   let mockExtensionManager: ExtensionManager;
@@ -544,12 +544,12 @@ describe('Project - deleteTask', () => {
       })),
     } as unknown as ModelManager;
 
-    mockWorktreeManager = {
+    mockGitManager = {
       close: vi.fn(() => Promise.resolve()),
       getTaskWorktree: vi.fn(() => Promise.resolve(null)),
       createWorktree: vi.fn(() => Promise.resolve({ path: '/test/worktree' })),
       removeWorktree: vi.fn(() => Promise.resolve()),
-    } as unknown as WorktreeManager;
+    } as unknown as GitManager;
 
     mockAgentProfileManager = {
       initializeForProject: vi.fn(() => Promise.resolve()),
@@ -596,7 +596,7 @@ describe('Project - deleteTask', () => {
       mockDataManager,
       mockEventManager,
       mockModelManager,
-      mockWorktreeManager,
+      mockGitManager,
       mockAgentProfileManager,
       mockMemoryManager,
       mockPromptsManager,
@@ -678,5 +678,47 @@ describe('Project - deleteTask', () => {
     expect(deletedIds).toContain(parentTask.id);
     expect(deletedIds).toContain(subtask1.id);
     expect(deletedIds).toContain(subtask2.id);
+  });
+
+  it('should cascade delete deeply nested subtasks', async () => {
+    const parentTask = await project.createNewTask({ name: 'Parent Task' });
+    const subtask = await project.createNewTask({ parentId: parentTask.id, name: 'Subtask' });
+    const subSubtask = await project.createNewTask({ parentId: subtask.id, name: 'Sub-subtask' });
+
+    await project.deleteTask(parentTask.id);
+
+    const tasks = await project.getTasks();
+    expect(tasks.find((t) => t.id === subtask.id)).toBeUndefined();
+    expect(tasks.find((t) => t.id === subSubtask.id)).toBeUndefined();
+    expect(mockEventManager.sendTaskDeleted).toHaveBeenCalledTimes(3);
+  });
+
+  describe('validateParentAssignment', () => {
+    it('should throw when the target parent does not exist', async () => {
+      const task = await project.createNewTask({ name: 'Task' });
+
+      expect(() => project.validateParentAssignment(task.id, 'non-existent')).toThrow('not found');
+    });
+
+    it('should throw when assigning the task as its own parent', async () => {
+      const task = await project.createNewTask({ name: 'Task' });
+
+      expect(() => project.validateParentAssignment(task.id, task.id)).toThrow(/under itself/);
+    });
+
+    it('should throw when assigning one of its descendants as parent', async () => {
+      const parentTask = await project.createNewTask({ name: 'Parent Task' });
+      const subtask = await project.createNewTask({ parentId: parentTask.id, name: 'Subtask' });
+
+      expect(() => project.validateParentAssignment(parentTask.id, subtask.id)).toThrow(/under itself/);
+    });
+
+    it('should allow valid re-parenting', async () => {
+      const taskA = await project.createNewTask({ name: 'Task A' });
+      const taskB = await project.createNewTask({ name: 'Task B' });
+      const subtaskA = await project.createNewTask({ parentId: taskA.id, name: 'Subtask A' });
+
+      expect(() => project.validateParentAssignment(subtaskA.id, taskB.id)).not.toThrow();
+    });
   });
 });

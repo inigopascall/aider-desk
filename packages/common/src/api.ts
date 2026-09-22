@@ -17,6 +17,7 @@ import {
   CommandsData,
   EditFormat,
   EnvironmentVariable,
+  GitSyncCommits,
   FileEdit,
   InputHistoryData,
   LogData,
@@ -78,6 +79,7 @@ import {
   ExtensionUIComponent,
   ExtensionUIRefreshData,
   ModalOverlayUrlData,
+  InputPromptData,
   AiderConnectorStatus,
   ChangeRequestItem,
   SkillDefinition,
@@ -92,7 +94,14 @@ export type ExtensionDisplayAPI = Pick<
   'getExtensionUIComponents' | 'getUIExtensionData' | 'executeUIExtensionAction' | 'onExtensionUIRefresh' | 'loadExtensionLibrary'
 >;
 
+export type RendererProcessMemoryInfo = {
+  private: number;
+  residentSet: number;
+  shared: number;
+};
+
 export interface ApplicationAPI {
+  getRendererProcessMemoryInfo: () => Promise<RendererProcessMemoryInfo | null>;
   isOpenLogsDirectorySupported: () => boolean;
   openLogsDirectory: () => Promise<boolean>;
   loadSettings: () => Promise<SettingsData>;
@@ -143,15 +152,20 @@ export interface ApplicationAPI {
   getRepositoryMappings: (baseDir: string) => Promise<ContextFile[]>;
   regenerateRepositoryMappings: (baseDir: string, taskId: string) => Promise<RegenerateRepositoryMappingsResult>;
   deleteRepositoryMapping: (baseDir: string, filePath: string) => Promise<ContextFile[]>;
+  getUpdatedFileDiff: (baseDir: string, taskId: string, filePath: string, commitHash?: string) => Promise<string>;
+  getUpdatedFileContents: (baseDir: string, taskId: string, filePath: string, commitHash?: string) => Promise<{ oldContent: string; newContent: string }>;
   addFileToGit: (baseDir: string, taskId: string, filePath: string) => Promise<void>;
   restoreFile: (baseDir: string, taskId: string, filePath: string) => Promise<void>;
   readFile: (baseDir: string, taskId: string, filePath: string) => Promise<string>;
-  generateCommitMessage: (baseDir: string, taskId: string) => Promise<string>;
-  commitChanges: (baseDir: string, taskId: string, message: string, amend: boolean) => Promise<void>;
+  saveFile: (baseDir: string, taskId: string, filePath: string, content: string) => Promise<void>;
+  generateCommitMessage: (baseDir: string, taskId: string, filePaths?: string[]) => Promise<string>;
+  commitChanges: (baseDir: string, taskId: string, message: string, amend: boolean, filePaths?: string[]) => Promise<void>;
   cancelCommitChanges: (baseDir: string, taskId: string) => Promise<void>;
   addFile: (baseDir: string, taskId: string, filePath: string, readOnly?: boolean) => Promise<void>;
   isValidPath: (baseDir: string, path: string) => Promise<boolean>;
   isProjectPath: (path: string) => Promise<boolean>;
+  cloneProject: (repositoryUrl: string, targetDir?: string) => Promise<string>;
+  cancelCloneProject: () => Promise<void>;
   dropFile: (baseDir: string, taskId: string, path: string) => void;
   setContextFilesDisabled: (baseDir: string, taskId: string, filePaths: string[], disabled: boolean) => Promise<void>;
   runCommand: (baseDir: string, taskId: string, command: string) => void;
@@ -161,7 +175,7 @@ export interface ApplicationAPI {
 
   // Skills operations
   getSkills: (baseDir: string, taskId: string) => Promise<SkillDefinition[]>;
-  activateSkill: (baseDir: string, taskId: string, skillName: string) => Promise<void>;
+  activateSkill: (baseDir: string, taskId: string, skillName: string) => Promise<boolean>;
   deactivateSkill: (baseDir: string, taskId: string, skillName: string) => Promise<void>;
 
   // Todo operations
@@ -209,6 +223,8 @@ export interface ApplicationAPI {
   saveExtensionConfig: (extensionId: string, configData: unknown, projectDir?: string) => Promise<unknown>;
   onExtensionUIRefresh: (callback: (data: ExtensionUIRefreshData) => void) => () => void;
   onModalOverlayUrl: (callback: (data: ModalOverlayUrlData) => void) => () => void;
+  onInputPrompt: (callback: (data: InputPromptData) => void) => () => void;
+  respondInputPrompt: (id: string, value: string | null, rememberSession?: boolean) => Promise<void>;
   isWebViewSupported: () => boolean;
   loadExtensionLibrary: (librarySpec: string) => Promise<string>;
 
@@ -304,7 +320,7 @@ export interface ApplicationAPI {
 
   getCommands: (baseDir: string) => Promise<CommandsData>;
   getCustomModes: (baseDir: string) => Promise<ModeDefinition[]>;
-  runCustomCommand: (baseDir: string, taskId: string, commandName: string, args: string[], mode: Mode) => Promise<void>;
+  runCustomCommand: (baseDir: string, taskId: string, commandName: string, args: string[], mode: Mode, images?: string[]) => Promise<void>;
 
   // Terminal operations
   isTerminalSupported: () => boolean;
@@ -313,14 +329,15 @@ export interface ApplicationAPI {
   resizeTerminal: (terminalId: string, cols: number, rows: number) => Promise<boolean>;
   closeTerminal: (terminalId: string) => Promise<boolean>;
   getTerminalForTask: (taskId: string) => Promise<string | null>;
-  getAllTerminalsForTask: (taskId: string) => Promise<Array<{ id: string; taskId: string; cols: number; rows: number }>>;
+  getAllTerminalsForTask: (taskId: string) => Promise<Array<{ id: string; taskId: string; baseDir: string; cols: number; rows: number }>>;
+  getTerminalBuffer: (terminalId: string) => Promise<{ exists: boolean; data: string }>;
 
   // Worktree merge operations
   mergeWorktreeToMain: (baseDir: string, taskId: string, squash: boolean, targetBranch?: string, commitMessage?: string) => Promise<void>;
   switchToLocalWorkingMode: (baseDir: string, taskId: string, options?: SwitchToLocalOptions) => Promise<void>;
   switchToWorktreeWorkingMode: (baseDir: string, taskId: string, options?: SwitchToWorktreeOptions) => Promise<void>;
   getLocalUncommittedFiles: (baseDir: string, taskId: string) => Promise<WorktreeUncommittedFiles>;
-  applyUncommittedChanges: (baseDir: string, taskId: string, targetBranch?: string) => Promise<void>;
+  applyUncommittedChanges: (baseDir: string, taskId: string) => Promise<void>;
   revertLastMerge: (baseDir: string, taskId: string) => Promise<void>;
   listBranches: (baseDir: string) => Promise<BranchInfo[]>;
   getWorktreeIntegrationStatus: (baseDir: string, taskId: string, targetBranch?: string) => Promise<WorktreeIntegrationStatus | null>;
@@ -329,6 +346,22 @@ export interface ApplicationAPI {
   continueWorktreeRebase: (baseDir: string, taskId: string) => Promise<void>;
   resolveWorktreeConflictsWithAgent: (baseDir: string, taskId: string) => Promise<void>;
   renameWorktreeBranch: (baseDir: string, taskId: string, newBranchName: string) => Promise<void>;
+  renameGitBranch: (baseDir: string, taskId: string, newBranchName: string) => Promise<void>;
+
+  // Git branch operations
+  listGitBranches: (baseDir: string, taskId: string, includeRemote?: boolean) => Promise<BranchInfo[]>;
+  getSyncCommits: (baseDir: string, taskId: string, targetBranch?: string) => Promise<GitSyncCommits>;
+  createGitBranch: (baseDir: string, taskId: string, name: string, startPoint?: string, checkout?: boolean) => Promise<void>;
+  checkoutGitBranch: (baseDir: string, taskId: string, branch: string, createTracking?: boolean, takeOver?: boolean) => Promise<void>;
+  deleteGitBranch: (baseDir: string, taskId: string, branch: string, force?: boolean) => Promise<void>;
+  mergeIntoCurrentBranch: (baseDir: string, taskId: string, branch: string) => Promise<{ conflictedFiles?: string[] }>;
+  rebaseOntoBranch: (baseDir: string, taskId: string, branch: string) => Promise<{ conflictedFiles?: string[] }>;
+  updateGitBranch: (baseDir: string, taskId: string, branchName: string) => Promise<{ output: string }>;
+  isGitRepository: (baseDir: string, taskId: string) => Promise<boolean>;
+  initializeGitRepository: (baseDir: string, taskId: string) => Promise<void>;
+  gitPull: (baseDir: string, taskId: string, rebase?: boolean) => Promise<{ output: string }>;
+  gitPush: (baseDir: string, taskId: string, force?: boolean, setUpstream?: boolean) => Promise<{ output: string }>;
+  resolveGitErrorWithAgent: (baseDir: string, taskId: string) => Promise<void>;
 
   // Agent profile operations
   getAllAgentProfiles: () => Promise<AgentProfile[]>;
@@ -347,6 +380,7 @@ export interface ApplicationAPI {
 
   // Clipboard operations
   writeToClipboard: (text: string) => Promise<void>;
+  writeImageToClipboard: (dataUrl: string) => Promise<void>;
   openPath: (path: string) => Promise<boolean>;
   openUrlInWindow: (url: string, title?: string) => Promise<void>;
   openUrlExternally: (url: string) => Promise<void>;

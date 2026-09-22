@@ -2,6 +2,7 @@ import '@/themes/themes.scss';
 import { AnimatePresence, motion } from 'framer-motion';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { HashRouter as Router, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { HotkeysProvider } from 'react-hotkeys-hook';
 import { ToastContainer } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
 import { BrowserBootstrap, THEMES } from '@common/types';
@@ -19,12 +20,16 @@ import { ModelProviderProvider } from '@/contexts/ModelProviderContext';
 import { AgentsProvider } from '@/contexts/AgentsContext';
 import { McpServersProvider } from '@/contexts/McpServersContext';
 import { ModalOverlayUrlViewer } from '@/components/common/ModalOverlayUrlViewer';
+import { InputPromptDialog } from '@/components/common/InputPromptDialog';
 import { UpdatedFilesDiff } from '@/pages/UpdatedFilesDiff';
 import { ExtensionsProvider } from '@/contexts/ExtensionsContext';
 import { DiffsWorkerPoolProvider } from '@/contexts/DiffsWorkerPoolContext';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { ReadonlyApp } from '@/pages/ReadonlyApp';
 import { loadBrowserBootstrap } from '@/api/readonly-browser-api';
+import { CommandPalette } from '@/components/common/CommandPalette';
+import { useCommandPaletteHotkeys } from '@/hooks/useCommandPaletteHotkeys';
+import { usePaletteCommands } from '@/hooks/usePaletteCommands';
 
 const Onboarding = lazy(() => import('@/pages/Onboarding').then((module) => ({ default: module.Onboarding })));
 
@@ -135,6 +140,41 @@ const AnimatedRoutes = () => {
   );
 };
 
+const AppContent = () => {
+  useCommandPaletteHotkeys();
+  usePaletteCommands();
+
+  return (
+    <Router useTransitions={false}>
+      <TooltipProvider>
+        <ApiProvider>
+          <IconContext.Provider value={ICON_CONTEXT_DEFAULT_VALUE}>
+            <ModelProviderProvider>
+              <SettingsInitializer />
+              <AgentsProvider>
+                <McpServersProvider>
+                  <ContextMenuProvider>
+                    <ExtensionsProvider>
+                      <DiffsWorkerPoolProvider>
+                        <ThemeAndFontManager />
+                        <AnimatedRoutes />
+                        <ToastContainer />
+                        <ModalOverlayUrlHandler />
+                        <InputPromptDialog />
+                        <CommandPalette />
+                      </DiffsWorkerPoolProvider>
+                    </ExtensionsProvider>
+                  </ContextMenuProvider>
+                </McpServersProvider>
+              </AgentsProvider>
+            </ModelProviderProvider>
+          </IconContext.Provider>
+        </ApiProvider>
+      </TooltipProvider>
+    </Router>
+  );
+};
+
 const NormalApp = () => {
   const [isVisible, setIsVisible] = useState(false);
 
@@ -146,31 +186,9 @@ const NormalApp = () => {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: isVisible ? 1 : 0 }} transition={{ duration: 0.5, ease: 'easeIn' }}>
-      <Router>
-        <TooltipProvider>
-          <ApiProvider>
-            <IconContext.Provider value={ICON_CONTEXT_DEFAULT_VALUE}>
-              <ModelProviderProvider>
-                <SettingsInitializer />
-                <AgentsProvider>
-                  <McpServersProvider>
-                    <ContextMenuProvider>
-                      <ExtensionsProvider>
-                        <DiffsWorkerPoolProvider>
-                          <ThemeAndFontManager />
-                          <AnimatedRoutes />
-                          <ToastContainer />
-                          <ModalOverlayUrlHandler />
-                        </DiffsWorkerPoolProvider>
-                      </ExtensionsProvider>
-                    </ContextMenuProvider>
-                  </McpServersProvider>
-                </AgentsProvider>
-              </ModelProviderProvider>
-            </IconContext.Provider>
-          </ApiProvider>
-        </TooltipProvider>
-      </Router>
+      <HotkeysProvider initiallyActiveScopes={['home', 'task', 'dialog', 'modal']}>
+        <AppContent />
+      </HotkeysProvider>
     </motion.div>
   );
 };
@@ -200,7 +218,7 @@ const App = () => {
 
   if (bootstrap?.mode === 'readonly') {
     return (
-      <Router>
+      <Router useTransitions={false}>
         <ReadonlyApp bootstrap={bootstrap} />
       </Router>
     );

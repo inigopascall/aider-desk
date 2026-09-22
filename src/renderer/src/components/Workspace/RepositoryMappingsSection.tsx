@@ -7,7 +7,7 @@ import { motion } from 'framer-motion';
 import { clsx } from 'clsx';
 
 import { SectionHeader } from './SectionHeader';
-import { FileViewerModal } from './FileViewerModal';
+import { useFileEditorStore } from '@/stores/fileEditorStore';
 import { TriStateCheckbox } from '@/components/common/TriStateCheckbox';
 import { useProjectSettings } from '@/contexts/ProjectSettingsContext';
 import { useShiftRangeSelection } from '@/hooks/useShiftRangeSelection';
@@ -53,7 +53,7 @@ export const RepositoryMappingsSection = ({
   const enabledCount = files.length - files.filter((file) => disabledFiles.includes(file.path)).length;
   const [isLoading, setIsLoading] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
-  const [previewFilePath, setPreviewFilePath] = useState<string | null>(null);
+  const openFile = useFileEditorStore((state) => state.openFile);
 
   const loadFiles = useCallback(async () => {
     setIsLoading(true);
@@ -108,14 +108,11 @@ export const RepositoryMappingsSection = ({
         if (disabledFiles.includes(filePath)) {
           await saveProjectSettings({ disabledRepositoryMappingFiles: disabledFiles.filter((path) => path !== filePath) });
         }
-        if (previewFilePath === filePath) {
-          setPreviewFilePath(null);
-        }
       } catch (error) {
         showErrorNotification(t('contextFiles.repositoryMappingsRemoveFailed', { error: String(error) }));
       }
     },
-    [api, baseDir, disabledFiles, previewFilePath, saveProjectSettings, t],
+    [api, baseDir, disabledFiles, saveProjectSettings, t],
   );
 
   const actions = useMemo(
@@ -165,7 +162,7 @@ export const RepositoryMappingsSection = ({
                           'select-none text-2xs overflow-hidden whitespace-nowrap overflow-ellipsis cursor-pointer hover:text-text-tertiary text-left bg-transparent border-0 p-0',
                           disabledFiles.includes(file.path) ? 'text-text-muted' : 'text-text-primary',
                         )}
-                        onClick={() => setPreviewFilePath(file.path)}
+                        onClick={() => openFile(baseDir, file.path, taskId)}
                       >
                         {getFileName(file.path)}
                       </button>
@@ -195,7 +192,6 @@ export const RepositoryMappingsSection = ({
         </Activity>
       </motion.div>
 
-      {previewFilePath && <FileViewerModal filePath={previewFilePath} baseDir={baseDir} taskId={taskId} onClose={() => setPreviewFilePath(null)} />}
     </>
   );
 };

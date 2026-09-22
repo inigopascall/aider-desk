@@ -3,7 +3,18 @@ import path from 'path';
 
 import { AVAILABLE_PROVIDERS, getDefaultProviderParams, LlmProvider, LlmProviderName } from '@common/agent';
 import { ProviderDefinition } from '@common/extensions';
-import { Model, ModelInfo, ModelOverrides, ProviderModelsData, ProviderProfile, Reasoning, SettingsData, UsageReportData, VoiceSession } from '@common/types';
+import {
+  Model,
+  ModelInfo,
+  ModelOverrides,
+  ProviderModelsData,
+  ProviderProfile,
+  Reasoning,
+  SettingsData,
+  TlsPolicyRegistrar,
+  UsageReportData,
+  VoiceSession,
+} from '@common/types';
 import { extractProviderModel } from '@common/utils';
 
 import { anthropicProviderStrategy } from './providers/anthropic';
@@ -27,6 +38,7 @@ import { ollamaProviderStrategy } from './providers/ollama';
 import { openaiProviderStrategy } from './providers/openai';
 import { openaiCompatibleProviderStrategy } from './providers/openai-compatible';
 import { opencodeProviderStrategy } from './providers/opencode';
+import { opencodeGoProviderStrategy } from './providers/opencode-go';
 import { openrouterProviderStrategy } from './providers/openrouter';
 import { requestyProviderStrategy } from './providers/requesty';
 import { syntheticProviderStrategy } from './providers/synthetic';
@@ -49,7 +61,7 @@ const MODEL_LOAD_TIMEOUT_MS = 30_000;
 const MODELS_META_URL = 'https://models.dev/api.json';
 const MODELS_FILE = path.join(AIDER_DESK_DATA_DIR, 'models.json');
 const PROVIDER_MODELS_CACHE_FILE = path.join(AIDER_DESK_CACHE_DIR, 'provider-models.json');
-const PROVIDER_MODELS_CACHE_VERSION = 2;
+const PROVIDER_MODELS_CACHE_VERSION = 3;
 
 type ProviderModelsCache = {
   version: number;
@@ -110,6 +122,7 @@ export class ModelManager {
     openai: openaiProviderStrategy,
     'openai-compatible': openaiCompatibleProviderStrategy,
     opencode: opencodeProviderStrategy,
+    'opencode-go': opencodeGoProviderStrategy,
     openrouter: openrouterProviderStrategy,
     requesty: requestyProviderStrategy,
     synthetic: syntheticProviderStrategy,
@@ -122,6 +135,7 @@ export class ModelManager {
   constructor(
     private store: Store,
     private eventManager: EventManager,
+    private readonly tlsRegistrar?: TlsPolicyRegistrar,
   ) {
     this.initPromise = this.init();
   }
@@ -317,7 +331,7 @@ export class ModelManager {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
 
-      lastResponse = await strategy.loadModels(profile, this.store.getSettings());
+      lastResponse = await strategy.loadModels(profile, this.store.getSettings(), this.tlsRegistrar);
       if (lastResponse.success) {
         return lastResponse;
       }
@@ -469,7 +483,7 @@ export class ModelManager {
     for (const modelOverride of providerModelOverrides) {
       const existingIndex = enrichedModels.findIndex((model) => model.id === modelOverride.id);
       if (existingIndex >= 0) {
-        const cleanedOverride = Object.fromEntries(Object.entries(modelOverride).filter(([_, value]) => value !== undefined));
+        const cleanedOverride = Object.fromEntries(Object.entries(modelOverride).filter(([, value]) => value !== undefined));
         logger.debug(`Overriding model: ${providerId}/${modelOverride.id}`, {
           existing: enrichedModels[existingIndex],
           override: modelOverride,
@@ -729,6 +743,7 @@ export class ModelManager {
     toolSet?: ToolSet,
     systemPrompt?: string,
     providerMetadata?: unknown,
+    sessionId?: string,
   ): LanguageModel | Promise<LanguageModel> {
     const strategy = this.providerRegistry[provider.provider.name];
     if (!strategy) {
@@ -754,7 +769,7 @@ export class ModelManager {
       throw new Error(`Model not found: ${model}`);
     }
 
-    return strategy.createLlm(provider, modelObj, settings, projectDir, toolSet, systemPrompt, providerMetadata);
+    return strategy.createLlm(provider, modelObj, settings, projectDir, toolSet, systemPrompt, providerMetadata, this.tlsRegistrar, sessionId);
   }
 
   getUsageReport(task: Task, provider: ProviderProfile, model: string | Model, usage: LanguageModelUsage, providerMetadata?: unknown): UsageReportData {
@@ -763,16 +778,22 @@ export class ModelManager {
       throw new Error(`Unsupported LLM provider: ${provider.provider.name}`);
     }
 
-    // Resolve Model object
-    let modelObj: Model | undefined;
+    // Resolve Model object, falling back to a minimal object so usage reports
+    // still work when provider models failed to load (e.g. network issues)
+    let modelObj: Model;
     if (typeof model === 'string') {
-      modelObj = this.getModelSettings(provider.id, model, true);
+      const foundModel = this.getModelSettings(provider.id, model, true);
+      if (foundModel) {
+        modelObj = foundModel;
+      } else {
+        logger.warn(`Model ${model} not found in provider ${provider.id}, generating usage report without model info`);
+        modelObj = {
+          id: model,
+          providerId: provider.id,
+        };
+      }
     } else {
       modelObj = model;
-    }
-
-    if (!modelObj) {
-      throw new Error(`Model not found: ${model}`);
     }
 
     return strategy.getUsageReport(task, provider, modelObj, usage, providerMetadata);
@@ -973,8 +994,10 @@ export class ModelManager {
 
       this.providerRegistry[provider.provider.name] = {
         ...provider.strategy,
-        createLlm: (profile, model, settings, projectDir, toolSet, systemPrompt, providerMetadata) =>
-          provider.strategy.createLlm(profile, model, settings, projectDir, toolSet, systemPrompt, providerMetadata) as LanguageModel | Promise<LanguageModel>,
+        createLlm: (profile, model, settings, projectDir, toolSet, systemPrompt, providerMetadata, tlsRegistrar, sessionId) =>
+          provider.strategy.createLlm(profile, model, settings, projectDir, toolSet, systemPrompt, providerMetadata, tlsRegistrar, sessionId) as
+            | LanguageModel
+            | Promise<LanguageModel>,
         getUsageReport: provider.strategy.getUsageReport || getDefaultUsageReport,
         getProviderOptions: provider.strategy.getProviderOptions
           ? (_provider, model, reasoning) => provider.strategy.getProviderOptions!(model, reasoning)

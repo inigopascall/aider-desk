@@ -1,5 +1,5 @@
 import { ContextFile, OS, TokensCost } from '@common/types';
-import React, { useCallback, useMemo, useState } from 'react';
+import { MouseEvent, memo, useCallback, useMemo, useState } from 'react';
 import { HiX } from 'react-icons/hi';
 import { BiCollapseVertical, BiExpandVertical } from 'react-icons/bi';
 import { MdOutlineSearch, MdOutlineRefresh } from 'react-icons/md';
@@ -8,7 +8,6 @@ import { useTranslation } from 'react-i18next';
 import { useDebounce, useLocalStorage } from '@reactuses/core';
 import { AnimatePresence, motion } from 'framer-motion';
 import { clsx } from 'clsx';
-import { FileViewerModal } from 'src/renderer/src/components/Workspace/FileViewerModal';
 
 import { WorkspaceSection } from './WorkspaceSection';
 import { normalizePath, createFileTree } from './types';
@@ -17,6 +16,7 @@ import type { TreeItem } from './types';
 
 import { Tooltip } from '@/components/ui/Tooltip';
 import { Input } from '@/components/common/Input';
+import { useFileEditorStore } from '@/stores/fileEditorStore';
 
 type Props = {
   baseDir: string;
@@ -30,15 +30,15 @@ type Props = {
   visitedSections: Set<string>;
   refreshAllFiles: (useGit?: boolean) => Promise<void>;
   onToggle: () => void;
-  onDropFile: (item: TreeItem) => (e: React.MouseEvent<HTMLButtonElement>) => void;
-  onAddFile: (item: TreeItem) => (event: React.MouseEvent<HTMLButtonElement>) => void;
+  onDropFile: (item: TreeItem) => (e: MouseEvent<HTMLButtonElement>) => void;
+  onAddFile: (item: TreeItem) => (event: MouseEvent<HTMLButtonElement>) => void;
   editMode?: boolean;
   isHidden?: boolean;
   onToggleHidden?: () => void;
   showBorderTop?: boolean;
 };
 
-export const ProjectFilesSection = ({
+export const ProjectFilesSectionComponent = ({
   baseDir,
   taskId,
   allFiles,
@@ -58,9 +58,9 @@ export const ProjectFilesSection = ({
   showBorderTop,
 }: Props) => {
   const { t } = useTranslation();
+  const openFile = useFileEditorStore((state) => state.openFile);
 
   const [projectExpandedItems, setProjectExpandedItems] = useState<string[]>([]);
-  const [previewFilePath, setPreviewFilePath] = useState<string | null>(null);
   const [isSearchVisible, setIsSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery, 50);
@@ -222,10 +222,11 @@ export const ProjectFilesSection = ({
         os={os}
         actions={projectActions}
         searchField={searchField}
+        isLoading={isRefreshing}
         showBorderTop={showBorderTop}
         onToggle={onToggle}
         onFileDiffClick={() => {}}
-        onFilePreviewClick={setPreviewFilePath}
+        onFilePreviewClick={(filePath: string) => openFile(baseDir, filePath, taskId)}
         onRevertFile={() => {}}
         onDropFile={onDropFile}
         onAddFile={onAddFile}
@@ -233,8 +234,8 @@ export const ProjectFilesSection = ({
         isHidden={isHidden}
         onToggleHidden={onToggleHidden}
       />
-
-      {previewFilePath && <FileViewerModal filePath={previewFilePath} baseDir={baseDir} taskId={taskId} onClose={() => setPreviewFilePath(null)} />}
     </>
   );
 };
+
+export const ProjectFilesSection = memo(ProjectFilesSectionComponent);

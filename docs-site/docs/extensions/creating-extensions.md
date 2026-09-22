@@ -1,4 +1,13 @@
+---
+title: "Creating Extensions"
+sidebar_label: "Creating Extensions"
+---
+
 # Creating Extensions
+
+:::tip[Let the agent do it]
+AiderDesk ships with a built-in **Extension Creator skill** — ask your agent in plain language to build an extension for your workflow, and it generates the files, metadata, tools, commands, and event handlers for you. Use this guide for full manual control, or to understand what the agent produces.
+:::
 
 Extensions are TypeScript or JavaScript files that export a class implementing the `Extension` interface. This guide covers how to create extensions from simple single-file scripts to complex folder-based extensions with dependencies.
 
@@ -94,7 +103,7 @@ export default class GenerateTestsExtension implements Extension {
           { description: 'File path to generate tests for', required: true },
           { description: 'Test framework (jest, vitest, mocha)', required: false },
         ],
-        async execute(args, context) {
+        async execute(args, context, images) {
           const filePath = args[0];
           const framework = args[1] || 'vitest';
 
@@ -105,7 +114,8 @@ export default class GenerateTestsExtension implements Extension {
           }
 
           const prompt = `Generate comprehensive unit tests for ${filePath} using ${framework}. Include edge cases and error handling.`;
-          await taskContext.runPrompt(prompt);
+          // Images are screenshots attached to the prompt when the command was executed
+          await taskContext.runPrompt(prompt, undefined, images);
         },
       },
     ];
@@ -235,7 +245,7 @@ export default class MyUIExtension implements Extension {
 (props) => {
   const { ui, executeExtensionAction } = props;
   const { Button } = ui;
-  
+
   return (
     <div className="flex items-center gap-1">
       <Button
@@ -298,11 +308,11 @@ export default class ActiveFilesCounterExtension implements Extension {
   const { Tooltip } = ui;
   const count = data?.count ?? 0;
   const files = data?.files ?? [];
-  
+
   if (count === 0) return null;
-  
+
   const tooltipContent = files.map(f => f.path.split('/').pop()).join('\\n');
-  
+
   return (
     <Tooltip content={tooltipContent}>
       <div className="flex items-center gap-1 px-2 py-0.5 text-xs text-text-secondary hover:text-text-primary cursor-default">
@@ -326,7 +336,7 @@ export default class ActiveFilesCounterExtension implements Extension {
       if (!taskContext) {
         return { count: 0, files: [] };
       }
-      
+
       const files = await taskContext.getContextFiles();
       return {
         count: files.length,
@@ -352,7 +362,7 @@ export default class TPSCounterExtension implements Extension {
   getUIComponents(context: ExtensionContext): UIComponentDefinition[] {
     // Load JSX from external file
     const jsx = readFileSync(join(__dirname, './TPSCounter.jsx'), 'utf-8');
-    
+
     return [
       {
         id: 'tps-counter',
@@ -376,9 +386,9 @@ export default class TPSCounterExtension implements Extension {
 ```jsx
 (props) => {
   const { data } = props;
-  
+
   if (!data || data.messageCount === 0) return null;
-  
+
   return (
     <div className="flex items-center gap-1 text-2xs mt-1 w-full justify-between">
       <span>Avg. tokens/s:</span>
@@ -436,15 +446,15 @@ The `jsx` function receives a `props` object with:
 (props) => {
   const { useState, useEffect, useCallback } = React;
   const [count, setCount] = useState(0);
-  
+
   useEffect(() => {
     console.log('Component mounted');
   }, []);
-  
+
   const handleClick = useCallback(() => {
     setCount(count + 1);
   }, [count]);
-  
+
   return <button onClick={handleClick}>Count: {count}</button>;
 }
 ```
@@ -456,12 +466,12 @@ The `icons` prop provides access to all react-icons libraries organized by icon 
 ```jsx
 (props) => {
   const { icons } = props;
-  
+
   // Access icons from different sets
   const FiSettings = icons.Fi.FiSettings;
   const HiCheck = icons.Hi.HiCheck;
   const CgSpinner = icons.Cg.CgSpinner;
-  
+
   return (
     <div className="flex items-center gap-2">
       <FiSettings className="w-4 h-4" />
@@ -779,12 +789,44 @@ If no metadata is provided, AiderDesk derives the name from the filename and set
 | Command names | kebab-case (colons allowed) | `generate-tests`, `impl:tweak` |
 | UI element IDs | kebab-case | `create-jira-ticket` |
 
+### Extension with Disposable Resources
+
+Extensions that create resources (timers, watchers, child processes) should register cleanup logic using `context.addDisposable()`. The setup function runs immediately, and if it returns a cleanup function, that function is called automatically when the extension is unloaded — **before** `onUnload` runs. Cleanups execute in reverse order of registration (LIFO). Cleanup functions may be synchronous or asynchronous: an async cleanup (returning a `Promise`) is awaited during unload, and any error it throws or rejects with is logged without preventing the remaining cleanups from running.
+
+```typescript
+// auto-refresh.ts
+import type { Extension, ExtensionContext } from '@aiderdesk/extensions';
+
+export default class AutoRefreshExtension implements Extension {
+  async onLoad(context: ExtensionContext) {
+    // Setup and cleanup are co-located — no need to track manually in onUnload
+    context.addDisposable(() => {
+      const timer = setInterval(() => {
+        context.log('Refreshing...', 'debug');
+      }, 5000);
+      return () => clearInterval(timer); // cleanup right next to setup
+    });
+
+    // If setup returns void, no cleanup is registered
+    context.addDisposable(() => {
+      context.log('One-time setup side effect', 'debug');
+      // no return — fire-and-forget
+    });
+  }
+
+  // onUnload still works as a fallback for anything not registered via addDisposable
+  async onUnload() {
+    // onUnload does not receive a context parameter
+  }
+}
+```
+
 ## Best Practices
 
 1. **Keep it focused** - Each extension should do one thing well
 2. **Handle errors gracefully** - Catch exceptions and return meaningful error messages
 3. **Use TypeScript** - Get compile-time checks and better IDE support
 4. **Log appropriately** - Use `context.log()` for debugging, not `console.log()`
-5. **Clean up resources** - Implement `onUnload()` to release resources
+5. **Clean up resources** - Use `context.addDisposable()` in `onLoad` or event handlers to co-locate setup and cleanup logic, or implement `onUnload()` to release resources. `addDisposable` cleanup functions run automatically (in LIFO order) before `onUnload` is called.
 6. **Validate inputs** - Use Zod schemas for tool parameters
 7. **Document your extension** - Include description in metadata

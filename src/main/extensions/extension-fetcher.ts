@@ -69,6 +69,7 @@ export class ExtensionFetcher {
       const repoDir = await this.ensureRepoCloned(repoUrl);
       const extensionsPath = this.getExtensionsPath(repoUrl, repoDir);
       const extensions = await this.scanForExtensions(extensionsPath, repoUrl);
+      await this.mergeInstallCounts(extensions, extensionsPath, repoDir);
 
       this.cache.set(repoUrl, {
         timestamp: now,
@@ -285,6 +286,44 @@ export class ExtensionFetcher {
     return extensions;
   }
 
+  private async mergeInstallCounts(extensions: AvailableExtension[], extensionsPath: string, repoDir: string): Promise<void> {
+    const candidates = [path.join(extensionsPath, 'extensions.json'), path.join(extensionsPath, '..', 'extensions.json')];
+
+    for (const candidate of candidates) {
+      const relativePath = path.relative(repoDir, candidate);
+      if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+        continue;
+      }
+
+      try {
+        const content = await fs.readFile(candidate, 'utf-8');
+        const registry = JSON.parse(content) as { extensions?: { id?: string; installCount?: number }[] };
+
+        const counts = new Map<string, number>();
+        for (const entry of registry.extensions ?? []) {
+          if (entry.id && typeof entry.installCount === 'number') {
+            counts.set(entry.id, entry.installCount);
+          }
+        }
+
+        if (counts.size === 0) {
+          continue;
+        }
+
+        for (const extension of extensions) {
+          const installCount = counts.get(extension.id);
+          if (installCount !== undefined) {
+            extension.installCount = installCount;
+          }
+        }
+
+        return;
+      } catch {
+        // Registry file missing or invalid at this location, try the next candidate
+      }
+    }
+  }
+
   private getRepoName(repoUrl: string): string {
     try {
       const url = new URL(repoUrl);
@@ -309,7 +348,7 @@ export class ExtensionFetcher {
 
   private async extractMetadataFromLocalFile(filePath: string): Promise<ExtensionMetadata | null> {
     try {
-      const metadata = this.getStaticMetadata(filePath);
+      const metadata = await this.getStaticMetadata(filePath);
 
       if (!metadata) {
         logger.error(`[ExtensionFetcher] No metadata found in ${filePath}`);
@@ -323,17 +362,9 @@ export class ExtensionFetcher {
     }
   }
 
-  private getStaticMetadata(filePath: string): ExtensionMetadata | null {
-    const program = ts.createProgram([filePath], {
-      allowJs: true,
-      target: ts.ScriptTarget.ESNext,
-      module: ts.ModuleKind.ESNext,
-    });
-
-    const sourceFile = program.getSourceFile(filePath);
-    if (!sourceFile) {
-      return null;
-    }
+  private async getStaticMetadata(filePath: string): Promise<ExtensionMetadata | null> {
+    const fileContent = await fs.readFile(filePath, 'utf-8');
+    const sourceFile = ts.createSourceFile(filePath, fileContent, ts.ScriptTarget.ESNext, true);
 
     let metadata: ExtensionMetadata | null = null;
     const enumValues = this.collectEnumValues(sourceFile);

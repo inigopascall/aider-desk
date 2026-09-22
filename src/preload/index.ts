@@ -44,6 +44,7 @@ import {
   WorktreeIntegrationStatusUpdatedData,
   WorkflowLogData,
   AiderConnectorStatus,
+  InputPromptData,
 } from '@common/types';
 import { electronAPI } from '@electron-toolkit/preload';
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
@@ -53,6 +54,7 @@ import { compareBaseDirs } from '@common/utils';
 import './index.d';
 
 const api: ApplicationAPI = {
+  getRendererProcessMemoryInfo: () => process.getProcessMemoryInfo(),
   isOpenLogsDirectorySupported: () => true,
   openLogsDirectory: () => ipcRenderer.invoke('open-logs-directory'),
   loadSettings: () => ipcRenderer.invoke('load-settings'),
@@ -104,17 +106,28 @@ const api: ApplicationAPI = {
   getRepositoryMappings: (baseDir) => ipcRenderer.invoke('get-repository-mappings', baseDir),
   regenerateRepositoryMappings: (baseDir, taskId) => ipcRenderer.invoke('regenerate-repository-mappings', baseDir, taskId),
   deleteRepositoryMapping: (baseDir, filePath) => ipcRenderer.invoke('delete-repository-mapping', baseDir, filePath),
+  getUpdatedFileDiff: (baseDir, taskId, filePath, commitHash) => ipcRenderer.invoke('get-updated-file-diff', baseDir, taskId, filePath, commitHash),
+  getUpdatedFileContents: (baseDir, taskId, filePath, commitHash) => ipcRenderer.invoke('get-updated-file-contents', baseDir, taskId, filePath, commitHash),
   addFileToGit: (baseDir, taskId, filePath) => ipcRenderer.invoke('add-file-to-git', baseDir, taskId, filePath),
   restoreFile: (baseDir, taskId, filePath) => ipcRenderer.invoke('restore-file', baseDir, taskId, filePath),
   readFile: (baseDir, taskId, filePath) => ipcRenderer.invoke('read-file', baseDir, taskId, filePath),
-  generateCommitMessage: (baseDir, taskId) => ipcRenderer.invoke('generate-commit-message', baseDir, taskId),
-  commitChanges: (baseDir, taskId, message, amend) => ipcRenderer.invoke('commit-changes', baseDir, taskId, message, amend),
+  saveFile: (baseDir, taskId, filePath, content) => ipcRenderer.invoke('save-file', baseDir, taskId, filePath, content),
+  generateCommitMessage: (baseDir, taskId, filePaths) => ipcRenderer.invoke('generate-commit-message', baseDir, taskId, filePaths),
+  commitChanges: (baseDir, taskId, message, amend, filePaths) => ipcRenderer.invoke('commit-changes', baseDir, taskId, message, amend, filePaths),
   cancelCommitChanges: (baseDir, taskId) => ipcRenderer.invoke('cancel-commit-changes', baseDir, taskId),
   addFile: async (baseDir, taskId, filePath, readOnly = false) => {
     ipcRenderer.send('add-file', baseDir, taskId, filePath, readOnly);
   },
   isValidPath: (baseDir, path) => ipcRenderer.invoke('is-valid-path', baseDir, path),
   isProjectPath: (path) => ipcRenderer.invoke('is-project-path', path),
+  cloneProject: async (repositoryUrl, targetDir) => {
+    const result = await ipcRenderer.invoke('clone-project', repositoryUrl, targetDir);
+    if (result.error || !result.path) {
+      throw new Error(result.error ?? 'Failed to clone the project');
+    }
+    return result.path;
+  },
+  cancelCloneProject: () => ipcRenderer.invoke('cancel-clone-project'),
   dropFile: (baseDir, taskId, path) => ipcRenderer.send('drop-file', baseDir, taskId, path),
   setContextFilesDisabled: (baseDir, taskId, filePaths, disabled) =>
     ipcRenderer.invoke('set-context-files-disabled', baseDir, taskId, filePaths, disabled),
@@ -184,6 +197,16 @@ const api: ApplicationAPI = {
       ipcRenderer.removeListener('modal-overlay-url', listener);
     };
   },
+  onInputPrompt: (callback: (data: InputPromptData) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, data: InputPromptData) => {
+      callback(data);
+    };
+    ipcRenderer.on('input-prompt', listener);
+    return () => {
+      ipcRenderer.removeListener('input-prompt', listener);
+    };
+  },
+  respondInputPrompt: (id: string, value: string | null, rememberSession?: boolean) => ipcRenderer.invoke('respond-input-prompt', id, value, rememberSession),
   loadExtensionLibrary: (librarySpec: string) => ipcRenderer.invoke('load-extension-library', librarySpec),
   // Extension config operations (per-extension settings)
   getExtensionConfigComponent: (extensionId: string, projectDir?: string) => ipcRenderer.invoke('get-extension-config-component', extensionId, projectDir),
@@ -744,7 +767,8 @@ const api: ApplicationAPI = {
 
   getCommands: (baseDir) => ipcRenderer.invoke('get-commands', baseDir),
   getCustomModes: (baseDir) => ipcRenderer.invoke('get-custom-modes', baseDir),
-  runCustomCommand: (baseDir, taskId, commandName, args, mode) => ipcRenderer.invoke('run-custom-command', baseDir, taskId, commandName, args, mode),
+  runCustomCommand: (baseDir, taskId, commandName, args, mode, images) =>
+    ipcRenderer.invoke('run-custom-command', baseDir, taskId, commandName, args, mode, images),
 
   // Terminal operations
   isTerminalSupported: () => true,
@@ -754,6 +778,7 @@ const api: ApplicationAPI = {
   closeTerminal: (terminalId) => ipcRenderer.invoke('terminal-close', terminalId),
   getTerminalForTask: (taskId) => ipcRenderer.invoke('terminal-get-for-task', taskId),
   getAllTerminalsForTask: (taskId) => ipcRenderer.invoke('terminal-get-all-for-task', taskId),
+  getTerminalBuffer: (terminalId) => ipcRenderer.invoke('terminal-get-buffer', terminalId),
 
   // Worktree merge operations
   mergeWorktreeToMain: (baseDir, taskId, squash, targetBranch, commitMessage) =>
@@ -761,7 +786,7 @@ const api: ApplicationAPI = {
   switchToLocalWorkingMode: (baseDir, taskId, options) => ipcRenderer.invoke('switch-to-local-working-mode', baseDir, taskId, options),
   switchToWorktreeWorkingMode: (baseDir, taskId, options) => ipcRenderer.invoke('switch-to-worktree-working-mode', baseDir, taskId, options),
   getLocalUncommittedFiles: (baseDir, taskId) => ipcRenderer.invoke('get-local-uncommitted-files', baseDir, taskId),
-  applyUncommittedChanges: (baseDir, taskId, targetBranch) => ipcRenderer.invoke('apply-uncommitted-changes', baseDir, taskId, targetBranch),
+  applyUncommittedChanges: (baseDir, taskId) => ipcRenderer.invoke('apply-uncommitted-changes', baseDir, taskId),
   revertLastMerge: (baseDir, taskId) => ipcRenderer.invoke('revert-last-merge', baseDir, taskId),
   listBranches: (baseDir) => ipcRenderer.invoke('list-branches', baseDir),
   getWorktreeIntegrationStatus: (baseDir, taskId, targetBranch) => ipcRenderer.invoke('get-worktree-integration-status', baseDir, taskId, targetBranch),
@@ -769,7 +794,25 @@ const api: ApplicationAPI = {
   abortWorktreeRebase: (baseDir, taskId) => ipcRenderer.invoke('abort-worktree-rebase', baseDir, taskId),
   continueWorktreeRebase: (baseDir, taskId) => ipcRenderer.invoke('continue-worktree-rebase', baseDir, taskId),
   resolveWorktreeConflictsWithAgent: (baseDir, taskId) => ipcRenderer.invoke('resolve-worktree-conflicts-with-agent', baseDir, taskId),
-  renameWorktreeBranch: (baseDir, taskId, newBranchName) => ipcRenderer.invoke('rename-worktree-branch', baseDir, taskId, newBranchName),
+  renameWorktreeBranch: (baseDir, taskId, newBranchName) => ipcRenderer.invoke('rename-git-branch', baseDir, taskId, newBranchName),
+  renameGitBranch: (baseDir, taskId, newBranchName) => ipcRenderer.invoke('rename-git-branch', baseDir, taskId, newBranchName),
+
+  // Git branch operations
+  listGitBranches: (baseDir, taskId, includeRemote) => ipcRenderer.invoke('list-git-branches', baseDir, taskId, includeRemote),
+  getSyncCommits: (baseDir, taskId, targetBranch) => ipcRenderer.invoke('get-sync-commits', baseDir, taskId, targetBranch),
+  createGitBranch: (baseDir, taskId, name, startPoint, checkout) => ipcRenderer.invoke('create-git-branch', baseDir, taskId, name, startPoint, checkout),
+  checkoutGitBranch: (baseDir, taskId, branch, createTracking, takeOver) =>
+    ipcRenderer.invoke('checkout-git-branch', baseDir, taskId, branch, createTracking, takeOver),
+  deleteGitBranch: (baseDir, taskId, branch, force) => ipcRenderer.invoke('delete-git-branch', baseDir, taskId, branch, force),
+  mergeIntoCurrentBranch: (baseDir, taskId, branch) => ipcRenderer.invoke('merge-into-current-branch', baseDir, taskId, branch),
+  rebaseOntoBranch: (baseDir, taskId, branch) => ipcRenderer.invoke('rebase-onto-branch', baseDir, taskId, branch),
+  updateGitBranch: (baseDir, taskId, branchName) => ipcRenderer.invoke('update-git-branch', baseDir, taskId, branchName),
+  isGitRepository: (baseDir, taskId) => ipcRenderer.invoke('git-is-repo', baseDir, taskId),
+  initializeGitRepository: (baseDir, taskId) => ipcRenderer.invoke('git-init-repo', baseDir, taskId),
+
+  gitPull: (baseDir, taskId, rebase) => ipcRenderer.invoke('git-pull', baseDir, taskId, rebase),
+  gitPush: (baseDir, taskId, force, setUpstream) => ipcRenderer.invoke('git-push', baseDir, taskId, force, setUpstream),
+  resolveGitErrorWithAgent: (baseDir, taskId) => ipcRenderer.invoke('resolve-git-error-with-agent', baseDir, taskId),
 
   // Agent profile operations
   getAllAgentProfiles: () => ipcRenderer.invoke('get-agent-profiles'),
@@ -787,6 +830,7 @@ const api: ApplicationAPI = {
   getMemoryEmbeddingProgress: () => ipcRenderer.invoke('get-memory-embedding-progress'),
 
   writeToClipboard: (text: string) => ipcRenderer.invoke('clipboard-write-text', text),
+  writeImageToClipboard: (dataUrl: string) => ipcRenderer.invoke('clipboard-write-image', dataUrl),
   openPath: (path: string) => ipcRenderer.invoke('open-path', path),
   openUrlInWindow: (url: string, title?: string) => ipcRenderer.invoke('open-url-in-window', url, title),
   openUrlExternally: (url: string) => ipcRenderer.invoke('open-url-externally', url),

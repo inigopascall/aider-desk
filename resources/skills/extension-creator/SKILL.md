@@ -144,6 +144,24 @@ Do not use when:
 
 **Never:** Use `'extension-settings'` placement — it was removed; use the dedicated config API instead
 
+### Rule: Validate UI components after creation
+
+**When:** Any UI or config component (.jsx file) was created or modified
+
+**Then:** Run the validator script and fix all reported issues
+
+**Must:** Run `node <skill-dir>/assets/scripts/validate-extension-ui.mjs <file-or-dir>` where `<skill-dir>` is this skill's directory
+
+**Must:** Ensure every file passes — exit code 0, all lines say `PASS`
+
+**Must:** Fix all `[SYNTAX]` issues (the component would crash at render time) and `[TYPE]` issues (typos in props, React API, or `ui.*` component names)
+
+**If:** A file uses config-style props (`config`, `updateConfig`) but is not named `Config*.jsx`
+
+**Then:** Add `--type=config` (conversely, `--type=ui` forces UI-component props)
+
+**Note:** The script needs `sucrase`, `typescript`, and `@types/react` resolvable (they are, when the aider-desk repo is available); otherwise it degrades to whatever checks are possible and says so in a warning
+
 ### Rule: Update registry and docs (In-Repo only)
 
 **When:** Target is In-Repo and extension file is created
@@ -196,6 +214,9 @@ Do not use when:
 - If extension needs constants, create constants.ts
 - If extension has placement-based UI components, create .jsx files for components (recommended for components > 20 lines)
 
+**After any .jsx file is created:**
+- Validate it: `node <skill-dir>/assets/scripts/validate-extension-ui.mjs <extension-dir>` — all files must pass
+
 ### For In-Repo target:
 
 1. Confirm user wants In-Repo (only available in aider-desk project)
@@ -210,6 +231,9 @@ Do not use when:
 
 **Between steps 3 and 5:**
 - Same optional files as Project/Global flow above
+
+**After any .jsx file is created:**
+- Validate it: `node <skill-dir>/assets/scripts/validate-extension-ui.mjs <extension-dir>` — all files must pass
 
 ## Preconditions
 
@@ -245,6 +269,7 @@ After completing this skill, verify:
 - Static `metadata` property on the class includes all required fields (name, version)
 - Default export is the extension class
 - No `@/` imports used
+- All UI/config .jsx components pass `assets/scripts/validate-extension-ui.mjs`
 - **If In-Repo:** extensions.json updated correctly
 - **If In-Repo:** docs-site/docs/extensions/extensions-gallery.md updated
 - **If In-Repo:** Type checking passes
@@ -350,6 +375,26 @@ After completing this skill, verify:
 - When ambiguous: If the user says "log", "show", "display", or "report" something, default to `addLogMessage` (user-visible). Use `context.log` only for internal diagnostics.
 - Note: `context.log` is always available; `getTaskContext()` returns `null` outside a task, so always use optional chaining (`?.`)
 
+**Situation:** Extension needs to manage resource cleanup (timers, watchers, child processes)
+
+**Pattern:**
+- When: Extension creates resources in `onLoad`, `onProjectStarted`, or event handlers that need cleanup
+- Then: Use `context.addDisposable()` to co-locate setup and cleanup logic
+- Setup runs immediately; if it returns a function, that function is called on unload (LIFO order). The cleanup may be sync or async (`Promise`) — async cleanups are awaited during unload
+- Disposers run **before** `onUnload` is called, so both patterns work together
+- Example:
+  ```typescript
+  async onLoad(context: ExtensionContext) {
+    // Setup and cleanup are co-located — no need to track in onUnload
+    context.addDisposable(() => {
+      const timer = setInterval(() => doWork(), 1000);
+      return () => clearInterval(timer);
+    });
+  }
+  // onUnload still works as a fallback for anything not registered via addDisposable
+  ```
+- If setup returns `void`, no cleanup is registered — useful for fire-and-forget side effects
+
 **Situation:** Extension needs to store or retrieve memories
 
 **Pattern:**
@@ -447,6 +492,7 @@ After completing this skill, verify:
 
 ## Assets
 
+- [scripts/validate-extension-ui.mjs](assets/scripts/validate-extension-ui.mjs) - UI component validator (syntax + type check)
 - [templates/single-file.ts.template](assets/templates/single-file.ts.template) - Single-file template
 - [templates/folder-extension/](assets/templates/folder-extension/) - Folder template (basic)
 - [templates/folder-extension-with-config/index.ts.template](assets/templates/folder-extension-with-config/index.ts.template) - Folder template with config component API

@@ -85,7 +85,7 @@ const createValidTool = (overrides: Partial<ToolDefinition> = {}): ToolDefinitio
   inputSchema: z.object({
     input: z.string(),
   }),
-  async execute(args, _signal, _context) {
+  async execute(args) {
     return { content: [{ type: 'text', text: args.input }] };
   },
   ...overrides,
@@ -638,7 +638,7 @@ describe('Extension Tool Integration with Agent', () => {
 
       await manager.executeCommand('test-command', ['arg1', 'arg2'], {} as any);
 
-      expect(mockExecute).toHaveBeenCalledWith(['arg1', 'arg2'], expect.any(Object));
+      expect(mockExecute).toHaveBeenCalledWith(['arg1', 'arg2'], expect.any(Object), undefined);
     });
   });
 });

@@ -1,5 +1,5 @@
 import { AIDER_MODES, AutonomyMode, AVAILABLE_WORKFLOWS, DEFAULT_AUTONOMY_MODE, Mode, TaskData } from '@common/types';
-import { useEffect, useMemo, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FaCog, FaInfoCircle } from 'react-icons/fa';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -7,7 +7,7 @@ import { MdOutlineFullscreen, MdPlaylistRemove, MdUndo } from 'react-icons/md';
 import { VscTerminal } from 'react-icons/vsc';
 import { clsx } from 'clsx';
 
-import { AgentSelector } from '@/components/AgentSelector';
+import { AgentSelector, AgentSelectorRef } from '@/components/AgentSelector';
 import { ModeSelector } from '@/components/PromptField/ModeSelector';
 import { AutonomySelector } from '@/components/PromptField/AutonomySelector';
 import { WorkflowSelector } from '@/components/PromptField/WorkflowSelector';
@@ -15,6 +15,10 @@ import { WorkflowConfigModal } from '@/components/PromptField/WorkflowConfigModa
 import { Button } from '@/components/common/Button';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
 import { useProjectSettings } from '@/contexts/ProjectSettingsContext';
+
+export type TaskControlBarRef = {
+  openAgentProfileSelector: () => void;
+};
 
 type Props = {
   baseDir: string;
@@ -29,7 +33,6 @@ type Props = {
   onToggleTaskInfoPanel?: () => void;
   onExpandEditor?: () => void;
   onAutonomyModeChanged?: (mode: AutonomyMode) => void;
-  showSettingsPage?: (pageId?: string, options?: Record<string, unknown>) => void;
   canUndoContextChange?: boolean;
   onUndoContextChange?: () => void;
   selectedWorkflowId?: string | null;
@@ -37,29 +40,38 @@ type Props = {
   onWorkflowRun?: (workflowId: string) => void;
 };
 
-export const TaskControlBar = ({
-  baseDir,
-  task,
-  isActive,
-  mode,
-  onModeChanged,
-  clearMessages,
-  toggleTerminal,
-  terminalVisible = false,
-  showTaskInfoPanel = false,
-  onToggleTaskInfoPanel,
-  onExpandEditor,
-  onAutonomyModeChanged,
-  showSettingsPage,
-  canUndoContextChange,
-  onUndoContextChange,
-  selectedWorkflowId,
-  onWorkflowChange,
-  onWorkflowRun,
-}: Props) => {
+export const TaskControlBar = forwardRef<TaskControlBarRef, Props>(
+  (
+    {
+      baseDir,
+      task,
+      isActive,
+      mode,
+      onModeChanged,
+      clearMessages,
+      toggleTerminal,
+      terminalVisible = false,
+      showTaskInfoPanel = false,
+      onToggleTaskInfoPanel,
+      onExpandEditor,
+      onAutonomyModeChanged,
+      showSettingsPage,
+      canUndoContextChange,
+      onUndoContextChange,
+      selectedWorkflowId,
+      onWorkflowChange,
+      onWorkflowRun,
+    },
+    ref,
+  ) => {
   const { t } = useTranslation();
   const isWorkflowSelected = !!selectedWorkflowId;
   const { projectSettings, saveProjectSettings } = useProjectSettings();
+  const agentSelectorRef = useRef<AgentSelectorRef>(null);
+
+  useImperativeHandle(ref, () => ({
+    openAgentProfileSelector: () => agentSelectorRef.current?.open(),
+  }));
 
   // Only workflows enabled for this project are offered in the selector
   const enabledWorkflowIds = projectSettings?.enabledWorkflows ?? [];
@@ -117,6 +129,7 @@ export const TaskControlBar = ({
         <ModeSelector baseDir={baseDir} mode={mode} onModeChange={onModeChanged} disabled={isWorkflowSelected} />
         {!AIDER_MODES.includes(mode) && (
           <AgentSelector
+            ref={agentSelectorRef}
             projectDir={baseDir}
             task={task}
             isActive={isActive}
@@ -235,4 +248,7 @@ export const TaskControlBar = ({
       )}
     </div>
   );
-};
+  },
+);
+
+TaskControlBar.displayName = 'TaskControlBar';

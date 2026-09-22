@@ -6,7 +6,7 @@ import { ChildProcess } from 'node:child_process';
 import treeKill from 'tree-kill';
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
-import { glob } from 'glob';
+import { globIterate } from 'glob';
 import { AgentProfile, BashToolSettings, FileWriteMode, PromptContext, ToolApprovalState } from '@common/types';
 import {
   POWER_TOOL_BASH as TOOL_BASH,
@@ -31,7 +31,7 @@ import logger from '@/logger';
 import { ensureRipgrepBinary, filterIgnoredFiles, scrapeWeb } from '@/utils';
 import { isAbortError, isFileNotFoundError } from '@/utils/errors';
 import { getShellCommandArgs, getShellInitCommand, getShellPath } from '@/utils/shell';
-import { expandTilde, readFileContent, truncateToolResult, coerceBoolean } from '@/agent/utils';
+import { BoundedOutputAccumulator, expandTilde, readFileContent, truncateToolResult, coerceBoolean } from '@/agent/utils';
 import { RIPGREP_BINARY_PATH } from '@/constants';
 
 /**
@@ -40,6 +40,9 @@ import { RIPGREP_BINARY_PATH } from '@/constants';
  * New operations on the same file must wait for the previous one to complete.
  */
 const fileLocks = new Map<string, Promise<unknown>>();
+
+const BASH_STREAMING_PREVIEW_CHARS = 8 * 1024;
+const BASH_STREAMING_UPDATE_INTERVAL_MS = 150;
 
 /**
  * Acquires a lock for a file and executes the operation.
@@ -368,15 +371,27 @@ Do not use escape characters \\ in the string like \\n or \\" and others. Do not
         return `Glob search with pattern '${pattern}' denied by user. Reason: ${userInput}`;
       }
 
+      const GLOB_WALK_LIMIT = 5000;
+      const GLOB_MAX_RESULTS = 1000;
+
       const absoluteCwd = expandedCwd ? path.resolve(task.getTaskDir(), expandedCwd) : task.getTaskDir();
       try {
-        const files = await glob(pattern, {
+        const files: string[] = [];
+        let walkTruncated = false;
+
+        for await (const file of globIterate(pattern, {
           cwd: absoluteCwd,
           ignore: ignore,
           nodir: false,
           absolute: false, // Keep paths relative to cwd for easier processing
           signal: abortSignal,
-        });
+        })) {
+          files.push(file);
+          if (files.length >= GLOB_WALK_LIMIT) {
+            walkTruncated = true;
+            break;
+          }
+        }
 
         // Convert to absolute paths for filtering, then back to relative
         const absoluteFiles = files.map((file) => path.resolve(absoluteCwd, file));
@@ -384,6 +399,15 @@ Do not use escape characters \\ in the string like \\n or \\" and others. Do not
 
         // Ensure paths are relative to task.getTaskDir()
         const result = filteredFiles.map((file) => path.relative(task.getTaskDir(), file));
+
+        const truncated = result.length > GLOB_MAX_RESULTS || walkTruncated;
+        if (truncated) {
+          const trimmed = result.length > GLOB_MAX_RESULTS ? result.slice(0, GLOB_MAX_RESULTS) : result;
+          const reason = walkTruncated
+            ? `walk limit of ${GLOB_WALK_LIMIT} entries reached (results may be incomplete)`
+            : `results truncated at ${GLOB_MAX_RESULTS} entries`;
+          return [...trimmed, `[Glob ${reason}. Refine your pattern for more specific results.]`];
+        }
 
         return result;
       } catch (error) {
@@ -407,9 +431,13 @@ Do not use escape characters \\ in the string like \\n or \\" and others. Do not
         .describe('The number of lines of context to show before and after each matching line. Default: 0.'),
       caseSensitive: coerceBoolean.optional().default(false).describe('Whether the search should be case sensitive. Default: false.'),
       maxResults: z.coerce.number().int().min(1).optional().default(50).describe('Maximum number of results to return. Default: 50.'),
+      ignoreGitignore: coerceBoolean
+        .optional()
+        .default(false)
+        .describe('Whether to include files ignored by .gitignore, .ignore or .rgignore files. Default: false.'),
     }),
     execute: async (input, { toolCallId }) => {
-      const { filePattern, searchTerm, contextLines, caseSensitive, maxResults } = input;
+      const { filePattern, searchTerm, contextLines, caseSensitive, maxResults, ignoreGitignore } = input;
       task.addToolMessage(
         toolCallId,
         TOOL_GROUP_NAME,
@@ -420,6 +448,7 @@ Do not use escape characters \\ in the string like \\n or \\" and others. Do not
           contextLines,
           caseSensitive,
           maxResults,
+          ignoreGitignore,
         },
         undefined,
         undefined,
@@ -442,7 +471,11 @@ Do not use escape characters \\ in the string like \\n or \\" and others. Do not
       }
 
       try {
-        const rgArgs: string[] = ['--no-heading', '--line-number', '--color', 'never'];
+        const rgArgs: string[] = ['--no-heading', '--line-number', '--color', 'never', '--max-columns', '2000', '--max-columns-preview'];
+
+        if (ignoreGitignore) {
+          rgArgs.push('--no-ignore');
+        }
 
         if (!caseSensitive) {
           rgArgs.push('-i');
@@ -698,11 +731,12 @@ Do not use escape characters \\ in the string like \\n or \\" and others. Do not
     description: POWER_TOOL_DESCRIPTIONS[TOOL_BASH],
     inputSchema: z.object({
       command: z.string().min(1).describe('The shell command to execute (e.g., ls -la, npm install).'),
+      description: z.string().optional().describe('Optional short description of the command intent (e.g., "Install dependencies").'),
       cwd: z.string().optional().describe('The working directory for the command (relative to <WorkingDirectory>). Default: <WorkingDirectory>.'),
       timeout: z.coerce.number().int().min(0).optional().default(120000).describe('Timeout for the command execution in milliseconds. Default: 120000 ms.'),
     }),
     execute: async (input, { toolCallId }) => {
-      const { command, cwd, timeout } = input;
+      const { command, cwd, timeout, description } = input;
       const expandedCwd = cwd ? expandTilde(cwd) : cwd;
       task.addToolMessage(
         toolCallId,
@@ -710,6 +744,7 @@ Do not use escape characters \\ in the string like \\n or \\" and others. Do not
         TOOL_BASH,
         {
           command,
+          description,
           cwd,
           timeout,
         },
@@ -766,13 +801,16 @@ Do not use escape characters \\ in the string like \\n or \\" and others. Do not
       };
 
       return await new Promise((resolve) => {
-        let stdout = '';
-        let stderr = '';
+        const stdoutAccumulator = new BoundedOutputAccumulator();
+        const stderrAccumulator = new BoundedOutputAccumulator();
         let exitCode = 0;
+        let stderrOverride: string | null = null;
         let timeoutHandle: NodeJS.Timeout | null = null;
         let isResolved = false;
         let childProcess: ChildProcess | null = null;
         let abortListener: (() => void) | null = null;
+        let lastStreamingUpdateAt = 0;
+        let streamingUpdateQueued = false;
 
         const cleanup = () => {
           if (timeoutHandle) {
@@ -785,6 +823,12 @@ Do not use escape characters \\ in the string like \\n or \\" and others. Do not
           }
         };
 
+        const finishOutput = async (accumulator: BoundedOutputAccumulator): Promise<string> => {
+          const content = await accumulator.finish();
+          const didSpill = accumulator.didSpill();
+          return truncateToolResult(content, 1000, 50, 10000, !didSpill, didSpill ? `Full output saved to ${accumulator.getSpillFilePath()}.` : undefined);
+        };
+
         const resolveWithResult = async () => {
           if (isResolved) {
             return;
@@ -792,10 +836,35 @@ Do not use escape characters \\ in the string like \\n or \\" and others. Do not
           isResolved = true;
           cleanup();
 
-          const truncatedStdout = await truncateToolResult(stdout, 1000, 50, 10000);
-          const truncatedStderr = await truncateToolResult(stderr, 1000, 50, 10000);
+          const truncatedStdout = await finishOutput(stdoutAccumulator);
+          const truncatedStderr = stderrOverride ?? (await finishOutput(stderrAccumulator));
 
           resolve({ stdout: truncatedStdout, stderr: truncatedStderr, exitCode });
+        };
+
+        const sendStreamingUpdate = () => {
+          const now = Date.now();
+          if (now - lastStreamingUpdateAt < BASH_STREAMING_UPDATE_INTERVAL_MS) {
+            streamingUpdateQueued = true;
+            return;
+          }
+          lastStreamingUpdateAt = now;
+          streamingUpdateQueued = false;
+          task.addToolMessage(
+            toolCallId,
+            TOOL_GROUP_NAME,
+            TOOL_BASH,
+            { command, description, cwd, timeout },
+            JSON.stringify({
+              stdout: stdoutAccumulator.getPreview(BASH_STREAMING_PREVIEW_CHARS),
+              stderr: stderrAccumulator.getPreview(BASH_STREAMING_PREVIEW_CHARS),
+              exitCode: null,
+            }),
+            undefined,
+            promptContext,
+            false,
+            false, // not finished yet
+          );
         };
 
         abortListener = () => {
@@ -808,7 +877,7 @@ Do not use escape characters \\ in the string like \\n or \\" and others. Do not
           }
 
           // Use the standard resolution method with proper type
-          stderr = 'Operation was cancelled by user.';
+          stderrOverride = 'Operation was cancelled by user.';
           exitCode = 130; // Standard cancel exit code (128 + SIGINT=2)
           void resolveWithResult();
         };
@@ -837,7 +906,7 @@ Do not use escape characters \\ in the string like \\n or \\" and others. Do not
             if (childProcess?.pid) {
               killProcess(childProcess.pid);
             }
-            stderr = `Error: Command timed out after ${timeout}ms. Consider increasing the timeout parameter.`;
+            stderrOverride = `Error: Command timed out after ${timeout}ms. Consider increasing the timeout parameter.`;
             exitCode = 124;
             void resolveWithResult();
           }, timeout);
@@ -847,21 +916,12 @@ Do not use escape characters \\ in the string like \\n or \\" and others. Do not
               return;
             }
 
-            const chunk = data.toString('utf-8');
-            stdout += chunk;
+            stdoutAccumulator.append(data);
 
-            // Send streaming update
-            task.addToolMessage(
-              toolCallId,
-              TOOL_GROUP_NAME,
-              TOOL_BASH,
-              { command, cwd, timeout },
-              JSON.stringify({ stdout, stderr: '', exitCode: null }),
-              undefined,
-              promptContext,
-              false,
-              false, // not finished yet
-            );
+            // Send throttled bounded streaming update
+            if (streamingUpdateQueued || Date.now() - lastStreamingUpdateAt >= BASH_STREAMING_UPDATE_INTERVAL_MS) {
+              sendStreamingUpdate();
+            }
           });
 
           childProcess.stderr?.on('data', (data: Buffer) => {
@@ -869,26 +929,17 @@ Do not use escape characters \\ in the string like \\n or \\" and others. Do not
               return;
             }
 
-            const chunk = data.toString('utf-8');
-            stderr += chunk;
+            stderrAccumulator.append(data);
 
-            // Send streaming update
-            task.addToolMessage(
-              toolCallId,
-              TOOL_GROUP_NAME,
-              TOOL_BASH,
-              { command, cwd, timeout },
-              JSON.stringify({ stdout, stderr, exitCode: null }),
-              undefined,
-              promptContext,
-              false,
-              false, // not finished yet
-            );
+            // Send throttled bounded streaming update
+            if (streamingUpdateQueued || Date.now() - lastStreamingUpdateAt >= BASH_STREAMING_UPDATE_INTERVAL_MS) {
+              sendStreamingUpdate();
+            }
           });
 
           childProcess.on('error', (error: Error) => {
             if (!isResolved) {
-              stderr = error.message;
+              stderrOverride = error.message;
               exitCode = 1;
               void resolveWithResult();
             }
@@ -908,7 +959,7 @@ Do not use escape characters \\ in the string like \\n or \\" and others. Do not
           });
         } catch (error: unknown) {
           if (!isResolved) {
-            stderr = error instanceof Error ? error.message : String(error);
+            stderrOverride = error instanceof Error ? error.message : String(error);
             exitCode = 1;
             void resolveWithResult();
           }

@@ -8,6 +8,9 @@ export type TaskSortOrder = 'createdAt' | 'updatedAt';
 
 export const getTaskDir = (task: TaskData): string => task.worktree?.path ?? task.baseDir;
 
+export const countAllSubtasks = (taskId: string, allTasks: TaskData[]): number =>
+  allTasks.filter((t) => t.parentId === taskId).reduce((count, subtask) => count + 1 + countAllSubtasks(subtask.id, allTasks), 0);
+
 const getMostRecentUpdatedAt = (task: TaskData, allTasks: TaskData[]): string | undefined => {
   let mostRecent = task.updatedAt;
 

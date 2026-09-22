@@ -65,11 +65,11 @@ export const FileWriteToolMessage = ({ message, onRemove, compact = false, onFor
       {content &&
         (isError ? (
           <Tooltip content={content}>
-            <RiErrorWarningFill className="w-3 h-3 text-error" />
+            <RiErrorWarningFill className="w-3 h-3 text-error shrink-0" />
           </Tooltip>
         ) : isDenied ? (
           <Tooltip content={content}>
-            <RiCloseCircleFill className="w-3 h-3 text-warning" />
+            <RiCloseCircleFill className="w-3 h-3 text-warning shrink-0" />
           </Tooltip>
         ) : (
           <RiCheckboxCircleFill className="w-3 h-3 text-success flex-shrink-0" />
@@ -86,7 +86,7 @@ export const FileWriteToolMessage = ({ message, onRemove, compact = false, onFor
           </pre>
         </div>
       ) : (
-        <CodeBlock baseDir="" language={language} file={filePath} isComplete={true}>
+        <CodeBlock baseDir="" language={language} file={filePath} isComplete={!message.isStreaming}>
           {contentToWrite}
         </CodeBlock>
       )}

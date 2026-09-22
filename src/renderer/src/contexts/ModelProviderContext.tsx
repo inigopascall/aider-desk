@@ -1,4 +1,4 @@
-import React, { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState, useOptimistic, startTransition } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState, useOptimistic, startTransition } from 'react';
 import { Model, ProviderProfile } from '@common/types';
 
 import { useApi } from '@/contexts/ApiContext';
@@ -19,7 +19,9 @@ export type ModelProviderContextType = {
 
 const ModelProviderContext = createContext<ModelProviderContextType | null>(null);
 
-export const ModelProviderProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+type Props = { children: ReactNode };
+
+export const ModelProviderProvider = ({ children }: Props) => {
   const api = useApi();
   const [modelsLoading, setModelsLoading] = useState(true);
   const [providersLoading, setProvidersLoading] = useState(true);
@@ -47,7 +49,7 @@ export const ModelProviderProvider: React.FC<{ children: ReactNode }> = ({ child
       setModelsLoading(true);
       try {
         const { models, errors } = await api.getProviderModels(reload);
-        setModels(models!);
+        setModels(Array.isArray(models) ? models : []);
         setErrors(errors || {});
       } catch (error) {
         // eslint-disable-next-line no-console
@@ -63,7 +65,7 @@ export const ModelProviderProvider: React.FC<{ children: ReactNode }> = ({ child
     try {
       setProvidersLoading(true);
       const data = await api.getProviders();
-      setProviders(data ?? []);
+      setProviders(Array.isArray(data) ? data : []);
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error('Failed to load providers:', error);
@@ -97,8 +99,10 @@ export const ModelProviderProvider: React.FC<{ children: ReactNode }> = ({ child
 
       startTransition(async () => {
         setOptimisticProviders(updated);
-        setProviders(updated);
-        void api.updateProviders(updated);
+        const result = await api.updateProviders(updated);
+        if (Array.isArray(result)) {
+          setProviders(result);
+        }
       });
     },
     [api, providers, setOptimisticProviders],
@@ -110,8 +114,10 @@ export const ModelProviderProvider: React.FC<{ children: ReactNode }> = ({ child
 
       startTransition(async () => {
         setOptimisticProviders(updated);
-        setProviders(updated);
-        void api.updateProviders(updated);
+        const result = await api.updateProviders(updated);
+        if (Array.isArray(result)) {
+          setProviders(result);
+        }
       });
     },
     [api, providers, setOptimisticProviders],
@@ -200,7 +206,9 @@ export const ModelProviderProvider: React.FC<{ children: ReactNode }> = ({ child
 
   useEffect(() => {
     return api.addProvidersUpdatedListener((data) => {
-      setProviders(data.providers ?? []);
+      if (Array.isArray(data.providers)) {
+        setProviders(data.providers);
+      }
     });
   }, [api]);
 
@@ -228,7 +236,7 @@ const unsupportedReadonlyOperation = async (): Promise<void> => {
   throw new Error('READ_ONLY_MODE');
 };
 
-export const ReadonlyModelProvider = ({ children }: { children: ReactNode }) => {
+export const ReadonlyModelProvider = ({ children }: Props) => {
   const value = useMemo<ModelProviderContextType>(
     () => ({
       refresh: () => {},

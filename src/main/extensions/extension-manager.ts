@@ -21,6 +21,7 @@ import { DEFAULT_AGENT_PROFILE } from '@common/agent';
 import { ExtensionLoader } from './extension-loader';
 import { ExtensionRegistry, LoadedExtension } from './extension-registry';
 import { ExtensionContextImpl } from './extension-context';
+import { DisposableStore } from './disposable-store';
 import { ExtensionFetcher } from './extension-fetcher';
 import { ExtensionLibraryLoader } from './extension-library-loader';
 
@@ -81,6 +82,7 @@ import { shouldUsePolling } from '@/utils/file-watch';
 import logger from '@/logger';
 import { AIDER_DESK_EXTENSIONS_DIR, AIDER_DESK_GLOBAL_EXTENSIONS_DIR } from '@/constants';
 import { ApprovalManager } from '@/agent/tools/approval-manager';
+import { contentArrayHasNonTextParts, stringifyWithBudget, truncateToolResult } from '@/agent/utils';
 import { Project } from '@/project';
 import { Task } from '@/task';
 
@@ -167,6 +169,37 @@ export type ExtensionEventMap = {
   onInterrupted: InterruptedEvent;
 };
 
+const EXTENSION_TOOL_RESULT_MAX_CHARS = 200_000;
+
+const hasNonTextContentParts = (value: unknown): boolean => {
+  if (value === null || typeof value !== 'object') {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return contentArrayHasNonTextParts(value);
+  }
+  const obj = value as Record<string, unknown>;
+  return ('content' in obj && contentArrayHasNonTextParts(obj.content)) || ('value' in obj && contentArrayHasNonTextParts(obj.value));
+};
+
+const boundExtensionToolResult = async (result: unknown): Promise<unknown> => {
+  if (typeof result === 'string' && result.length > EXTENSION_TOOL_RESULT_MAX_CHARS) {
+    return await truncateToolResult(result, 1000, 200, 20_000);
+  }
+
+  if (result !== null && typeof result === 'object') {
+    if (hasNonTextContentParts(result)) {
+      return result;
+    }
+    const { text, truncated } = stringifyWithBudget(result, EXTENSION_TOOL_RESULT_MAX_CHARS);
+    if (truncated) {
+      return JSON.parse(text);
+    }
+  }
+
+  return result;
+};
+
 export class ExtensionManager {
   private loader: ExtensionLoader;
   private fetcher: ExtensionFetcher;
@@ -175,6 +208,7 @@ export class ExtensionManager {
   private initialized = false;
   private listeners: ExtensionsChangeListener[] = [];
   private extensionMtimes: Map<string, number> = new Map();
+  private readonly startedProjects = new Map<string, Project>();
 
   private libraryLoader: ExtensionLibraryLoader;
 
@@ -199,35 +233,78 @@ export class ExtensionManager {
     }
   }, 100);
 
+  private isExtensionDisabled(filePath: string): boolean {
+    const settings = this.store.getSettings();
+    const disabledExtensions = settings.extensions?.disabled || [];
+    return disabledExtensions.includes(filePath);
+  }
+
   /**
    * Filter extensions based on disabled list from settings
    * @param extensions - All loaded extensions
    * @returns Filtered extensions excluding disabled ones
    */
   private filterEnabledExtensions(extensions: LoadedExtension[]): LoadedExtension[] {
-    const settings = this.store.getSettings();
-    const disabledExtensions = settings.extensions?.disabled || [];
-
-    return extensions.filter((ext) => !disabledExtensions.includes(ext.filePath));
+    return extensions.filter((ext) => !this.isExtensionDisabled(ext.filePath));
   }
 
   /**
-   * Handle settings changes. Detects when extensions with UI components
-   * are enabled/disabled and triggers UI refresh accordingly.
+   * Handle settings changes. Detects when extensions are enabled/disabled
+   * and triggers lifecycle events accordingly.
    */
-  settingsChanged(oldSettings: SettingsData, newSettings: SettingsData): void {
+  async settingsChanged(oldSettings: SettingsData, newSettings: SettingsData): Promise<void> {
     const oldDisabled = oldSettings.extensions?.disabled || [];
     const newDisabled = newSettings.extensions?.disabled || [];
     const oldRepositories = oldSettings.extensions?.repositories || [AIDER_DESK_EXTENSIONS_REPO_URL];
     const newRepositories = newSettings.extensions?.repositories || [AIDER_DESK_EXTENSIONS_REPO_URL];
 
     // Check for disabled extensions changes
-    const disabledChanged = JSON.stringify(oldDisabled.sort()) !== JSON.stringify(newDisabled.sort());
+    const disabledChanged = JSON.stringify([...oldDisabled].sort()) !== JSON.stringify([...newDisabled].sort());
 
     if (disabledChanged) {
-      // Find extensions that changed state
-      const newlyDisabled = oldDisabled.filter((name) => !newDisabled.includes(name));
-      const newlyEnabled = newDisabled.filter((name) => !oldDisabled.includes(name));
+      // newlyEnabled: was disabled before, now enabled (removed from disabled list)
+      // newlyDisabled: was enabled before, now disabled (added to disabled list)
+      const newlyEnabled = oldDisabled.filter((name) => !newDisabled.includes(name));
+      const newlyDisabled = newDisabled.filter((name) => !oldDisabled.includes(name));
+
+      // Unload newly disabled extensions: disposables first, then onUnload
+      for (const filePath of newlyDisabled) {
+        const loaded = this.registry.getExtension(filePath);
+        if (!loaded?.initialized) {
+          continue;
+        }
+
+        await loaded.disposableStore?.disposeExtension();
+
+        if (loaded.instance.onUnload) {
+          try {
+            await loaded.instance.onUnload();
+            logger.debug(`[Extensions] Unloaded disabled extension: ${loaded.metadata.name}`);
+          } catch (error) {
+            logger.error(`[Extensions] Failed to unload extension '${loaded.metadata.name}':`, error);
+          }
+        }
+
+        this.registry.setInitialized(filePath, false);
+      }
+
+      // Re-initialize newly enabled extensions
+      for (const filePath of newlyEnabled) {
+        const loaded = this.registry.getExtension(filePath);
+        if (!loaded) {
+          continue;
+        }
+
+        try {
+          const success = await this.initializeExtension(loaded, loaded.project);
+          if (success) {
+            logger.debug(`[Extensions] Re-initialized enabled extension: ${loaded.metadata.name}`);
+          }
+        } catch (error) {
+          logger.error(`[Extensions] Failed to re-initialize extension '${loaded.metadata.name}':`, error);
+        }
+      }
+
       const changedExtensions = [...newlyDisabled, ...newlyEnabled];
 
       if (changedExtensions.length > 0) {
@@ -243,7 +320,7 @@ export class ExtensionManager {
     }
 
     // Check for repository changes
-    const repositoriesChanged = JSON.stringify(oldRepositories.sort()) !== JSON.stringify(newRepositories.sort());
+    const repositoriesChanged = JSON.stringify([...oldRepositories].sort()) !== JSON.stringify([...newRepositories].sort());
 
     if (repositoriesChanged) {
       logger.debug('[Extensions] Repository list changed, refreshing extension cache');
@@ -288,6 +365,8 @@ export class ExtensionManager {
         logger.warn('[Extensions] Failed to preload available extensions:', error);
       });
     } catch (error) {
+      // Mark as initialized even on failure so dispatchEvent doesn't block forever waiting for init
+      this.initialized = true;
       logger.error(`[Extensions] Extension system initialization failed: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
@@ -316,6 +395,7 @@ export class ExtensionManager {
 
   private async initializeExtension(loaded: LoadedExtension, project?: Project): Promise<boolean> {
     const { filePath, instance, metadata } = loaded;
+    loaded.project = project;
 
     if (!instance.onLoad) {
       logger.debug(`[Extensions] Extension '${metadata.name}' has no onLoad method, skipping initialization`);
@@ -323,10 +403,11 @@ export class ExtensionManager {
       return true;
     }
 
+    const context = this.createContext(loaded.id, metadata.name, project);
     try {
-      const context = new ExtensionContextImpl(loaded.id, metadata.name, this.store, this.modelManager, this.eventManager, this.memoryManager, project);
       await instance.onLoad(context);
       this.registry.setInitialized(filePath, true);
+      await this.dispatchDelayedProjectStarted(loaded);
       this.eventManager.sendExtensionUIRefresh({
         projectDir: project?.baseDir,
         extensionId: loaded.id,
@@ -334,8 +415,35 @@ export class ExtensionManager {
       logger.debug(`[Extensions] Initialized extension: ${metadata.name} v${metadata.version}${project ? ` for project ${project.baseDir}}` : ''}`);
       return true;
     } catch (error) {
+      await loaded.disposableStore?.disposeExtension();
       logger.error(`[Extensions] Failed to call onLoad for extension '${metadata.name}${project ? ` for project ${project.baseDir}}` : ''}':`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Delivers onProjectStarted to a freshly (re)initialized extension for projects that are
+   * already running — otherwise lifecycle events dispatched before this extension was
+   * loaded or reloaded would be silently lost.
+   */
+  private async dispatchDelayedProjectStarted(loaded: LoadedExtension): Promise<void> {
+    const { instance, metadata } = loaded;
+    if (typeof instance.onProjectStarted !== 'function' || this.startedProjects.size === 0) {
+      return;
+    }
+
+    // A project-bound extension initialized during Project.start() is not tracked as started yet;
+    // its onProjectStarted arrives via the regular dispatchEvent call right after.
+    const targets = loaded.project ? [loaded.project].filter((p) => this.startedProjects.has(p.baseDir)) : Array.from(this.startedProjects.values());
+
+    for (const target of targets) {
+      try {
+        const context = this.createContext(loaded.id, metadata.name, target);
+        await instance.onProjectStarted({ baseDir: target.baseDir }, context);
+        logger.debug(`[Extensions] Delivered delayed 'onProjectStarted' to '${metadata.name}' for ${target.baseDir}`);
+      } catch (error) {
+        logger.error(`[Extensions] Failed to deliver delayed 'onProjectStarted' to '${metadata.name}' for ${target.baseDir}:`, error);
+      }
     }
   }
 
@@ -358,6 +466,11 @@ export class ExtensionManager {
       if (!loaded) {
         logger.error(`[Extensions] Failed to retrieve registered extension: ${metadata.name}${project ? ` for project ${project.baseDir}` : ''}`);
         return { success: false, hasUIComponents: false };
+      }
+
+      if (this.isExtensionDisabled(filePath)) {
+        logger.debug(`[Extensions] Extension '${metadata.name}' is disabled, skipping initialization`);
+        return { success: true, hasUIComponents: false };
       }
 
       const success = await this.initializeExtension(loaded, project);
@@ -591,15 +704,19 @@ export class ExtensionManager {
 
     const extensions = this.registry.getExtensions();
     for (const loaded of extensions) {
-      if (!loaded.initialized || !loaded.instance.onUnload) {
+      if (!loaded.initialized) {
         continue;
       }
 
-      try {
-        await loaded.instance.onUnload();
-        logger.debug(`[Extensions] Unloaded extension: ${loaded.metadata.name}`);
-      } catch (error) {
-        logger.error(`[Extensions] Failed to unload extension '${loaded.metadata.name}':`, error);
+      await loaded.disposableStore?.disposeExtension();
+
+      if (loaded.instance.onUnload) {
+        try {
+          await loaded.instance.onUnload();
+          logger.debug(`[Extensions] Unloaded extension: ${loaded.metadata.name}`);
+        } catch (error) {
+          logger.error(`[Extensions] Failed to unload extension '${loaded.metadata.name}':`, error);
+        }
       }
     }
 
@@ -617,6 +734,8 @@ export class ExtensionManager {
     const { instance, metadata, initialized } = extension;
 
     if (initialized) {
+      await extension.disposableStore?.disposeExtension();
+
       if (instance.onUnload) {
         try {
           await instance.onUnload();
@@ -661,6 +780,38 @@ export class ExtensionManager {
 
     this.debouncedNotifyListeners();
     return success;
+  }
+
+  private getOrCreateDisposableStore(loaded: LoadedExtension): DisposableStore {
+    if (!loaded.disposableStore) {
+      loaded.disposableStore = new DisposableStore(loaded.metadata.name);
+    }
+    return loaded.disposableStore;
+  }
+
+  private findLoadedById(extensionId: string, projectDir?: string): LoadedExtension | undefined {
+    const candidates = this.registry.getExtensions(projectDir);
+    return candidates.find((e) => e.id === extensionId);
+  }
+
+  private createContext(extensionId: string, extensionName: string, project?: Project, task?: Task): ExtensionContextImpl {
+    const loaded = this.findLoadedById(extensionId, project?.baseDir);
+    if (!loaded) {
+      throw new Error(`Cannot create context: extension '${extensionId}' not found`);
+    }
+    const store = this.getOrCreateDisposableStore(loaded);
+    return new ExtensionContextImpl(
+      extensionId,
+      extensionName,
+      store,
+      this.store,
+      this.modelManager,
+      this.eventManager,
+      this.memoryManager,
+      project,
+      task,
+      this.mcpConfigManager,
+    );
   }
 
   private findExtensionByPath(filePath: string): LoadedExtension | undefined {
@@ -927,7 +1078,7 @@ export class ExtensionManager {
       }
 
       try {
-        const context = new ExtensionContextImpl(loaded.id, metadata.name, this.store, this.modelManager, this.eventManager, this.memoryManager);
+        const context = this.createContext(loaded.id, metadata.name);
         const tools = instance.getTools(context, 'agent', DEFAULT_AGENT_PROFILE);
 
         if (!Array.isArray(tools)) {
@@ -969,16 +1120,7 @@ export class ExtensionManager {
       }
 
       try {
-        const context = new ExtensionContextImpl(
-          loaded.id,
-          metadata.name,
-          this.store,
-          this.modelManager,
-          this.eventManager,
-          this.memoryManager,
-          task.project,
-          task,
-        );
+        const context = this.createContext(loaded.id, metadata.name, task.project, task);
         const tools = instance.getTools(context, mode, profile);
 
         if (!Array.isArray(tools)) {
@@ -1038,16 +1180,7 @@ export class ExtensionManager {
     for (const { extensionId, extensionName, tool } of registeredTools) {
       const toolId = tool.name;
       const fullToolId = `${extensionId}${TOOL_GROUP_NAME_SEPARATOR}${tool.name}`;
-      const context = new ExtensionContextImpl(
-        extensionId,
-        extensionName,
-        this.store,
-        this.modelManager,
-        this.eventManager,
-        this.memoryManager,
-        task.project,
-        task,
-      );
+      const context = this.createContext(extensionId, extensionName, task.project, task);
 
       // Tool approval filtering is handled in getTools()
 
@@ -1097,7 +1230,7 @@ export class ExtensionManager {
           );
 
           try {
-            return await tool.execute(input, abortSignal || options.abortSignal, context, allToolsInternal);
+            return await boundExtensionToolResult(await tool.execute(input, abortSignal || options.abortSignal, context, allToolsInternal));
           } catch (error) {
             // Error isolation - log and return error message
             const errorMsg = error instanceof Error ? error.message : String(error);
@@ -1165,7 +1298,7 @@ export class ExtensionManager {
       }
 
       try {
-        const context = new ExtensionContextImpl(loaded.id, metadata.name, this.store, this.modelManager, this.eventManager, this.memoryManager, project);
+        const context = this.createContext(loaded.id, metadata.name, project);
         const commands = instance.getCommands(context);
 
         if (!Array.isArray(commands)) {
@@ -1208,7 +1341,7 @@ export class ExtensionManager {
       }
 
       try {
-        const context = new ExtensionContextImpl(loaded.id, metadata.name, this.store, this.modelManager, this.eventManager, this.memoryManager, project);
+        const context = this.createContext(loaded.id, metadata.name, project);
         const agents = instance.getAgents(context);
 
         if (!Array.isArray(agents)) {
@@ -1258,7 +1391,7 @@ export class ExtensionManager {
       }
 
       try {
-        const context = new ExtensionContextImpl(loaded.id, metadata.name, this.store, this.modelManager, this.eventManager, this.memoryManager, project);
+        const context = this.createContext(loaded.id, metadata.name, project);
         const modes = instance.getModes(context);
 
         if (!Array.isArray(modes)) {
@@ -1329,7 +1462,7 @@ export class ExtensionManager {
       }
 
       try {
-        const context = new ExtensionContextImpl(loaded.id, metadata.name, this.store, this.modelManager, this.eventManager, this.memoryManager, project);
+        const context = this.createContext(loaded.id, metadata.name, project);
         const providers = instance.getProviders(context);
 
         if (!Array.isArray(providers)) {
@@ -1370,7 +1503,7 @@ export class ExtensionManager {
       }
 
       try {
-        const context = new ExtensionContextImpl(loaded.id, metadata.name, this.store, this.modelManager, this.eventManager, this.memoryManager, project, task);
+        const context = this.createContext(loaded.id, metadata.name, project, task);
         const skills = instance.getSkills(context);
 
         if (!Array.isArray(skills)) {
@@ -1420,7 +1553,7 @@ export class ExtensionManager {
       }
 
       try {
-        const context = new ExtensionContextImpl(loaded.id, metadata.name, this.store, this.modelManager, this.eventManager, this.memoryManager, project, task);
+        const context = this.createContext(loaded.id, metadata.name, project, task);
         const components = instance.getUIComponents(context);
 
         if (!Array.isArray(components)) {
@@ -1504,7 +1637,7 @@ export class ExtensionManager {
     }
 
     try {
-      const context = new ExtensionContextImpl(loadedExt.id, loadedExt.metadata.name, this.store, this.modelManager, this.eventManager, this.memoryManager);
+      const context = this.createContext(loadedExt.id, loadedExt.metadata.name);
       const jsx = instance.getConfigComponent(context);
       return typeof jsx === 'string' && jsx.length > 0;
     } catch {
@@ -1534,7 +1667,7 @@ export class ExtensionManager {
 
       try {
         logger.debug(`[Extensions] Getting UI extension data from '${id}' for component '${componentId}'`);
-        const context = new ExtensionContextImpl(id, metadata.name, this.store, this.modelManager, this.eventManager, this.memoryManager, project, task);
+        const context = this.createContext(id, metadata.name, project, task);
         return await instance.getUIExtensionData(componentId, context);
       } catch (error) {
         logger.error(`[Extensions] Failed to get UI extension data from '${id}' for component '${componentId}':`, error);
@@ -1567,7 +1700,7 @@ export class ExtensionManager {
 
       try {
         logger.debug(`[Extensions] Executing UI extension action '${action}' from '${id}' for component '${componentId}'`);
-        const context = new ExtensionContextImpl(id, metadata.name, this.store, this.modelManager, this.eventManager, this.memoryManager, project, task);
+        const context = this.createContext(id, metadata.name, project, task);
         return await instance.executeUIExtensionAction(componentId, action, args, context);
       } catch (error) {
         logger.error(`[Extensions] Failed to execute UI extension action '${action}' from '${id}' for component '${componentId}':`, error);
@@ -1594,15 +1727,7 @@ export class ExtensionManager {
       }
 
       try {
-        const context = new ExtensionContextImpl(
-          loaded.id,
-          loaded.metadata.name,
-          this.store,
-          this.modelManager,
-          this.eventManager,
-          this.memoryManager,
-          project,
-        );
+        const context = this.createContext(loaded.id, loaded.metadata.name, project);
         const jsx = loaded.instance.getConfigComponent(context);
 
         if (typeof jsx !== 'string' || jsx.length === 0) {
@@ -1637,15 +1762,7 @@ export class ExtensionManager {
       }
 
       try {
-        const context = new ExtensionContextImpl(
-          loaded.id,
-          loaded.metadata.name,
-          this.store,
-          this.modelManager,
-          this.eventManager,
-          this.memoryManager,
-          project,
-        );
+        const context = this.createContext(loaded.id, loaded.metadata.name, project);
         return await loaded.instance.getConfigData(context);
       } catch (error) {
         logger.error(`[Extensions] Failed to get config data from extension '${extensionId}':`, error);
@@ -1674,15 +1791,7 @@ export class ExtensionManager {
       }
 
       try {
-        const context = new ExtensionContextImpl(
-          loaded.id,
-          loaded.metadata.name,
-          this.store,
-          this.modelManager,
-          this.eventManager,
-          this.memoryManager,
-          project,
-        );
+        const context = this.createContext(loaded.id, loaded.metadata.name, project);
         return await loaded.instance.saveConfigData(configData, context);
       } catch (error) {
         logger.error(`[Extensions] Failed to save config data for extension '${extensionId}':`, error);
@@ -1748,7 +1857,7 @@ export class ExtensionManager {
       }
 
       try {
-        const context = new ExtensionContextImpl(loaded.id, metadata.name, this.store, this.modelManager, this.eventManager, this.memoryManager);
+        const context = this.createContext(loaded.id, metadata.name);
         const agents = instance.getAgents(context);
 
         if (!Array.isArray(agents)) {
@@ -1784,7 +1893,7 @@ export class ExtensionManager {
     return null;
   }
 
-  async executeCommand(commandName: string, args: string[], project: Project, task?: Task): Promise<void> {
+  async executeCommand(commandName: string, args: string[], project: Project, task?: Task, images?: string[]): Promise<void> {
     const commands = this.getCommands(project);
     const registered = commands.find((c) => c.command.name === commandName);
 
@@ -1795,10 +1904,10 @@ export class ExtensionManager {
     const { extensionId, extensionName, command } = registered;
 
     try {
-      const context = new ExtensionContextImpl(extensionId, extensionName, this.store, this.modelManager, this.eventManager, this.memoryManager, project, task);
+      const context = this.createContext(extensionId, extensionName, project, task);
 
       logger.debug(`[Extensions] Executing command '${commandName}' from extension '${extensionName}'`);
-      await command.execute(args, context);
+      await command.execute(args, context, images);
 
       logger.debug(`[Extensions] Command '${commandName}' executed successfully`);
     } catch (error) {
@@ -1981,6 +2090,9 @@ export class ExtensionManager {
         throw new Error(`Extension '${extensionId}' has no file path`);
       }
 
+      // Unload (dispose + onUnload) before removing files
+      await this.unloadExtension(extension.filePath);
+
       const parsedPath = path.parse(extension.filePath);
       const isFolderExtension = parsedPath.name === 'index';
 
@@ -2158,6 +2270,15 @@ export class ExtensionManager {
     project: Project,
     task?: Task,
   ): Promise<ExtensionEventMap[K]> {
+    // Wait for initialization so events are never delivered to a partially loaded extension set
+    await this.waitForInit();
+
+    if (eventName === 'onProjectStarted') {
+      this.startedProjects.set(project.baseDir, project);
+    } else if (eventName === 'onProjectStopped') {
+      this.startedProjects.delete(project.baseDir);
+    }
+
     // Get all extensions (global + project-specific)
     const allExtensions = this.registry.getExtensions();
     const enabledExtensions = this.filterEnabledExtensions(allExtensions);
@@ -2189,19 +2310,16 @@ export class ExtensionManager {
       }
 
       logger.debug(`[Extensions] Dispatching event '${String(eventName)}' to extension '${metadata.name}'`);
+
       try {
+        // For onProjectStopped: dispose project-level disposables BEFORE calling the handler
+        // (disposers first, then manual cleanup — consistent with onUnload pattern)
+        if (eventName === 'onProjectStopped' && loaded.disposableStore) {
+          await loaded.disposableStore.disposeProject(project.baseDir);
+        }
+
         // Create ExtensionContext for this extension
-        const context = new ExtensionContextImpl(
-          loaded.id,
-          metadata.name,
-          this.store,
-          this.modelManager,
-          this.eventManager,
-          this.memoryManager,
-          project,
-          task,
-          this.mcpConfigManager,
-        );
+        const context = this.createContext(loaded.id, metadata.name, project, task);
 
         // Call the extension handler
         // Using type assertion to handle dynamic dispatch across different event types

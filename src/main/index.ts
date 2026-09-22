@@ -16,12 +16,17 @@ import { performStartUp, UpdateProgressData } from '@/start-up';
 import { Store } from '@/store';
 import logger, { eventTransport } from '@/logger';
 import { initManagers } from '@/managers';
-import { getDefaultProjectSettings, initPath } from '@/utils';
+import { createLoadRetryHandler, getDefaultProjectSettings, initPath } from '@/utils';
 import { WindowManager } from '@/window-manager';
 
 // Global instances shared across all windows
 let windowManager: WindowManager;
 let store: Store;
+
+// Prevent unhandled promise rejections from crashing the process
+process.on('unhandledRejection', (reason) => {
+  logger.error('Unhandled promise rejection:', reason);
+});
 
 const setupCustomMenu = (createWindowFn: () => void): void => {
   const menuTemplate: Electron.MenuItemConstructorOptions[] = [
@@ -190,6 +195,58 @@ const initWindow = async (windowMgr: WindowManager, storeInstance: Store, projec
     return { action: 'deny' };
   });
 
+  // Retry transient network failures (e.g. ERR_NETWORK_CHANGED during dev server loading)
+  // so a network change doesn't leave a blank white window
+  const loadRetry = createLoadRetryHandler({
+    load: () => newWindow.webContents.reload(),
+    isDestroyed: () => newWindow.isDestroyed(),
+  });
+
+  // Renderer crash recovery: reload from the main process side, since a crashed/hung
+  // renderer cannot process user-triggered reloads (e.g. Ctrl+R)
+  const MAX_CONSECUTIVE_CRASHES = 5;
+  const CRASH_LOOP_RESET_MS = 30_000;
+  let consecutiveRendererCrashes = 0;
+  let lastCrashTimestamp = 0;
+
+  newWindow.webContents.on('render-process-gone', (_event, details) => {
+    if (details.reason === 'clean-exit' || newWindow.isDestroyed()) {
+      return;
+    }
+
+    const now = Date.now();
+    consecutiveRendererCrashes = now - lastCrashTimestamp < CRASH_LOOP_RESET_MS ? consecutiveRendererCrashes + 1 : 1;
+    lastCrashTimestamp = now;
+
+    if (consecutiveRendererCrashes > MAX_CONSECUTIVE_CRASHES) {
+      logger.error(
+        `Renderer process crashed ${consecutiveRendererCrashes} times in quick succession (reason: ${details.reason}, exit code: ${details.exitCode}); giving up auto-reload`,
+      );
+      return;
+    }
+
+    logger.warn(
+      `Renderer process gone (reason: ${details.reason}, exit code: ${details.exitCode}), reloading window (consecutive crash ${consecutiveRendererCrashes}/${MAX_CONSECUTIVE_CRASHES})`,
+    );
+    setTimeout(() => {
+      if (!newWindow.isDestroyed()) {
+        newWindow.webContents.reload();
+      }
+    }, 1000);
+  });
+
+  newWindow.webContents.on('unresponsive', () => {
+    logger.warn('Renderer process became unresponsive, reloading window');
+    if (!newWindow.isDestroyed()) {
+      newWindow.webContents.reload();
+    }
+  });
+
+  newWindow.webContents.on('did-fail-load', (_event, errorCode, _errorDescription, validatedURL, isMainFrame) => {
+    void loadRetry.onDidFailLoad(errorCode, isMainFrame, validatedURL);
+  });
+  newWindow.webContents.on('did-finish-load', () => loadRetry.reset());
+
   newWindow.webContents.on('context-menu', (_event, params) => {
     const contextMenuParams: ContextMenuParams = {
       x: params.x,
@@ -236,14 +293,24 @@ const initWindow = async (windowMgr: WindowManager, storeInstance: Store, projec
     if (projectToActivate) {
       url += `#/home?project=${encodeURIComponent(projectToActivate)}`;
     }
-    await newWindow.loadURL(url);
+    try {
+      await newWindow.loadURL(url);
+    } catch (error) {
+      // transient failures (e.g. ERR_NETWORK_CHANGED) are retried by the did-fail-load handler
+      logger.warn(`Failed to load renderer URL: ${error instanceof Error ? error.message : String(error)}`);
+    }
   } else {
     // For production with HashRouter, append hash with query params
     let url = `file://${join(__dirname, '../renderer/index.html')}`;
     if (projectToActivate) {
       url += `#/home?project=${encodeURIComponent(projectToActivate)}`;
     }
-    await newWindow.loadURL(url);
+    try {
+      await newWindow.loadURL(url);
+    } catch (error) {
+      // transient failures (e.g. ERR_NETWORK_CHANGED) are retried by the did-fail-load handler
+      logger.warn(`Failed to load renderer: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   // Apply saved zoom level

@@ -1,4 +1,4 @@
-import { forwardRef, memo, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 import { toPng } from 'html-to-image';
 import { MdKeyboardDoubleArrowDown } from 'react-icons/md';
 import { useTranslation } from 'react-i18next';
@@ -16,7 +16,6 @@ import { EMPTY_WORKFLOW_RUNS, WorkflowRunState } from '@/stores/taskStore';
 
 export type MessagesRef = {
   exportToImage: () => void;
-  container: HTMLDivElement | null;
   scrollToBottom: () => void;
   scrollToMessage: (messageId: string) => void;
 };
@@ -29,6 +28,7 @@ type Props = {
   workflowRuns?: WorkflowRunState[];
   allFiles?: string[];
   renderMarkdown: boolean;
+  onContainerRef?: (container: HTMLDivElement | null) => void;
   removeMessage?: (message: Message) => void;
   removeGroup?: (group: GroupMessage) => void;
   redoUserPrompt?: (messageId: string) => void;
@@ -48,6 +48,7 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
       workflowRuns,
       allFiles = [],
       renderMarkdown,
+      onContainerRef,
       removeMessage,
       removeGroup,
       redoUserPrompt,
@@ -128,7 +129,11 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
       buttonClassName: 'hidden group-hover:block',
     });
 
-    const exportToImage = async () => {
+    useEffect(() => {
+      onContainerRef?.(messagesContainerRef.current);
+    }, [onContainerRef]);
+
+    const exportToImage = useCallback(async () => {
       const messagesContainer = messagesContainerRef.current;
       if (messagesContainer === null) {
         return;
@@ -148,7 +153,7 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
         // eslint-disable-next-line no-console
         console.error('Failed to export chat as PNG', err);
       }
-    };
+    }, []);
 
     const scrollToMessage = (messageId: string) => {
       setScrollingPaused(true);

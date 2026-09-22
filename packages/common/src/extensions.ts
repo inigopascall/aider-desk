@@ -36,6 +36,7 @@ import {
   SwitchToWorktreeOptions,
   TodoItem,
   ToolApprovalState,
+  TlsPolicyRegistrar,
   UpdatedFile,
   UsageReportData,
   VoiceSession,
@@ -167,8 +168,10 @@ export interface ExtensionProviderStrategy {
     toolSet?: unknown,
     systemPrompt?: string,
     providerMetadata?: unknown,
+    tlsRegistrar?: TlsPolicyRegistrar,
+    sessionId?: string,
   ) => unknown | Promise<unknown>;
-  loadModels: (profile: ProviderProfile, settings: SettingsData) => Promise<LoadModelsResponse>;
+  loadModels: (profile: ProviderProfile, settings: SettingsData, tlsRegistrar?: TlsPolicyRegistrar) => Promise<LoadModelsResponse>;
 
   getAiderMapping?: (provider: ProviderProfile, modelId: string, settings: SettingsData, projectDir: string) => AiderModelMapping;
   getUsageReport?: (task: unknown, provider: ProviderProfile, model: Model, usage: unknown, providerMetadata?: unknown) => UsageReportData;
@@ -360,8 +363,13 @@ export interface CommandDefinition {
   description: string;
   /** Command arguments */
   arguments?: CommandArgument[];
-  /** Execute function that handles the complete command logic */
-  execute: (args: string[], context: ExtensionContext) => Promise<void>;
+  /**
+   * Execute function that handles the complete command logic
+   * @param args - Command arguments provided by the user
+   * @param context - Extension context providing access to task and project operations
+   * @param images - Optional images (data URLs) attached to the prompt when the command was executed
+   */
+  execute: (args: string[], context: ExtensionContext, images?: string[]) => Promise<void>;
 }
 
 // Event Payload Interfaces
@@ -829,6 +837,14 @@ export interface TaskContext {
   getUpdatedFiles(): Promise<UpdatedFile[]>;
 
   /**
+   * Get the diff for a single updated file (lazily loaded from the backend)
+   * @param filePath Path of the file (as returned by getUpdatedFiles)
+   * @param commitHash Optional commit hash for per-commit diffs in grouped worktree mode
+   * @returns Unified diff string (empty for binary files or on error)
+   */
+  getUpdatedFileDiff(filePath: string, commitHash?: string): Promise<string>;
+
+  /**
    * Get the cached repository map string.
    * The repo map summarizes the codebase structure and is maintained by the Aider manager.
    * @returns Repository map as a formatted string
@@ -897,8 +913,9 @@ export interface TaskContext {
    * If there is a pending question, it will be answered with 'no' using the prompt text as user input.
    * @param prompt - The text prompt to send
    * @param mode - Optional mode to use (defaults to the task's current mode)
+   * @param images - Optional images (data URLs) to include with the prompt
    */
-  runPrompt(prompt: string, mode?: string): Promise<void>;
+  runPrompt(prompt: string, mode?: string, images?: string[]): Promise<void>;
 
   /**
    * Execute a prompt directly using a specific agent profile.
@@ -1166,10 +1183,10 @@ export interface TaskContext {
   getLocalUncommittedFiles(): Promise<WorktreeUncommittedFiles>;
 
   /**
-   * Apply uncommitted changes from the task's worktree to a target branch in the main repository.
-   * @param targetBranch - Optional target branch name (defaults to the project's main branch)
+   * Apply uncommitted changes from the task's worktree to the branch currently checked out
+   * in the main repository, without merging commits or switching branches.
    */
-  applyUncommittedChanges(targetBranch?: string): Promise<void>;
+  applyUncommittedChanges(): Promise<void>;
 
   /**
    * Merge commits and optionally uncommitted changes from this task's worktree to a target worktree directory.
@@ -1303,6 +1320,28 @@ export interface ProjectContext {
    * @returns Array of prompt strings in reverse chronological order (most recent first)
    */
   getInputHistory(): Promise<string[]>;
+
+  /**
+   * Register a setup function whose returned cleanup function will be called
+   * automatically when the project is stopped (`onProjectStopped` event).
+   *
+   * Setup runs immediately. The returned cleanup function runs in reverse order
+   * of registration (LIFO) when the project stops, before the `onProjectStopped`
+   * handler is called. The cleanup function may return a Promise; asynchronous
+   * cleanups are awaited and errors are logged without preventing other cleanups.
+   * If setup returns void, no cleanup is registered.
+   *
+   * Can be called from any hook that provides a `ProjectContext`
+   * (e.g., via `context.getProjectContext()`).
+   *
+   * @example
+   * // In onProjectStarted:
+   * context.getProjectContext().addDisposable(() => {
+   *   const watcher = fs.watch(path, () => {});
+   *   return () => watcher.close();  // cleanup right next to setup
+   * });
+   */
+  addDisposable(setup: () => (() => void | Promise<void>) | void): void;
 }
 
 /**
@@ -1397,6 +1436,25 @@ export interface ElectronProcessMetric {
  * ```
  */
 export interface ExtensionContext {
+  /**
+   * Register a setup function whose returned cleanup function will be called
+   * automatically when the extension is unloaded.
+   *
+   * Setup runs immediately. The returned cleanup function runs on unload,
+   * in reverse order of registration (LIFO). The cleanup function may return
+   * a Promise; asynchronous cleanups are awaited during unload, and errors
+   * (thrown or rejected) are logged without preventing other cleanups from
+   * running. If setup returns void, no cleanup is registered.
+   *
+   * @example
+   * // In onLoad or onProjectStarted:
+   * context.addDisposable(() => {
+   *   const timer = setInterval(() => doWork(), 1000);
+   *   return () => clearInterval(timer);  // cleanup right next to setup
+   * });
+   */
+  addDisposable(setup: () => (() => void | Promise<void>) | void): void;
+
   /**
    * Log a message prefixed with the extension name to the AiderDesk logger.
    * Messages appear in the console output and log files at the specified level.

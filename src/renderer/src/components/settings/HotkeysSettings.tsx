@@ -27,6 +27,10 @@ export const HotkeysSettings = ({ settings, setSettings }: Props) => {
       ...DEFAULT_HOTKEY_CONFIG.taskHotkeys,
       ...(settings.hotkeyConfig?.taskHotkeys ?? {}),
     },
+    gitHotkeys: {
+      ...DEFAULT_HOTKEY_CONFIG.gitHotkeys,
+      ...(settings.hotkeyConfig?.gitHotkeys ?? {}),
+    },
     dialogHotkeys: {
       ...DEFAULT_HOTKEY_CONFIG.dialogHotkeys,
       ...(settings.hotkeyConfig?.dialogHotkeys ?? {}),
@@ -55,6 +59,7 @@ export const HotkeysSettings = ({ settings, setSettings }: Props) => {
         ...DEFAULT_HOTKEY_CONFIG,
         projectHotkeys: { ...DEFAULT_HOTKEY_CONFIG.projectHotkeys },
         taskHotkeys: { ...DEFAULT_HOTKEY_CONFIG.taskHotkeys },
+        gitHotkeys: { ...DEFAULT_HOTKEY_CONFIG.gitHotkeys },
         dialogHotkeys: { ...DEFAULT_HOTKEY_CONFIG.dialogHotkeys },
       },
     });
@@ -79,6 +84,7 @@ export const HotkeysSettings = ({ settings, setSettings }: Props) => {
             {renderHotkeyConfig('projectHotkeys', 'settings', t('settings.hotkeys.settings'))}
             {renderHotkeyConfig('projectHotkeys', 'cycleNextProject', t('settings.hotkeys.cycleNextProject'))}
             {renderHotkeyConfig('projectHotkeys', 'cyclePrevProject', t('settings.hotkeys.cyclePrevProject'))}
+            {renderHotkeyConfig('projectHotkeys', 'openEditor', t('settings.hotkeys.openEditor'))}
             {renderHotkeyConfig('projectHotkeys', 'switchProject1', t('settings.hotkeys.switchProject', { number: 1 }))}
             {renderHotkeyConfig('projectHotkeys', 'switchProject2', t('settings.hotkeys.switchProject', { number: 2 }))}
             {renderHotkeyConfig('projectHotkeys', 'switchProject3', t('settings.hotkeys.switchProject', { number: 3 }))}
@@ -111,8 +117,28 @@ export const HotkeysSettings = ({ settings, setSettings }: Props) => {
           </div>
         </Section>
 
+        <Section id="hotkeys-git" title={t('settings.hotkeys.gitHotkeys')}>
+          <div className="px-5 py-3 space-y-1">
+            {renderHotkeyConfig('gitHotkeys', 'pull', t('git.updateProject'))}
+            {renderHotkeyConfig('gitHotkeys', 'push', t('git.push'))}
+            {renderHotkeyConfig('gitHotkeys', 'branches', t('uiActions.gitBranches'))}
+            {renderHotkeyConfig('gitHotkeys', 'newBranch', t('git.newBranch'))}
+            {renderHotkeyConfig('gitHotkeys', 'renameBranch', t('worktree.renameBranch'))}
+            {renderHotkeyConfig('gitHotkeys', 'worktreeMerge', t('worktree.mergeIntoBranch'))}
+            {renderHotkeyConfig('gitHotkeys', 'worktreeSquash', t('worktree.squashIntoBranch'))}
+            {renderHotkeyConfig('gitHotkeys', 'worktreeApplyUncommitted', t('worktree.applyUncommittedChanges'))}
+            {renderHotkeyConfig('gitHotkeys', 'worktreeRebase', t('worktree.rebaseFromBranch'))}
+            {renderHotkeyConfig('gitHotkeys', 'worktreeAbortRebase', t('worktree.abortRebase'))}
+            {renderHotkeyConfig('gitHotkeys', 'worktreeContinueRebase', t('worktree.continueRebase'))}
+            {renderHotkeyConfig('gitHotkeys', 'worktreeResolveConflicts', t('worktree.resolveConflictsWithAgent'))}
+          </div>
+        </Section>
+
         <Section id="hotkeys-dialog" title={t('settings.hotkeys.dialogHotkeys')}>
-          <div className="px-5 py-3 space-y-1">{renderHotkeyConfig('dialogHotkeys', 'browseFolder', t('settings.hotkeys.browseFolder'))}</div>
+          <div className="px-5 py-3 space-y-1">
+            {renderHotkeyConfig('dialogHotkeys', 'browseFolder', t('settings.hotkeys.browseFolder'))}
+            {renderHotkeyConfig('dialogHotkeys', 'commandPalette', t('settings.hotkeys.commandPalette'))}
+          </div>
         </Section>
       </div>
 

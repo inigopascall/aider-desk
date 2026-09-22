@@ -61,13 +61,13 @@ export const DiffViewer = ({ oldValue, newValue, language, isComplete = false, v
       <div className={`flex w-full ${isMobile ? 'flex-col' : ''}`}>
         <div className={`flex ${isMobile ? 'flex-col' : 'w-full'}`}>
           <div className={`flex-1 overflow-auto px-4 py-3 ${!isMobile ? 'border-r border-border-dark' : ''}`}>
-            <h3 className="mt-0 mb-2 text-xs font-semibold text-text-secondary">Old Value</h3>
+            <h3 className="mt-0 mb-2 text-xs font-semibold text-text-secondary">{t('diffViewer.oldValue')}</h3>
             <pre className="whitespace-pre-wrap break-words m-0 text-2xs text-text-primary leading-normal bg-bg-secondary px-3 py-2 rounded">
               {oldValueToUse}
             </pre>
           </div>
           <div className="flex-1 overflow-auto px-4 py-3">
-            <h3 className="mt-0 mb-2 text-xs font-semibold text-text-secondary">New Value</h3>
+            <h3 className="mt-0 mb-2 text-xs font-semibold text-text-secondary">{t('diffViewer.newValue')}</h3>
             <pre className="whitespace-pre-wrap break-words m-0 text-2xs text-text-primary leading-normal bg-bg-secondary px-3 py-2 rounded">
               {newValueToUse}
             </pre>
@@ -75,9 +75,9 @@ export const DiffViewer = ({ oldValue, newValue, language, isComplete = false, v
         </div>
         {diffError.message && (
           <div className="w-full px-4 py-2 bg-info text-error-lighter text-xs text-center">
-            Error: {diffError.message}
+            {t('diffViewer.error', { message: diffError.message })}
             <br />
-            Please report an issue in https://github.com/hotovo/aider-desk/issues.
+            {t('diffViewer.reportIssue')}
           </div>
         )}
       </div>
@@ -86,6 +86,10 @@ export const DiffViewer = ({ oldValue, newValue, language, isComplete = false, v
 
   if (!diffFile || !diffFile.hunks || diffFile.hunks.length === 0) {
     // No error, but no diff file (e.g., identical content)
+    // While streaming, args may be partial/identical - show nothing until completed
+    if (!isComplete) {
+      return null;
+    }
     return <div className="flex w-full justify-center items-center py-4 text-text-muted-light text-xs">{t('diffViewer.noChanges')}</div>;
   }
 

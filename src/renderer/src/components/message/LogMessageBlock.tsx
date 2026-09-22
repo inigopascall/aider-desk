@@ -9,6 +9,7 @@ import { MessageActions } from './MessageActions';
 
 import { IconButton } from '@/components/common/IconButton';
 import { useParsedContent } from '@/hooks/useParsedContent';
+import { removeMessageActionId } from '@/stores/taskStore';
 
 type Props = {
   baseDir: string;
@@ -17,9 +18,11 @@ type Props = {
   onRemove?: () => void;
   compact?: boolean;
   onInterrupt?: () => void;
+  removeActionId?: (actionId: string) => void;
 };
 
-export const LogMessageBlock = ({ baseDir, taskId, message, onRemove, compact = false, onInterrupt }: Props) => {
+export const LogMessageBlock = ({ baseDir, taskId, message, onRemove, compact = false, onInterrupt, removeActionId }: Props) => {
+  const removeMessageAction = removeActionId ?? ((actionId: string) => removeMessageActionId(taskId, message.id, actionId));
   const { t } = useTranslation();
   const translatedContent = t(message.content);
   const parsedContent = useParsedContent(baseDir, translatedContent, [], true, false);
@@ -63,7 +66,7 @@ export const LogMessageBlock = ({ baseDir, taskId, message, onRemove, compact = 
       <div className="flex items-center gap-4">
         {message.actionIds && (
           <div className="flex flex-wrap justify-end">
-            <MessageActions actionIds={message.actionIds} baseDir={baseDir} taskId={taskId} onInterrupt={onInterrupt} />
+            <MessageActions actionIds={message.actionIds} baseDir={baseDir} taskId={taskId} onInterrupt={onInterrupt} removeActionId={removeMessageAction} />
           </div>
         )}
         <div className="flex items-center space-x-1">

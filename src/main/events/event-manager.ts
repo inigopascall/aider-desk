@@ -43,6 +43,7 @@ import {
   CommandsData,
   ExtensionUIRefreshData,
   ModalOverlayUrlData,
+  InputPromptData,
   ContextInfoData,
   WorkflowLogData,
 } from '@common/types';
@@ -301,6 +302,11 @@ export class EventManager {
   }
 
   // Question events
+  sendInputPrompt(data: InputPromptData): void {
+    this.sendToWindows('input-prompt', data);
+    this.broadcastToEventConnectors('input-prompt', data);
+  }
+
   sendAskQuestion(questionData: QuestionData): void {
     this.sendToWindows('ask-question', questionData);
     this.broadcastToEventConnectors('ask-question', questionData);
@@ -625,8 +631,15 @@ export class EventManager {
 
     // Send event to all open windows
     windows.forEach((window) => {
-      if (!window.isDestroyed()) {
+      if (window.isDestroyed() || window.webContents.isDestroyed() || window.webContents.isCrashed()) {
+        return;
+      }
+      try {
         window.webContents.send(eventType, data);
+      } catch (error) {
+        // Sending to a disposed/crashed render frame can throw synchronously; skip it
+        // without breaking delivery to other windows or the code that triggered the event
+        logger.warn(`Failed to send event '${eventType}' to window: ${error instanceof Error ? error.message : String(error)}`);
       }
     });
   }

@@ -146,6 +146,7 @@ export interface Group {
   color?: string;
   finished?: boolean;
   interruptId?: string;
+  ephemeral?: boolean;
 }
 
 export interface UsageReportData {

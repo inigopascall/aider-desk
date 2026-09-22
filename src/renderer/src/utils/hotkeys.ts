@@ -18,6 +18,7 @@ export const DEFAULT_HOTKEY_CONFIG: HotkeyConfig = {
     switchProject9: 'alt+9,meta+9',
     cycleNextProject: 'ctrl+tab',
     cyclePrevProject: 'ctrl+shift+tab',
+    openEditor: 'mod+e',
   },
   taskHotkeys: {
     switchTask1: 'ctrl+1',
@@ -36,8 +37,23 @@ export const DEFAULT_HOTKEY_CONFIG: HotkeyConfig = {
     toggleMarkdownEditorMode: 'shift+ctrl+n',
     toggleMarkdownEditorWidth: 'shift+ctrl+e',
   },
+  gitHotkeys: {
+    pull: 'mod+shift+u',
+    push: 'mod+shift+k',
+    branches: 'ctrl+`',
+    newBranch: '',
+    renameBranch: '',
+    worktreeMerge: '',
+    worktreeSquash: '',
+    worktreeApplyUncommitted: '',
+    worktreeRebase: '',
+    worktreeAbortRebase: '',
+    worktreeContinueRebase: '',
+    worktreeResolveConflicts: '',
+  },
   dialogHotkeys: {
     browseFolder: 'mod+b',
+    commandPalette: 'mod+shift+p',
   },
 };
 
@@ -53,6 +69,10 @@ export const getHotkeys = (config?: HotkeyConfig) => {
       ...DEFAULT_HOTKEY_CONFIG.taskHotkeys,
       ...(config?.taskHotkeys ?? {}),
     },
+    gitHotkeys: {
+      ...DEFAULT_HOTKEY_CONFIG.gitHotkeys,
+      ...(config?.gitHotkeys ?? {}),
+    },
     dialogHotkeys: {
       ...DEFAULT_HOTKEY_CONFIG.dialogHotkeys,
       ...(config?.dialogHotkeys ?? {}),
@@ -61,9 +81,11 @@ export const getHotkeys = (config?: HotkeyConfig) => {
 
   const pj = mergedConfig.projectHotkeys;
   const tk = mergedConfig.taskHotkeys;
+  const gh = mergedConfig.gitHotkeys;
   const dk = mergedConfig.dialogHotkeys;
   const pjDef = DEFAULT_HOTKEY_CONFIG.projectHotkeys;
   const tkDef = DEFAULT_HOTKEY_CONFIG.taskHotkeys;
+  const ghDef = DEFAULT_HOTKEY_CONFIG.gitHotkeys;
   const dkDef = DEFAULT_HOTKEY_CONFIG.dialogHotkeys;
 
   return {
@@ -75,6 +97,7 @@ export const getHotkeys = (config?: HotkeyConfig) => {
       SETTINGS: pj.settings || pjDef.settings,
       CYCLE_NEXT_PROJECT: pj.cycleNextProject || pjDef.cycleNextProject,
       CYCLE_PREV_PROJECT: pj.cyclePrevProject || pjDef.cyclePrevProject,
+      OPEN_EDITOR: pj.openEditor || pjDef.openEditor,
       SWITCH_PROJECT_1: pj.switchProject1 || pjDef.switchProject1,
       SWITCH_PROJECT_2: pj.switchProject2 || pjDef.switchProject2,
       SWITCH_PROJECT_3: pj.switchProject3 || pjDef.switchProject3,
@@ -102,8 +125,23 @@ export const getHotkeys = (config?: HotkeyConfig) => {
       TOGGLE_MARKDOWN_EDITOR_MODE: tk.toggleMarkdownEditorMode ?? tkDef.toggleMarkdownEditorMode,
       TOGGLE_MARKDOWN_EDITOR_WIDTH: tk.toggleMarkdownEditorWidth ?? tkDef.toggleMarkdownEditorWidth,
     },
+    GIT_HOTKEYS: {
+      PULL: gh.pull || ghDef.pull,
+      PUSH: gh.push || ghDef.push,
+      BRANCHES: gh.branches || ghDef.branches,
+      NEW_BRANCH: gh.newBranch || ghDef.newBranch,
+      RENAME_BRANCH: gh.renameBranch || ghDef.renameBranch,
+      WORKTREE_MERGE: gh.worktreeMerge || ghDef.worktreeMerge,
+      WORKTREE_SQUASH: gh.worktreeSquash || ghDef.worktreeSquash,
+      WORKTREE_APPLY_UNCOMMITTED: gh.worktreeApplyUncommitted || ghDef.worktreeApplyUncommitted,
+      WORKTREE_REBASE: gh.worktreeRebase || ghDef.worktreeRebase,
+      WORKTREE_ABORT_REBASE: gh.worktreeAbortRebase || ghDef.worktreeAbortRebase,
+      WORKTREE_CONTINUE_REBASE: gh.worktreeContinueRebase || ghDef.worktreeContinueRebase,
+      WORKTREE_RESOLVE_CONFLICTS: gh.worktreeResolveConflicts || ghDef.worktreeResolveConflicts,
+    },
     DIALOG_HOTKEYS: {
       BROWSE_FOLDER: dk.browseFolder || dkDef.browseFolder,
+      COMMAND_PALETTE: dk.commandPalette || dkDef.commandPalette,
     },
   };
 };

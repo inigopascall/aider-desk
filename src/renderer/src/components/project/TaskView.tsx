@@ -15,7 +15,19 @@ import {
   TodoItem,
   UserMessage,
 } from '@common/types';
-import { forwardRef, startTransition, useCallback, useDeferredValue, useEffect, useImperativeHandle, useMemo, useOptimistic, useRef, useState } from 'react';
+import {
+  forwardRef,
+  startTransition,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useOptimistic,
+  useRef,
+  useState,
+  useTransition,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { ResizableBox, ResizeCallbackData } from 'react-resizable';
 import { clsx } from 'clsx';
@@ -35,8 +47,8 @@ import { useProjectSettings } from '@/contexts/ProjectSettingsContext';
 import { useApi } from '@/contexts/ApiContext';
 import { AddFileDialog } from '@/components/project/AddFileDialog';
 import { TaskBar, TaskBarRef } from '@/components/project/TaskBar';
+import { TaskControlBar, TaskControlBarRef } from '@/components/project/TaskControlBar';
 import { PromptField, PromptFieldRef } from '@/components/PromptField';
-import { TaskControlBar } from '@/components/project/TaskControlBar';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
 import { Button } from '@/components/common/Button';
 import { TodoWindow } from '@/components/project/TodoWindow';
@@ -58,6 +70,8 @@ import { showErrorNotification } from '@/utils/notifications';
 import { useSearchText } from '@/hooks/useSearchText';
 import { TaskStateActions } from '@/components/message/TaskStateActions';
 import { TaskInfoPanel } from '@/components/message/TaskInfoPanel';
+import { registerAction, unregisterAction } from '@/stores/actionsStore';
+import { getSessionKey, useTerminalVisible, toggleTerminalVisible, setTerminalVisible } from '@/stores/terminalStore';
 
 type AddFileDialogOptions = {
   readOnly: boolean;
@@ -66,6 +80,8 @@ type AddFileDialogOptions = {
 export type TaskViewRef = {
   exportMessagesToImage: () => void;
   focusPromptField: () => void;
+  openMainModelSelector: () => void;
+  openAgentProfileSelector: () => void;
 };
 
 const FILES_COLLAPSED_WIDTH = 36;
@@ -77,7 +93,6 @@ type Props = {
   updateOptimisticTaskState: (taskId: string, taskState: string) => void;
   inputHistory: string[];
   isActive?: boolean;
-  showSettingsPage?: (pageId?: string, options?: Record<string, unknown>) => void;
   shouldFocusPrompt?: boolean;
   onArchiveTask?: () => void;
   onUnarchiveTask?: () => void;
@@ -93,7 +108,6 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
       updateTask,
       inputHistory,
       isActive = false,
-      showSettingsPage,
       shouldFocusPrompt = false,
       updateOptimisticTaskState,
       onArchiveTask,
@@ -140,6 +154,25 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
     const [displayedMessages, setDisplayedMessages] = useOptimistic(deferredMessages);
     const messagesPending = task.updatedAt && messages.length !== displayedMessages.length;
 
+    // On first mount, defer the heavy message list until after the shell has painted: the first
+    // commit renders the shell + LoadingOverlay (renderReady=false), then a rAF flips renderReady
+    // inside a transition so the messages render without blocking the initial load. Guarded by
+    // renderReady so re-running the effect (e.g. a project-level <Activity> becoming visible again)
+    // does not re-trigger the transition and flash the loading overlay on an already-rendered task.
+    const [renderReady, setRenderReady] = useState(false);
+    const [isRenderPending, startRenderTransition] = useTransition();
+    useEffect(() => {
+      if (renderReady) {
+        return;
+      }
+      const rafId = requestAnimationFrame(() => {
+        startRenderTransition(() => setRenderReady(true));
+      });
+      return () => cancelAnimationFrame(rafId);
+    }, [renderReady]);
+    const isSwitchingTask = !renderReady || isRenderPending;
+    const visibleMessages = isSwitchingTask ? [] : displayedMessages;
+
     const currentMode = task.currentMode || 'agent';
 
     const [addFileDialogOptions, setAddFileDialogOptions] = useState<AddFileDialogOptions | null>(null);
@@ -147,11 +180,12 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
     const editedMessage = editingMessageIndex !== null ? displayedMessages[editingMessageIndex] : undefined;
     const canSaveEditedPrompt = messages.length === 1 && isUserMessage(messages[0]) && messages[0]?.id === editedMessage?.id;
     const [searchContainer, setSearchContainer] = useState<HTMLElement | null>(null);
-    const [terminalVisible, setTerminalVisible] = useState(false);
+    const terminalSessionKey = getSessionKey(projectDir, task.id);
+    const terminalVisible = useTerminalVisible(terminalSessionKey);
     const [showTaskInfoPanel, setShowTaskInfoPanel] = useState(false);
     const [showSidebar, setShowSidebar] = useState(isMobile);
     const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
-    const { width: sidebarWidth, setWidth: setSidebarWidth } = useSidebarWidth(projectDir, task.id);
+    const { width: sidebarWidth, setWidth: setSidebarWidth } = useSidebarWidth(projectDir);
     const [isFilesSidebarCollapsed, setIsFilesSidebarCollapsed] = useLocalStorage(`files-sidebar-collapsed-${projectDir}-${task.id}`, false);
     const { renderSearchInput } = useSearchText(searchContainer, 'absolute top-1 left-1', isActive);
 
@@ -161,6 +195,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
     const promptFieldRef = useRef<PromptFieldRef>(null);
     const centralColumnRef = useRef<HTMLDivElement>(null);
     const projectTopBarRef = useRef<TaskBarRef>(null);
+    const taskControlBarRef = useRef<TaskControlBarRef>(null);
     const messagesRef = useRef<MessagesRef | VirtualizedMessagesRef>(null);
     const terminalViewRef = useRef<TerminalViewRef | null>(null);
     const activeAgentProfile = useActiveAgentProfile(task, projectDir);
@@ -180,6 +215,12 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
       },
       focusPromptField: () => {
         promptFieldRef.current?.focus();
+      },
+      openMainModelSelector: () => {
+        projectTopBarRef.current?.openMainModelSelector();
+      },
+      openAgentProfileSelector: () => {
+        taskControlBarRef.current?.openAgentProfileSelector();
       },
     }));
 
@@ -316,8 +357,8 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
     );
 
     const toggleTerminal = useCallback(() => {
-      setTerminalVisible(!terminalVisible);
-    }, [terminalVisible]);
+      toggleTerminalVisible(terminalSessionKey);
+    }, [terminalSessionKey]);
 
     const clearLogMessages = useCallback(() => {
       setMessages(task.id, (prevMessages) => prevMessages.filter((message) => !isLogMessage(message)));
@@ -333,6 +374,24 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
     const toggleSidebar = useCallback(() => {
       setShowSidebar((prev) => !prev);
     }, []);
+
+    useEffect(() => {
+      if (!isActive) {
+        return;
+      }
+      const actions: Record<string, () => void> = {
+        'task.modelSelector': () => projectTopBarRef.current?.openMainModelSelector(),
+        'task.agentProfileSelector': () => taskControlBarRef.current?.openAgentProfileSelector(),
+      };
+      for (const [id, handler] of Object.entries(actions)) {
+        registerAction(id, handler);
+      }
+      return () => {
+        for (const id of Object.keys(actions)) {
+          unregisterAction(id);
+        }
+      };
+    }, [isActive]);
 
     const runTests = useCallback(
       (testCmd?: string) => {
@@ -819,9 +878,6 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
 
     const setMessagesRef = useCallback((node: MessagesRef | VirtualizedMessagesRef | null) => {
       messagesRef.current = node;
-      if (node?.container) {
-        setSearchContainer(node.container);
-      }
     }, []);
 
     const handleRefreshAllFiles = useCallback((useGit?: boolean) => refreshAllFiles(task.id, useGit), [refreshAllFiles, task.id]);
@@ -866,7 +922,8 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
             )}
             <ExtensionComponentWrapper placement="task-messages-top" />
             <div className="overflow-hidden flex-grow relative">
-              {displayedMessages.length === 0 && !loading && !messagesPending && !inProgress ? (
+              {loaded && isSwitchingTask && (messagesPending || displayedMessages.length > 0) && <LoadingOverlay message={t('common.loadingMessages')} />}
+              {!isSwitchingTask && visibleMessages.length === 0 && !loading && !messagesPending && !inProgress ? (
                 <WelcomeMessage onModeChange={handleModeChange} mode={currentMode} projectDir={projectDir} taskId={task.id} />
               ) : (
                 <>
@@ -880,6 +937,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                       workflowRuns={workflowRuns}
                       allFiles={allFiles}
                       renderMarkdown={renderMarkdown!}
+                      onContainerRef={setSearchContainer}
                       removeMessage={handleRemoveMessage}
                       removeGroup={handleRemoveGroup}
                       redoUserPrompt={handleRedoUserPrompt}
@@ -898,6 +956,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                       workflowRuns={workflowRuns}
                       allFiles={allFiles}
                       renderMarkdown={renderMarkdown!}
+                      onContainerRef={setSearchContainer}
                       removeMessage={handleRemoveMessage}
                       removeGroup={handleRemoveGroup}
                       redoUserPrompt={handleRedoUserPrompt}
@@ -911,7 +970,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
               )}
             </div>
             <ExtensionComponentWrapper placement="task-messages-bottom" />
-            {showTaskInfoPanel && <TaskInfoPanel task={task} messageCount={displayedMessages.length || 0} onClose={() => setShowTaskInfoPanel(false)} />}
+            {showTaskInfoPanel && <TaskInfoPanel task={task} messageCount={visibleMessages.length || 0} onClose={() => setShowTaskInfoPanel(false)} />}
             {showTaskStateActions && !inProgress && !isLastLoadingMessage && (
               <TaskStateActions
                 state={task.state}
@@ -944,7 +1003,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                 taskId={task.id}
                 visible={terminalVisible}
                 className="border-t border-border-dark-light flex-grow"
-                onClose={() => setTerminalVisible(false)}
+                onClose={() => setTerminalVisible(terminalSessionKey, false)}
                 onCopyOutput={handleCopyTerminalOutput}
               />
             </ResizableBox>
@@ -1010,6 +1069,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                   overlayContainerRef={centralColumnRef}
                 />
                 <TaskControlBar
+                  ref={taskControlBarRef}
                   baseDir={projectDir}
                   task={task}
                   isActive={isActive}
@@ -1022,7 +1082,6 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                   onToggleTaskInfoPanel={handleToggleTaskInfoPanel}
                   onExpandEditor={() => promptFieldRef.current?.toggleExpanded()}
                   onAutonomyModeChanged={handleAutonomyModeChanged}
-                  showSettingsPage={showSettingsPage}
                   canUndoContextChange={canUndoContextChange && messages.length === 0}
                   onUndoContextChange={handleUndoContextChange}
                   selectedWorkflowId={selectedWorkflowId}

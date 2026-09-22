@@ -1,0 +1,3821 @@
+import os from 'os';
+import path, { join } from 'path';
+import fs, { mkdir, rm, lstat, symlink } from 'fs/promises';
+import { existsSync, lstatSync } from 'fs';
+
+import {
+  BranchInfo,
+  ConflictResolutionFileContext,
+  GitSyncCommits,
+  MergeState,
+  RebaseState,
+  UpdatedFile,
+  UpdatedFilesGroupMode,
+  WorkingMode,
+  Worktree,
+  WorktreeAheadCommits,
+  WorktreeUncommittedFiles,
+} from '@common/types';
+// @ts-expect-error istextorbinary library does not provide TypeScript definitions
+import { isBinary } from 'istextorbinary';
+import { simpleGit } from 'simple-git';
+
+import type { GitAskpassManager } from '@/git/git-askpass-manager';
+
+import { execWithShellPath, withLock } from '@/utils';
+import { AIDER_DESK_TASKS_DIR } from '@/constants';
+import logger from '@/logger';
+import { isFileNotFoundError } from '@/utils/errors';
+
+export class GitError extends Error {
+  name = 'GitError';
+
+  gitCommands?: string[];
+  gitOutput?: string;
+  workingDirectory?: string;
+  projectPath?: string;
+  originalError?: Error;
+
+  getErrorDetails() {
+    let details = this.message;
+
+    if (this.gitCommands) {
+      details += `\n\nGit Commands: ${this.gitCommands.join('\n')}`;
+    }
+    if (this.gitOutput) {
+      details += `\n\nGit Output: ${this.gitOutput}`;
+    }
+    if (this.workingDirectory) {
+      details += `\n\nWorking Directory: ${this.workingDirectory}`;
+    }
+    if (this.projectPath) {
+      details += `\n\nProject Path: ${this.projectPath}`;
+    }
+    if (this.originalError) {
+      details += `\n\nOriginal Error: ${this.originalError.message}`;
+    }
+
+    return details;
+  }
+}
+
+// Interface for raw commit data
+interface RawCommitData {
+  hash: string;
+  message: string;
+  date: string | Date;
+  author?: string;
+  additions?: number;
+  deletions?: number;
+  filesChanged?: number;
+}
+
+const REMOTE_FETCH_THROTTLE_MS = 60_000;
+
+const isAbortError = (error: unknown): boolean => {
+  return error instanceof Error && (error.name === 'AbortError' || (error as NodeJS.ErrnoException).code === 'ABORT_ERR');
+};
+
+export class GitManager {
+  private commitCancelControllers = new Map<string, AbortController>();
+  private remoteFetchTimestamps = new Map<string, number>();
+
+  constructor(private readonly gitAskpassManager?: GitAskpassManager) {}
+
+  private getWorktreePath(projectPath: string, taskId: string): string {
+    return join(projectPath, AIDER_DESK_TASKS_DIR, taskId, 'worktree');
+  }
+
+  private async isBranchCheckedOutInOtherWorktree(projectPath: string, branch: string, worktreePath: string): Promise<boolean> {
+    try {
+      const result = await execWithShellPath('git worktree list --porcelain', { cwd: projectPath });
+      let currentPath = '';
+      for (const line of result.stdout.split(/\r?\n/)) {
+        if (line.startsWith('worktree ')) {
+          currentPath = line.slice('worktree '.length);
+        } else if (line === `branch refs/heads/${branch}`) {
+          return currentPath !== worktreePath;
+        }
+      }
+      return false;
+    } catch (error) {
+      logger.warn(`Failed to list worktrees to check branch ${branch}:`, error);
+      return false;
+    }
+  }
+
+  private async initializeWorktree(projectPath: string, taskId: string): Promise<void> {
+    const worktreePath = this.getWorktreePath(projectPath, taskId);
+    try {
+      await rm(worktreePath, { recursive: true, force: true });
+      await mkdir(worktreePath, { recursive: true });
+    } catch (error) {
+      logger.error('Failed to create worktree directory:', error);
+      throw error;
+    }
+  }
+
+  async createWorktree(projectPath: string, taskId: string, branch?: string, baseBranch = 'HEAD'): Promise<Worktree> {
+    return await withLock(`worktree-create-${projectPath}-${taskId}`, async () => {
+      const worktreePath = this.getWorktreePath(projectPath, taskId);
+
+      try {
+        // 1. Initialize repository if necessary
+        try {
+          await execWithShellPath('git rev-parse --is-inside-work-tree', {
+            cwd: projectPath,
+          });
+        } catch {
+          // Initialize git repository
+          await execWithShellPath('git init', { cwd: projectPath });
+        }
+
+        // 2. Clean up stale worktree registrations (e.g. the directory was deleted out-of-band)
+        try {
+          await execWithShellPath('git worktree prune', { cwd: projectPath });
+        } catch (error) {
+          logger.warn('Failed to prune stale worktree registrations:', error);
+        }
+
+        // 3. Clean up any existing worktree before recreating its directory
+        try {
+          await execWithShellPath(`git worktree remove "${worktreePath}" --force`, { cwd: projectPath });
+        } catch (error) {
+          logger.warn(`Failed to remove existing worktree at ${worktreePath}:`, error);
+        }
+
+        await this.initializeWorktree(projectPath, taskId);
+
+        // 4. Ensure the repository has at least one commit
+        try {
+          await execWithShellPath('git rev-parse HEAD', { cwd: projectPath });
+        } catch {
+          // Repository has no commits yet, create initial commit
+          try {
+            await execWithShellPath('git add -A', { cwd: projectPath });
+          } catch {
+            // Ignore add errors (no files to add)
+          }
+          try {
+            await execWithShellPath('git commit -m "Initial commit" --allow-empty', { cwd: projectPath });
+          } catch {
+            await execWithShellPath('git -c user.name="AiderDesk" -c user.email="aiderdesk@aiderdesk" commit -m "Initial commit" --allow-empty', {
+              cwd: projectPath,
+            });
+          }
+        }
+
+        // 5. Logic for creating the worktree
+        let baseCommit: string;
+        let newBranchName: string;
+        const baseRef = baseBranch; // Will be 'HEAD' if not provided
+
+        if (branch) {
+          // A. Branch name provided: Check if branch exists or create it
+          let branchExists = false;
+          try {
+            // Check if it's an actual branch (not just a commit SHA)
+            await execWithShellPath(`git show-ref --verify --quiet refs/heads/${branch}`, { cwd: projectPath });
+            branchExists = true;
+          } catch (error) {
+            // Branch doesn't exist, it will be created from baseRef
+            logger.debug(`Branch ${branch} not found, will create it from ${baseRef}:`, error);
+          }
+
+          if (branchExists) {
+            // A1. Use existing branch
+            let branchToAdd = branch;
+            if (await this.isBranchCheckedOutInOtherWorktree(projectPath, branch, worktreePath)) {
+              // git refuses to check out a branch that is already used by another worktree;
+              // fall back to a unique sibling branch created from the original branch's tip
+              branchToAdd = await this.findUniqueBranchName(projectPath, branch);
+              await execWithShellPath(`git worktree add -b ${branchToAdd} "${worktreePath}" ${branch}`, { cwd: projectPath });
+            } else {
+              await execWithShellPath(`git worktree add "${worktreePath}" ${branch}`, { cwd: projectPath });
+            }
+
+            // Get the base commit (the tip of the existing branch)
+            baseCommit = (
+              await execWithShellPath(`git rev-parse ${branchToAdd}`, {
+                cwd: projectPath,
+              })
+            ).stdout.trim();
+            newBranchName = branchToAdd;
+          } else {
+            // A2. Create new branch from baseRef (which defaults to 'HEAD')
+
+            // Verify that the base branch exists if specified and is a branch name
+            if (baseBranch !== 'HEAD') {
+              try {
+                await execWithShellPath(`git show-ref --verify --quiet refs/heads/${baseBranch}`, { cwd: projectPath });
+              } catch {
+                throw new Error(`Base branch '${baseBranch}' does not exist`);
+              }
+            }
+
+            // Capture the base commit before creating the worktree
+            baseCommit = (
+              await execWithShellPath(`git rev-parse ${baseRef}`, {
+                cwd: projectPath,
+              })
+            ).stdout.trim();
+
+            // Create the new branch and checkout the worktree
+            await execWithShellPath(`git worktree add -b ${branch} "${worktreePath}" ${baseRef}`, { cwd: projectPath });
+            newBranchName = branch; // Use the newly created branch name
+          }
+        } else {
+          // B. No branch name provided: Create detached worktree from current HEAD (or specified baseRef)
+
+          // Note: git worktree add <path> defaults to current HEAD
+          await execWithShellPath(`git worktree add "${worktreePath}" ${baseRef}`, { cwd: projectPath });
+
+          // Capture the base commit (the commit it's detached at)
+          baseCommit = (
+            await execWithShellPath(`git rev-parse ${baseRef}`, {
+              cwd: projectPath,
+            })
+          ).stdout.trim();
+
+          // Use the baseRef for the branch name, or resolve the current branch if baseRef is 'HEAD'
+          if (baseRef === 'HEAD') {
+            try {
+              newBranchName = (
+                await execWithShellPath('git rev-parse --abbrev-ref HEAD', {
+                  cwd: projectPath,
+                })
+              ).stdout.trim();
+              if (newBranchName === 'HEAD') {
+                newBranchName = 'DETACHED HEAD';
+              }
+            } catch {
+              newBranchName = 'DETACHED HEAD';
+            }
+          } else {
+            newBranchName = `${baseRef} (DETACHED)`;
+          }
+          logger.info(`Worktree created in DETACHED HEAD mode from commit: ${baseCommit}`);
+        }
+
+        // Resolve the base branch: if baseRef is 'HEAD', resolve to the current branch name
+        let resolvedBaseBranch: string | undefined;
+        if (baseRef === 'HEAD') {
+          try {
+            const result = await execWithShellPath('git rev-parse --abbrev-ref HEAD', { cwd: projectPath });
+            const headBranch = result.stdout.trim();
+            resolvedBaseBranch = headBranch !== 'HEAD' ? headBranch : undefined;
+          } catch {
+            resolvedBaseBranch = undefined;
+          }
+        } else {
+          resolvedBaseBranch = baseRef;
+        }
+
+        logger.info(`Worktree created successfully at: ${worktreePath}`);
+
+        return {
+          path: worktreePath,
+          baseCommit,
+          baseBranch: resolvedBaseBranch,
+          branch: newBranchName,
+        };
+      } catch (error) {
+        logger.error('Failed to create worktree:', error);
+        throw new Error(`Failed to create worktree: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    });
+  }
+
+  async renameBranch(projectPath: string, oldBranch: string, newBranch: string): Promise<string> {
+    if (!(await this.ensureGitRepository(projectPath, 'rename branch'))) {
+      return newBranch;
+    }
+
+    const finalBranchName = await this.findUniqueBranchName(projectPath, newBranch);
+    await execWithShellPath(`git branch -m ${oldBranch} ${finalBranchName}`, { cwd: projectPath });
+    logger.info(`Renamed branch: ${oldBranch} -> ${finalBranchName}`);
+    return finalBranchName;
+  }
+
+  private async findUniqueBranchName(projectPath: string, baseName: string): Promise<string> {
+    const existingBranches = await this.listBranches(projectPath);
+    const branchNames = new Set(existingBranches.map((b) => b.name));
+
+    if (!branchNames.has(baseName)) {
+      return baseName;
+    }
+
+    let suffix = 2;
+    while (branchNames.has(`${baseName}-${suffix}`)) {
+      suffix++;
+    }
+    return `${baseName}-${suffix}`;
+  }
+
+  async createSymlinks(projectPath: string, worktreePath: string, folderNames: string[]): Promise<void> {
+    if (folderNames.length === 0) {
+      logger.debug('No symlink folders configured, skipping symlink creation');
+      return;
+    }
+    logger.debug(`Creating symlinks for folders: ${folderNames.join(', ')}`);
+    for (const folderName of folderNames) {
+      const sourcePath = join(projectPath, folderName);
+      const targetPath = join(worktreePath, folderName);
+      try {
+        if (!(await this.existsAndIsDirectory(sourcePath))) {
+          logger.debug(`Source folder does not exist or is not a directory: ${sourcePath}`);
+          continue;
+        }
+        if (existsSync(targetPath)) {
+          logger.debug(`Target already exists in worktree, skipping: ${targetPath}`);
+          continue;
+        }
+        const isTrackedByGit = await this.isFolderTrackedByGit(projectPath, folderName);
+        if (isTrackedByGit) {
+          logger.debug(`Folder is tracked by Git, skipping symlink creation: ${folderName}`);
+          continue;
+        }
+        await symlink(sourcePath, targetPath, 'dir');
+        logger.info(`Created symlink: ${targetPath} -> ${sourcePath}`);
+      } catch (error) {
+        logger.warn(`Failed to create symlink for ${folderName}:`, error);
+      }
+    }
+  }
+
+  private async existsAndIsDirectory(path: string): Promise<boolean> {
+    try {
+      if (!existsSync(path)) {
+        return false;
+      }
+      const stats = await lstat(path);
+      return stats.isDirectory();
+    } catch {
+      return false;
+    }
+  }
+
+  private async isFolderTrackedByGit(projectPath: string, folderName: string): Promise<boolean> {
+    try {
+      const { stdout } = await execWithShellPath(`git ls-files "${folderName}"`, { cwd: projectPath });
+      return stdout.trim().length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  async removeWorktree(projectDir: string, worktree: Worktree, force = false): Promise<void> {
+    return await withLock(`worktree-remove-${projectDir}-${worktree.path}`, async () => {
+      if (!force) {
+        const rebaseState = await this.getRebaseState(worktree.path);
+        if (rebaseState.inProgress) {
+          throw new Error('Cannot remove a worktree while a rebase is in progress. Continue or abort the rebase first.');
+        }
+      }
+
+      try {
+        await execWithShellPath(`git worktree remove "${worktree.path}" --force`, { cwd: projectDir });
+
+        // Clean up the branch if it's a task branch (starts with "task-" or looks like generated from task name)
+        if (worktree.branch) {
+          try {
+            await execWithShellPath(`git branch -D ${worktree.branch}`, {
+              cwd: projectDir,
+            });
+            logger.info(`Deleted task branch: ${worktree.branch}`);
+          } catch (error) {
+            // Branch might not exist or be protected, don't fail the removal
+            logger.debug(`Could not delete branch ${worktree.branch}:`, error);
+          }
+        }
+      } catch (error: unknown) {
+        const err = error as Error & { stderr?: string; stdout?: string };
+        const errorMessage = err.stderr || err.stdout || err.message || String(err);
+
+        // If the worktree is not found, that's okay - it might have been manually deleted
+        if (errorMessage.includes('is not a working tree') || errorMessage.includes('does not exist') || errorMessage.includes('No such file or directory')) {
+          logger.debug(`Worktree ${worktree.path} already removed or doesn't exist, skipping...`);
+          return;
+        }
+
+        // For other errors, still throw
+        throw new Error(`Failed to remove worktree: ${errorMessage}`);
+      }
+    });
+  }
+
+  async listWorktrees(projectDir: string): Promise<Worktree[]> {
+    try {
+      const { stdout } = await execWithShellPath('git worktree list --porcelain', { cwd: projectDir });
+
+      const worktrees: Worktree[] = [];
+      const lines = stdout.split('\n');
+
+      let currentWorktree: Worktree | null = null;
+
+      for (const line of lines) {
+        if (line.startsWith('worktree ')) {
+          if (currentWorktree?.path) {
+            worktrees.push({
+              ...currentWorktree,
+            });
+          }
+          currentWorktree = { path: line.substring(9), branch: '' };
+        } else if (line.startsWith('branch ')) {
+          currentWorktree = {
+            ...(currentWorktree || {}),
+            path: currentWorktree ? currentWorktree.path : '',
+            branch: line.substring(7).replace('refs/heads/', ''),
+          };
+        } else if (line.startsWith('HEAD ')) {
+          currentWorktree = {
+            ...(currentWorktree || {}),
+            path: currentWorktree ? currentWorktree.path : '',
+            baseCommit: line.substring(5),
+          };
+        } else if (line.startsWith('detached')) {
+          currentWorktree = {
+            ...(currentWorktree || {}),
+            path: currentWorktree ? currentWorktree.path : '',
+            branch: undefined,
+          };
+        } else if (line.startsWith('prunable')) {
+          currentWorktree = {
+            ...(currentWorktree || {}),
+            path: currentWorktree ? currentWorktree.path : '',
+            prunable: true,
+          };
+        }
+      }
+
+      if (currentWorktree?.path) {
+        worktrees.push({
+          ...currentWorktree,
+        });
+      }
+
+      return worktrees;
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('not a git repository')) {
+        return [];
+      }
+      throw new Error(`Failed to list worktrees: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async listBranches(projectPath: string, includeRemote = false): Promise<BranchInfo[]> {
+    if (!(await this.ensureGitRepository(projectPath, 'list branches'))) {
+      return [];
+    }
+
+    try {
+      // Get all local branches
+      const { stdout: branchOutput } = await execWithShellPath('git branch', {
+        cwd: projectPath,
+      });
+
+      // Get all worktrees to identify which branches have worktrees
+      const worktrees = await this.listWorktrees(projectPath);
+      const worktreeBranches = new Set(worktrees.map((w) => w.branch));
+
+      // Get upstream tracking info (upstream name and ahead/behind counts) in one call
+      const { stdout: upstreamOutput } = await execWithShellPath(
+        "git for-each-ref refs/heads --format='%(refname:short)%09%(upstream:short)%09%(upstream:track)'",
+        { cwd: projectPath },
+      );
+
+      const upstreamInfo = new Map<string, { upstream?: string; ahead?: number; behind?: number }>();
+      for (const line of upstreamOutput.split('\n')) {
+        const [name, upstream, track] = line.split('\t');
+        if (!name || !upstream) {
+          continue;
+        }
+
+        const aheadMatch = track?.match(/ahead (\d+)/);
+        const behindMatch = track?.match(/behind (\d+)/);
+
+        upstreamInfo.set(name.trim(), {
+          upstream: upstream.trim(),
+          ahead: aheadMatch ? parseInt(aheadMatch[1], 10) : 0,
+          behind: behindMatch ? parseInt(behindMatch[1], 10) : 0,
+        });
+      }
+
+      const branches: BranchInfo[] = [];
+      const lines = branchOutput.split('\n').filter((line) => line.trim());
+
+      for (const line of lines) {
+        const isCurrent = line.startsWith('*');
+        // Remove leading *, +, and spaces. The + indicates uncommitted changes
+        const name = line.replace(/^[*+]?\s*[+]?\s*/, '').trim();
+        if (name) {
+          const info = upstreamInfo.get(name);
+
+          branches.push({
+            name,
+            isCurrent,
+            hasWorktree: worktreeBranches.has(name),
+            upstream: info?.upstream,
+            ahead: info?.ahead,
+            behind: info?.behind,
+          });
+        }
+      }
+
+      // Unborn HEAD (repository with no commits yet): `git branch` outputs nothing,
+      // so synthesize the current branch to keep it visible in the UI
+      if (branches.length === 0) {
+        try {
+          const { stdout } = await execWithShellPath('git branch --show-current', { cwd: projectPath });
+          const name = stdout.trim();
+          if (name) {
+            branches.push({
+              name,
+              isCurrent: true,
+              hasWorktree: worktreeBranches.has(name),
+            });
+          }
+        } catch (error) {
+          logger.debug('Could not determine current branch for unborn HEAD:', error);
+        }
+      }
+
+      if (includeRemote) {
+        try {
+          const { stdout: remoteOutput } = await execWithShellPath("git branch -r --format='%(refname:short)'", {
+            cwd: projectPath,
+          });
+          const localNames = new Set(branches.map((b) => b.name));
+
+          for (const line of remoteOutput.split('\n')) {
+            const name = line.trim();
+            // Skip remote-name refs (e.g. "origin"), detached HEAD pointers (e.g. "origin/HEAD") and branches that exist locally
+            const localEquivalent = name.split('/').slice(1).join('/');
+            if (!name || !name.includes('/') || name.includes('->') || /\/HEAD$/.test(name) || localNames.has(name) || localNames.has(localEquivalent)) {
+              continue;
+            }
+
+            branches.push({
+              name,
+              isCurrent: false,
+              hasWorktree: false,
+              isRemote: true,
+            });
+          }
+        } catch (error) {
+          logger.debug('No remote branches found:', error);
+        }
+      }
+
+      // Sort branches: current first, then other worktree branches, then locals, then remotes; alphabetical within groups
+      branches.sort((a, b) => {
+        if (a.isCurrent !== b.isCurrent) {
+          return a.isCurrent ? -1 : 1;
+        }
+        if (!!a.isRemote !== !!b.isRemote) {
+          return a.isRemote ? 1 : -1;
+        }
+        if (a.hasWorktree && !b.hasWorktree) {
+          return -1;
+        }
+        if (!a.hasWorktree && b.hasWorktree) {
+          return 1;
+        }
+        // Within each group, sort alphabetically
+        return a.name.localeCompare(b.name);
+      });
+
+      return branches;
+    } catch (error) {
+      logger.error('Error listing branches:', error);
+      return [];
+    }
+  }
+
+  async createBranch(projectPath: string, name: string, startPoint?: string, checkout = true): Promise<void> {
+    if (!(await this.ensureGitRepository(projectPath, 'create branch'))) {
+      return;
+    }
+
+    try {
+      await execWithShellPath(`git check-ref-format --branch ${this.quoteArg(name)}`, { cwd: projectPath });
+    } catch {
+      throw new GitError(`Invalid branch name: ${name}`);
+    }
+
+    const refPart = startPoint ? ` ${this.quoteArg(startPoint)}` : '';
+    const command = checkout ? `git checkout -b ${this.quoteArg(name)}${refPart}` : `git branch ${this.quoteArg(name)}${refPart}`;
+
+    try {
+      await execWithShellPath(command, { cwd: projectPath });
+    } catch (error: unknown) {
+      throw this.wrapGitError(error, [command], projectPath);
+    }
+  }
+
+  async checkoutBranch(projectPath: string, branch: string, createTracking = false, takeOver = false): Promise<void> {
+    if (!(await this.ensureGitRepository(projectPath, 'checkout branch'))) {
+      return;
+    }
+
+    return await withLock(`git-checkout-${projectPath}`, async () => {
+      let command: string;
+
+      if (createTracking) {
+        const localName = branch.includes('/') ? branch.split('/').slice(1).join('/') : branch;
+        const { stdout: existing } = await execWithShellPath(`git branch --list ${this.quoteArg(localName)}`, { cwd: projectPath });
+
+        if (existing.trim()) {
+          branch = localName;
+          command = `git checkout ${this.quoteArg(localName)}`;
+        } else {
+          command = `git checkout -b ${this.quoteArg(localName)} --track ${this.quoteArg(branch)}`;
+          branch = localName;
+        }
+      } else {
+        command = `git checkout ${this.quoteArg(branch)}`;
+      }
+
+      if (takeOver) {
+        await this.detachBranchFromOtherWorktrees(projectPath, branch);
+      }
+
+      try {
+        await execWithShellPath(command, { cwd: projectPath });
+      } catch (error: unknown) {
+        const gitError = this.wrapGitError(error, [command], projectPath);
+
+        if (gitError.gitOutput?.includes('would be overwritten by checkout')) {
+          gitError.message = `Cannot checkout '${branch}': you have uncommitted changes that would be overwritten. Commit or stash them first.`;
+        } else if (/already used by worktree|already checked out at/.test(gitError.gitOutput || '')) {
+          gitError.message = `Cannot checkout '${branch}': it is already checked out in another worktree.`;
+        }
+
+        throw gitError;
+      }
+    });
+  }
+
+  private async detachBranchFromOtherWorktrees(projectPath: string, branch: string): Promise<void> {
+    const worktrees = await this.listWorktrees(projectPath);
+    // The first worktree is always the main working tree. Detaching it would leave the main repository
+    // in a detached HEAD state, breaking project-level git operations, so it must never be detached.
+    const mainWorktree = worktrees[0];
+    const isMainWorktree = (w: Worktree) => Boolean(mainWorktree?.path && path.resolve(w.path) === path.resolve(mainWorktree.path));
+    const isTargetMainWorktree = Boolean(mainWorktree?.path && path.resolve(mainWorktree.path) === path.resolve(projectPath));
+
+    if (mainWorktree?.branch === branch && !isTargetMainWorktree) {
+      throw new GitError(`Cannot checkout '${branch}': it is checked out in the main repository. Switch the main repository to a different branch first.`);
+    }
+
+    const holders = worktrees.filter((w) => w.branch === branch && w.path && path.resolve(w.path) !== path.resolve(projectPath) && !isMainWorktree(w));
+
+    for (const worktree of holders) {
+      await execWithShellPath('git checkout --detach', { cwd: worktree.path });
+    }
+  }
+
+  async deleteBranch(projectPath: string, branch: string, force = false): Promise<void> {
+    if (!(await this.ensureGitRepository(projectPath, 'delete branch'))) {
+      return;
+    }
+
+    const worktrees = await this.listWorktrees(projectPath);
+    if (worktrees.some((w) => w.branch === branch)) {
+      throw new GitError(`Cannot delete '${branch}': it is checked out in a worktree.`);
+    }
+
+    const currentBranch = await this.getProjectMainBranch(projectPath).catch(() => undefined);
+    if (currentBranch === branch) {
+      throw new GitError(`Cannot delete '${branch}': it is the currently checked out branch.`);
+    }
+
+    const command = `git branch ${force ? '-D' : '-d'} ${this.quoteArg(branch)}`;
+
+    try {
+      await execWithShellPath(command, { cwd: projectPath });
+    } catch (error: unknown) {
+      const gitError = this.wrapGitError(error, [command], projectPath);
+
+      if (gitError.gitOutput?.includes('not fully merged')) {
+        gitError.message = `Branch '${branch}' is not fully merged. Delete it forcefully to discard its unmerged commits.`;
+      }
+
+      throw gitError;
+    }
+  }
+
+  async mergeIntoCurrent(projectPath: string, branch: string): Promise<{ conflictedFiles?: string[] }> {
+    if (!(await this.ensureGitRepository(projectPath, 'merge'))) {
+      return {};
+    }
+
+    return await withLock(`git-merge-into-current-${projectPath}`, async () => {
+      const command = `git merge --no-edit ${this.quoteArg(branch)}`;
+
+      try {
+        await execWithShellPath(command, { cwd: projectPath });
+        return {};
+      } catch (error: unknown) {
+        const gitError = this.wrapGitError(error, [command], projectPath);
+
+        const conflictedFiles = await this.getConflictedFiles(projectPath).catch(() => [] as string[]);
+        if (conflictedFiles.length > 0) {
+          gitError.gitCommands = [command];
+          gitError.gitOutput = `Merge conflicts in:\n${conflictedFiles.join('\n')}`;
+          gitError.message = `Merge conflicts occurred while merging '${branch}'`;
+          return { conflictedFiles };
+        }
+
+        throw gitError;
+      }
+    });
+  }
+
+  async rebaseOnto(projectPath: string, branch: string): Promise<{ conflictedFiles?: string[] }> {
+    if (!(await this.ensureGitRepository(projectPath, 'rebase'))) {
+      return {};
+    }
+
+    return await withLock(`git-rebase-onto-${projectPath}`, async () => {
+      if (await this.hasUncommittedChanges(projectPath)) {
+        throw new GitError(`Cannot rebase onto '${branch}': you have uncommitted changes. Commit or stash them first.`);
+      }
+
+      const command = `git rebase ${this.quoteArg(branch)}`;
+
+      try {
+        await execWithShellPath(command, { cwd: projectPath });
+        return {};
+      } catch (error: unknown) {
+        const gitError = this.wrapGitError(error, [command], projectPath);
+
+        const conflictedFiles = await this.getConflictedFiles(projectPath).catch(() => [] as string[]);
+        if (conflictedFiles.length > 0) {
+          gitError.gitCommands = [command];
+          gitError.gitOutput = `Rebase conflicts in:\n${conflictedFiles.join('\n')}`;
+          gitError.message = `Rebase conflicts occurred while rebasing onto '${branch}'`;
+          return { conflictedFiles };
+        }
+
+        throw gitError;
+      }
+    });
+  }
+
+  private quoteArg(arg: string): string {
+    return `'${arg.replace(/'/g, "'\\''")}'`;
+  }
+
+  private wrapGitError(error: unknown, commands: string[], workingDirectory?: string): GitError {
+    if (error instanceof GitError) {
+      return error;
+    }
+
+    const err = error as Error & { stderr?: string; stdout?: string };
+    const gitError = new GitError(err.message || 'Git operation failed');
+    gitError.gitCommands = commands;
+    gitError.gitOutput = err.stderr || err.stdout || err.message || '';
+    gitError.workingDirectory = workingDirectory;
+
+    return gitError;
+  }
+
+  private async getConflictedFiles(path: string): Promise<string[]> {
+    const { stdout } = await execWithShellPath('git diff --name-only --diff-filter=U', { cwd: path });
+
+    return stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line);
+  }
+
+  async getProjectMainBranch(projectPath: string): Promise<string> {
+    try {
+      // ONLY check the current branch in the project root directory
+      const currentBranchResult = await execWithShellPath('git branch --show-current', { cwd: projectPath });
+      const currentBranch = currentBranchResult.stdout.trim();
+
+      if (currentBranch) {
+        return currentBranch;
+      }
+
+      // Throw error if we're in detached HEAD state
+      throw new Error(`Cannot determine main branch: repository at ${projectPath} is in detached HEAD state`);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('detached HEAD')) {
+        throw error;
+      }
+      throw new Error(`Failed to get main branch for project at ${projectPath}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Deprecated: Use getProjectMainBranch instead
+  async detectMainBranch(projectPath: string): Promise<string> {
+    logger.warn('detectMainBranch is deprecated, use getProjectMainBranch instead');
+    return await this.getProjectMainBranch(projectPath);
+  }
+
+  // Deprecated: Use getProjectMainBranch instead
+  async getEffectiveMainBranch(project: { path: string; main_branch?: string }): Promise<string> {
+    logger.warn('getEffectiveMainBranch is deprecated, use getProjectMainBranch instead');
+    return await this.getProjectMainBranch(project.path);
+  }
+
+  async isGitRepository(projectPath: string): Promise<boolean> {
+    try {
+      await execWithShellPath('git rev-parse --git-dir', { cwd: projectPath });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async initRepository(projectPath: string): Promise<void> {
+    return await withLock(`git-init-${projectPath}`, async () => {
+      try {
+        await execWithShellPath(`git init -b ${this.quoteArg('main')}`, { cwd: projectPath });
+      } catch {
+        // Fallback for older git versions without `-b` support
+        await execWithShellPath('git init', { cwd: projectPath });
+        try {
+          await execWithShellPath('git symbolic-ref HEAD refs/heads/main', { cwd: projectPath });
+        } catch {
+          logger.warn('Failed to set initial branch to main after git init', { projectPath });
+        }
+      }
+
+      await this.ensureGitignoreEntry(projectPath);
+    });
+  }
+
+  private async ensureGitignoreEntry(projectPath: string): Promise<void> {
+    const gitignorePath = path.join(projectPath, '.gitignore');
+
+    try {
+      const existing = await fs.readFile(gitignorePath, 'utf8').catch(() => null);
+
+      if (existing === null) {
+        await fs.writeFile(gitignorePath, '.aider-desk/\n', 'utf8');
+        return;
+      }
+
+      const hasEntry = existing.split('\n').some((line) => {
+        const trimmed = line.trim();
+        return trimmed === '.aider-desk/' || trimmed === '.aider-desk';
+      });
+      if (!hasEntry) {
+        const separator = existing.length > 0 && !existing.endsWith('\n') ? '\n' : '';
+        await fs.appendFile(gitignorePath, `${separator}.aider-desk/\n`, 'utf8');
+      }
+    } catch (error) {
+      logger.warn('Failed to add .aider-desk/ to .gitignore:', { error });
+    }
+  }
+
+  private async ensureGitRepository(projectPath: string, action: string): Promise<boolean> {
+    if (await this.isGitRepository(projectPath)) {
+      return true;
+    }
+
+    logger.debug(`Skipping git action '${action}': directory is not a git repository`, { projectPath });
+    return false;
+  }
+
+  async getCommitHash(worktreePath: string, ref: string): Promise<string | undefined> {
+    try {
+      const { stdout } = await execWithShellPath(`git rev-parse ${ref}`, { cwd: worktreePath });
+      return stdout.trim();
+    } catch {
+      return undefined;
+    }
+  }
+
+  async getHeadCommit(worktreePath: string): Promise<string | undefined> {
+    return await this.getCommitHash(worktreePath, 'HEAD');
+  }
+
+  /**
+   * Check if a commit is an ancestor of another commit (or HEAD).
+   * Returns true if `ancestorCommit` is reachable from `descendantRef`.
+   */
+  async isCommitAncestorOf(worktreePath: string, ancestorCommit: string, descendantRef = 'HEAD'): Promise<boolean> {
+    try {
+      // git merge-base --is-ancestor returns exit code 0 if ancestor, 1 if not
+      await execWithShellPath(`git merge-base --is-ancestor ${ancestorCommit} ${descendantRef}`, { cwd: worktreePath });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Get the "onto" commit from an active rebase.
+   * Returns undefined if no rebase is in progress or the file doesn't exist.
+   */
+  async getRebaseOntoCommit(worktreePath: string): Promise<string | undefined> {
+    try {
+      // Try rebase-merge first (interactive rebase)
+      const { stdout: rebaseMergePath } = await execWithShellPath('git rev-parse --git-path rebase-merge', { cwd: worktreePath });
+      const ontoPath = `${rebaseMergePath.trim()}/onto`;
+      try {
+        const { stdout: ontoCommit } = await execWithShellPath(`cat "${ontoPath}"`, { cwd: worktreePath });
+        if (ontoCommit.trim()) {
+          return ontoCommit.trim();
+        }
+      } catch {
+        // rebase-merge/onto doesn't exist, try rebase-apply
+      }
+
+      // Try rebase-apply (non-interactive rebase)
+      const { stdout: rebaseApplyPath } = await execWithShellPath('git rev-parse --git-path rebase-apply', { cwd: worktreePath });
+      const ontoApplyPath = `${rebaseApplyPath.trim()}/onto`;
+      try {
+        const { stdout: ontoCommit } = await execWithShellPath(`cat "${ontoApplyPath}"`, { cwd: worktreePath });
+        if (ontoCommit.trim()) {
+          return ontoCommit.trim();
+        }
+      } catch {
+        // rebase-apply/onto doesn't exist either
+      }
+
+      return undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Resolve a commit to the branch name that points to it.
+   * Returns the first branch found, or undefined if no branch points to that exact commit.
+   */
+  async getBranchPointingAtCommit(projectPath: string, commit: string): Promise<string | undefined> {
+    try {
+      const { stdout } = await execWithShellPath(`git branch --points-at ${commit} --format='%(refname:short)'`, { cwd: projectPath });
+      const branches = stdout
+        .trim()
+        .split('\n')
+        .map((b) => b.trim())
+        .filter((b) => b && !b.includes('(') && !b.includes('HEAD'));
+
+      return branches.length > 0 ? branches[0] : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async getBranchesContainingCommit(projectPath: string, commit: string): Promise<string[]> {
+    try {
+      const { stdout } = await execWithShellPath(`git branch --contains ${commit} --format='%(refname:short)'`, { cwd: projectPath });
+      return stdout
+        .trim()
+        .split('\n')
+        .map((b) => b.trim())
+        .filter((b) => b);
+    } catch {
+      return [];
+    }
+  }
+
+  async hasChangesToRebase(worktreePath: string, mainBranch: string): Promise<boolean> {
+    try {
+      // Check if main branch has commits that the current branch doesn't have
+      // Use cross-platform approach
+      let stdout = '0';
+      try {
+        const result = await execWithShellPath(`git rev-list --count HEAD..${mainBranch}`, { cwd: worktreePath });
+        stdout = result.stdout;
+      } catch {
+        // Error checking, assume no changes
+        stdout = '0';
+      }
+      const commitCount = parseInt(stdout.trim());
+      return commitCount > 0;
+    } catch (error) {
+      logger.error('Error checking for changes to rebase:', error);
+      return false;
+    }
+  }
+
+  async checkForRebaseConflicts(
+    worktreePath: string,
+    mainBranch: string,
+  ): Promise<{
+    hasConflicts: boolean;
+    conflictingFiles?: string[];
+    conflictingCommits?: { ours: string[]; theirs: string[] };
+    canAutoMerge?: boolean;
+  }> {
+    try {
+      // First check if there are any changes to rebase
+      const hasChanges = await this.hasChangesToRebase(worktreePath, mainBranch);
+      if (!hasChanges) {
+        return { hasConflicts: false, canAutoMerge: true };
+      }
+
+      // Get the merge base
+      const { stdout: mergeBase } = await execWithShellPath(`git merge-base HEAD ${mainBranch}`, { cwd: worktreePath });
+      const base = mergeBase.trim();
+
+      // Try a dry-run merge to detect conflicts
+      // We use merge-tree to check for conflicts without modifying the working tree
+      try {
+        const { stdout: mergeTreeOutput } = await execWithShellPath(`git merge-tree ${base} HEAD ${mainBranch}`, { cwd: worktreePath });
+
+        // Parse merge-tree output for conflicts
+        const conflictMarkers = mergeTreeOutput.match(/<<<<<<< /g);
+        const hasConflicts = conflictMarkers && conflictMarkers.length > 0;
+
+        if (hasConflicts) {
+          // Get list of files that would conflict
+          const { stdout: diffOutput } = await execWithShellPath(`git diff --name-only ${base}...HEAD`, { cwd: worktreePath });
+          const ourFiles = diffOutput
+            .trim()
+            .split('\n')
+            .filter((f) => f);
+
+          const { stdout: theirDiffOutput } = await execWithShellPath(`git diff --name-only ${base}...${mainBranch}`, { cwd: worktreePath });
+          const theirFiles = theirDiffOutput
+            .trim()
+            .split('\n')
+            .filter((f) => f);
+
+          // Find files modified in both branches
+          const conflictingFiles = ourFiles.filter((f) => theirFiles.includes(f));
+
+          // Get commit info for better error reporting
+          const { stdout: ourCommits } = await execWithShellPath(`git log --oneline ${base}..HEAD`, { cwd: worktreePath });
+          const { stdout: theirCommits } = await execWithShellPath(`git log --oneline ${base}..${mainBranch}`, { cwd: worktreePath });
+
+          logger.info(`Found conflicts in files: ${conflictingFiles.join(', ')}`);
+
+          return {
+            hasConflicts: true,
+            conflictingFiles,
+            conflictingCommits: {
+              ours: ourCommits
+                .trim()
+                .split('\n')
+                .filter((c) => c),
+              theirs: theirCommits
+                .trim()
+                .split('\n')
+                .filter((c) => c),
+            },
+            canAutoMerge: false,
+          };
+        }
+
+        return { hasConflicts: false, canAutoMerge: true };
+      } catch (error) {
+        // If merge-tree is not available (older git), fall back to checking modified files
+        logger.debug('merge-tree not available, using fallback conflict detection', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        // Get files changed in both branches
+        const { stdout: diffOutput } = await execWithShellPath(`git diff --name-only ${base}...HEAD`, { cwd: worktreePath });
+        const ourFiles = diffOutput
+          .trim()
+          .split('\n')
+          .filter((f) => f);
+
+        const { stdout: theirDiffOutput } = await execWithShellPath(`git diff --name-only ${base}...${mainBranch}`, { cwd: worktreePath });
+        const theirFiles = theirDiffOutput
+          .trim()
+          .split('\n')
+          .filter((f) => f);
+
+        // Find files modified in both branches (potential conflicts)
+        const conflictingFiles = ourFiles.filter((f) => theirFiles.includes(f));
+
+        if (conflictingFiles.length > 0) {
+          // Get commit info
+          const { stdout: ourCommits } = await execWithShellPath(`git log --oneline ${base}..HEAD`, { cwd: worktreePath });
+          const { stdout: theirCommits } = await execWithShellPath(`git log --oneline ${base}..${mainBranch}`, { cwd: worktreePath });
+
+          logger.info(`Potential conflicts in files: ${conflictingFiles.join(', ')}`);
+
+          return {
+            hasConflicts: true,
+            conflictingFiles,
+            conflictingCommits: {
+              ours: ourCommits
+                .trim()
+                .split('\n')
+                .filter((c) => c),
+              theirs: theirCommits
+                .trim()
+                .split('\n')
+                .filter((c) => c),
+            },
+            canAutoMerge: false,
+          };
+        }
+
+        return { hasConflicts: false, canAutoMerge: true };
+      }
+    } catch (error: unknown) {
+      logger.error('Error checking for rebase conflicts:', error);
+      // On error, return unknown status
+      return {
+        hasConflicts: false,
+        canAutoMerge: false,
+      };
+    }
+  }
+
+  async rebaseMainIntoWorktree(
+    worktreePath: string,
+    mainBranch: string,
+    baseCommit?: string,
+    symlinkFolders: string[] = [],
+  ): Promise<{
+    success: boolean;
+    error?: GitError;
+    hasTempCommit?: boolean;
+    ontoCommit?: string;
+  }> {
+    return await withLock(`git-rebase-${worktreePath}`, async () => {
+      const executedCommands: string[] = [];
+      let lastOutput = '';
+      let hadUncommittedChanges = false;
+
+      try {
+        // 0. Guard against starting a rebase while one is already in progress
+        const { inProgress: rebaseInProgress } = await this.getRebaseState(worktreePath);
+        if (rebaseInProgress) {
+          const gitError = new GitError('A rebase is already in progress in the worktree. Continue or abort the rebase first.');
+          gitError.workingDirectory = worktreePath;
+          return { success: false, hasTempCommit: false, error: gitError };
+        }
+
+        const ontoCommit = await this.getCommitHash(worktreePath, mainBranch);
+
+        // 1. Check for uncommitted changes and create temporary commit if needed
+        const hasChanges = await this.hasUncommittedChanges(worktreePath);
+
+        if (hasChanges) {
+          hadUncommittedChanges = true;
+          // Stage all changes
+          const addCommand = 'git add -A';
+          executedCommands.push(`${addCommand} (in ${worktreePath})`);
+          await execWithShellPath(addCommand, { cwd: worktreePath });
+
+          // Unstage symlink folders to prevent them from being tracked by git
+          // (they are worktree infrastructure artifacts, not real project files)
+          if (symlinkFolders.length > 0) {
+            const resetPaths = symlinkFolders.map((f) => `"${f}"`).join(' ');
+            const resetCommand = `git reset HEAD -- ${resetPaths}`;
+            executedCommands.push(`${resetCommand} (in ${worktreePath})`);
+            try {
+              await execWithShellPath(resetCommand, { cwd: worktreePath });
+            } catch {
+              logger.debug('Some symlink folders could not be unstaged (may not be in index)');
+            }
+          }
+
+          // Create temporary commit with unique timestamp
+          const commitCommand = `git commit --no-verify -m "TEMP_UNCOMMITTED_${Date.now()}"`;
+          executedCommands.push(`${commitCommand} (in ${worktreePath})`);
+          await execWithShellPath(commitCommand, {
+            cwd: worktreePath,
+          });
+
+          logger.info('Created temporary commit for uncommitted changes');
+        }
+
+        // 2. Validate baseCommit if provided - ensure it's an ancestor of HEAD
+        // If baseCommit is stale (e.g., user rebased externally), fall back to simple rebase
+        let effectiveBaseCommit = baseCommit;
+        if (baseCommit) {
+          const [isValid, headCommit] = await Promise.all([this.isCommitAncestorOf(worktreePath, baseCommit), this.getHeadCommit(worktreePath)]);
+          if (!isValid || baseCommit === headCommit) {
+            logger.warn(`baseCommit ${baseCommit} is not a valid rebase base (stale or equal to HEAD), falling back to simple rebase`, {
+              worktreePath,
+              mainBranch,
+            });
+            effectiveBaseCommit = undefined;
+          }
+        }
+
+        // 3. Rebase the current worktree branch onto target branch
+        // When baseCommit is provided and valid, use --onto to only replay commits made after baseCommit
+        // This avoids carrying over base branch commits that aren't in the target branch
+        const command = effectiveBaseCommit ? `git rebase --onto ${mainBranch} ${effectiveBaseCommit}` : `git rebase ${mainBranch}`;
+        executedCommands.push(`${command} (in ${worktreePath})`);
+        const rebaseResult = await execWithShellPath(command, {
+          cwd: worktreePath,
+        });
+        lastOutput = rebaseResult.stdout || rebaseResult.stderr || '';
+
+        // 4. If rebase succeeds AND we had uncommitted changes, reset to uncommitted state
+        if (hadUncommittedChanges) {
+          await this.resetTempCommitIfExists(worktreePath);
+          logger.info('Successfully reset temporary commit back to uncommitted changes');
+        }
+
+        return {
+          success: true,
+          hasTempCommit: false,
+          ontoCommit,
+        };
+      } catch (error: unknown) {
+        const err = error as Error & { stderr?: string; stdout?: string };
+        logger.error(`Failed to rebase ${mainBranch} into worktree:`, err);
+
+        // Create detailed error with git command output
+        const gitError = new GitError(`Failed to rebase ${mainBranch} into worktree`);
+        gitError.gitCommands = executedCommands;
+        gitError.gitOutput = err.stderr || err.stdout || lastOutput || err.message || '';
+        gitError.workingDirectory = worktreePath;
+        gitError.originalError = err;
+
+        return {
+          success: false,
+          hasTempCommit: hadUncommittedChanges,
+          error: gitError,
+        };
+      }
+    });
+  }
+
+  async abortRebase(worktreePath: string): Promise<void> {
+    try {
+      // Check if we're in the middle of a rebase
+      const statusCommand = 'git status --porcelain=v1';
+      await execWithShellPath(statusCommand, { cwd: worktreePath });
+
+      // Abort the rebase
+      const command = 'git rebase --abort';
+      const { stderr } = await execWithShellPath(command, {
+        cwd: worktreePath,
+      });
+
+      if (stderr && !stderr.includes('No rebase in progress')) {
+        throw new Error(`Failed to abort rebase: ${stderr}`);
+      }
+
+      // Always try to reset temporary commit if it exists
+      await this.resetTempCommitIfExists(worktreePath);
+      logger.info('Successfully handled temporary commit after abort rebase');
+    } catch (error: unknown) {
+      const err = error as Error;
+      logger.error('Error aborting rebase:', err);
+      throw new Error(`Failed to abort rebase: ${err.message}`);
+    }
+  }
+
+  async continueRebase(worktreePath: string): Promise<{ ontoCommit?: string; ontoBranch?: string }> {
+    return await withLock(`git-rebase-continue-${worktreePath}`, async () => {
+      const executedCommands: string[] = [];
+      let lastOutput = '';
+
+      // Capture the "onto" info before continuing (it will be gone after rebase completes)
+      const ontoCommit = await this.getRebaseOntoCommit(worktreePath);
+      let ontoBranch: string | undefined;
+      if (ontoCommit) {
+        ontoBranch = await this.getBranchPointingAtCommit(worktreePath, ontoCommit);
+      }
+
+      try {
+        const command = 'git rebase --continue';
+        executedCommands.push(`${command} (in ${worktreePath})`);
+        const result = await execWithShellPath(command, {
+          cwd: worktreePath,
+          env: { GIT_EDITOR: 'true' },
+        });
+        lastOutput = result.stdout || result.stderr || '';
+
+        // Always try to reset temporary commit if it exists after successful continue
+        await this.resetTempCommitIfExists(worktreePath);
+        logger.info('Successfully handled temporary commit after continue rebase');
+
+        return { ontoCommit, ontoBranch };
+      } catch (error: unknown) {
+        const err = error as Error & { stderr?: string; stdout?: string };
+        logger.error(`Failed to continue rebase in ${worktreePath}:`, err);
+
+        const gitError = new GitError('Failed to continue rebase');
+        gitError.gitCommands = executedCommands;
+        gitError.gitOutput = err.stderr || err.stdout || lastOutput || err.message || '';
+        gitError.workingDirectory = worktreePath;
+        gitError.originalError = err;
+
+        throw gitError;
+      }
+    });
+  }
+
+  private async squashAndMergeWorktreeToMain(
+    projectPath: string,
+    worktreePath: string,
+    mainBranch: string,
+    commitMessage: string,
+    baseCommit?: string,
+    checkoutless = false,
+  ): Promise<void> {
+    const executedCommands: string[] = [];
+    let lastOutput = '';
+
+    try {
+      logger.info(`Squashing and merging worktree to ${mainBranch}: ${worktreePath}`);
+
+      // SAFETY CHECK 0: A rebase left in progress (e.g. awaiting conflict resolution in the UI)
+      // would block our own rebase and must not be aborted by this operation
+      const { inProgress: rebaseInProgress } = await this.getRebaseState(worktreePath);
+      if (rebaseInProgress) {
+        const gitError = new GitError('Cannot squash merge: a rebase is in progress in the worktree. Resolve or abort the rebase first.');
+        gitError.gitCommands = executedCommands;
+        gitError.workingDirectory = worktreePath;
+        gitError.projectPath = projectPath;
+        throw gitError;
+      }
+
+      // Get current branch name in worktree (for logging purposes)
+      let command = 'git branch --show-current';
+      executedCommands.push(`git branch --show-current (in ${worktreePath})`);
+      const { stdout: currentBranch, stderr: stderr1 } = await execWithShellPath(command, { cwd: worktreePath });
+      lastOutput = currentBranch || stderr1 || '';
+      const branchName = currentBranch.trim() || 'detached HEAD';
+
+      // Check if there are any changes to merge (before rebase)
+      command = `git log --oneline ${mainBranch}..HEAD`;
+      const { stdout: commits, stderr: stderr2 } = await execWithShellPath(command, { cwd: worktreePath });
+      lastOutput = commits || stderr2 || '';
+      if (!commits.trim()) {
+        return;
+      }
+
+      // Validate baseCommit if provided - ensure it's an ancestor of HEAD
+      // If baseCommit is stale (e.g., user rebased externally), fall back to simple rebase
+      let effectiveBaseCommit = baseCommit;
+      if (baseCommit) {
+        const [isValid, headCommit] = await Promise.all([this.isCommitAncestorOf(worktreePath, baseCommit), this.getHeadCommit(worktreePath)]);
+        if (!isValid || baseCommit === headCommit) {
+          logger.warn(`baseCommit ${baseCommit} is not a valid rebase base (stale or equal to HEAD), falling back to simple rebase`, {
+            worktreePath,
+            mainBranch,
+          });
+          effectiveBaseCommit = undefined;
+        }
+      }
+
+      // SAFETY CHECK 1: Rebase worktree onto main FIRST before squashing
+      // Use --onto with baseCommit to only replay worktree-specific commits
+      command = effectiveBaseCommit ? `git rebase --onto ${mainBranch} ${effectiveBaseCommit}` : `git rebase ${mainBranch}`;
+      executedCommands.push(`${command} (in ${worktreePath})`);
+      try {
+        const rebaseWorktreeResult = await execWithShellPath(command, {
+          cwd: worktreePath,
+        });
+        lastOutput = rebaseWorktreeResult.stdout || rebaseWorktreeResult.stderr || '';
+        logger.debug(`Successfully rebased worktree onto ${mainBranch} before squashing`);
+      } catch (error: unknown) {
+        const err = error as Error & { stderr?: string; stdout?: string };
+        // Only abort a rebase that this operation started - never a pre-existing rebase
+        // the user may still be resolving (e.g. started concurrently while we passed the guard)
+        const errOutput = err.stderr || err.stdout || '';
+        const preExistingRebase = errOutput.includes('already a rebase-merge directory') || errOutput.includes('already a rebase-apply directory');
+        if (!preExistingRebase) {
+          try {
+            await execWithShellPath('git rebase --abort', { cwd: worktreePath });
+          } catch {
+            // Ignore abort errors
+          }
+        }
+
+        const gitError = new GitError(`Failed to rebase worktree onto ${mainBranch} before squashing. Conflicts must be resolved first.`);
+        gitError.gitCommands = executedCommands;
+        gitError.gitOutput = err.stderr || err.stdout || err.message || '';
+        gitError.workingDirectory = worktreePath;
+        gitError.originalError = err;
+
+        throw gitError;
+      }
+
+      // Get the HEAD commit hash from worktree AFTER rebase (but before squashing)
+      // This preserves the worktree's commit history
+      command = 'git rev-parse HEAD';
+      executedCommands.push(`git rev-parse HEAD (in ${worktreePath})`);
+      const { stdout: worktreeHead, stderr: stderr3 } = await execWithShellPath(command, { cwd: worktreePath });
+      lastOutput = worktreeHead || stderr3 || '';
+      const worktreeCommitHash = worktreeHead.trim();
+
+      if (checkoutless) {
+        // Create the squashed commit via plumbing and update the target branch ref directly
+        // without checking it out (the project directory is on a different branch, and git
+        // guarantees the target branch cannot be checked out in any other worktree)
+        const { stdout: worktreeTree } = await execWithShellPath(`git rev-parse '${worktreeCommitHash}^{tree}'`, { cwd: worktreePath });
+        const treeHash = worktreeTree.trim();
+
+        const { stdout: targetHead } = await execWithShellPath(`git rev-parse ${mainBranch}`, { cwd: projectPath });
+        const targetHeadHash = targetHead.trim();
+
+        // No-op check: nothing to squash if the trees are identical
+        const { stdout: targetTree } = await execWithShellPath(`git rev-parse '${mainBranch}^{tree}'`, { cwd: projectPath });
+        if (treeHash === targetTree.trim()) {
+          logger.info('No changes to squash merge (worktree tree is identical to target branch tree)');
+          return;
+        }
+
+        const commitMessageFile = join(os.tmpdir(), `aiderdesk-squash-message-${Date.now()}.txt`);
+        await fs.writeFile(commitMessageFile, commitMessage, 'utf-8');
+        try {
+          command = `git commit-tree ${treeHash} -p ${targetHeadHash} -F "${commitMessageFile}"`;
+          executedCommands.push(`git commit-tree ${treeHash} -p ${targetHeadHash} -F <message-file> (in ${projectPath})`);
+          const commitResult = await execWithShellPath(command, {
+            cwd: projectPath,
+          });
+          lastOutput = commitResult.stdout || commitResult.stderr || '';
+          const newCommitHash = commitResult.stdout.trim();
+
+          command = `git update-ref refs/heads/${mainBranch} ${newCommitHash} ${targetHeadHash}`;
+          executedCommands.push(`git update-ref refs/heads/${mainBranch} ${newCommitHash} <old-hash> (in ${projectPath})`);
+          await execWithShellPath(command, {
+            cwd: projectPath,
+          });
+
+          logger.info(`Successfully squash merged ${branchName} into ${mainBranch} (${newCommitHash}) without checkout`);
+        } finally {
+          await fs.rm(commitMessageFile, { force: true });
+        }
+        return;
+      }
+
+      // Switch to main branch in the main repository
+      command = `git checkout ${mainBranch}`;
+      executedCommands.push(`git checkout ${mainBranch} (in ${projectPath})`);
+      const checkoutResult = await execWithShellPath(command, {
+        cwd: projectPath,
+      });
+      lastOutput = checkoutResult.stdout || checkoutResult.stderr || '';
+
+      // SQUASH MERGE: Use git merge --squash to create a squashed staging of all changes
+      // This keeps the worktree branch history intact while creating a single commit in main
+      command = `git merge --squash ${worktreeCommitHash}`;
+      executedCommands.push(`git merge --squash ${worktreeCommitHash} (in ${projectPath})`);
+      try {
+        const squashResult = await execWithShellPath(command, {
+          cwd: projectPath,
+        });
+        lastOutput = squashResult.stdout || squashResult.stderr || '';
+        logger.debug(`Successfully squashed changes from ${branchName}`);
+      } catch (error: unknown) {
+        const err = error as Error & { stderr?: string; stdout?: string };
+        throw new Error(`Failed to squash merge from ${branchName}.\n\n` + `Git output: ${err.stderr || err.stdout || err.message}`);
+      }
+
+      // Check if there are staged changes to commit
+      command = 'git diff --cached --quiet';
+      const hasStagedChanges = await execWithShellPath(command, {
+        cwd: projectPath,
+      })
+        .then(() => false)
+        .catch(() => true);
+
+      if (!hasStagedChanges) {
+        logger.info('No changes to commit after squash merge (worktree was already up to date with main)');
+        return;
+      }
+
+      // Commit the squashed changes with the provided message
+      const escapedMessage = commitMessage.replace(/"/g, '\\"');
+      command = `git commit -m "${escapedMessage}"`;
+      executedCommands.push(`git commit -m "..." (in ${projectPath})`);
+      try {
+        const commitResult = await execWithShellPath(command, {
+          cwd: projectPath,
+        });
+        lastOutput = commitResult.stdout || commitResult.stderr || '';
+        logger.debug(`Successfully committed squashed changes to ${mainBranch}`);
+      } catch (error: unknown) {
+        const err = error as Error & { stderr?: string; stdout?: string };
+        throw new Error(`Failed to commit squashed changes to ${mainBranch}.\n\n` + `Git output: ${err.stderr || err.stdout || err.message}`);
+      }
+
+      logger.info(`Successfully squashed and merged worktree to ${mainBranch} (worktree history preserved)`);
+    } catch (error: unknown) {
+      // Preserve specific errors (e.g. rebase-in-progress guard, rebase conflict details)
+      if (error instanceof GitError) {
+        logger.error(`Failed to squash and merge worktree to ${mainBranch}:`, error);
+        throw error;
+      }
+      const err = error as Error & { stderr?: string; stdout?: string };
+      logger.error(`Failed to squash and merge worktree to ${mainBranch}:`, err);
+
+      // Create detailed error with git command output
+      const gitError = new GitError(`Failed to squash and merge worktree to ${mainBranch}`);
+      gitError.gitCommands = executedCommands;
+      // Prioritize actual error messages over lastOutput (which may contain unrelated data like commit counts)
+      gitError.gitOutput = err.stderr || err.stdout || err.message || lastOutput || '';
+      gitError.workingDirectory = worktreePath;
+      gitError.projectPath = projectPath;
+      gitError.originalError = err;
+
+      throw gitError;
+    }
+  }
+
+  private async mergeWorktreeToMain(projectPath: string, worktreePath: string, mainBranch: string, checkoutless = false): Promise<void> {
+    const executedCommands: string[] = [];
+    let lastOutput = '';
+
+    try {
+      logger.info(`Merging worktree to ${mainBranch} (without squashing): ${worktreePath}`);
+
+      // SAFETY CHECK 0: A rebase left in progress (e.g. awaiting conflict resolution in the UI)
+      // would block our own rebase and must not be aborted by this operation
+      const { inProgress: rebaseInProgress } = await this.getRebaseState(worktreePath);
+      if (rebaseInProgress) {
+        const gitError = new GitError('Cannot merge: a rebase is in progress in the worktree. Resolve or abort the rebase first.');
+        gitError.gitCommands = executedCommands;
+        gitError.workingDirectory = worktreePath;
+        gitError.projectPath = projectPath;
+        throw gitError;
+      }
+
+      // Get current branch name in worktree (for logging purposes)
+      let command = 'git branch --show-current';
+      executedCommands.push(`git branch --show-current (in ${worktreePath})`);
+      const { stdout: currentBranch, stderr: stderr1 } = await execWithShellPath(command, { cwd: worktreePath });
+      lastOutput = currentBranch || stderr1 || '';
+      const branchName = currentBranch.trim() || 'detached HEAD';
+
+      // Check if there are any changes to merge
+      command = `git log --oneline ${mainBranch}..HEAD`;
+      const { stdout: commits, stderr: stderr2 } = await execWithShellPath(command, { cwd: worktreePath });
+      lastOutput = commits || stderr2 || '';
+      if (!commits.trim()) {
+        return;
+      }
+
+      // SAFETY CHECK 1: Rebase worktree onto main FIRST (resolves conflicts in worktree, not main)
+      command = `git rebase ${mainBranch}`;
+      executedCommands.push(`git rebase ${mainBranch} (in ${worktreePath})`);
+      try {
+        const rebaseWorktreeResult = await execWithShellPath(command, {
+          cwd: worktreePath,
+        });
+        lastOutput = rebaseWorktreeResult.stdout || rebaseWorktreeResult.stderr || '';
+        logger.debug(`Successfully rebased worktree onto ${mainBranch}`);
+      } catch (error: unknown) {
+        const err = error as Error & { stderr?: string; stdout?: string };
+        // Only abort a rebase that this operation started - never a pre-existing rebase
+        // the user may still be resolving (e.g. started concurrently while we passed the guard)
+        const errOutput = err.stderr || err.stdout || '';
+        const preExistingRebase = errOutput.includes('already a rebase-merge directory') || errOutput.includes('already a rebase-apply directory');
+        if (!preExistingRebase) {
+          try {
+            await execWithShellPath('git rebase --abort', { cwd: worktreePath });
+          } catch {
+            // Ignore abort errors
+          }
+        }
+
+        const gitError = new GitError(`Failed to rebase worktree onto ${mainBranch}. Conflicts must be resolved first.`);
+        gitError.gitCommands = executedCommands;
+        gitError.gitOutput = err.stderr || err.stdout || err.message || '';
+        gitError.workingDirectory = worktreePath;
+        gitError.originalError = err;
+
+        throw gitError;
+      }
+
+      // Get the HEAD commit hash from worktree AFTER rebase
+      command = 'git rev-parse HEAD';
+      executedCommands.push(`git rev-parse HEAD (in ${worktreePath})`);
+      const { stdout: worktreeHead, stderr: stderr1b } = await execWithShellPath(command, { cwd: worktreePath });
+      lastOutput = worktreeHead || stderr1b || '';
+      const worktreeCommitHash = worktreeHead.trim();
+
+      if (checkoutless) {
+        // Update the target branch ref directly without checking it out:
+        // the project directory is on a different branch, and git guarantees the target
+        // branch cannot be checked out in any other worktree
+        try {
+          await execWithShellPath(`git merge-base --is-ancestor ${mainBranch} ${worktreeCommitHash}`, {
+            cwd: projectPath,
+          });
+        } catch {
+          throw new Error(
+            `Failed to fast-forward ${mainBranch} to ${branchName}: ${mainBranch} is not an ancestor of the worktree HEAD. ` +
+              `The branch may have diverged - rebase the worktree onto ${mainBranch} first.`,
+          );
+        }
+
+        const { stdout: targetHead } = await execWithShellPath(`git rev-parse ${mainBranch}`, { cwd: projectPath });
+        command = `git update-ref refs/heads/${mainBranch} ${worktreeCommitHash} ${targetHead.trim()}`;
+        executedCommands.push(`git update-ref refs/heads/${mainBranch} ${worktreeCommitHash} <old-hash> (in ${projectPath})`);
+        await execWithShellPath(command, {
+          cwd: projectPath,
+        });
+
+        logger.info(`Successfully fast-forwarded ${mainBranch} to ${branchName} (${worktreeCommitHash}) without checkout`);
+        return;
+      }
+
+      // Switch to main branch in the main repository
+      command = `git checkout ${mainBranch}`;
+      executedCommands.push(`git checkout ${mainBranch} (in ${projectPath})`);
+      const checkoutResult = await execWithShellPath(command, {
+        cwd: projectPath,
+      });
+      lastOutput = checkoutResult.stdout || checkoutResult.stderr || '';
+
+      // SAFETY CHECK 2: Use --ff-only merge to prevent history rewriting
+      // This will fail if local main has diverged from the worktree branch
+      command = `git merge --ff-only ${worktreeCommitHash}`;
+      executedCommands.push(`git merge --ff-only ${worktreeCommitHash} (in ${projectPath})`);
+      try {
+        const mergeResult = await execWithShellPath(command, {
+          cwd: projectPath,
+        });
+        lastOutput = mergeResult.stdout || mergeResult.stderr || '';
+        logger.debug(`Successfully fast-forwarded ${mainBranch} to ${branchName} (${worktreeCommitHash})`);
+      } catch (error: unknown) {
+        const err = error as Error & { stderr?: string; stdout?: string };
+        throw new Error(
+          `Failed to fast-forward ${mainBranch} to ${branchName}.\n\n` +
+            `This usually means ${mainBranch} has commits that ${branchName} doesn't have.\n` +
+            `You may need to rebase the worktree onto ${mainBranch} first, or reset ${mainBranch} to match origin.\n\n` +
+            `Git output: ${err.stderr || err.stdout || err.message}`,
+        );
+      }
+
+      logger.info(`Successfully merged worktree to ${mainBranch} (without squashing)`);
+    } catch (error: unknown) {
+      // Preserve specific errors (e.g. rebase-in-progress guard, rebase conflict details)
+      if (error instanceof GitError) {
+        logger.error(`Failed to merge worktree to ${mainBranch}:`, error);
+        throw error;
+      }
+      const err = error as Error & { stderr?: string; stdout?: string };
+      logger.error(`Failed to merge worktree to ${mainBranch}:`, err);
+
+      // Create detailed error with git command output
+      const gitError = new GitError(`Failed to merge worktree to ${mainBranch}`);
+      gitError.gitCommands = executedCommands;
+      // Prioritize actual error messages over lastOutput (which may contain unrelated data like commit counts)
+      gitError.gitOutput = err.stderr || err.stdout || err.message || lastOutput || '';
+      gitError.workingDirectory = worktreePath;
+      gitError.projectPath = projectPath;
+      gitError.originalError = err;
+
+      throw gitError;
+    }
+  }
+
+  generateRebaseCommands(mainBranch: string): string[] {
+    return [`git rebase ${mainBranch}`];
+  }
+
+  generateSquashCommands(mainBranch: string, branchName: string): string[] {
+    return [
+      `# In worktree: Rebase onto ${mainBranch} to get latest changes`,
+      `git rebase ${mainBranch}`,
+      `# In main repo: Switch to ${mainBranch}`,
+      `git checkout ${mainBranch}`,
+      '# In main repo: Squash merge the worktree branch (preserves worktree history)',
+      `git merge --squash ${branchName}`,
+      'git commit -m "Your commit message"',
+    ];
+  }
+
+  generateMergeCommands(mainBranch: string, branchName: string): string[] {
+    return [
+      `# In worktree: Rebase onto ${mainBranch} to get latest changes`,
+      `git rebase ${mainBranch}`,
+      `# In main repo: Switch to ${mainBranch}`,
+      `git checkout ${mainBranch}`,
+      '# In main repo: Merge the worktree branch',
+      `git merge --ff-only ${branchName}`,
+    ];
+  }
+
+  async gitPull(worktreePath: string, rebase?: boolean): Promise<{ output: string }> {
+    if (!(await this.ensureGitRepository(worktreePath, 'pull'))) {
+      return { output: '' };
+    }
+
+    try {
+      const command = rebase ? 'git pull --rebase --autostash' : 'git pull --no-rebase';
+      const { stdout, stderr } = await execWithShellPath(command, {
+        cwd: worktreePath,
+        env: this.gitAskpassManager?.getEnv(),
+      });
+      const output = stdout || stderr || 'Pull completed successfully';
+
+      return { output };
+    } catch (error: unknown) {
+      const err = error as Error & { stderr?: string; stdout?: string };
+      const gitError = new GitError(err.message || 'Git pull failed');
+      gitError.gitOutput = err.stderr || err.stdout || err.message || '';
+      gitError.workingDirectory = worktreePath;
+      throw gitError;
+    }
+  }
+
+  async gitPush(worktreePath: string, force?: boolean, setUpstream?: boolean): Promise<{ output: string }> {
+    if (!(await this.ensureGitRepository(worktreePath, 'push'))) {
+      return { output: '' };
+    }
+
+    try {
+      let command = force ? 'git push --force' : 'git push';
+      if (setUpstream) {
+        const { stdout: branchOut } = await execWithShellPath('git rev-parse --abbrev-ref HEAD', {
+          cwd: worktreePath,
+        });
+        const branch = branchOut.trim();
+        if (!branch || branch === 'HEAD') {
+          throw new Error('Cannot determine current branch for push.');
+        }
+        const remote = await this.getDefaultRemote(worktreePath);
+        command = `git push ${force ? '--force ' : ''}--set-upstream ${remote} ${branch}`;
+      }
+      const { stdout, stderr } = await execWithShellPath(command, {
+        cwd: worktreePath,
+        env: this.gitAskpassManager?.getEnv(),
+      });
+      const output = stdout || stderr || 'Push completed successfully';
+
+      return { output };
+    } catch (error: unknown) {
+      const err = error as Error & { stderr?: string; stdout?: string };
+      const gitError = new GitError(err.message || 'Git push failed');
+      gitError.gitOutput = err.stderr || err.stdout || err.message || '';
+      gitError.workingDirectory = worktreePath;
+      throw gitError;
+    }
+  }
+
+  private async getDefaultRemote(repoPath: string): Promise<string> {
+    const { stdout } = await execWithShellPath('git remote', { cwd: repoPath });
+    const remotes = stdout
+      .split('\n')
+      .map((remote) => remote.trim())
+      .filter(Boolean);
+    if (remotes.length === 0) {
+      throw new Error('No git remote configured.');
+    }
+    return remotes.includes('origin') ? 'origin' : remotes[0];
+  }
+
+  async updateBranch(repoPath: string, branchName: string): Promise<{ output: string }> {
+    if (!(await this.ensureGitRepository(repoPath, 'update branch'))) {
+      return { output: '' };
+    }
+
+    try {
+      let upstream = '';
+      try {
+        const { stdout } = await execWithShellPath(`git rev-parse --abbrev-ref ${branchName}@{upstream}`, {
+          cwd: repoPath,
+        });
+        upstream = stdout.trim();
+      } catch {
+        throw new Error(`Branch '${branchName}' has no upstream remote branch configured.`);
+      }
+
+      if (!upstream) {
+        throw new Error(`Branch '${branchName}' has no upstream remote branch configured.`);
+      }
+
+      const slashIndex = upstream.indexOf('/');
+      const remote = slashIndex !== -1 ? upstream.slice(0, slashIndex) : 'origin';
+      const remoteBranch = slashIndex !== -1 ? upstream.slice(slashIndex + 1) : upstream;
+
+      await execWithShellPath(`git fetch ${remote} ${remoteBranch}`, {
+        cwd: repoPath,
+        env: this.gitAskpassManager?.getEnv(),
+      });
+
+      let isCurrentInRepo = false;
+      try {
+        const { stdout: currentRef } = await execWithShellPath('git rev-parse --abbrev-ref HEAD', {
+          cwd: repoPath,
+        });
+        isCurrentInRepo = currentRef.trim() === branchName;
+      } catch {
+        // ignore
+      }
+
+      if (isCurrentInRepo) {
+        const { stdout, stderr } = await execWithShellPath(`git merge --ff-only ${upstream}`, {
+          cwd: repoPath,
+        });
+        const output = stdout || stderr || 'Branch updated successfully';
+        return { output };
+      }
+
+      const worktrees = await this.listWorktrees(repoPath);
+      const activeWorktree = worktrees.find((w) => w.branch === branchName);
+      if (activeWorktree) {
+        const { stdout, stderr } = await execWithShellPath(`git merge --ff-only ${upstream}`, {
+          cwd: activeWorktree.path,
+        });
+        const output = stdout || stderr || 'Branch updated successfully';
+        return { output };
+      }
+
+      const { stdout, stderr } = await execWithShellPath(`git fetch ${remote} ${remoteBranch}:${branchName}`, {
+        cwd: repoPath,
+        env: this.gitAskpassManager?.getEnv(),
+      });
+      const output = stdout || stderr || 'Branch updated successfully';
+      return { output };
+    } catch (error: unknown) {
+      const err = error as Error & { stderr?: string; stdout?: string };
+      const gitError = new GitError(err.message || `Failed to update branch '${branchName}'`);
+      gitError.gitOutput = err.stderr || err.stdout || err.message || '';
+      gitError.workingDirectory = repoPath;
+      throw gitError;
+    }
+  }
+
+  async getLastCommits(worktreePath: string, count: number = 20, includeStats: boolean = true): Promise<RawCommitData[]> {
+    try {
+      const statFlag = includeStats ? ' --shortstat' : '';
+      const { stdout } = await execWithShellPath(`git log -${count} --pretty=format:'%H|%s|%ai|%an'${statFlag}`, { cwd: worktreePath });
+
+      const commits: RawCommitData[] = [];
+      const lines = stdout.split('\n');
+      let i = 0;
+
+      while (i < lines.length) {
+        const commitLine = lines[i];
+        if (!commitLine || !commitLine.includes('|')) {
+          i++;
+          continue;
+        }
+
+        const parts = commitLine.split('|');
+        const hash = parts.shift() || '';
+        const author = (parts.pop() || '').trim();
+        const date = (parts.pop() || '').trim();
+        const message = parts.join('|');
+
+        const commit: RawCommitData = {
+          hash: hash.trim(),
+          message: message.trim(),
+          date,
+          author: author || 'Unknown',
+        };
+
+        if (includeStats && i + 1 < lines.length && lines[i + 1].trim()) {
+          const statsLine = lines[i + 1].trim();
+          const statsMatch = statsLine.match(/(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?/);
+
+          if (statsMatch) {
+            commit.filesChanged = parseInt(statsMatch[1]) || 0;
+            commit.additions = parseInt(statsMatch[2]) || 0;
+            commit.deletions = parseInt(statsMatch[3]) || 0;
+            i++;
+          }
+        }
+
+        commits.push(commit);
+        i++;
+      }
+
+      return commits;
+    } catch (error: unknown) {
+      const err = error as Error & { stderr?: string; stdout?: string };
+      const gitError = new GitError(err.message || 'Failed to get commits');
+      gitError.gitOutput = err.stderr || err.stdout || err.message || '';
+      gitError.workingDirectory = worktreePath;
+      throw gitError;
+    }
+  }
+
+  async getChangesDiff(projectPath: string, worktreePath: string, targetBranch?: string): Promise<string> {
+    try {
+      const mainBranch = targetBranch || (await this.getProjectMainBranch(projectPath));
+
+      // Check if there are any commits in worktree that are not in main
+      const { stdout: commits } = await execWithShellPath(`git log --oneline ${mainBranch}..HEAD`, { cwd: worktreePath });
+
+      if (!commits.trim()) {
+        // No commits in worktree, return empty string
+        return '';
+      }
+
+      // Get the first commit hash in the worktree branch (oldest commit not in main)
+      const commitLines = commits.trim().split('\n');
+      const oldestCommitHash = commitLines[commitLines.length - 1].split(' ')[0];
+
+      // Get full diff from the commit before the oldest worktree commit to HEAD
+      const { stdout } = await execWithShellPath(`git diff ${oldestCommitHash}^..HEAD`, { cwd: worktreePath });
+
+      return stdout.trim();
+    } catch (error: unknown) {
+      const err = error as Error & { stderr?: string; stdout?: string };
+      const gitError = new GitError(err.message || 'Failed to get changes diff');
+      gitError.gitOutput = err.stderr || err.stdout || err.message || '';
+      gitError.workingDirectory = worktreePath;
+      throw gitError;
+    }
+  }
+
+  async getOriginBranch(worktreePath: string, branch: string): Promise<string | null> {
+    try {
+      await execWithShellPath(`git rev-parse --verify origin/${branch}`, {
+        cwd: worktreePath,
+      });
+      return `origin/${branch}`;
+    } catch {
+      return null;
+    }
+  }
+
+  async getTaskWorktree(projectPath: string, taskId: string): Promise<Worktree | null> {
+    try {
+      const worktrees = await this.listWorktrees(projectPath);
+      const taskWorktreePath = this.getWorktreePath(projectPath, taskId);
+
+      // Find worktree that matches our task's worktree path
+      const taskWorktree = worktrees.find((w) => w.path === taskWorktreePath);
+
+      // A prunable worktree has a missing or invalid directory (stale registration), treat it as absent
+      if (taskWorktree && !taskWorktree.prunable) {
+        return taskWorktree;
+      }
+
+      // If no worktree exists for this task, return null
+      return null;
+    } catch (error) {
+      logger.error('Failed to get task worktree:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Check if there are uncommitted changes in the given path
+   */
+  async hasUncommittedChanges(path: string): Promise<boolean> {
+    try {
+      const { stdout } = await execWithShellPath('git status --porcelain=v1 -z', {
+        cwd: path,
+      });
+      const filePaths = this.parseGitStatusEntries(stdout);
+      const realChanges = filePaths.filter((filePath) => !this.isSymlinkPath(path, filePath));
+      return realChanges.length > 0;
+    } catch (error) {
+      logger.error('Failed to check for uncommitted changes:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Stash uncommitted changes with a unique identifier
+   * Returns the stash identifier or null if no changes to stash
+   */
+  async stashUncommittedChanges(stashId: string, path: string, message: string, symlinkFolders: string[] = []): Promise<string | null> {
+    try {
+      const hasChanges = await this.hasUncommittedChanges(path);
+      if (!hasChanges) {
+        return null;
+      }
+
+      const fullMessage = `${stashId}: ${message}`;
+
+      // Find which symlink folders have untracked files
+      const foldersToExclude: string[] = [];
+
+      if (symlinkFolders.length > 0) {
+        // Get untracked files to check which symlink folders have content
+        const { stdout: untrackedFiles } = await execWithShellPath('git ls-files --others --exclude-standard -z', { cwd: path });
+        const untrackedFilesList = untrackedFiles.split('\0').filter((file) => file.trim() !== '');
+
+        for (const folder of symlinkFolders) {
+          // Check if folder has untracked files
+          const hasUntrackedInFolder = untrackedFilesList.some((file) => {
+            const normalizedFile = file.replace(/\\/g, '/');
+            return normalizedFile.startsWith(`${folder}/`) || normalizedFile === folder;
+          });
+
+          if (hasUntrackedInFolder) {
+            foldersToExclude.push(folder);
+            logger.debug(`Excluding folder ${folder} from stash (has untracked files)`);
+          }
+        }
+      }
+
+      // Build stash command with exclude patterns for folders with untracked files
+      let command = `git stash push -u -m "${fullMessage}"`;
+      if (foldersToExclude.length > 0) {
+        const excludePatterns = foldersToExclude.map((folder) => `':(exclude)${folder}'`).join(' ');
+        command += ` -- . ${excludePatterns}`;
+      }
+
+      await execWithShellPath(command, {
+        cwd: path,
+      });
+      logger.info(`Stashed changes with ID: ${stashId}`);
+      return stashId;
+    } catch (error) {
+      logger.error('Failed to stash changes:', error);
+      throw new Error(`Failed to stash uncommitted changes: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Apply a stash by its identifier
+   */
+  async applyStash(path: string, stashId: string): Promise<void> {
+    try {
+      // Find the stash entry that matches our identifier
+      const { stdout: stashList } = await execWithShellPath('git stash list', {
+        cwd: path,
+      });
+      const stashEntry = stashList.split('\n').find((line) => line.includes(stashId));
+
+      if (!stashEntry) {
+        logger.warn(`Stash with ID ${stashId} not found, skipping apply`);
+        return;
+      }
+
+      // Extract stash reference (e.g., "stash@{0}")
+      const stashRef = stashEntry.split(':')[0];
+      try {
+        await execWithShellPath(`git stash apply ${stashRef}`, { cwd: path });
+      } catch (error) {
+        const err = error as Error & { stdout?: string; stderr?: string };
+        const output = err.stdout || err.stderr || err.message || '';
+        const hasUntrackedCollision = output.includes('already exists, no checkout') || output.includes('could not restore untracked files from stash');
+
+        if (!hasUntrackedCollision) {
+          throw error;
+        }
+
+        // A previous partial apply may have restored this stash's untracked files to disk,
+        // which blocks re-applying the stash. Remove identical copies and retry once.
+        await this.removeIdenticalStashUntrackedFiles(path, stashRef);
+        await execWithShellPath(`git stash apply ${stashRef}`, { cwd: path });
+      }
+      logger.info(`Applied stash: ${stashRef}`);
+    } catch (error) {
+      logger.error(`Failed to apply stash ${stashId}:`, error);
+
+      const err = error as Error & { stdout?: string; stderr?: string };
+      const output = err.stdout || err.stderr || err.message || '';
+      const hasConflicts = output.includes('CONFLICT') || output.includes('both modified');
+
+      if (hasConflicts) {
+        const gitError = new GitError('Failed to apply stash with conflicts. Resolve all conflicts manually.');
+        gitError.gitOutput = output;
+        gitError.workingDirectory = path;
+        gitError.originalError = error instanceof Error ? error : undefined;
+        throw gitError;
+      }
+
+      throw new Error(`Failed to apply stash: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Remove untracked files from the stash's untracked-files commit that already exist on disk
+   * with identical content (left behind by a partial stash apply), so the stash can be applied again.
+   * Tracked files and files with different content are never removed.
+   */
+  private async removeIdenticalStashUntrackedFiles(dir: string, stashRef: string): Promise<void> {
+    let files: string[] = [];
+    try {
+      const { stdout } = await execWithShellPath(`git ls-tree -r --name-only ${stashRef}^3`, { cwd: dir });
+      files = stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+    } catch (error) {
+      logger.debug('Failed to list untracked files from stash, skipping collision cleanup:', error);
+      return;
+    }
+
+    for (const file of files) {
+      const filePath = join(dir, file);
+      if (!existsSync(filePath)) {
+        continue;
+      }
+
+      // Never remove files that are tracked in the index
+      let isTracked = false;
+      try {
+        await execWithShellPath(`git ls-files --error-unmatch "${file}"`, { cwd: dir });
+        isTracked = true;
+      } catch {
+        // not in the index
+      }
+      if (isTracked) {
+        continue;
+      }
+
+      const { stdout: diskHash } = await execWithShellPath(`git hash-object "${file}"`, { cwd: dir });
+      const { stdout: stashHash } = await execWithShellPath(`git rev-parse "${stashRef}^3:${file}"`, { cwd: dir });
+      if (diskHash.trim() !== stashHash.trim()) {
+        throw new Error(`Cannot restore stash untracked file "${file}": a different file already exists at that path`);
+      }
+
+      logger.info(`Removing partially restored stash file before stash re-apply: ${file}`);
+      await rm(filePath, { force: true });
+    }
+  }
+
+  /**
+   * Drop a stash by its identifier
+   */
+  async dropStash(path: string, stashId: string): Promise<void> {
+    try {
+      // Find the stash entry that matches our identifier
+      const { stdout: stashList } = await execWithShellPath('git stash list', {
+        cwd: path,
+      });
+      const stashEntry = stashList.split('\n').find((line) => line.includes(stashId));
+
+      if (!stashEntry) {
+        logger.warn(`Stash with ID ${stashId} not found, skipping drop`);
+        return;
+      }
+
+      // Extract stash reference (e.g., "stash@{0}")
+      const stashRef = stashEntry.split(':')[0];
+      await execWithShellPath(`git stash drop ${stashRef}`, { cwd: path });
+      logger.info(`Dropped stash: ${stashRef}`);
+    } catch (error) {
+      logger.error(`Failed to drop stash ${stashId}:`, error);
+      // Don't throw - dropping stash is not critical
+    }
+  }
+
+  /**
+   * Merge worktree to main branch with uncommitted changes support
+   * Returns MergeState for potential revert
+   */
+  async mergeWorktreeToMainWithUncommitted(
+    projectPath: string,
+    taskId: string,
+    worktreePath: string,
+    squash: boolean,
+    commitMessage?: string,
+    targetBranch?: string,
+    symlinkFolders: string[] = [],
+    baseCommit?: string,
+  ): Promise<MergeState> {
+    return await withLock(`git-merge-worktree-${worktreePath}`, async () => {
+      const timestamp = Date.now();
+      const worktreeStashId = `worktree-${taskId.length > 24 ? taskId.substring(24) : taskId}-merge-${timestamp}`;
+      const mainStashId = `main-${taskId.length > 24 ? taskId.substring(24) : taskId}-merge-${timestamp}`;
+      let beforeMergeCommitHash = '';
+      let worktreeBranchCommitHash = '';
+      let mainOriginalStashId: string | undefined;
+      let mergeStarted = false;
+
+      const mainBranch = targetBranch || (await this.getProjectMainBranch(projectPath));
+
+      // If the project directory is on a different branch, update the target branch ref directly
+      // without checking it out (the working tree is left untouched)
+      const projectCurrentBranch = await this.getProjectMainBranch(projectPath).catch(() => '');
+      const checkoutless = Boolean(targetBranch) && projectCurrentBranch !== mainBranch;
+
+      try {
+        logger.info(`Starting ${squash ? 'squash' : 'merge'} operation with uncommitted changes support`);
+
+        // 1. Track initial state
+        const { stdout: mainCommit } = await execWithShellPath(`git rev-parse ${mainBranch}`, { cwd: projectPath });
+        beforeMergeCommitHash = mainCommit.trim();
+
+        const { stdout: worktreeCommit } = await execWithShellPath('git rev-parse HEAD', { cwd: worktreePath });
+        worktreeBranchCommitHash = worktreeCommit.trim();
+
+        logger.info('Initial state tracked', {
+          beforeMergeCommitHash,
+          worktreeBranchCommitHash,
+        });
+
+        // 2. Stash uncommitted changes in worktree
+        await this.stashUncommittedChanges(worktreeStashId, worktreePath, 'Worktree uncommitted changes before merge', symlinkFolders);
+
+        // 3. Stash uncommitted changes in main branch if any (not needed for checkoutless merge,
+        // since the project directory working tree is never touched)
+        if (!checkoutless) {
+          const mainStashResult = await this.stashUncommittedChanges(mainStashId, projectPath, 'Main branch uncommitted changes before merge', []);
+          if (mainStashResult) {
+            mainOriginalStashId = mainStashResult;
+          }
+        }
+
+        // 4. Perform the merge operation (existing methods handle the actual merge)
+        mergeStarted = true;
+        if (squash) {
+          if (!commitMessage) {
+            throw new Error('Commit message is required for squash merge');
+          }
+          await this.squashAndMergeWorktreeToMain(projectPath, worktreePath, mainBranch, commitMessage, baseCommit, checkoutless);
+        } else {
+          await this.mergeWorktreeToMain(projectPath, worktreePath, mainBranch, checkoutless);
+        }
+
+        // 5. Apply worktree stash to both branches (keeping changes uncommitted)
+        // For checkoutless merge the project directory is on a different branch, so the
+        // worktree's uncommitted changes are only restored into the worktree
+        if (worktreeStashId) {
+          if (checkoutless) {
+            logger.info('Skipping applying worktree stash to project directory (checkoutless merge)');
+          } else {
+            logger.info('Applying worktree stash to main branch');
+            await this.applyStash(projectPath, worktreeStashId);
+          }
+
+          logger.info('Applying worktree stash back to worktree');
+          await this.applyStash(worktreePath, worktreeStashId);
+
+          // Drop the worktree stash after successful application
+          await this.dropStash(worktreePath, worktreeStashId);
+        }
+
+        // 6. Restore main branch's original uncommitted changes if any
+        // DO NOT drop this stash - we need it for potential revert
+        if (mainOriginalStashId) {
+          logger.info('Restoring main branch original uncommitted changes');
+          await this.applyStash(projectPath, mainOriginalStashId);
+        }
+
+        logger.info('Merge operation completed successfully');
+
+        // Return merge state for potential revert
+        const mergeState: MergeState = {
+          beforeMergeCommitHash,
+          worktreeBranchCommitHash,
+          mainOriginalStashId,
+          targetBranch: mainBranch,
+          checkoutless,
+          timestamp,
+        };
+
+        return mergeState;
+      } catch (error) {
+        logger.error('Merge operation failed:', { error });
+
+        // Recovery: revert main repo to pre-merge state before restoring stashes
+        // Only when the merge step actually ran - otherwise the main working tree may still
+        // contain un-stashed changes that a hard reset would destroy
+        if (mergeStarted) {
+          if (checkoutless) {
+            // Checkoutless merge never touched the project working tree - only move the ref back
+            if (beforeMergeCommitHash) {
+              try {
+                await execWithShellPath(`git update-ref refs/heads/${mainBranch} ${beforeMergeCommitHash}`, { cwd: projectPath });
+                logger.info('Reverted target branch ref to pre-merge state');
+              } catch (recoveryError) {
+                logger.error('Failed to reset target branch ref to pre-merge state:', { error: recoveryError });
+              }
+            }
+          } else {
+            try {
+              // Abort any in-progress merge (in case merge itself failed)
+              await execWithShellPath('git merge --abort', { cwd: projectPath });
+            } catch {
+              // Ignore - no merge in progress
+            }
+
+            // Hard reset main to undo merge commit and clean conflict markers from failed stash apply
+            if (beforeMergeCommitHash) {
+              try {
+                await execWithShellPath(`git reset --hard ${beforeMergeCommitHash}`, { cwd: projectPath });
+                logger.info('Reverted main repo to pre-merge state');
+              } catch (recoveryError) {
+                logger.error('Failed to reset main repo to pre-merge state:', { error: recoveryError });
+              }
+            }
+          }
+        }
+
+        // Restore worktree stash
+        if (worktreeStashId) {
+          try {
+            await this.applyStash(worktreePath, worktreeStashId);
+            await this.dropStash(worktreePath, worktreeStashId);
+          } catch (recoveryError) {
+            logger.error('Failed to recover worktree stash:', {
+              error: recoveryError,
+            });
+          }
+        }
+
+        // Restore main's original uncommitted changes on the clean working tree
+        if (mainOriginalStashId) {
+          try {
+            await this.applyStash(projectPath, mainOriginalStashId);
+            await this.dropStash(projectPath, mainOriginalStashId);
+          } catch (recoveryError) {
+            logger.error('Failed to recover main branch stash:', {
+              error: recoveryError,
+              stashId: mainOriginalStashId,
+            });
+            throw new Error(
+              `The merge failed and your uncommitted changes on ${mainBranch} could not be restored automatically. ` +
+                `They are preserved in stash '${mainOriginalStashId}' - restore them manually with 'git stash list' and 'git stash apply'. ` +
+                `Original error: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
+
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * Check if worktree has uncommitted changes or unmerged commits
+   * Returns information about unsaved work in the worktree
+   */
+  async checkWorktreeForUnmergedWork(
+    projectPath: string,
+    worktreePath: string,
+    targetBranch?: string,
+    symlinkFolders: string[] = [],
+  ): Promise<{
+    hasUncommittedChanges: boolean;
+    hasUnmergedCommits: boolean;
+    unmergedCommitCount: number;
+    unmergedCommits: string[];
+    uncommittedFiles?: string[];
+  }> {
+    if (!existsSync(worktreePath)) {
+      logger.debug(`Worktree ${worktreePath} no longer exists, skipping unmerged work check`);
+      return {
+        hasUncommittedChanges: false,
+        hasUnmergedCommits: false,
+        unmergedCommitCount: 0,
+        unmergedCommits: [],
+        uncommittedFiles: [],
+      };
+    }
+
+    try {
+      // 1. Check for uncommitted changes
+      const { files: uncommittedFiles } = await this.getUncommittedFiles(worktreePath);
+
+      // Filter out files that belong to symlink folders (worktree infrastructure artifacts)
+      const filteredUncommittedFiles = uncommittedFiles.filter((file) => {
+        const pathPart = file.replace(/^..\s*/, '').trim();
+        const normalizedPath = pathPart.replace(/\\/g, '/');
+        return !symlinkFolders.some((folder) => normalizedPath.startsWith(`${folder}/`) || normalizedPath === folder);
+      });
+      const actualHasUncommittedChanges = filteredUncommittedFiles.length > 0;
+
+      // 2. Get the target branch name
+      const effectiveTargetBranch = targetBranch || (await this.getProjectMainBranch(projectPath));
+
+      // 3. Check for commits in worktree that are not in target branch
+      let unmergedCommitCount = 0;
+      let unmergedCommits: string[] = [];
+
+      try {
+        const { stdout: commits } = await execWithShellPath(`git log --oneline ${effectiveTargetBranch}..HEAD`, { cwd: worktreePath });
+        const commitLines = commits
+          .trim()
+          .split('\n')
+          .filter((line) => line.trim());
+
+        unmergedCommitCount = commitLines.length;
+        unmergedCommits = commitLines;
+      } catch (error) {
+        // If we can't get commits, log but don't fail
+        logger.warn('Failed to check for unmerged commits:', error);
+      }
+
+      const hasUnmergedCommits = unmergedCommitCount > 0;
+
+      return {
+        hasUncommittedChanges: actualHasUncommittedChanges,
+        hasUnmergedCommits,
+        unmergedCommitCount,
+        unmergedCommits,
+        uncommittedFiles: filteredUncommittedFiles,
+      };
+    } catch (error) {
+      logger.error('Failed to check worktree for unmerged work:', error);
+      // On error, return safe defaults (assume there might be work)
+      return {
+        hasUncommittedChanges: false,
+        hasUnmergedCommits: false,
+        unmergedCommitCount: 0,
+        unmergedCommits: [],
+        uncommittedFiles: [],
+      };
+    }
+  }
+
+  async getAheadCommits(worktreePath: string, targetBranch: string): Promise<WorktreeAheadCommits> {
+    const { stdout } = await execWithShellPath(`git log --oneline ${targetBranch}..HEAD`, { cwd: worktreePath });
+    const commits = stdout
+      .trim()
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+
+    return {
+      count: commits.length,
+      commits,
+    };
+  }
+
+  /**
+   * Get outgoing and incoming commits relative to a target branch, or relative to the
+   * upstream of the current branch when no target branch is provided.
+   * Fetches the remote first (throttled per repository) so un-fetched remote commits are counted too.
+   */
+  async getSyncCommits(repoPath: string, targetBranch?: string): Promise<GitSyncCommits> {
+    if (!(await this.ensureGitRepository(repoPath, 'get sync commits'))) {
+      return { outgoing: { count: 0, commits: [] }, incoming: { count: 0, commits: [] } };
+    }
+
+    let baseRef = targetBranch;
+
+    if (!baseRef) {
+      try {
+        const { stdout } = await execWithShellPath("git rev-parse --abbrev-ref '@{upstream}'", { cwd: repoPath });
+        baseRef = stdout.trim() || undefined;
+      } catch {
+        baseRef = undefined;
+      }
+    }
+
+    if (!baseRef) {
+      return {
+        outgoing: { count: 0, commits: [] },
+        incoming: { count: 0, commits: [] },
+      };
+    }
+
+    await this.fetchRemote(repoPath);
+
+    const parseCommits = (stdout: string) =>
+      stdout
+        .trim()
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+
+    const [outgoing, incoming] = await Promise.all([
+      execWithShellPath(`git log --oneline ${baseRef}..HEAD`, { cwd: repoPath }),
+      execWithShellPath(`git log --oneline HEAD..${baseRef}`, { cwd: repoPath }),
+    ]);
+
+    const outgoingCommits = parseCommits(outgoing.stdout);
+    const incomingCommits = parseCommits(incoming.stdout);
+
+    return {
+      outgoing: { count: outgoingCommits.length, commits: outgoingCommits },
+      incoming: { count: incomingCommits.length, commits: incomingCommits },
+    };
+  }
+
+  private async fetchRemote(repoPath: string): Promise<void> {
+    const lastFetchAt = this.remoteFetchTimestamps.get(repoPath) ?? 0;
+    if (Date.now() - lastFetchAt < REMOTE_FETCH_THROTTLE_MS) {
+      return;
+    }
+    this.remoteFetchTimestamps.set(repoPath, Date.now());
+
+    try {
+      await execWithShellPath('git fetch --quiet', { cwd: repoPath });
+    } catch (error) {
+      logger.debug('Failed to fetch remote for sync status:', error);
+    }
+  }
+
+  async getUncommittedFiles(worktreePath: string): Promise<WorktreeUncommittedFiles> {
+    if (!(await this.ensureGitRepository(worktreePath, 'get uncommitted files'))) {
+      return { count: 0, files: [] };
+    }
+
+    const { stdout } = await execWithShellPath('git status --porcelain=v1 -z', {
+      cwd: worktreePath,
+    });
+    const filePaths = this.parseGitStatusEntries(stdout);
+    const files = filePaths.filter((filePath) => !this.isSymlinkPath(worktreePath, filePath));
+
+    return {
+      count: files.length,
+      files: Array.from(new Set(files)),
+    };
+  }
+
+  private parseGitStatusEntries(stdout: string): string[] {
+    return stdout
+      .split('\0')
+      .map((entry) => entry.substring(3).trim())
+      .filter((filePath) => filePath.length > 0);
+  }
+
+  private isSymlinkPath(cwd: string, filePath: string): boolean {
+    try {
+      const fullPath = join(cwd, filePath);
+      const stat = lstatSync(fullPath);
+      return stat.isSymbolicLink();
+    } catch {
+      return false;
+    }
+  }
+
+  private isDirectoryPath(cwd: string, filePath: string): boolean {
+    try {
+      const fullPath = join(cwd, filePath);
+      const stat = lstatSync(fullPath);
+      return stat.isDirectory();
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Get updated files with per-commit and uncommitted diffs.
+   *
+   * Worktree mode grouped: returns files grouped by commit (with per-commit diffs)
+   * plus uncommitted files (with uncommitted diffs). A file can appear in multiple groups.
+   * Worktree mode flat: returns all changed files with cumulative diff from base,
+   * plus uncommitted changes vs HEAD. Each file appears once.
+   * Non-worktree mode: returns uncommitted files only (diff vs HEAD).
+   */
+  async getUpdatedFiles(
+    worktreePath: string,
+    workingMode?: WorkingMode,
+    mainBranch?: string,
+    groupMode: UpdatedFilesGroupMode = UpdatedFilesGroupMode.Grouped,
+  ): Promise<UpdatedFile[]> {
+    if (!(await this.ensureGitRepository(worktreePath, 'get updated files'))) {
+      return [];
+    }
+
+    try {
+      let files: UpdatedFile[];
+      if (workingMode === 'worktree' && mainBranch) {
+        if (groupMode === UpdatedFilesGroupMode.Flat) {
+          files = await this.getWorktreeFlatUpdatedFiles(worktreePath, mainBranch);
+        } else {
+          files = await this.getWorktreeUpdatedFiles(worktreePath, mainBranch);
+        }
+      } else {
+        files = await this.getNonWorktreeUpdatedFiles(worktreePath);
+      }
+
+      const filesWithUntrackedFiles = await this.includeUntrackedFiles(worktreePath, files);
+      return await this.markConflictingFiles(worktreePath, filesWithUntrackedFiles);
+    } catch (error) {
+      logger.warn('Failed to get updated files:', error);
+      return [];
+    }
+  }
+
+  private async includeUntrackedFiles(worktreePath: string, files: UpdatedFile[]): Promise<UpdatedFile[]> {
+    try {
+      const { stdout } = await execWithShellPath('git ls-files --others --exclude-standard -z', { cwd: worktreePath });
+      const untrackedPaths = stdout.split('\0').filter((filePath) => filePath.length > 0);
+      const updatedFiles = [...files];
+      const existingPaths = new Set(files.filter((file) => !file.commitHash).map((file) => file.path));
+
+      for (const filePath of untrackedPaths) {
+        if (existingPaths.has(filePath) || this.isSymlinkPath(worktreePath, filePath) || this.isDirectoryPath(worktreePath, filePath)) {
+          continue;
+        }
+
+        try {
+          const untrackedFile = await this.createUntrackedUpdatedFile(worktreePath, filePath);
+          updatedFiles.push(untrackedFile);
+        } catch (error) {
+          logger.warn(`Failed to get untracked file ${filePath}:`, error);
+        }
+      }
+
+      return updatedFiles;
+    } catch (error) {
+      logger.warn('Failed to get untracked files:', error);
+      return files;
+    }
+  }
+
+  private async createUntrackedUpdatedFile(worktreePath: string, filePath: string): Promise<UpdatedFile> {
+    const fileContentBuffer = await fs.readFile(join(worktreePath, filePath));
+    if (isBinary(filePath, fileContentBuffer)) {
+      return { path: filePath, additions: 0, deletions: 0, diff: '', isUntracked: true };
+    }
+
+    const content = fileContentBuffer.toString('utf8');
+    const lines = content.split('\n');
+    if (content.endsWith('\n')) {
+      lines.pop();
+    }
+
+    const additions = content.length === 0 ? 0 : lines.length;
+    return { path: filePath, additions, deletions: 0, diff: '', isUntracked: true };
+  }
+
+  /**
+   * Build the synthetic unified diff for an untracked (new) file.
+   */
+  private buildUntrackedFileDiff(fileContentBuffer: Buffer, filePath: string): string {
+    if (isBinary(filePath, fileContentBuffer)) {
+      return '';
+    }
+
+    const content = fileContentBuffer.toString('utf8');
+    const lines = content.split('\n');
+    if (content.endsWith('\n')) {
+      lines.pop();
+    }
+
+    const additions = content.length === 0 ? 0 : lines.length;
+    if (additions === 0) {
+      return '';
+    }
+
+    const oldPath = this.formatDiffPath(`a/${filePath}`);
+    const newPath = this.formatDiffPath(`b/${filePath}`);
+    const range = additions === 1 ? '1' : `1,${additions}`;
+    const diffLines = [
+      `diff --git ${oldPath} ${newPath}`,
+      'new file mode 100644',
+      '--- /dev/null',
+      `+++ ${newPath}`,
+      `@@ -0,0 +${range} @@`,
+      ...lines.map((line) => `+${line}`),
+    ];
+
+    if (!content.endsWith('\n')) {
+      diffLines.push('\\ No newline at end of file');
+    }
+
+    return diffLines.join('\n');
+  }
+
+  private formatDiffPath(filePath: string): string {
+    return /[\s"\\]/.test(filePath) ? JSON.stringify(filePath) : filePath;
+  }
+
+  /**
+   * Worktree mode: separate committed (per-commit) and uncommitted file diffs.
+   */
+  private async getWorktreeUpdatedFiles(worktreePath: string, mainBranch: string): Promise<UpdatedFile[]> {
+    const files: UpdatedFile[] = [];
+
+    // 1. Get commits in order (oldest first) between mainBranch and HEAD
+    const commits: Array<{ hash: string; message: string }> = [];
+    try {
+      const { stdout: logOutput } = await execWithShellPath(`git log --reverse --pretty=format:'%H|%s' ${mainBranch}..HEAD`, { cwd: worktreePath });
+
+      for (const line of logOutput.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.includes('|')) {
+          continue;
+        }
+        const [hash, message] = trimmed.split('|', 2);
+        commits.push({ hash, message });
+      }
+    } catch (logError) {
+      logger.warn('Failed to get commit list for worktree updated files:', logError);
+    }
+
+    // 2. For each commit, get its files (diffs are lazy loaded via getFileDiff)
+    for (const commit of commits) {
+      try {
+        // Get numstat for this specific commit
+        const { stdout: numstatOutput } = await execWithShellPath(`git diff-tree --no-commit-id -r --numstat ${commit.hash}`, { cwd: worktreePath });
+
+        // Build a map of filePath -> {additions, deletions} from numstat
+        const fileStats = new Map<string, { additions: number; deletions: number }>();
+        for (const line of numstatOutput.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed) {
+            continue;
+          }
+          const parts = trimmed.split('\t');
+          if (parts.length >= 3) {
+            const additions = parts[0] === '-' ? 0 : parseInt(parts[0], 10);
+            const deletions = parts[1] === '-' ? 0 : parseInt(parts[1], 10);
+            const filePath = parts.slice(2).join('\t');
+            if (filePath) {
+              fileStats.set(filePath, { additions, deletions });
+            }
+          }
+        }
+
+        // Emit one UpdatedFile per file in this commit (diff not included - lazy loaded via getFileDiff)
+        for (const [filePath, stats] of fileStats.entries()) {
+          // Skip symlink paths (worktree infrastructure artifacts)
+          if (this.isSymlinkPath(worktreePath, filePath)) {
+            continue;
+          }
+
+          files.push({
+            path: filePath,
+            additions: stats.additions,
+            deletions: stats.deletions,
+            diff: '',
+            commitHash: commit.hash,
+            commitMessage: commit.message,
+          });
+        }
+      } catch (commitError) {
+        logger.warn(`Failed to get files for commit ${commit.hash}:`, commitError);
+      }
+    }
+
+    // 3. Get uncommitted changes (diff against HEAD, not merge-base)
+    try {
+      // Check if HEAD exists (no commits yet in worktree)
+      await execWithShellPath('git rev-parse HEAD', { cwd: worktreePath });
+    } catch {
+      return files.concat(await this.getNoHeadUpdatedFiles(worktreePath));
+    }
+
+    try {
+      const { stdout: uncommittedNumstat } = await execWithShellPath('git diff --numstat -z HEAD', {
+        cwd: worktreePath,
+      });
+
+      const entries = uncommittedNumstat.split('\0').filter((entry) => entry.trim() !== '');
+
+      for (const entry of entries) {
+        const parts = entry.split('\t');
+        if (parts.length < 3) {
+          continue;
+        }
+
+        const additions = parts[0] === '-' ? 0 : parseInt(parts[0], 10);
+        const deletions = parts[1] === '-' ? 0 : parseInt(parts[1], 10);
+        const filePath = parts.slice(2).join('\t');
+        if (!filePath) {
+          continue;
+        }
+
+        // Skip symlink paths (worktree infrastructure artifacts)
+        if (this.isSymlinkPath(worktreePath, filePath)) {
+          continue;
+        }
+
+        files.push({ path: filePath, additions, deletions, diff: '' });
+      }
+    } catch (uncommittedError) {
+      logger.warn('Failed to get uncommitted changes:', uncommittedError);
+    }
+
+    return files;
+  }
+
+  /**
+   * Worktree flat mode: all changed files with diff from base to working tree,
+   * covering both committed and uncommitted changes in a single pass.
+   */
+  private async getWorktreeFlatUpdatedFiles(worktreePath: string, mainBranch: string): Promise<UpdatedFile[]> {
+    const files: UpdatedFile[] = [];
+
+    // Diff from the merge-base instead of the mainBranch tip, so commits on main that are not
+    // yet in this branch don't show up as reverse diffs.
+    let base = mainBranch;
+    try {
+      const { stdout: mergeBase } = await execWithShellPath(`git merge-base HEAD ${mainBranch}`, { cwd: worktreePath });
+      if (mergeBase.trim()) {
+        base = mergeBase.trim();
+      }
+    } catch {
+      // No HEAD or unrelated histories: fall back to mainBranch
+    }
+
+    try {
+      // git diff (without ...) compares the base directly to the working tree,
+      // including both committed and uncommitted changes.
+      const { stdout: numstatOutput } = await execWithShellPath(`git diff --numstat -z ${base}`, {
+        cwd: worktreePath,
+      });
+
+      const entries = numstatOutput.split('\0').filter((entry) => entry.trim() !== '');
+
+      for (const entry of entries) {
+        const parts = entry.split('\t');
+        if (parts.length < 3) {
+          continue;
+        }
+
+        const additions = parts[0] === '-' ? 0 : parseInt(parts[0], 10);
+        const deletions = parts[1] === '-' ? 0 : parseInt(parts[1], 10);
+        const filePath = parts.slice(2).join('\t');
+        if (!filePath) {
+          continue;
+        }
+
+        // Skip symlink paths (worktree infrastructure artifacts)
+        if (this.isSymlinkPath(worktreePath, filePath)) {
+          continue;
+        }
+
+        files.push({ path: filePath, additions, deletions, diff: '' });
+      }
+    } catch (baseDiffError) {
+      logger.warn('Failed to get base diff for worktree:', baseDiffError);
+    }
+
+    return files;
+  }
+
+  /**
+   * Non-worktree mode: simple uncommitted changes vs HEAD.
+   */
+  private async getNonWorktreeUpdatedFiles(worktreePath: string): Promise<UpdatedFile[]> {
+    try {
+      await execWithShellPath('git rev-parse HEAD', { cwd: worktreePath });
+    } catch {
+      return await this.getNoHeadUpdatedFiles(worktreePath);
+    }
+
+    const { stdout } = await execWithShellPath('git diff --numstat -z HEAD', {
+      cwd: worktreePath,
+    });
+
+    const entries = stdout.split('\0').filter((entry) => entry.trim() !== '');
+    const files: UpdatedFile[] = [];
+
+    for (const entry of entries) {
+      const parts = entry.split('\t');
+      if (parts.length >= 3) {
+        const additions = parts[0] === '-' ? 0 : parseInt(parts[0], 10);
+        const deletions = parts[1] === '-' ? 0 : parseInt(parts[1], 10);
+        const filePath = parts.slice(2).join('\t');
+
+        if (!filePath) {
+          continue;
+        }
+
+        // Skip symlink paths (worktree infrastructure artifacts)
+        if (this.isSymlinkPath(worktreePath, filePath)) {
+          continue;
+        }
+
+        files.push({ path: filePath, additions, deletions, diff: '' });
+      }
+    }
+
+    return files;
+  }
+
+  /**
+   * No-HEAD mode: repo has no commits yet. Uses the well-known empty tree hash
+   * as the diff base, which is equivalent to `git diff HEAD` against an empty repo.
+   * Shows staged files and unstaged modifications to staged files (same as `git diff HEAD`
+   * would show if HEAD pointed to an empty commit). Untracked files are not shown,
+   * consistent with the existing HEAD-based behavior.
+   */
+  private async getNoHeadUpdatedFiles(worktreePath: string): Promise<UpdatedFile[]> {
+    const EMPTY_TREE_HASH = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+    const files: UpdatedFile[] = [];
+
+    try {
+      const { stdout } = await execWithShellPath(`git diff --numstat -z ${EMPTY_TREE_HASH}`, {
+        cwd: worktreePath,
+      });
+
+      const entries = stdout.split('\0').filter((entry) => entry.trim() !== '');
+
+      for (const entry of entries) {
+        const parts = entry.split('\t');
+        if (parts.length < 3) {
+          continue;
+        }
+
+        const additions = parts[0] === '-' ? 0 : parseInt(parts[0], 10);
+        const deletions = parts[1] === '-' ? 0 : parseInt(parts[1], 10);
+        const filePath = parts.slice(2).join('\t');
+        if (!filePath) {
+          continue;
+        }
+
+        if (this.isSymlinkPath(worktreePath, filePath)) {
+          continue;
+        }
+
+        files.push({ path: filePath, additions, deletions, diff: '' });
+      }
+    } catch (error) {
+      logger.warn('Failed to get updated files for repo with no commits:', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    return files;
+  }
+
+  /**
+   * Lazy load the diff for a single updated file.
+   *
+   * - commitHash provided: per-commit diff for the file.
+   * - No commitHash: untracked file diff (synthesized) or file diff against HEAD,
+   *   merge-base (worktree flat mode) or the empty tree hash (no commits yet).
+   */
+  async getFileDiff(worktreePath: string, workingMode?: WorkingMode, mainBranch?: string, filePath?: string, commitHash?: string): Promise<string> {
+    if (!(await this.ensureGitRepository(worktreePath, 'get file diff'))) {
+      return '';
+    }
+
+    if (!filePath) {
+      return '';
+    }
+
+    try {
+      const escapedPath = filePath.replace(/"/g, '\\"');
+
+      if (commitHash) {
+        if (await this.checkBinaryOrSkip(worktreePath, filePath)) {
+          return '';
+        }
+        const { stdout } = await execWithShellPath(`git diff-tree -p -r --unified=3 ${commitHash} -- "${escapedPath}"`, {
+          cwd: worktreePath,
+          maxBuffer: 10 * 1024 * 1024,
+        });
+        return stdout;
+      }
+
+      // Untracked file: synthesize the diff from the file content
+      let isTracked = false;
+      try {
+        await execWithShellPath(`git ls-files --error-unmatch -- "${escapedPath}"`, { cwd: worktreePath });
+        isTracked = true;
+      } catch {
+        isTracked = false;
+      }
+      if (!isTracked) {
+        const fileContentBuffer = await fs.readFile(join(worktreePath, filePath));
+        return this.buildUntrackedFileDiff(fileContentBuffer, filePath);
+      }
+
+      // resolve diff base
+      let base = 'HEAD';
+      if (workingMode === 'worktree' && mainBranch) {
+        try {
+          const { stdout: mergeBase } = await execWithShellPath(`git merge-base HEAD ${mainBranch}`, { cwd: worktreePath });
+          if (mergeBase.trim()) {
+            base = mergeBase.trim();
+          } else {
+            base = mainBranch;
+          }
+        } catch {
+          base = mainBranch;
+        }
+      } else {
+        try {
+          await execWithShellPath('git rev-parse HEAD', { cwd: worktreePath });
+        } catch {
+          base = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+        }
+      }
+
+      if (await this.checkBinaryOrSkip(worktreePath, filePath)) {
+        return '';
+      }
+
+      const { stdout } = await execWithShellPath(`git diff --unified=3 ${base} -- "${escapedPath}"`, {
+        cwd: worktreePath,
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      return stdout;
+    } catch (error) {
+      logger.warn(`Failed to get diff for file ${filePath}:`, error);
+      return '';
+    }
+  }
+
+  /**
+   * Get full old and new contents of a file for a diff group.
+   * commitHash group: old = parent commit version, new = commit version.
+   * Uncommitted group: old = base (merge-base/HEAD) version, new = working tree.
+   */
+  async getFileContents(
+    worktreePath: string,
+    workingMode?: WorkingMode,
+    mainBranch?: string,
+    filePath?: string,
+    commitHash?: string,
+  ): Promise<{ oldContent: string; newContent: string }> {
+    const emptyContents = { oldContent: '', newContent: '' };
+    if (!filePath) {
+      return emptyContents;
+    }
+
+    try {
+      const escapedPath = filePath.replace(/"/g, '\\"');
+
+      if (await this.checkBinaryOrSkip(worktreePath, filePath)) {
+        return emptyContents;
+      }
+
+      if (commitHash) {
+        const { stdout: parent } = await execWithShellPath(`git rev-parse ${commitHash}^`, { cwd: worktreePath });
+        const parentHash = parent.trim();
+        const newContent = await this.safeGitShow(worktreePath, `${commitHash}`, escapedPath);
+        const oldContent = await this.safeGitShow(worktreePath, parentHash, escapedPath);
+        return { oldContent, newContent };
+      }
+
+      // Resolve the base the same way as getFileDiff
+      let base = 'HEAD';
+      if (workingMode === 'worktree' && mainBranch) {
+        try {
+          const { stdout: mergeBase } = await execWithShellPath(`git merge-base HEAD ${mainBranch}`, { cwd: worktreePath });
+          if (mergeBase.trim()) {
+            base = mergeBase.trim();
+          } else {
+            base = mainBranch;
+          }
+        } catch {
+          base = mainBranch;
+        }
+      } else {
+        try {
+          await execWithShellPath('git rev-parse HEAD', { cwd: worktreePath });
+        } catch {
+          base = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+        }
+      }
+
+      const newContent = await fs
+        .readFile(join(worktreePath, filePath))
+        .then((data) => data.toString('utf8'))
+        .catch(() => '');
+      const oldContent = await this.safeGitShow(worktreePath, base, escapedPath);
+      return { oldContent, newContent };
+    } catch (error) {
+      logger.warn(`Failed to get file contents for ${filePath}:`, error);
+      return emptyContents;
+    }
+  }
+
+  private async safeGitShow(worktreePath: string, ref: string, escapedPath: string): Promise<string> {
+    try {
+      const { stdout } = await execWithShellPath(`git show ${ref}:"${escapedPath}"`, { cwd: worktreePath, maxBuffer: 10 * 1024 * 1024 });
+      return stdout;
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * Check if the file at the given path (relative to worktreePath) is binary.
+   */
+  private async checkBinaryOrSkip(worktreePath: string, filePath: string): Promise<boolean> {
+    try {
+      const fileExists = await fs
+        .access(join(worktreePath, filePath))
+        .then(() => true)
+        .catch(() => false);
+      if (fileExists) {
+        const fileContentBuffer = await fs.readFile(join(worktreePath, filePath));
+        return isBinary(filePath, fileContentBuffer);
+      }
+    } catch {
+      // If we can't check, assume regular (text) file
+    }
+    return false;
+  }
+
+  private async markConflictingFiles(worktreePath: string, files: UpdatedFile[]): Promise<UpdatedFile[]> {
+    try {
+      const { stdout } = await execWithShellPath('git diff --name-only --diff-filter=U', { cwd: worktreePath });
+      const unmergedFiles = new Set(
+        stdout
+          .split('\n')
+          .map((l) => l.trim())
+          .filter((l) => l.length > 0),
+      );
+
+      if (unmergedFiles.size === 0) {
+        return files;
+      }
+
+      return files.map((f) => (unmergedFiles.has(f.path) ? { ...f, hasConflicts: true } : f));
+    } catch {
+      return files;
+    }
+  }
+
+  async addFileToGit(worktreePath: string, filePath: string): Promise<void> {
+    if (!(await this.ensureGitRepository(worktreePath, 'add file to git'))) {
+      return;
+    }
+
+    // Files explicitly added by the user should always be staged: -f handles ignored files
+    // (git check-ignore is unreliable here: negation rules under an excluded parent directory,
+    // e.g. .aider* + !.aider-desk/rules, report "not ignored" but git add still refuses),
+    // -A stages deletions (git add fails with "pathspec did not match any files" for files removed on disk)
+    const escapedPath = filePath.replace(/(["\\$`])/g, '\\$1');
+    try {
+      await execWithShellPath(`git add -- "${escapedPath}"`, { cwd: worktreePath });
+    } catch (error) {
+      logger.debug(`Failed to stage ${filePath}, retrying with -A -f (file may be deleted or gitignored):`, error);
+      await execWithShellPath(`git add -A -f -- "${escapedPath}"`, { cwd: worktreePath });
+    }
+  }
+
+  async stageFile(worktreePath: string, filePath: string): Promise<boolean> {
+    if (!(await this.ensureGitRepository(worktreePath, 'stage file'))) {
+      return false;
+    }
+
+    const escapedPath = filePath.replace(/(["\\$`])/g, '\\$1');
+    await execWithShellPath(`git add -- "${escapedPath}"`, { cwd: worktreePath });
+    return true;
+  }
+
+  async undoLastCommit(worktreePath: string): Promise<{ commitHash: string; commitMessage: string } | null> {
+    if (!(await this.ensureGitRepository(worktreePath, 'undo last commit'))) {
+      return null;
+    }
+
+    // Use the git root directory to handle monorepo scenarios
+    const { stdout: gitRootOutput } = await execWithShellPath('git rev-parse --show-toplevel', { cwd: worktreePath });
+    const gitRoot = gitRootOutput.trim() || worktreePath;
+    const gitRootDir = simpleGit(gitRoot);
+
+    const commitHash = await gitRootDir.revparse(['HEAD']);
+    const commitMessage = await gitRootDir.show(['--format=%s', '--no-patch', 'HEAD']);
+
+    const lastCommitFiles = await gitRootDir.show(['--name-only', '--pretty=format:', 'HEAD']);
+    const files = lastCommitFiles.split('\n').filter((file) => file.trim() !== '');
+
+    for (const file of files) {
+      try {
+        // Check if file exists at HEAD~1
+        await gitRootDir.show(['HEAD~1', '--', file]);
+        // If it exists, checkout the previous version
+        await gitRootDir.checkout(['HEAD~1', '--', file]);
+      } catch {
+        await gitRootDir.rm(file);
+      }
+    }
+
+    // Reset --soft HEAD~1
+    await gitRootDir.reset(['--soft', 'HEAD~1']);
+
+    return { commitHash: commitHash.trim(), commitMessage: commitMessage.trim() };
+  }
+
+  async restoreFile(worktreePath: string, filePath: string): Promise<void> {
+    if (!(await this.ensureGitRepository(worktreePath, 'restore file'))) {
+      return;
+    }
+
+    try {
+      logger.info(`Restoring file: ${filePath}`, { worktreePath });
+      const escapedPath = filePath.replace(/"/g, '\\"');
+
+      // Check if file exists in HEAD (committed)
+      let existsInHead = false;
+      try {
+        await execWithShellPath(`git cat-file -e HEAD:"${escapedPath}"`, { cwd: worktreePath });
+        existsInHead = true;
+      } catch {
+        existsInHead = false;
+      }
+
+      if (existsInHead) {
+        // File exists in HEAD - restore both staged area and working tree from HEAD
+        await execWithShellPath(`git restore --staged --worktree --source=HEAD -- "${escapedPath}"`, {
+          cwd: worktreePath,
+        });
+      } else {
+        // New file not in HEAD - remove from index and delete working tree copy
+        try {
+          await execWithShellPath(`git rm --cached -f -- "${escapedPath}"`, { cwd: worktreePath });
+        } catch {
+          // File might not be in the index
+        }
+
+        const absolutePath = join(worktreePath, filePath);
+        try {
+          const stats = await lstat(absolutePath);
+          if (stats.isDirectory()) {
+            await rm(absolutePath, { recursive: true, force: true });
+          } else {
+            await fs.unlink(absolutePath);
+          }
+        } catch (error) {
+          if (!isFileNotFoundError(error)) {
+            throw error;
+          }
+        }
+      }
+
+      logger.info(`Successfully restored file: ${filePath}`);
+    } catch (error) {
+      logger.error(`Failed to restore file ${filePath}:`, error);
+      throw error;
+    }
+  }
+
+  async getUncommittedDiff(worktreePath: string, filePaths?: string[]): Promise<string | null> {
+    const pathspecs = (filePaths ?? []).map((filePath) => ` -- "${filePath.replace(/"/g, '\\"')}"`).join('');
+
+    try {
+      const { stdout } = await execWithShellPath(`git diff HEAD${pathspecs}`, { cwd: worktreePath });
+      return stdout || null;
+    } catch (error) {
+      // Unborn HEAD (repository with no commits yet): fall back to diffing against the empty tree
+      let headExists = false;
+      try {
+        await execWithShellPath('git rev-parse HEAD', { cwd: worktreePath });
+        headExists = true;
+      } catch {
+        // no commits yet
+      }
+
+      if (headExists) {
+        logger.error('Failed to get uncommitted diff:', error);
+        return null;
+      }
+    }
+
+    let diffText = '';
+    try {
+      const { stdout } = await execWithShellPath(`git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904${pathspecs}`, { cwd: worktreePath });
+      diffText = stdout || '';
+    } catch (error) {
+      logger.warn('Failed to get diff against empty tree:', error);
+    }
+
+    // The empty tree diff only shows staged changes - also include untracked files
+    try {
+      const { stdout: untrackedOutput } = await execWithShellPath('git ls-files --others --exclude-standard -z', { cwd: worktreePath });
+      for (const filePath of untrackedOutput.split('\0').filter((untrackedPath) => untrackedPath.length > 0)) {
+        if (filePaths && filePaths.length > 0 && !filePaths.includes(filePath)) {
+          continue;
+        }
+        try {
+          const fileContentBuffer = await fs.readFile(join(worktreePath, filePath));
+          diffText += `${diffText ? '\n' : ''}${this.buildUntrackedFileDiff(fileContentBuffer, filePath)}`;
+        } catch (error) {
+          logger.warn(`Failed to read untracked file ${filePath}:`, error);
+        }
+      }
+    } catch (error) {
+      logger.warn('Failed to list untracked files:', error);
+    }
+
+    return diffText || null;
+  }
+
+  cancelCommitChanges(worktreePath: string): boolean {
+    const controller = this.commitCancelControllers.get(worktreePath);
+    if (!controller) {
+      return false;
+    }
+    controller.abort();
+    return true;
+  }
+
+  async commitChanges(worktreePath: string, message: string, amend: boolean, filePaths?: string[]): Promise<boolean> {
+    if (!(await this.ensureGitRepository(worktreePath, 'commit changes'))) {
+      return false;
+    }
+
+    const cancelController = new AbortController();
+    this.commitCancelControllers.set(worktreePath, cancelController);
+    const options = { cwd: worktreePath, signal: cancelController.signal, killSignal: 'SIGINT' as const };
+
+    try {
+      logger.info(`Committing changes${amend ? ' (amend)' : ''}`, { worktreePath });
+
+      // Get the list of updated files (unstaged changes that are shown in the UI)
+      const updatedFiles = await this.getUpdatedFiles(worktreePath);
+      const selectedFiles = filePaths ? updatedFiles.filter((file) => filePaths.includes(file.path)) : updatedFiles;
+
+      if (selectedFiles.length === 0 && !amend) {
+        logger.info('No updated files to commit');
+        return true;
+      }
+
+      // Stage updated files before committing
+      if (selectedFiles.length > 0) {
+        for (const file of selectedFiles) {
+          if (cancelController.signal.aborted) {
+            logger.info('Commit cancelled while staging files', { worktreePath });
+            return false;
+          }
+          const escapedPath = file.path.replace(/"/g, '\\"');
+          try {
+            await execWithShellPath(`git add -- "${escapedPath}"`, options);
+          } catch (error) {
+            if (isAbortError(error)) {
+              throw error;
+            }
+            // Retry with -A -f: files explicitly selected in the UI should always be staged.
+            // -A stages deletions (git add fails with "pathspec did not match any files" for
+            // files removed on disk), -f handles ignored files (git check-ignore misses
+            // directory-traversal exclusions like .aider* ignoring .aider-desk/rules
+            // despite a negation pattern)
+            logger.debug(`Failed to stage ${file.path}, retrying with -A -f (file may be deleted or gitignored):`, error);
+            await execWithShellPath(`git add -A -f -- "${escapedPath}"`, options);
+          }
+        }
+        logger.info(`Staged ${selectedFiles.length} file(s) for commit`);
+      }
+
+      if (cancelController.signal.aborted) {
+        logger.info('Commit cancelled before committing', { worktreePath });
+        return false;
+      }
+
+      // Escape the commit message for shell
+      const escapedMessage = message.replace(/"/g, '\\"');
+      const amendFlag = amend ? ' --amend' : '';
+      // If amending and message is empty, use --no-edit to keep previous message
+      const commitCommand = amend && !message.trim() ? 'git commit --amend --no-edit' : `git commit${amendFlag} -m "${escapedMessage}"`;
+      await execWithShellPath(commitCommand, options);
+
+      logger.info(`Successfully committed changes${amend ? ' (amended)' : ''}`);
+      return true;
+    } catch (error) {
+      if (isAbortError(error)) {
+        logger.info(`Commit changes cancelled${amend ? ' (amend)' : ''}`, { worktreePath });
+        return false;
+      }
+      logger.debug('Failed to commit changes:', error);
+      throw error;
+    } finally {
+      this.commitCancelControllers.delete(worktreePath);
+    }
+  }
+
+  async getRebaseState(worktreePath: string): Promise<RebaseState> {
+    try {
+      const { stdout } = await execWithShellPath('git status --porcelain=v1', {
+        cwd: worktreePath,
+      });
+      const lines = stdout
+        .split('\n')
+        .map((l) => l.trimEnd())
+        .filter((l) => l.length > 0);
+
+      const unmergedFiles = lines
+        .filter((l) => {
+          const status = l.slice(0, 2);
+          return ['UU', 'AA', 'DD', 'AU', 'UA', 'DU', 'UD'].includes(status);
+        })
+        .map((l) => l.slice(3).trim())
+        .filter((l) => l.length > 0);
+
+      let inProgress = false;
+      try {
+        const { stdout: rebaseDir } = await execWithShellPath('git rev-parse --git-path rebase-merge', { cwd: worktreePath });
+        if (rebaseDir.trim().length > 0) {
+          await execWithShellPath(`test -e "${rebaseDir.trim()}"`, {
+            cwd: worktreePath,
+          });
+          inProgress = true;
+        }
+      } catch {
+        // ignore
+      }
+
+      if (!inProgress) {
+        try {
+          const { stdout: rebaseDir } = await execWithShellPath('git rev-parse --git-path rebase-apply', { cwd: worktreePath });
+          if (rebaseDir.trim().length > 0) {
+            await execWithShellPath(`test -e "${rebaseDir.trim()}"`, {
+              cwd: worktreePath,
+            });
+            inProgress = true;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      return {
+        inProgress,
+        hasUnmergedPaths: unmergedFiles.length > 0,
+        unmergedFiles: unmergedFiles.length > 0 ? unmergedFiles : undefined,
+      };
+    } catch {
+      return {
+        inProgress: false,
+        hasUnmergedPaths: false,
+      };
+    }
+  }
+
+  async getUnmergedFiles(worktreePath: string): Promise<string[]> {
+    const { stdout } = await execWithShellPath('git diff --name-only --diff-filter=U', { cwd: worktreePath });
+    return stdout
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+  }
+
+  async getStageFileContent(worktreePath: string, stage: 1 | 2 | 3, filePath: string): Promise<string | null> {
+    try {
+      const { stdout } = await execWithShellPath(`git show :${stage}:${filePath}`, { cwd: worktreePath });
+      return stdout;
+    } catch {
+      return null;
+    }
+  }
+
+  async collectConflictContext(worktreePath: string, filePath: string): Promise<ConflictResolutionFileContext> {
+    const [base, ours, theirs, current] = await Promise.all([
+      this.getStageFileContent(worktreePath, 1, filePath),
+      this.getStageFileContent(worktreePath, 2, filePath),
+      this.getStageFileContent(worktreePath, 3, filePath),
+      fs.readFile(`${worktreePath}/${filePath}`, 'utf8').catch(() => ''),
+    ]);
+
+    return {
+      filePath,
+      base,
+      ours,
+      theirs,
+      current,
+    };
+  }
+
+  /**
+   * Reset a temporary commit back to uncommitted changes state
+   */
+  private async resetTempCommit(worktreePath: string): Promise<void> {
+    try {
+      await execWithShellPath('git reset --soft HEAD^', { cwd: worktreePath });
+    } catch (error) {
+      logger.error('Failed to reset temp commit:', error);
+      throw new Error(`Failed to restore uncommitted changes: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Reset temporary commit if it exists by finding it by name pattern
+   */
+  private async resetTempCommitIfExists(worktreePath: string): Promise<void> {
+    try {
+      // Check if HEAD is a temporary commit
+      const { stdout: commitMessage } = await execWithShellPath('git log -1 --pretty=format:%s', {
+        cwd: worktreePath,
+      });
+
+      if (commitMessage.includes('TEMP_UNCOMMITTED_')) {
+        logger.info('Resetting temporary commit back to uncommitted changes');
+        await this.resetTempCommit(worktreePath);
+      }
+    } catch (error) {
+      logger.debug('Failed to check/reset temporary commit:', error);
+      // Don't throw - this is cleanup logic
+    }
+  }
+
+  async stageResolvedFile(worktreePath: string, filePath: string, content: string): Promise<void> {
+    await fs.writeFile(`${worktreePath}/${filePath}`, content, 'utf8');
+    await execWithShellPath(`git add -- "${filePath}"`, { cwd: worktreePath });
+  }
+
+  async listConflictedFiles(worktreePath: string): Promise<string[]> {
+    return await this.getUnmergedFiles(worktreePath);
+  }
+
+  /**
+   * Apply uncommitted changes from worktree to the branch currently checked out in the
+   * project directory without merging commits or switching branches
+   * This transfers work-in-progress changes while keeping them uncommitted in both branches
+   */
+  async applyUncommittedChangesToMain(projectPath: string, taskId: string, worktreePath: string, symlinkFolders: string[] = []): Promise<void> {
+    return await withLock(`git-apply-uncommitted-${worktreePath}`, async () => {
+      const timestamp = Date.now();
+      const worktreeStashId = `worktree-${taskId.length > 24 ? taskId.substring(24) : taskId}-uncommitted-${timestamp}`;
+      const projectStashId = `main-${taskId.length > 24 ? taskId.substring(24) : taskId}-uncommitted-${timestamp}`;
+      let projectOriginalStashId: string | undefined;
+
+      try {
+        logger.info('Starting apply uncommitted changes operation');
+
+        // 1. Check if there are uncommitted changes in worktree
+        const hasChanges = await this.hasUncommittedChanges(worktreePath);
+        if (!hasChanges) {
+          logger.info('No uncommitted changes to apply');
+          return;
+        }
+
+        // 2. Stash uncommitted changes from worktree
+        const stashResult = await this.stashUncommittedChanges(worktreeStashId, worktreePath, 'Uncommitted changes to apply to main', symlinkFolders);
+        if (!stashResult) {
+          logger.info('No changes were stashed');
+          return;
+        }
+
+        const targetBranch = await this.getProjectMainBranch(projectPath);
+
+        // 3. Stash uncommitted changes in the project directory to keep them safe while applying
+        const projectStashResult = await this.stashUncommittedChanges(
+          projectStashId,
+          projectPath,
+          'Project directory uncommitted changes before applying worktree changes',
+          [],
+        );
+        if (projectStashResult) {
+          projectOriginalStashId = projectStashResult;
+        }
+
+        // 4. Apply stash to the currently checked out branch (keeping uncommitted)
+        logger.info(`Applying uncommitted changes to ${targetBranch} branch`);
+        await this.applyStash(projectPath, worktreeStashId);
+
+        // 5. Apply stash back to worktree (keeping uncommitted)
+        logger.info('Applying uncommitted changes back to worktree');
+        await this.applyStash(worktreePath, worktreeStashId);
+
+        // 6. Clean up stash
+        await this.dropStash(worktreePath, worktreeStashId);
+
+        // 7. Restore project directory's original uncommitted changes if any
+        if (projectOriginalStashId) {
+          logger.info('Restoring project directory original uncommitted changes');
+          await this.applyStash(projectPath, projectOriginalStashId);
+          await this.dropStash(projectPath, projectOriginalStashId);
+        }
+
+        logger.info(`Successfully applied uncommitted changes to ${targetBranch} branch`);
+      } catch (error) {
+        logger.error('Failed to apply uncommitted changes:', error);
+
+        // Recovery: clean up project directory from failed stash apply
+        try {
+          await execWithShellPath('git reset --hard', { cwd: projectPath });
+          logger.info('Cleaned up project directory after failed stash apply');
+        } catch (recoveryError) {
+          logger.error('Failed to clean up project directory:', { error: recoveryError });
+        }
+
+        // Restore project directory's original uncommitted changes
+        if (projectOriginalStashId) {
+          try {
+            await this.applyStash(projectPath, projectOriginalStashId);
+            await this.dropStash(projectPath, projectOriginalStashId);
+          } catch (recoveryError) {
+            logger.error('Failed to recover project directory stash:', recoveryError);
+          }
+        }
+
+        // Restore stash to worktree
+        if (worktreeStashId) {
+          try {
+            await this.applyStash(worktreePath, worktreeStashId);
+            await this.dropStash(worktreePath, worktreeStashId);
+          } catch (recoveryError) {
+            logger.error('Failed to recover worktree stash:', recoveryError);
+          }
+        }
+
+        throw new Error(`Failed to apply uncommitted changes: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    });
+  }
+
+  /**
+   * Revert a merge operation using the stored MergeState
+   * Restores the main branch to its pre-merge state while preserving uncommitted changes
+   */
+  async revertMerge(projectPath: string, taskId: string, worktreePath: string, mergeState: MergeState, symlinkFolders: string[] = []): Promise<void> {
+    return await withLock(`git-revert-merge-${worktreePath}`, async () => {
+      const timestamp = Date.now();
+      const currentWorktreeStashId = `worktree-${taskId.length > 24 ? taskId.substring(24) : taskId}-revert-${timestamp}`;
+      const currentMainStashId = `main-${taskId.length > 24 ? taskId.substring(24) : taskId}-revert-${timestamp}`;
+
+      let worktreeRevertStashId: string | null = null;
+      let mainRevertStashId: string | null = null;
+
+      try {
+        logger.info('Starting merge revert operation', { mergeState });
+
+        const targetBranch = mergeState.targetBranch || (await this.getProjectMainBranch(projectPath));
+        const projectCurrentBranch = await this.getProjectMainBranch(projectPath).catch(() => '');
+        // For a checkoutless merge the ref is moved back directly, unless the user has since
+        // checked out the target branch in the project directory
+        const checkoutlessRevert = Boolean(mergeState.checkoutless) && projectCurrentBranch !== targetBranch;
+
+        // 1. Stash current uncommitted changes in worktree
+        worktreeRevertStashId = await this.stashUncommittedChanges(
+          currentWorktreeStashId,
+          worktreePath,
+          'Current uncommitted changes before revert',
+          symlinkFolders,
+        );
+
+        if (checkoutlessRevert) {
+          // 2. Move the target branch ref back to the pre-merge state without touching the project working tree
+          logger.info(`Resetting ${targetBranch} branch to ${mergeState.beforeMergeCommitHash} (without checkout)`);
+          await execWithShellPath(`git update-ref refs/heads/${targetBranch} ${mergeState.beforeMergeCommitHash}`, { cwd: projectPath });
+        } else {
+          // 2. Stash current uncommitted changes in main repo to clean the working directory
+          // This is crucial to avoid conflicts with untracked files when applying the original stash
+          mainRevertStashId = await this.stashUncommittedChanges(currentMainStashId, projectPath, 'Current uncommitted changes before revert', []);
+
+          // 3. Switch to the branch we merged into, then reset it to previous state
+          await execWithShellPath(`git checkout ${targetBranch}`, {
+            cwd: projectPath,
+          });
+
+          logger.info(`Resetting ${targetBranch} branch to ${mergeState.beforeMergeCommitHash}`);
+          await execWithShellPath(`git reset --hard ${mergeState.beforeMergeCommitHash}`, { cwd: projectPath });
+        }
+
+        // 4. Reset worktree branch to previous state
+        logger.info(`Resetting worktree branch to ${mergeState.worktreeBranchCommitHash}`);
+        await execWithShellPath(`git reset --hard ${mergeState.worktreeBranchCommitHash}`, { cwd: worktreePath });
+
+        // 5. Restore main's original uncommitted changes if they were preserved
+        if (mergeState.mainOriginalStashId) {
+          logger.info('Restoring main branch original uncommitted changes');
+          await this.applyStash(projectPath, mergeState.mainOriginalStashId);
+          // Clean up the stash after successful revert
+          await this.dropStash(projectPath, mergeState.mainOriginalStashId);
+        }
+
+        // 6. Restore uncommitted changes in worktree
+        if (worktreeRevertStashId) {
+          logger.info('Restoring uncommitted changes in worktree');
+          await this.applyStash(worktreePath, currentWorktreeStashId);
+          await this.dropStash(worktreePath, currentWorktreeStashId);
+        }
+
+        // 7. Clean up temporary main stash
+        // We don't apply it back because we want to revert to the state BEFORE the merge (with original changes)
+        // Applying it back would re-introduce the changes that were just merged
+        if (mainRevertStashId) {
+          await this.dropStash(projectPath, currentMainStashId);
+        }
+
+        logger.info('Merge revert completed successfully');
+      } catch (error) {
+        logger.error('Failed to revert merge:', error);
+
+        // Recovery: try to restore stashes
+        if (worktreeRevertStashId) {
+          try {
+            await this.applyStash(worktreePath, currentWorktreeStashId);
+            await this.dropStash(worktreePath, currentWorktreeStashId);
+          } catch (recoveryError) {
+            logger.error('Failed to recover worktree stash:', recoveryError);
+          }
+        }
+
+        if (mainRevertStashId) {
+          try {
+            await this.applyStash(projectPath, currentMainStashId);
+            await this.dropStash(projectPath, currentMainStashId);
+          } catch (recoveryError) {
+            logger.error('Failed to recover main branch stash:', recoveryError);
+          }
+        }
+
+        throw new Error(`Failed to revert merge: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    });
+  }
+
+  private async pruneDeleted(projectDir: string): Promise<void> {
+    logger.info('Pruning deleted worktrees', {
+      projectDir,
+    });
+    const worktrees = await this.listWorktrees(projectDir);
+    logger.debug('Found worktrees', {
+      worktrees,
+    });
+    for (const worktree of worktrees) {
+      if (worktree.path.startsWith(path.join(projectDir, AIDER_DESK_TASKS_DIR)) && worktree.prunable) {
+        try {
+          logger.debug(`Pruning deleted worktree: ${worktree.path}`);
+          await execWithShellPath(`git worktree remove ${worktree.path}`, {
+            cwd: projectDir,
+          });
+        } catch (error) {
+          logger.warn('Failed to prune worktree:', {
+            worktree,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          // in case of failure, try to remove the directory manually
+          await rm(worktree.path, { recursive: true, force: true });
+        }
+      }
+    }
+  }
+
+  async mergeWorktreeToWorktree(sourceWorktreeDir: string, targetWorktreeDir: string, includeUncommitted = false): Promise<void> {
+    logger.info('Merging worktree to worktree', {
+      sourceWorktreeDir,
+      targetWorktreeDir,
+      includeUncommitted,
+    });
+
+    if (sourceWorktreeDir === targetWorktreeDir) {
+      logger.warn('Source and target worktree directories are the same, skipping merge');
+      return;
+    }
+
+    const { stdout: sourceHead } = await execWithShellPath('git rev-parse HEAD', { cwd: sourceWorktreeDir });
+    const { stdout: targetHead } = await execWithShellPath('git rev-parse HEAD', { cwd: targetWorktreeDir });
+    const sourceCommit = sourceHead.trim();
+    const targetCommit = targetHead.trim();
+
+    if (sourceCommit === targetCommit) {
+      logger.info('Source and target worktrees are at the same commit, skipping commit merge');
+    } else {
+      const { stdout: mergeBase } = await execWithShellPath(`git merge-base ${sourceCommit} ${targetCommit}`, {
+        cwd: targetWorktreeDir,
+      });
+      const baseCommit = mergeBase.trim();
+
+      if (baseCommit === sourceCommit) {
+        logger.info('Source worktree has no commits ahead of target, skipping commit merge');
+      } else if (baseCommit === targetCommit) {
+        logger.info('Target worktree is at merge base, fast-forwarding to source HEAD');
+        try {
+          await execWithShellPath(`git merge --ff-only ${sourceCommit}`, { cwd: targetWorktreeDir });
+          logger.info('Successfully fast-forwarded target worktree to source HEAD');
+        } catch (error) {
+          logger.error('Failed to fast-forward target worktree:', { error });
+          throw new Error(`Failed to fast-forward target worktree to source HEAD. Error: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      } else {
+        logger.info('Worktrees have diverged, cherry-picking source commits onto target');
+        const { stdout: commits } = await execWithShellPath(`git log --reverse --format=%H ${baseCommit}..${sourceCommit}`, {
+          cwd: sourceWorktreeDir,
+        });
+        const commitList = commits.trim().split('\n').filter(Boolean);
+
+        if (commitList.length === 0) {
+          logger.info('No commits to cherry-pick');
+        } else {
+          for (const commitHash of commitList) {
+            try {
+              await execWithShellPath(`git cherry-pick ${commitHash}`, { cwd: targetWorktreeDir });
+              logger.debug(`Cherry-picked commit ${commitHash.substring(0, 8)}`);
+            } catch (error) {
+              try {
+                await execWithShellPath('git cherry-pick --abort', { cwd: targetWorktreeDir });
+              } catch {
+                // Ignore abort errors
+              }
+              throw new Error(
+                `Failed to cherry-pick commit ${commitHash.substring(0, 8)} onto target worktree. ` +
+                  `Cherry-pick aborted. Error: ${error instanceof Error ? error.message : String(error)}`,
+              );
+            }
+          }
+          logger.info(`Successfully cherry-picked ${commitList.length} commit(s) onto target worktree`);
+        }
+      }
+    }
+
+    if (includeUncommitted) {
+      const hasChanges = await this.hasUncommittedChanges(sourceWorktreeDir);
+      if (!hasChanges) {
+        logger.info('No uncommitted changes in source worktree, skipping uncommitted merge');
+        return;
+      }
+
+      const timestamp = Date.now();
+      const stashId = `worktree-to-worktree-${timestamp}`;
+
+      try {
+        const stashResult = await this.stashUncommittedChanges(stashId, sourceWorktreeDir, 'Uncommitted changes carried over to target worktree');
+
+        if (!stashResult) {
+          logger.info('No changes to carry over after stash attempt');
+          return;
+        }
+
+        try {
+          await this.applyStash(targetWorktreeDir, stashId);
+          await this.applyStash(sourceWorktreeDir, stashId);
+        } catch (error) {
+          logger.error('Failed to apply stash to worktrees:', { error });
+          try {
+            await this.applyStash(sourceWorktreeDir, stashId);
+          } catch (restoreError) {
+            logger.error('Failed to restore stash to source worktree:', { error: restoreError, stashId });
+            throw new Error(
+              `Failed to apply stashed changes to target worktree and could not restore them. Stash ID "${stashId}" still exists. Manual recovery required. Original error: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+          throw new Error(
+            `Failed to apply stashed changes to target worktree. Changes have been restored to source worktree. Error: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+
+        await this.dropStash(sourceWorktreeDir, stashId);
+      } catch (error) {
+        logger.error('Failed to carry over uncommitted changes:', { error });
+        throw error;
+      }
+    }
+  }
+
+  async close(projectDir: string) {
+    logger.info('Closing worktree manager');
+    await this.pruneDeleted(projectDir);
+  }
+}

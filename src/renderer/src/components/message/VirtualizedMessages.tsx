@@ -18,7 +18,6 @@ import { EMPTY_WORKFLOW_RUNS, WorkflowRunState } from '@/stores/taskStore';
 
 export type VirtualizedMessagesRef = {
   exportToImage: () => void;
-  container: HTMLDivElement | null;
   scrollToBottom: () => void;
   scrollToMessage: (messageId: string) => void;
 };
@@ -31,6 +30,7 @@ type Props = {
   workflowRuns?: WorkflowRunState[];
   allFiles?: string[];
   renderMarkdown: boolean;
+  onContainerRef?: (container: HTMLDivElement | null) => void;
   removeMessage?: (message: Message) => void;
   removeGroup?: (group: GroupMessage) => void;
   redoUserPrompt?: (messageId: string) => void;
@@ -50,6 +50,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
       workflowRuns,
       allFiles = [],
       renderMarkdown,
+      onContainerRef,
       removeMessage,
       removeGroup,
       redoUserPrompt,
@@ -107,6 +108,8 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
     const [scrollingPaused, setScrollingPaused] = useState(false);
     const scrollingPausedRef = useRef(false);
     const isProgrammaticScrollRef = useRef(false);
+    const prevScrollTopRef = useRef(0);
+    const pointerDownRef = useRef(false);
 
     const updateScrollingPaused = useCallback((paused: boolean) => {
       scrollingPausedRef.current = paused;
@@ -116,8 +119,14 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
     const handleListRef = useCallback((node: LegendListRef | null) => {
       listRef.current = node;
       const element = node?.getScrollableNode();
-      setScrollContainer(element ? (element as HTMLDivElement) : null);
+      prevScrollTopRef.current = element?.scrollTop ?? 0;
+      const nextContainer = (element as HTMLDivElement) ?? null;
+      setScrollContainer((prev) => (prev === nextContainer ? prev : nextContainer));
     }, []);
+
+    useEffect(() => {
+      onContainerRef?.(scrollContainer);
+    }, [onContainerRef, scrollContainer]);
 
     const scrollContainerRef = useMemo(() => ({ current: scrollContainer }) as RefObject<HTMLDivElement | null>, [scrollContainer]);
 
@@ -153,39 +162,57 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
         }
       };
 
+      const handlePointerDown = () => {
+        pointerDownRef.current = true;
+      };
+
+      const handlePointerUp = () => {
+        pointerDownRef.current = false;
+      };
+
       element.addEventListener('wheel', handleWheel);
       element.addEventListener('touchstart', handleTouchStart, { passive: true });
       element.addEventListener('touchmove', handleTouchMove, { passive: true });
+      element.addEventListener('pointerdown', handlePointerDown);
+      window.addEventListener('pointerup', handlePointerUp);
+      window.addEventListener('pointercancel', handlePointerUp);
 
       return () => {
         element.removeEventListener('wheel', handleWheel);
         element.removeEventListener('touchstart', handleTouchStart);
         element.removeEventListener('touchmove', handleTouchMove);
+        element.removeEventListener('pointerdown', handlePointerDown);
+        window.removeEventListener('pointerup', handlePointerUp);
+        window.removeEventListener('pointercancel', handlePointerUp);
       };
     }, [scrollContainer, updateScrollingPaused]);
 
     useEffect(() => {
       const element = scrollContainer;
-      const content = element?.querySelector('.legend-list-content-container');
+      const content = element?.querySelector('.legend-list-content-container') as HTMLElement | null;
       if (!element || !content) {
         return;
       }
 
       const scrollToEndIfFollowing = () => {
-        // when content no longer overflows the container (e.g. messages cleared), unpause follow-scroll
-        if (element.scrollHeight <= element.clientHeight) {
+        const tempPaddingBottom = parseFloat(content.style.paddingBottom) || 0;
+        const effectiveScrollHeight = element.scrollHeight - tempPaddingBottom;
+
+        if (effectiveScrollHeight <= element.clientHeight) {
           updateScrollingPaused(false);
         }
         if (!scrollingPausedRef.current) {
-          const target = element.scrollHeight - element.clientHeight;
+          const target = effectiveScrollHeight - element.clientHeight;
           if (Math.abs(element.scrollTop - target) > 2) {
+            isProgrammaticScrollRef.current = true;
             element.scrollTop = target;
           }
         }
       };
 
+      const innerContent = content.firstElementChild;
       const observer = new ResizeObserver(scrollToEndIfFollowing);
-      observer.observe(content);
+      observer.observe(innerContent || content);
       observer.observe(element);
 
       return () => {
@@ -198,23 +225,36 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
       if (!element || scrollingPausedRef.current) {
         return;
       }
-      const target = element.scrollHeight - element.clientHeight;
+      const content = element.querySelector('.legend-list-content-container') as HTMLElement | null;
+      const tempPaddingBottom = parseFloat(content?.style.paddingBottom ?? '') || 0;
+      const target = element.scrollHeight - element.clientHeight - tempPaddingBottom;
       if (Math.abs(element.scrollTop - target) > 2) {
+        isProgrammaticScrollRef.current = true;
         element.scrollTop = target;
       }
     }, [processedMessages]);
 
     const handleScrollState = useCallback(() => {
-      const state = listRef.current?.getState();
-      if (state?.isAtEnd) {
-        if (isProgrammaticScrollRef.current) {
-          return;
-        }
-        updateScrollingPaused(false);
-      } else {
-        isProgrammaticScrollRef.current = false;
+      const element = scrollContainer;
+      if (!element) {
+        return;
       }
-    }, [updateScrollingPaused]);
+      const scrollTop = element.scrollTop;
+      const scrolledUp = scrollTop < prevScrollTopRef.current - 1;
+      prevScrollTopRef.current = scrollTop;
+      if (isProgrammaticScrollRef.current) {
+        isProgrammaticScrollRef.current = false;
+        return;
+      }
+      const content = element.querySelector('.legend-list-content-container') as HTMLElement | null;
+      const tempPaddingBottom = parseFloat(content?.style.paddingBottom ?? '') || 0;
+      const distanceFromEnd = element.scrollHeight - tempPaddingBottom - scrollTop - element.clientHeight;
+      if (distanceFromEnd <= 2) {
+        updateScrollingPaused(false);
+      } else if (scrolledUp && distanceFromEnd > 30 && pointerDownRef.current) {
+        updateScrollingPaused(true);
+      }
+    }, [scrollContainer, updateScrollingPaused]);
 
     const scrollToBottom = useCallback(() => {
       updateScrollingPaused(false);
@@ -246,21 +286,40 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
       return processedMessages.filter(isUserMessage).map((message) => message.id);
     }, [processedMessages]);
 
+    const userMessageIndices = useMemo(() => {
+      const indices: number[] = [];
+      processedMessages.forEach((message, index) => {
+        if (isUserMessage(message)) {
+          indices.push(index);
+        }
+      });
+      return indices;
+    }, [processedMessages]);
+
+    const getVisibleRange = useCallback(() => {
+      const state = listRef.current?.getState();
+      return state ? { startIndex: state.start, endIndex: state.end } : null;
+    }, []);
+
+    const scrollToUserMessageIndex = useCallback(
+      (index: number) => {
+        isProgrammaticScrollRef.current = true;
+        updateScrollingPaused(true);
+        void listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0 });
+      },
+      [updateScrollingPaused],
+    );
+
     const { hasPreviousUserMessage, hasNextUserMessage, renderGoToPrevious, renderGoToNext } = useUserMessageNavigation({
       containerRef: scrollContainerRef,
       userMessageIds,
-      scrollToMessageById: (id: string) => {
-        const index = processedMessages.findIndex((msg) => msg.id === id);
-        if (index !== -1) {
-          isProgrammaticScrollRef.current = true;
-          updateScrollingPaused(true);
-          void listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0 });
-        }
-      },
+      userMessageIndices,
+      getVisibleRange,
+      scrollToIndex: scrollToUserMessageIndex,
       buttonClassName: 'hidden group-hover:block',
     });
 
-    const exportToImage = async () => {
+    const exportToImage = useCallback(async () => {
       const scrollNode = listRef.current?.getScrollableNode();
       if (!scrollNode) {
         return;
@@ -280,7 +339,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
         // eslint-disable-next-line no-console
         console.error('Failed to export chat as PNG', err);
       }
-    };
+    }, []);
 
     useImperativeHandle(ref, () => ({
       exportToImage,

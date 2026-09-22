@@ -8,10 +8,11 @@ import { motion } from 'framer-motion';
 import { clsx } from 'clsx';
 
 import { SectionHeader } from './SectionHeader';
-import { FileViewerModal } from './FileViewerModal';
+import { SectionLoading } from './SectionLoading';
 
 import { Tooltip } from '@/components/ui/Tooltip';
 import { TriStateCheckbox } from '@/components/common/TriStateCheckbox';
+import { useFileEditorStore } from '@/stores/fileEditorStore';
 import { useProjectSettings } from '@/contexts/ProjectSettingsContext';
 import { useShiftRangeSelection } from '@/hooks/useShiftRangeSelection';
 
@@ -77,7 +78,7 @@ export const RulesSection = ({
   const { t } = useTranslation();
   const { projectSettings, saveProjectSettings } = useProjectSettings();
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [previewFilePath, setPreviewFilePath] = useState<string | null>(null);
+  const openFile = useFileEditorStore((state) => state.openFile);
 
   const disabledRuleFiles = useMemo(() => projectSettings?.disabledRuleFiles ?? [], [projectSettings?.disabledRuleFiles]);
 
@@ -158,7 +159,9 @@ export const RulesSection = ({
           exit={{ opacity: 0, height: 0 }}
           transition={{ duration: 0.3, ease: 'easeInOut' }}
         >
-          {hasContent ? (
+          {isRefreshing ? (
+            <SectionLoading label={t('common.loadingFiles')} />
+          ) : hasContent ? (
             sortedRulesFiles.map((file) => {
               const isDisabled = disabledRuleFiles.includes(file.path);
               return (
@@ -170,7 +173,7 @@ export const RulesSection = ({
                           'select-none text-2xs overflow-hidden whitespace-nowrap overflow-ellipsis cursor-pointer hover:text-text-tertiary',
                           isDisabled ? 'text-text-muted' : 'text-text-primary',
                         )}
-                        onClick={() => setPreviewFilePath(file.path)}
+                        onClick={() => openFile(baseDir, file.path, taskId)}
                       >
                         {getFileName(file.path)}
                       </span>
@@ -196,8 +199,6 @@ export const RulesSection = ({
           )}
         </motion.div>
       </Activity>
-
-      {previewFilePath && <FileViewerModal filePath={previewFilePath} baseDir={baseDir} taskId={taskId} onClose={() => setPreviewFilePath(null)} />}
     </motion.div>
   );
 };

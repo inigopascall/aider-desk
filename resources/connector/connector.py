@@ -22,6 +22,43 @@ from aider.main import main as cli_main
 from aider.utils import is_image_file
 from concurrent.futures import ThreadPoolExecutor, Future
 import nest_asyncio
+
+def apply_tls_overrides():
+  """Apply AiderDesk TLS settings before litellm/httpx create their SSL contexts.
+
+  Must run before `import litellm` so module-level HTTP clients pick up the patched
+  `ssl.create_default_context`. Re-applying later only affects newly created contexts.
+  """
+  import ssl
+
+  insecure = os.getenv("AIDER_DESK_INSECURE_TLS") == "1"
+  ca_bundle = os.getenv("AIDER_DESK_CA_BUNDLE_PATH")
+
+  if not insecure and not ca_bundle:
+    return
+
+  original_create_default_context = ssl.create_default_context
+
+  def patched_create_default_context(*args, **kwargs):
+    context = original_create_default_context(*args, **kwargs)
+    try:
+      if insecure:
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+      elif ca_bundle:
+        context.load_verify_locations(cafile=ca_bundle)
+    except (OSError, ssl.SSLError):
+      pass
+    return context
+
+  ssl.create_default_context = patched_create_default_context
+
+  if ca_bundle:
+    os.environ.setdefault("SSL_CERT_FILE", ca_bundle)
+    os.environ.setdefault("REQUESTS_CA_BUNDLE", ca_bundle)
+
+apply_tls_overrides()
+
 import litellm
 import types
 import portalocker
@@ -91,6 +128,15 @@ def update_model_params(models_info, model):
 
   temperature = info.get('temperature')
   model.use_temperature = temperature if temperature is not None else False
+
+  task_id = os.environ.get("TASK_ID")
+  openai_base = os.environ.get("OPENAI_API_BASE", "")
+  anthropic_base = os.environ.get("ANTHROPIC_BASE_URL", "")
+  if task_id and ("opencode.ai/zen/go" in openai_base or "opencode.ai/zen/go" in anthropic_base):
+    if model.extra_params is None:
+      model.extra_params = {}
+    extra_headers = model.extra_params.setdefault("extra_headers", {})
+    extra_headers["x-opencode-session"] = task_id
 
 def wait_for_async(connector, coroutine):
   try:
@@ -1267,10 +1313,22 @@ class Connector:
   async def update_environment_variables(self, environment_variables):
     """Update environment variables for the Aider process"""
     try:
+      tls_changed = any(
+        key in ("AIDER_DESK_INSECURE_TLS", "AIDER_DESK_CA_BUNDLE_PATH")
+        for key in environment_variables
+      )
+
       # Update the environment variables in the current process
       for key, value in environment_variables.items():
         if value is not None:
           os.environ[key] = str(value)
+
+      if tls_changed:
+        apply_tls_overrides()
+        await self.send_log_message(
+          "warning",
+          "TLS verification settings changed - already established LLM connections may require an Aider restart to pick them up.",
+        )
     except Exception as e:
       await self.send_log_message("error", f"Failed to update environment variables: {str(e)}")
 

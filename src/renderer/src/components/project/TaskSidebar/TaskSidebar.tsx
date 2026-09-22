@@ -1,6 +1,21 @@
 import { DefaultTaskState, TaskData } from '@common/types';
 import { useTranslation } from 'react-i18next';
-import { MouseEvent, DragEvent, useState, useRef, useEffect, useOptimistic, startTransition, Activity, memo, useCallback, useMemo } from 'react';
+import {
+  MouseEvent,
+  DragEvent,
+  useState,
+  useRef,
+  useEffect,
+  useOptimistic,
+  startTransition,
+  Activity,
+  memo,
+  useCallback,
+  useMemo,
+  forwardRef,
+  useImperativeHandle,
+  ForwardedRef,
+} from 'react';
 import { HiPlus } from 'react-icons/hi';
 import { RiMenuUnfold4Line, RiMenuFold2Line } from 'react-icons/ri';
 import { MdOutlineSearch } from 'react-icons/md';
@@ -53,28 +68,35 @@ type Props = {
   contentRef?: React.RefObject<HTMLDivElement | null>;
 };
 
-const TaskSidebarComponent = ({
-  loading,
-  tasks,
-  readonly = false,
-  activeTaskId,
-  onTaskSelect,
-  createNewTask,
-  className,
-  isCollapsed,
-  onToggleCollapse,
-  updateTask,
-  deleteTask,
-  onCopyAsMarkdown,
-  onExportToMarkdown,
-  onExportToImage,
-  onDuplicateTask,
-  isMobile = false,
-  onClose,
-  width,
-  onResize,
-  contentRef,
-}: Props) => {
+export type TaskSidebarRef = {
+  startRenaming: (taskId: string) => void;
+};
+
+const TaskSidebarComponent = (
+  {
+    loading,
+    tasks,
+    readonly = false,
+    activeTaskId,
+    onTaskSelect,
+    createNewTask,
+    className,
+    isCollapsed,
+    onToggleCollapse,
+    updateTask,
+    deleteTask,
+    onCopyAsMarkdown,
+    onExportToMarkdown,
+    onExportToImage,
+    onDuplicateTask,
+    isMobile = false,
+    onClose,
+    width,
+    onResize,
+    contentRef,
+  }: Props,
+  ref: ForwardedRef<TaskSidebarRef>,
+) => {
   const { t } = useTranslation();
   const [deleteConfirmTaskId, setDeleteConfirmTaskId] = useState<string | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -246,34 +268,49 @@ const TaskSidebarComponent = ({
     [setExpandedIds],
   );
 
-  const prevActiveTaskIdRef = useRef<string | null>(null);
+  const expandedForActiveTaskRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (activeTaskId === prevActiveTaskIdRef.current) {
+    if (!activeTaskId) {
+      expandedForActiveTaskRef.current = null;
       return;
     }
-    prevActiveTaskIdRef.current = activeTaskId;
-
-    if (activeTaskId && tasks.length > 0) {
-      // Walk up the parent chain so every ancestor is expanded and the active
-      // task is actually visible.
-      const ancestorIds: string[] = [];
-      const seen = new Set<string>([activeTaskId]);
-      let currentId: string | null | undefined = tasks.find((t) => t.id === activeTaskId)?.parentId;
-      while (currentId && !seen.has(currentId)) {
-        const ancestorId: string = currentId;
-        seen.add(ancestorId);
-        ancestorIds.push(ancestorId);
-        currentId = tasks.find((t) => t.id === ancestorId)?.parentId;
-      }
-      if (ancestorIds.length > 0) {
-        setExpandedIds((prev) => {
-          const prevArr = prev ?? [];
-          const missing = ancestorIds.filter((id) => !prevArr.includes(id));
-          return missing.length > 0 ? [...prevArr, ...missing] : prevArr;
-        });
-      }
+    if (tasks.length === 0 || expandedForActiveTaskRef.current === activeTaskId) {
+      return;
     }
+
+    const tasksById = new Map(tasks.map((task) => [task.id, task]));
+    const activeTask = tasksById.get(activeTaskId);
+    // the active task may be activated before the task list update arrives, retry on the next tasks update
+    if (!activeTask) {
+      return;
+    }
+
+    const ancestors: string[] = [];
+    const visited = new Set<string>();
+    let current = activeTask;
+    while (current.parentId && !visited.has(current.parentId)) {
+      visited.add(current.parentId);
+      const parent = tasksById.get(current.parentId);
+      if (!parent) {
+        break;
+      }
+      ancestors.push(parent.id);
+      current = parent;
+    }
+
+    if (ancestors.length > 0) {
+      setExpandedIds((prev) => {
+        const newSet = new Set(prev ?? []);
+        const missingAncestors = ancestors.filter((id) => !newSet.has(id));
+        if (missingAncestors.length === 0) {
+          return prev ?? [];
+        }
+        missingAncestors.forEach((id) => newSet.add(id));
+        return Array.from(newSet);
+      });
+    }
+    expandedForActiveTaskRef.current = activeTaskId;
   }, [activeTaskId, tasks, setExpandedIds]);
 
   useEffect(() => {
@@ -319,6 +356,10 @@ const TaskSidebarComponent = ({
     setEditingTaskId(taskId);
     setDeleteConfirmTaskId(null);
   }, []);
+
+  useImperativeHandle(ref, () => ({
+    startRenaming: handleEditClick,
+  }));
 
   const handleEditConfirm = useCallback(
     async (taskId: string, newName: string) => {
@@ -766,7 +807,7 @@ const TaskSidebarComponent = ({
                       <ExtensionComponentWrapper placement="tasks-sidebar-actions-left" />
                       <Tooltip content={t('taskSidebar.filterStates')}>
                         <button
-                          className="p-1.5 rounded-md hover:bg-bg-tertiary transition-colors"
+                          className={clsx('p-1.5 rounded-md transition-colors', isFilterVisible ? 'bg-bg-fourth' : 'hover:bg-bg-tertiary')}
                           onClick={() => {
                             setIsFilterVisible(!isFilterVisible);
                           }}
@@ -776,7 +817,7 @@ const TaskSidebarComponent = ({
                       </Tooltip>
                       <Tooltip content={t('taskSidebar.search')}>
                         <button
-                          className="p-1 rounded-md hover:bg-bg-tertiary transition-colors"
+                          className={clsx('p-1 rounded-md transition-colors', isSearchVisible ? 'bg-bg-fourth' : 'hover:bg-bg-tertiary')}
                           onClick={handleSearchToggle}
                           data-testid="search-toggle-button"
                         >
@@ -1170,4 +1211,4 @@ const arePropsEqual = (prevProps: Props, nextProps: Props): boolean => {
 
 TaskSidebarComponent.displayName = 'TaskSidebar';
 
-export const TaskSidebar = memo(TaskSidebarComponent, arePropsEqual);
+export const TaskSidebar = memo(forwardRef(TaskSidebarComponent), arePropsEqual);

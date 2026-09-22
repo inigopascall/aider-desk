@@ -1,5 +1,5 @@
 import 'prismjs/themes/prism-tomorrow.css';
-import { startTransition, useMemo, useOptimistic, useState } from 'react';
+import { startTransition, useEffect, useMemo, useOptimistic, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { twMerge } from 'tailwind-merge';
 import { AiOutlineLoading3Quarters } from 'react-icons/ai';
@@ -17,7 +17,7 @@ import { DiffViewer, UDiffViewer, CompactDiffViewer } from '@/components/common/
 import { useApi } from '@/contexts/ApiContext';
 import { useSaveSettings, useSettingsStore } from '@/stores/settingsStore';
 import { useResponsive } from '@/hooks/useResponsive';
-import { highlightWithLowlight, lowlight } from '@/utils/highlighter';
+import { highlightWithLowlight } from '@/utils/highlighter';
 
 const SEARCH_MARKER = /^<{5,9} SEARCH[^\n]*$/m;
 const DIVIDER_MARKER = /^={5,9}\s*$/m;
@@ -71,9 +71,10 @@ type Props = {
   oldValue?: string;
   newValue?: string;
   className?: string;
+  hideCopyButton?: boolean;
 };
 
-export const CodeBlock = ({ baseDir, taskId, language, children, file, isComplete = true, oldValue, newValue, className }: Props) => {
+export const CodeBlock = ({ baseDir, taskId, language, children, file, isComplete = true, oldValue, newValue, className, hideCopyButton = false }: Props) => {
   const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(true);
   const [changesReverted, setChangesReverted] = useState(false);
@@ -128,6 +129,26 @@ export const CodeBlock = ({ baseDir, taskId, language, children, file, isComplet
     stringToCopy = children || '';
   }
 
+  // Defer syntax highlighting off the critical render path: the plain-text version renders
+  // immediately (cheap) and is upgraded to the highlighted version once the browser is idle.
+  // This keeps mounting large conversation histories fast. The result is cached against its
+  // source code so a stale highlight from a previous value is never shown.
+  const [highlighted, setHighlighted] = useState<{ code: string; node: ReactNode } | null>(null);
+  useEffect(() => {
+    if (!codeForSyntaxHighlight || !language || language === 'mermaid') {
+      return;
+    }
+    if (!isComplete) {
+      return;
+    }
+    const code = codeForSyntaxHighlight;
+    const handle = requestIdleCallback(() => {
+      setHighlighted({ code, node: highlightWithLowlight(code, language) });
+    });
+    return () => cancelIdleCallback(handle);
+  }, [codeForSyntaxHighlight, language, isComplete]);
+  const highlightedCode = highlighted && highlighted.code === codeForSyntaxHighlight ? highlighted.node : null;
+
   const content = useMemo(() => {
     if (displayAsUdiff && children) {
       if (diffViewMode === DiffViewMode.Compact) {
@@ -142,12 +163,11 @@ export const CodeBlock = ({ baseDir, taskId, language, children, file, isComplet
     } else if (language === 'mermaid' && codeForSyntaxHighlight) {
       return <MermaidDiagram code={codeForSyntaxHighlight} />;
     } else if (codeForSyntaxHighlight && language) {
-      const shouldHighlight = isComplete || lowlight.registered(language);
       return (
         <pre
           className={`language-${language} !bg-transparent !border-none !shadow-none scrollbar-thin scrollbar-track-bg-primary-light scrollbar-thumb-bg-secondary-light hover:scrollbar-thumb-bg-fourth focus:outline-none`}
         >
-          <code className={`language-${language}`}>{shouldHighlight ? highlightWithLowlight(codeForSyntaxHighlight, language) : codeForSyntaxHighlight}</code>
+          <code className={`language-${language}`}>{highlightedCode ?? codeForSyntaxHighlight}</code>
         </pre>
       );
     } else {
@@ -157,7 +177,7 @@ export const CodeBlock = ({ baseDir, taskId, language, children, file, isComplet
         </pre>
       );
     }
-  }, [displayAsUdiff, children, displayAsDiff, codeForSyntaxHighlight, language, diffViewMode, diffOldValue, diffNewValue, isComplete, file]);
+  }, [displayAsUdiff, children, displayAsDiff, codeForSyntaxHighlight, language, diffViewMode, diffOldValue, diffNewValue, isComplete, file, highlightedCode]);
 
   const handleRevertChanges = () => {
     if (file && displayAsDiff) {
@@ -202,7 +222,7 @@ export const CodeBlock = ({ baseDir, taskId, language, children, file, isComplet
                     />
                   </div>
                 )}
-                <CopyMessageButton content={stringToCopy} className="opacity-0 group-hover:opacity-100" />
+                {!hideCopyButton && <CopyMessageButton content={stringToCopy} className="opacity-0 group-hover:opacity-100" />}
                 {!isComplete && <AiOutlineLoading3Quarters className="animate-spin text-text-muted" size={14} />}
                 {(displayAsDiff || displayAsUdiff) && !isMobile && (
                   <div onClick={(e) => e.stopPropagation()}>
@@ -224,7 +244,7 @@ export const CodeBlock = ({ baseDir, taskId, language, children, file, isComplet
         ) : (
           <div className="relative">
             <div className="absolute right-0 top-1 flex items-center gap-2 z-10">
-              <CopyMessageButton content={stringToCopy} />
+              {!hideCopyButton && <CopyMessageButton content={stringToCopy} />}
               {(displayAsDiff || displayAsUdiff) && !isMobile && (
                 <CompactSelect options={diffViewOptions} value={diffViewMode} onChange={handleDiffViewModeChange} />
               )}

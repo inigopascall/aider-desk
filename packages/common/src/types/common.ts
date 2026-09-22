@@ -11,6 +11,7 @@ import {
   OpenAiCompatibleProvider,
   OpenAiProvider,
   OpenCodeProvider,
+  OpenCodeGoProvider,
   OpenRouterProvider,
   RequestyProvider,
   VertexAiProvider,
@@ -26,6 +27,7 @@ export const WorktreeSchema = z.object({
   baseBranch: z.string().optional(),
   baseCommit: z.string().optional(),
   branch: z.string().optional(),
+  pendingRebaseFromBranch: z.string().optional(),
   prunable: z.boolean().optional(),
 });
 
@@ -37,6 +39,7 @@ export const MergeStateSchema = z.object({
   worktreeBranchCommitHash: z.string(),
   mainOriginalStashId: z.string().optional(),
   targetBranch: z.string().optional(),
+  checkoutless: z.boolean().optional(),
   timestamp: z.number(),
 });
 
@@ -45,6 +48,11 @@ export type MergeState = z.infer<typeof MergeStateSchema>;
 export interface WorktreeAheadCommits {
   count: number;
   commits: string[];
+}
+
+export interface GitSyncCommits {
+  outgoing: WorktreeAheadCommits;
+  incoming: WorktreeAheadCommits;
 }
 
 export interface WorktreeUncommittedFiles {
@@ -257,6 +265,12 @@ export enum AutonomyMode {
 }
 
 export const DEFAULT_AUTONOMY_MODE = AutonomyMode.Guided;
+
+export enum TaskExecutionMode {
+  CreateOnly = 'create_only',
+  WaitForFinish = 'wait_for_finish',
+  RunInBackground = 'run_in_background',
+}
 
 export interface AiderRunOptions {
   autoApprove?: boolean;
@@ -556,6 +570,12 @@ export interface QueuedPromptData {
   text: string;
   mode: Mode;
   timestamp: number;
+  images?: string[];
+  customCommand?: {
+    name: string;
+    args: string[];
+    images?: string[];
+  };
 }
 
 export interface QueuedPromptsUpdatedData {
@@ -797,6 +817,7 @@ export const THEMES = [
   'botanical-garden',
   'botanical-garden-dark',
   'obsidian',
+  'crimson',
 ] as const;
 export type Theme = (typeof THEMES)[number];
 
@@ -814,6 +835,7 @@ export const isCodeEditorDarkTheme = (theme: Theme) =>
     'neopunk',
     'ocean',
     'obsidian',
+    'crimson',
   ].includes(theme);
 
 export const FONTS = [
@@ -848,6 +870,7 @@ export interface HotkeyConfig {
     settings: string;
     cycleNextProject: string;
     cyclePrevProject: string;
+    openEditor: string;
     switchProject1: string;
     switchProject2: string;
     switchProject3: string;
@@ -875,8 +898,23 @@ export interface HotkeyConfig {
     toggleMarkdownEditorMode: string;
     toggleMarkdownEditorWidth: string;
   };
+  gitHotkeys: {
+    pull: string;
+    push: string;
+    branches: string;
+    newBranch: string;
+    renameBranch: string;
+    worktreeMerge: string;
+    worktreeSquash: string;
+    worktreeApplyUncommitted: string;
+    worktreeRebase: string;
+    worktreeAbortRebase: string;
+    worktreeContinueRebase: string;
+    worktreeResolveConflicts: string;
+  };
   dialogHotkeys: {
     browseFolder: string;
+    commandPalette: string;
   };
 }
 
@@ -903,6 +941,7 @@ export interface TaskSettings {
   /** Allow a third tier of tasks: a subtask may itself have subtasks. */
   allowSubSubTasks: boolean;
   worktreeSymlinkFolders: string[];
+  worktreePostCreateCommand?: string;
   contextCompactingThreshold: { percentage: number; tokens: number };
   contextCompactionType: ContextCompactionType;
   taskNameModel?: string | null;
@@ -980,6 +1019,7 @@ export interface SettingsData {
     minimax?: MinimaxProvider;
     'openai-compatible'?: OpenAiCompatibleProvider;
     opencode?: OpenCodeProvider;
+    'opencode-go'?: OpenCodeGoProvider;
     openrouter?: OpenRouterProvider;
     requesty?: RequestyProvider;
     synthetic?: SyntheticProvider;
@@ -1193,6 +1233,7 @@ export interface SwitchToLocalOptions {
   mergeBeforeSwitch?: boolean;
   targetBranch?: string;
   switchAllInWorktree?: boolean;
+  discardWorktreeChanges?: boolean;
 }
 
 export interface SwitchToWorktreeOptions {
@@ -1383,6 +1424,10 @@ export interface BranchInfo {
   name: string;
   isCurrent: boolean;
   hasWorktree: boolean;
+  isRemote?: boolean;
+  upstream?: string;
+  ahead?: number;
+  behind?: number;
 }
 export interface NotificationData {
   baseDir: string;
@@ -1429,6 +1474,7 @@ export interface AvailableExtension {
   repositoryUrl: string;
   hasDependencies?: boolean;
   readmeContent?: string;
+  installCount?: number;
 }
 
 export interface ExtensionOperationResult {
@@ -1491,6 +1537,23 @@ export interface ContextMenuParams {
 
 export interface ModalOverlayUrlData {
   url: string;
+}
+
+export type InputPromptType = 'password' | 'text' | 'confirmation';
+
+export interface InputPromptData {
+  id: string;
+  title?: string;
+  titleParams?: Record<string, string | number>;
+  message: string;
+  messageParams?: Record<string, string | number>;
+  type?: InputPromptType;
+  placeholder?: string;
+  defaultValue?: string;
+  allowRememberSession?: boolean;
+  rememberSessionLabel?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
 }
 
 export type AiderConnectorStatus =

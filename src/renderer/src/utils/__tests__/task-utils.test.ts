@@ -1,12 +1,31 @@
 import { describe, it, expect } from 'vitest';
 import { DefaultTaskState, TaskData } from '@common/types';
 
-import { getSortedVisibleTasks, flattenTasksForVirtualization } from '../task-utils';
+import { countAllSubtasks, getSortedVisibleTasks, flattenTasksForVirtualization } from '../task-utils';
 
 const allStates = new Set([...Object.values(DefaultTaskState)]);
 const defaultStates = new Set([...Object.values(DefaultTaskState)]);
 
 describe('task-utils', () => {
+  describe('countAllSubtasks', () => {
+    it('should return 0 for a task without subtasks', () => {
+      const tasks = [{ id: '1', name: 'Task', updatedAt: '', parentId: null }] as TaskData[];
+      expect(countAllSubtasks('1', tasks)).toBe(0);
+    });
+
+    it('should count direct and nested subtasks', () => {
+      const tasks = [
+        { id: '1', name: 'Parent', updatedAt: '', parentId: null },
+        { id: '2', name: 'Child', updatedAt: '', parentId: '1' },
+        { id: '3', name: 'Grandchild', updatedAt: '', parentId: '2' },
+        { id: '4', name: 'Great-grandchild', updatedAt: '', parentId: '3' },
+        { id: '5', name: 'Other', updatedAt: '', parentId: null },
+      ] as TaskData[];
+      expect(countAllSubtasks('1', tasks)).toBe(3);
+      expect(countAllSubtasks('5', tasks)).toBe(0);
+    });
+  });
+
   describe('getSortedVisibleTasks', () => {
     const mockTasks: Partial<TaskData>[] = [
       { id: '1', name: 'Parent 1', updatedAt: '2026-01-14T10:00:00Z', archived: false, pinned: false, parentId: null },
@@ -86,6 +105,29 @@ describe('task-utils', () => {
       // Subtask of archived parent (id: '2') appears as orphan since parent is filtered
       const sorted = getSortedVisibleTasks(tasks as TaskData[], allStates, true, '', 'updatedAt');
       expect(sorted.map((t) => t.id)).toEqual(['3', '4', '1', '2']);
+    });
+
+    it('should hide subtasks of archived parent when showArchived is false', () => {
+      const tasks: Partial<TaskData>[] = [
+        { id: '1', name: 'Archived Parent', updatedAt: '2026-01-14T10:00:00Z', pinned: false, parentId: null, archived: true },
+        { id: '2', name: 'Subtask of Archived Parent', updatedAt: '2026-01-14T10:05:00Z', pinned: false, parentId: '1', archived: false },
+        { id: '3', name: 'Active Parent', updatedAt: '2026-01-14T09:00:00Z', pinned: false, parentId: null, archived: false },
+        { id: '4', name: 'Subtask of Active Parent', updatedAt: '2026-01-14T11:00:00Z', pinned: false, parentId: '3', archived: false },
+      ];
+      const sorted = getSortedVisibleTasks(tasks as TaskData[], allStates, false);
+      expect(sorted.map((t) => t.id)).toEqual(['3', '4']);
+    });
+
+    it('should hide nested subtasks of archived ancestor at any depth when showArchived is false', () => {
+      const tasks: Partial<TaskData>[] = [
+        { id: '1', name: 'Archived Grandparent', updatedAt: '2026-01-14T10:00:00Z', pinned: false, parentId: null, archived: true },
+        { id: '2', name: 'Subtask', updatedAt: '2026-01-14T10:05:00Z', pinned: false, parentId: '1', archived: false },
+        { id: '3', name: 'Sub-subtask', updatedAt: '2026-01-14T10:10:00Z', pinned: false, parentId: '2', archived: false },
+        { id: '4', name: 'Sub-sub-subtask', updatedAt: '2026-01-14T10:15:00Z', pinned: false, parentId: '3', archived: false },
+        { id: '5', name: 'Active Parent', updatedAt: '2026-01-14T09:00:00Z', pinned: false, parentId: null, archived: false },
+      ];
+      const sorted = getSortedVisibleTasks(tasks as TaskData[], allStates, false);
+      expect(sorted.map((t) => t.id)).toEqual(['5']);
     });
 
     it('should show archived subtasks of active parent when showArchived is true', () => {

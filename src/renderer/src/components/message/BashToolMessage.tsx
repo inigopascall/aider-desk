@@ -5,6 +5,7 @@ import { CgSpinner } from 'react-icons/cg';
 import { MdKeyboardDoubleArrowDown } from 'react-icons/md';
 import { ToolMessage } from '@common/types';
 
+import { CodeBlock } from '@/components/common/CodeBlock';
 import { CodeInline } from '@/components/common/CodeInline';
 import { ExpandableMessageBlock } from '@/components/message/ExpandableMessageBlock';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -37,6 +38,8 @@ export const BashToolMessage = ({ message, onRemove, compact = false, onFork, on
   const { t } = useTranslation();
 
   const command = (message.args.command as string) || '';
+  const isMultilineCommand = command.includes('\n');
+  const description = message.args.description as string | undefined;
   const timeout = message.args.timeout as number | undefined;
   const cwd = message.args.cwd as string | undefined;
   const content = message.content && JSON.parse(message.content);
@@ -83,31 +86,59 @@ export const BashToolMessage = ({ message, onRemove, compact = false, onFork, on
   };
 
   const title = (
-    <div className="flex items-center gap-2 w-full text-left">
-      <div className="text-text-muted">
-        <RiTerminalLine className="w-4 h-4" />
+    <div className="flex flex-col w-full text-left">
+      <div className="flex items-center gap-2 w-full">
+        <div className="text-text-muted">
+          <RiTerminalLine className="w-4 h-4" />
+        </div>
+        <div className="text-xs text-text-primary flex flex-wrap gap-1 items-center">
+          <span>{description ? t('toolMessage.power.bash.titleWithDescription') : t('toolMessage.power.bash.title')}</span>
+          {description ? (
+            <span className="text-text-tertiary ml-1">{description}</span>
+          ) : (
+            !isMultilineCommand && (
+              <>
+                <span>
+                  <CodeInline className="bg-bg-primary-light">{command}</CodeInline>
+                </span>
+                <CopyMessageButton content={command} alwaysShow={true} className="w-3.5 h-3.5" />
+              </>
+            )
+          )}
+        </div>
+        {!isFinished && <CgSpinner className="animate-spin w-3 h-3 text-text-muted-light flex-shrink-0" />}
+        {isFinished &&
+          content &&
+          (isError ? (
+            <Tooltip content={typeof content === 'string' ? content : hasError ? content.error : content.stderr || t('toolMessage.power.bash.commandFailed')}>
+              <RiErrorWarningFill className="w-3 h-3 text-error shrink-0" />
+            </Tooltip>
+          ) : isDenied ? (
+            <Tooltip content={typeof content === 'string' ? content : hasDenied ? content.denied : ''}>
+              <RiCloseCircleFill className="w-3 h-3 text-warning shrink-0" />
+            </Tooltip>
+          ) : (
+            <RiCheckboxCircleFill className="w-3 h-3 text-success flex-shrink-0" />
+          ))}
+        {(isMultilineCommand || description) && <CopyMessageButton content={command} alwaysShow={true} className="w-3.5 h-3.5" />}
       </div>
-      <div className="text-xs text-text-primary flex flex-wrap gap-1">
-        <span>{t('toolMessage.power.bash.title')}</span>
-        <span>
-          <CodeInline className="bg-bg-primary-light">{command}</CodeInline>
-        </span>
-        <CopyMessageButton content={command} alwaysShow={true} className="w-3.5 h-3.5" />
-      </div>
-      {!isFinished && <CgSpinner className="animate-spin w-3 h-3 text-text-muted-light flex-shrink-0" />}
-      {isFinished &&
-        content &&
-        (isError ? (
-          <Tooltip content={typeof content === 'string' ? content : hasError ? content.error : content.stderr || t('toolMessage.power.bash.commandFailed')}>
-            <RiErrorWarningFill className="w-3 h-3 text-error" />
-          </Tooltip>
-        ) : isDenied ? (
-          <Tooltip content={typeof content === 'string' ? content : hasDenied ? content.denied : ''}>
-            <RiCloseCircleFill className="w-3 h-3 text-warning" />
-          </Tooltip>
-        ) : (
-          <RiCheckboxCircleFill className="w-3 h-3 text-success flex-shrink-0" />
-        ))}
+      {isMultilineCommand ? (
+        <CodeBlock
+          baseDir=""
+          language="bash"
+          isComplete={!message.isStreaming}
+          hideCopyButton
+          className="ml-6 mb-0 text-2xs py-1 px-2 [&_pre]:!py-0 [&_pre]:!px-1"
+        >
+          {command}
+        </CodeBlock>
+      ) : (
+        description && (
+          <div className="ml-6 mt-1 flex items-center flex-wrap gap-1">
+            <CodeInline className="bg-bg-primary-light">{command}</CodeInline>
+          </div>
+        )
+      )}
     </div>
   );
 
@@ -192,7 +223,7 @@ export const BashToolMessage = ({ message, onRemove, compact = false, onFork, on
               {timeout !== undefined && timeout !== null && (
                 <div className="flex items-center gap-2">
                   <div className="font-semibold text-text-secondary">{t('toolMessage.power.bash.timeout')}:</div>
-                  <div>{timeout}ms</div>
+                  <div>{`${timeout}ms`}</div>
                 </div>
               )}
               {isFinished && isStandardOutput && content.exitCode !== null && content.exitCode !== undefined && (

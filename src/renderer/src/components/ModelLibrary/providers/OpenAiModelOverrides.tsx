@@ -24,12 +24,13 @@ export const OpenAiModelOverrides = ({ provider, overrides, onChange }: Props) =
     const newOverrides = {
       reasoningEffort: updatedProvider.reasoningEffort,
       useWebSearch: updatedProvider.useWebSearch,
+      store: updatedProvider.store,
       disableStreaming: updatedProvider.disableStreaming,
       disableToolCallStreaming: updatedProvider.disableToolCallStreaming,
     };
 
     // Remove undefined values
-    const cleanedOverrides = Object.fromEntries(Object.entries(newOverrides).filter(([_, value]) => value !== undefined));
+    const cleanedOverrides = Object.fromEntries(Object.entries(newOverrides).filter(([, value]) => value !== undefined));
 
     onChange(cleanedOverrides);
   };
