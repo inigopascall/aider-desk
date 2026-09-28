@@ -1,4 +1,3 @@
-import fs from 'fs/promises';
 import path from 'path';
 
 import { tool } from 'ai';
@@ -64,8 +63,12 @@ export const createAiderToolset = (task: Task, profile: AgentProfile, promptCont
     inputSchema: z.object({
       paths: z
         .array(z.string())
-        .describe('One or more file paths to add to context. Relative to task directory (e.g. "src/file.ts") or absolute (e.g. "/tmp/log.txt" for read-only).'),
-      readOnly: coerceBoolean.optional().describe('Whether the file(s) are read-only. Applies to all paths if true.'),
+        .describe(
+          'One or more paths to files or folders that already exist on disk. A relative path (e.g. "src/file.ts") is resolved against the task directory and nowhere else. For anything outside the task directory, including files in other projects, pass the full absolute path (e.g. "/home/user/other-project/src/file.ts"). Paths that do not exist are rejected; this tool never creates files.',
+        ),
+      readOnly: coerceBoolean
+        .optional()
+        .describe('Whether the file(s) are read-only. Applies to all paths if true. Set to true for files outside the task directory.'),
     }),
     execute: async (input, { toolCallId }) => {
       const { paths, readOnly = false } = input;
@@ -83,66 +86,59 @@ export const createAiderToolset = (task: Task, profile: AgentProfile, promptCont
       );
 
       const toolName = `${TOOL_GROUP_NAME}${TOOL_GROUP_NAME_SEPARATOR}${TOOL_ADD_CONTEXT_FILES}`;
+      const taskDir = task.getTaskDir();
       const results: string[] = [];
       for (const filePath of paths) {
-        const absolutePath = path.resolve(task.getTaskDir(), filePath);
-        let fileExists = false;
-        try {
-          await fs.access(absolutePath);
-          fileExists = true;
-        } catch {
-          fileExists = false;
-        }
+        const resolvedPath = path.resolve(taskDir, filePath);
 
-        if (!fileExists) {
-          const createFileQuestionKey = `tool_aider_${TOOL_ADD_CONTEXT_FILES}_create_file_${filePath.replace(/[^a-zA-Z0-9]/g, '_')}`;
-          const createFileQuestionText = `File '${filePath}' does not exist. Create it?`;
-          const [createApproved] = await approvalManager.handleToolApproval(toolName, input, createFileQuestionKey, createFileQuestionText);
-
-          if (createApproved) {
-            try {
-              const dir = path.dirname(absolutePath);
-              await fs.mkdir(dir, { recursive: true });
-              await fs.writeFile(absolutePath, '');
-              task.addLogMessage('info', `Created new file: ${filePath}`);
-              fileExists = true;
-
-              await task.addToGit(absolutePath);
-              results.push(`Created and added file: ${filePath}`);
-            } catch (error) {
-              const errorMessage = error instanceof Error ? error.message : String(error);
-              task.addLogMessage('error', `Failed to create file '${filePath}': ${errorMessage}`);
-              results.push(`Error: Failed to create file '${filePath}'. It was not added to the context.`);
-            }
-          } else {
-            results.push(`File '${filePath}' does not exist and was not created. It was not added to the context.`);
-          }
-        } else {
-          const questionKey = `${TOOL_GROUP_NAME}${TOOL_GROUP_NAME_SEPARATOR}${TOOL_ADD_CONTEXT_FILES}_${filePath.replace(/[^a-zA-Z0-9]/g, '_')}`;
-          const questionText = `Approve adding file '${filePath}' to context?`;
-
-          const [isApproved, userInput] = await approvalManager.handleToolApproval(toolName, input, questionKey, questionText);
-
-          if (!isApproved) {
-            results.push(`Adding '${filePath}' to context denied by user. Reason: ${userInput}`);
+        if (!path.isAbsolute(filePath)) {
+          const relativeToTaskDir = path.relative(taskDir, resolvedPath);
+          const escapesTaskDir = relativeToTaskDir === '..' || relativeToTaskDir.startsWith(`..${path.sep}`) || path.isAbsolute(relativeToTaskDir);
+          if (escapesTaskDir) {
+            task.addLogMessage(
+              'warning',
+              `add_context_files rejected '${filePath}': the relative path points outside the task directory (it resolves to '${resolvedPath}'). Nothing was added.`,
+            );
+            results.push(
+              `Error: '${filePath}' was not added. It is a relative path that points outside the task directory. Relative paths are resolved against the task directory '${taskDir}' only, so it resolves to '${resolvedPath}'. For a file outside the task directory, including a file in another project, pass its full absolute path instead.`,
+            );
             continue;
           }
         }
 
-        if (fileExists) {
-          // This condition is now met if the file initially existed or was just created
-          const added = await task.addFiles({
-            path: filePath,
-            readOnly,
-          });
-          if (added) {
-            // Only add to results if it wasn't handled by the creation logic above
-            if (!results.some((r) => r.includes(`Created and added file: ${filePath}`))) {
-              results.push(`Added file: ${filePath}`);
-            }
-          } else {
-            results.push(`Not added - file '${filePath}' was already in the context.`);
-          }
+        const existingPath = await task.resolveContextFilePath(filePath);
+        if (!existingPath) {
+          task.addLogMessage(
+            'warning',
+            `add_context_files rejected '${filePath}': nothing exists at '${resolvedPath}'. No file was created and nothing was added.`,
+          );
+          const hint = path.isAbsolute(filePath)
+            ? 'Check that the path is correct.'
+            : `Relative paths are resolved against the task directory '${taskDir}' only. If the file is in another project or anywhere else outside the task directory, pass its full absolute path.`;
+          results.push(
+            `Error: '${filePath}' was not added: nothing exists at '${resolvedPath}'. This tool never creates files, and nothing was created. ${hint} To work on a new file, create it first with a file-writing tool, then add it.`,
+          );
+          continue;
+        }
+
+        const questionKey = `${TOOL_GROUP_NAME}${TOOL_GROUP_NAME_SEPARATOR}${TOOL_ADD_CONTEXT_FILES}_${filePath.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        const questionText = `Approve adding file '${filePath}' to context?`;
+
+        const [isApproved, userInput] = await approvalManager.handleToolApproval(toolName, input, questionKey, questionText);
+
+        if (!isApproved) {
+          results.push(`Adding '${filePath}' to context denied by user. Reason: ${userInput}`);
+          continue;
+        }
+
+        const added = await task.addFiles({
+          path: filePath,
+          readOnly,
+        });
+        if (added) {
+          results.push(`Added file: ${filePath}`);
+        } else {
+          results.push(`Not added - file '${filePath}' was already in the context.`);
         }
       }
       return results.join('\n');
@@ -162,7 +158,7 @@ export const createAiderToolset = (task: Task, profile: AgentProfile, promptCont
       const results: string[] = [];
       for (const filePath of paths) {
         const questionKey = toolName;
-        const questionText = `Approve dropping file '${path}' from context?`;
+        const questionText = `Approve dropping file '${filePath}' from context?`;
 
         const [isApproved, userInput] = await approvalManager.handleToolApproval(toolName, input, questionKey, questionText);
 

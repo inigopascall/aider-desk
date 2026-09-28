@@ -30,9 +30,17 @@ export const EXTENSION_TOOL_GROUP_NAME = 'extensions';
 
 export const AIDER_TOOL_DESCRIPTIONS = {
   [AIDER_TOOL_GET_CONTEXT_FILES]: 'Get all files currently in the context for Aider to read or edit',
-  [AIDER_TOOL_ADD_CONTEXT_FILES]: `Adds file(s) to the Aider context for reading or editing.
+  [AIDER_TOOL_ADD_CONTEXT_FILES]: `Adds existing file(s) or folder(s) to the Aider context for reading or editing.
 Prerequisite: Before using, check the current context with 'get_context_files'. Do NOT add files already present in the context.
-Use relative file path(s) for files intended for editing within the project. Use absolute file path(s) for read-only files (e.g., outside the project).`,
+
+Every path must already exist on disk. This tool never creates files. A path that does not exist is rejected with an error, and nothing is added or created. To work on a new file, create it first with a file-writing tool, then add it.
+
+How paths are resolved:
+- A relative path is resolved against the task directory (the directory this task is working in), and against nothing else. "src/file.ts" means "<task directory>/src/file.ts".
+- A relative path is never resolved against another project's root. If a file belongs to a different project, or lives anywhere outside the task directory, pass its full absolute path (for example "/home/user/other-project/src/file.ts"). Do not pass that file's path relative to its own project.
+- A relative path that climbs out of the task directory with "../" is rejected. Pass the absolute path instead.
+
+Use relative paths for files inside the task directory that you intend to edit. Use absolute paths, with readOnly set to true, for files outside the task directory.`,
   [AIDER_TOOL_DROP_CONTEXT_FILES]: `Removes file(s) from the Aider context.
 Note: Unless explicitly requested by the user to remove specific file(s), this tool should primarily be used to remove files that were previously added using 'add_context_files' (e.g., after a related 'run_prompt' task is completed).`,
   [AIDER_TOOL_RUN_PROMPT]: `Delegates a context-aware coding task to the Aider assistant for execution within the current project context.
