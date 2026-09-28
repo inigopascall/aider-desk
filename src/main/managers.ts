@@ -123,9 +123,10 @@ export const initManagers = async (store: Store, windowManager?: WindowManager):
 
   const gitManager = new GitManager(gitAskpassManager);
 
-  // Initialize agent profile manager with extension manager for unified profile access
+  // Initialize agent profile manager with extension manager for unified profile access.
+  // Awaited so global and workflow profiles are loaded before any project can start.
   const agentProfileManager = new AgentProfileManager(eventManager, extensionManager, store);
-  agentProfileManager.init().catch((error) => {
+  await agentProfileManager.init().catch((error) => {
     logger.error('[AgentProfile] Agent profile system initialization failed:', error);
   });
 

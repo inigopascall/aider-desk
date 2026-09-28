@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useOptimistic, startTransition, ReactNode, useCallback, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useOptimistic, startTransition, ReactNode, useCallback, useRef, useState } from 'react';
 import { AgentProfile } from '@common/types';
 
 import { useApi } from '@/contexts/ApiContext';
@@ -28,17 +28,27 @@ export const AgentsProvider = ({ children }: AgentsProviderProps) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const api = useApi();
+  // Incremented by every refresh request and every pushed update. A refresh
+  // response is applied only if nothing newer has started or arrived since.
+  const profilesSequenceRef = useRef(0);
 
   const refreshProfiles = useCallback(async () => {
+    const sequence = ++profilesSequenceRef.current;
     try {
       setLoading(true);
       setError(null);
       const result = await api.getAllAgentProfiles();
-      setProfiles(result);
+      if (sequence === profilesSequenceRef.current) {
+        setProfiles(result);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load agent profiles');
+      if (sequence === profilesSequenceRef.current) {
+        setError(err instanceof Error ? err.message : 'Failed to load agent profiles');
+      }
     } finally {
-      setLoading(false);
+      if (sequence === profilesSequenceRef.current) {
+        setLoading(false);
+      }
     }
   }, [api]);
 
@@ -123,7 +133,9 @@ export const AgentsProvider = ({ children }: AgentsProviderProps) => {
 
     // Register event listener for agent profiles updates
     const unsubscribe = api.addAgentProfilesUpdatedListener((data) => {
+      profilesSequenceRef.current++;
       setProfiles(data.profiles);
+      setLoading(false);
     });
 
     return () => {

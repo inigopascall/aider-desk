@@ -148,8 +148,8 @@ export class AgentProfileManager {
     // Load project-specific profiles
     await this.loadProfilesFromDirectory(projectAgentsDir);
 
-    // Setup file watcher for project directory
-    await this.setupWatcherForDirectory(projectAgentsDir);
+    // Setup file watcher for project directory (only if the project has an agents directory)
+    await this.setupWatcherForDirectory(projectAgentsDir, false);
 
     this.sendAgentProfilesUpdated();
   }
@@ -260,12 +260,16 @@ export class AgentProfileManager {
     await this.setupWatcherForDirectory(globalAgentsDir);
   }
 
-  private async setupWatcherForDirectory(agentsDir: string): Promise<void> {
-    // Create directory if it doesn't exist
+  private async setupWatcherForDirectory(agentsDir: string, createIfMissing = true): Promise<void> {
+    // Create directory if it doesn't exist (or skip watching it when creation is not wanted)
     const dirExists = await fs
       .access(agentsDir)
       .then(() => true)
       .catch(() => false);
+    if (!dirExists && !createIfMissing) {
+      logger.debug(`Agents directory does not exist, not watching: ${agentsDir}`);
+      return;
+    }
     if (!dirExists) {
       try {
         await fs.mkdir(agentsDir, { recursive: true });
@@ -670,6 +674,11 @@ export class AgentProfileManager {
     const configPath = path.join(profileDir, 'config.json');
 
     await fs.mkdir(profileDir, { recursive: true });
+
+    // A project agents directory created here was not watched at project start
+    if (!this.directoryWatchers.has(agentsDir)) {
+      await this.setupWatcherForDirectory(agentsDir);
+    }
 
     // Create markdown sidecar files (canonical prompt store) before saving config.json
     await this.writePromptSidecars(profileDir, profile);

@@ -61,7 +61,7 @@ export class Project {
 
   public start(): Promise<void> {
     if (!this.startPromise) {
-      this.startPromise = (async () => {
+      const startPromise: Promise<void> = (async () => {
         await this.customCommandManager.start();
         await this.promptsManager.watchProject(this.baseDir);
         await this.agentProfileManager.initializeForProject(this.baseDir);
@@ -72,7 +72,18 @@ export class Project {
 
         await this.extensionManager.dispatchEvent('onProjectStarted', { baseDir: this.baseDir }, this);
         this.eventManager.sendProjectStarted(this.baseDir);
-      })();
+      })().catch((error) => {
+        logger.error('Failed to start project', {
+          baseDir: this.baseDir,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        // Clear the start so the next start request retries instead of treating the project as started.
+        if (this.startPromise === startPromise) {
+          this.startPromise = null;
+        }
+        throw error;
+      });
+      this.startPromise = startPromise;
     }
     return this.startPromise;
   }
@@ -755,7 +766,11 @@ export class Project {
   }
 
   async close() {
-    await this.startPromise;
+    try {
+      await this.startPromise;
+    } catch {
+      // A failed start has already been logged by start(); closing must still release resources.
+    }
     this.startPromise = null;
 
     await this.extensionManager.dispatchEvent('onProjectStopped', { baseDir: this.baseDir }, this);

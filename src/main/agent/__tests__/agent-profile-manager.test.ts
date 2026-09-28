@@ -13,10 +13,17 @@ vi.mock('@/utils', () => ({
   deriveDirName: vi.fn((name: string) => name.toLowerCase().replace(/\s+/g, '-')),
 }));
 vi.mock('fs/promises');
+vi.mock('chokidar', () => ({
+  watch: vi.fn(() => ({
+    on: vi.fn().mockReturnThis(),
+    close: vi.fn(() => Promise.resolve()),
+  })),
+}));
 
 import * as fs from 'fs/promises';
 import path from 'path';
 
+import { watch } from 'chokidar';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentProfile } from '@common/types';
 
@@ -24,7 +31,8 @@ import { AgentProfileManager } from '../agent-profile-manager';
 
 import type { ExtensionManager } from '@/extensions/extension-manager';
 
-import { AIDER_DESK_HOME_DIR } from '@/constants';
+import { AIDER_DESK_AGENTS_DIR, AIDER_DESK_HOME_DIR } from '@/constants';
+import logger from '@/logger';
 import { createMockAgentProfile } from '@/__tests__/mocks';
 
 describe('AgentProfileManager', () => {
@@ -348,6 +356,56 @@ describe('AgentProfileManager', () => {
 
       expect(profile.includeRepoMappings).toBe(true);
       expect(profile.includeRepoMap).toBeUndefined();
+    });
+  });
+
+  describe('project agents directory watching', () => {
+    const projectDir = '/proj';
+    const projectAgentsDir = path.join(projectDir, AIDER_DESK_AGENTS_DIR);
+    const watchedPaths = () => vi.mocked(watch).mock.calls.map(([watchedPath]) => watchedPath);
+    const mkdirPaths = () => (fs.mkdir as any).mock.calls.map(([createdPath]: [string]) => createdPath);
+
+    it('does not create or watch a missing project agents directory', async () => {
+      (fs.access as any).mockImplementation(async (target: string) => {
+        if (target === projectAgentsDir) {
+          throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        }
+      });
+
+      await agentProfileManager.initializeForProject(projectDir);
+
+      expect(mkdirPaths()).not.toContain(projectAgentsDir);
+      expect((agentProfileManager as any).directoryWatchers.has(projectAgentsDir)).toBe(false);
+      expect(watchedPaths()).not.toContain(projectAgentsDir);
+      expect(logger.error).not.toHaveBeenCalled();
+      expect(logger.debug).toHaveBeenCalledWith(`Agents directory does not exist, not watching: ${projectAgentsDir}`);
+    });
+
+    it('watches the project agents directory when it exists', async () => {
+      await agentProfileManager.initializeForProject(projectDir);
+
+      expect((agentProfileManager as any).directoryWatchers.has(projectAgentsDir)).toBe(true);
+      expect(watchedPaths()).toContain(projectAgentsDir);
+    });
+
+    it('starts watching the project agents directory when createProfile creates it', async () => {
+      const profile = createMockAgentProfile({ id: 'project-profile', name: 'Project Profile' });
+
+      await agentProfileManager.createProfile(profile, projectDir);
+
+      expect((agentProfileManager as any).directoryWatchers.has(projectAgentsDir)).toBe(true);
+      expect(watchedPaths()).toContain(projectAgentsDir);
+    });
+
+    it('does not re-watch a project agents directory that is already watched', async () => {
+      const existingWatcher = { on: vi.fn().mockReturnThis(), close: vi.fn(() => Promise.resolve()) };
+      (agentProfileManager as any).directoryWatchers.set(projectAgentsDir, existingWatcher);
+      const profile = createMockAgentProfile({ id: 'project-profile', name: 'Project Profile' });
+
+      await agentProfileManager.createProfile(profile, projectDir);
+
+      expect(watchedPaths()).not.toContain(projectAgentsDir);
+      expect((agentProfileManager as any).directoryWatchers.get(projectAgentsDir)).toBe(existingWatcher);
     });
   });
 });

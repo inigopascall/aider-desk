@@ -21,6 +21,7 @@ vi.mock('@/prompts');
 vi.mock('@/extensions/extension-manager');
 vi.mock('@/constants');
 vi.mock('@/utils');
+vi.mock('@/repository-mappings');
 vi.mock('fs/promises');
 let uuidCounter = 0;
 vi.mock('uuid', () => ({
@@ -47,6 +48,7 @@ import { TelemetryManager } from '@/telemetry';
 import { determineMainModel, determineWeakModel } from '@/utils';
 import { GitManager } from '@/git';
 import { migrateSessionsToTasks } from '@/project/migrations';
+import logger from '@/logger';
 
 describe('Project - createNewTask', () => {
   let project: Project;
@@ -419,6 +421,38 @@ describe('Project - createNewTask', () => {
       expect(subtask1.id).not.toBe(subtask2.id);
       expect(subtask1.parentId).toBe(parentTask.id);
       expect(subtask2.parentId).toBe(parentTask.id);
+    });
+  });
+
+  describe('start failure recovery', () => {
+    it('clears a failed start so the next start() retries every step', async () => {
+      vi.mocked(mockAgentProfileManager.initializeForProject!).mockRejectedValueOnce(new Error('agents dir unreadable'));
+
+      await expect(project.start()).rejects.toThrow('agents dir unreadable');
+
+      expect(project.isStarted()).toBe(false);
+      expect(logger.error).toHaveBeenCalledWith('Failed to start project', expect.objectContaining({ baseDir }));
+
+      await expect(project.start()).resolves.toBeUndefined();
+
+      expect(mockAgentProfileManager.initializeForProject).toHaveBeenCalledTimes(2);
+      expect(project.isStarted()).toBe(true);
+    });
+
+    it('close() resolves when the start it waits on fails', async () => {
+      vi.mocked(mockAgentProfileManager.initializeForProject!).mockRejectedValueOnce(new Error('agents dir unreadable'));
+      const taskCloseSpy = vi.spyOn(Task.prototype, 'close').mockResolvedValue(undefined);
+
+      try {
+        const startResult = project.start();
+        const closeResult = project.close();
+
+        await expect(startResult).rejects.toThrow('agents dir unreadable');
+        await expect(closeResult).resolves.toBeUndefined();
+        expect(mockGitManager.close).toHaveBeenCalledWith(baseDir);
+      } finally {
+        taskCloseSpy.mockRestore();
+      }
     });
   });
 });

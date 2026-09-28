@@ -29,6 +29,7 @@ import { LoadingOverlay } from '@/components/common/LoadingOverlay';
 import { TaskViewRef } from '@/components/project/TaskView';
 import { MountedTaskView } from '@/components/project/MountedTaskView';
 import { useApi } from '@/contexts/ApiContext';
+import { useAgents } from '@/contexts/AgentsContext';
 import { TasksProvider } from '@/contexts/TasksContext';
 import { useConfiguredHotkeys } from '@/hooks/useConfiguredHotkeys';
 import { useOverlayFocusRestore } from '@/hooks/useOverlayFocusRestore';
@@ -59,6 +60,7 @@ export const ProjectView = ({ projectDir, isProjectActive = false, initialTaskId
   const settingsLoaded = useSettingsStore((state) => !!state.settings);
   const { projectSettings } = useProjectSettings();
   const api = useApi();
+  const { refreshProfiles } = useAgents();
   const { TASK_HOTKEYS, PROJECT_HOTKEYS } = useConfiguredHotkeys();
   const { isMobile } = useResponsive();
   const replaceItems = useCommandPaletteStore((state) => state.replaceItems);
@@ -303,6 +305,10 @@ export const ProjectView = ({ projectDir, isProjectActive = false, initialTaskId
         await api.startProject(projectDir);
         setStarting(false);
 
+        // The project's agent profiles are loaded during start; fetch the list now so it
+        // does not depend on the agent-profiles-updated event reaching this client.
+        void refreshProfiles();
+
         // Load input history (may have been emitted before listener was registered)
         const history = await api.loadInputHistory(projectDir);
         setInputHistory(history);
@@ -351,7 +357,7 @@ export const ProjectView = ({ projectDir, isProjectActive = false, initialTaskId
       taskIds.forEach(cleanupProcessingResponseMessage);
       cleanupProjectCache(projectDir);
     };
-  }, [activateTask, api, projectDir, handleStartupMode]);
+  }, [activateTask, api, projectDir, handleStartupMode, refreshProfiles]);
 
   // Startup-on-first-activation: background projects do not load any task until they are first
   // activated, then the configured startup mode is applied once (also serving as a self-healing

@@ -72,13 +72,18 @@ vi.mock('@/stores/taskFilesStore', () => ({
   useTaskAllFiles: vi.fn(() => ['src/file.ts']),
 }));
 
-// Mock useAgents hook
+// Mock useAgents hook. refreshProfiles keeps one identity across renders, as the real
+// useCallback does, because ProjectView's project-start effect depends on it.
+const agentsMock = vi.hoisted(() => ({
+  refreshProfiles: vi.fn(() => Promise.resolve()),
+}));
+
 vi.mock('@/contexts/AgentsContext', () => ({
   useAgents: vi.fn(() => ({
     getProfiles: () => [],
     getActiveProfile: () => null,
     setActiveProfile: vi.fn(),
-    refreshProfiles: vi.fn(),
+    refreshProfiles: agentsMock.refreshProfiles,
   })),
 }));
 
@@ -198,6 +203,28 @@ describe('ProjectView', () => {
       expect(mockApi.startProject).toHaveBeenCalledWith(projectDir);
       expect(mockApi.getTasks).toHaveBeenCalledWith(projectDir);
     });
+  });
+
+  it('refreshes agent profiles once the project has started', async () => {
+    let resolveStart!: () => void;
+    mockApi.startProject.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveStart = resolve;
+        }),
+    );
+
+    render(<ProjectView projectDir={projectDir} isProjectActive={true} />);
+
+    await waitFor(() => expect(mockApi.startProject).toHaveBeenCalledWith(projectDir));
+    const callsBeforeStart = agentsMock.refreshProfiles.mock.calls.length;
+    expect(callsBeforeStart).toBe(0);
+
+    await act(async () => {
+      resolveStart();
+    });
+
+    await waitFor(() => expect(agentsMock.refreshProfiles.mock.calls.length).toBeGreaterThan(callsBeforeStart));
   });
 
   it('renders task sidebar and active task view', async () => {
