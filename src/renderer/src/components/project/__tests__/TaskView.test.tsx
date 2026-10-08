@@ -55,23 +55,28 @@ const { mockStoreGetState, mockUseTaskStore } = vi.hoisted(() => {
       }
       return getState();
     }),
-    { getState },
+    { getState, subscribe: vi.fn(() => () => undefined) },
   );
 
   return { mockStoreGetState: getState, mockUseTaskStore: fn };
 });
 
-vi.mock('@/stores/taskStore', () => ({
-  useOptimizedTaskState: vi.fn(),
-  useTaskState: vi.fn(),
-  useTaskMessages: vi.fn(),
-  useTaskStore: mockUseTaskStore,
-  useTaskTokensInfo: vi.fn().mockReturnValue(null),
-  useTaskFileTokensInfo: vi.fn().mockReturnValue(null),
-  useTaskQuestion: vi.fn(),
-  useTaskTodoItems: vi.fn(),
-  useTaskQueuedPrompts: vi.fn(),
-}));
+vi.mock('@/stores/taskStore', () => {
+  const noWorkflowRuns: never[] = [];
+  return {
+    useOptimizedTaskState: vi.fn(),
+    useTaskState: vi.fn(),
+    useTaskMessages: vi.fn(),
+    useTaskStore: mockUseTaskStore,
+    useTaskTokensInfo: vi.fn().mockReturnValue(null),
+    useTaskFileTokensInfo: vi.fn().mockReturnValue(null),
+    useTaskQuestion: vi.fn(),
+    useTaskTodoItems: vi.fn(),
+    useTaskQueuedPrompts: vi.fn(),
+    useTaskWorkflowRuns: vi.fn(() => noWorkflowRuns),
+    useTaskHasWorkflowHistory: vi.fn(() => false),
+  };
+});
 
 vi.mock('@/stores/taskFilesStore', () => ({
   useTaskAllFiles: vi.fn(() => []),

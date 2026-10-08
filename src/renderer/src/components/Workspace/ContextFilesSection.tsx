@@ -277,10 +277,8 @@ export const ContextFilesSectionComponent = ({
 
   const handlePaste = useCallback(async () => {
     const clipboardState = useContextFilesClipboard.getState();
-    console.log('Paste handler entered', clipboardState);
 
     if (!clipboardState.sourceBaseDir || clipboardState.copiedFiles.length === 0) {
-      console.warn('Paste aborted by clipboard guard', clipboardState);
       return;
     }
 
@@ -296,7 +294,6 @@ export const ContextFilesSectionComponent = ({
           // absolute for external read-only files). Preserve the original readOnly flag.
           const pathToAdd = file.path;
           const readOnly = file.readOnly;
-          console.log('Pasting context file', { file, pathToAdd, readOnly, isSameProject });
           await api.addFile(baseDir, taskId, pathToAdd, readOnly);
         } else {
           // Different project: convert relative paths to absolute, force readOnly.
@@ -309,7 +306,7 @@ export const ContextFilesSectionComponent = ({
             /^[A-Za-z]:[\\/]/.test(file.path);
           const absolutePath = isAbsolute ? file.path : `${sourceRoot}/${file.path}`;
           const readOnly = true;
-          console.log('Pasting context file', { file, pathToAdd: absolutePath, readOnly, isSameProject });
+
           await api.addFile(baseDir, taskId, absolutePath, readOnly);
         }
       });

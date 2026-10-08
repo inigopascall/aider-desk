@@ -466,6 +466,7 @@ export async function runDecompositionStage(
   planText: string,
   resolvedResearch: string | null,
 ): Promise<{ assignments: FileAssignment[]; summary: string }> {
+  report.abortStage = 'decomposition';
   const decomposerSections: PromptSection[] = [
     conversationSection(ctx),
     { title: 'USER REQUEST', body: ctx.initialPrompt },
@@ -832,7 +833,6 @@ export async function runAssignmentBatch(
     contextFiles: a.contextFiles ?? [],
     relevantContracts: a.relevantContracts ?? [],
   }));
-  const uniquePaths = [...new Set(normalized.map((a) => a.path))];
   const existingPaths = new Set<string>();
   const targetProblems = new Map<number, string>();
   for (const a of normalized) {

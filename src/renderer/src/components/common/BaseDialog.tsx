@@ -54,13 +54,17 @@ export const BaseDialog = ({
         }
       : { width: `${width}px` };
 
+  // Lets the trap focus the dialog itself when it contains nothing tabbable, instead of throwing.
+  const focusTrapOptions = { allowOutsideClick: true, escapeDeactivates: false, fallbackFocus: () => dialogRef.current! };
+
   const dialogContent = (
     <div
       role="dialog"
       aria-modal="true"
       aria-labelledby={headingId}
+      tabIndex={-1}
       style={dialogStyle}
-      className="bg-bg-secondary-light-strongest shadow-2xl rounded-xl border border-bg-tertiary-strong max-h-[90vh] flex flex-col"
+      className="bg-bg-secondary-light-strongest shadow-2xl rounded-xl border border-bg-tertiary-strong max-h-[90vh] flex flex-col outline-none"
       ref={dialogRef}
     >
       <div className="px-6 py-4 border-b border-bg-tertiary-strong flex-shrink-0">
@@ -97,7 +101,7 @@ export const BaseDialog = ({
         }
       }}
     >
-      {enableFocusTrap ? <FocusTrap focusTrapOptions={{ allowOutsideClick: true, escapeDeactivates: false }}>{dialogContent}</FocusTrap> : dialogContent}
+      {enableFocusTrap ? <FocusTrap focusTrapOptions={focusTrapOptions}>{dialogContent}</FocusTrap> : dialogContent}
     </div>
   );
 };

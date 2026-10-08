@@ -152,10 +152,8 @@ export const listRepositoryMappingFiles = async (baseDir: string): Promise<Conte
   const mappingsDir = path.join(baseDir, AIDER_DESK_PROJECT_MAPPINGS_DIR);
 
   const walk = async (dir: string): Promise<string[]> => {
-    let entries: Awaited<ReturnType<typeof fs.readdir>>;
-    try {
-      entries = await fs.readdir(dir, { withFileTypes: true });
-    } catch {
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => null);
+    if (!entries) {
       return [];
     }
 

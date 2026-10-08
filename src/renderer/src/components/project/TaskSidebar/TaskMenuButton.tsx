@@ -4,7 +4,6 @@ import { MouseEvent, useRef, useState, useEffect, memo } from 'react';
 import { HiCheck, HiOutlinePencil, HiOutlineTrash } from 'react-icons/hi';
 import { FaEllipsisVertical } from 'react-icons/fa6';
 import { IoLogoMarkdown } from 'react-icons/io';
-import { RiFlag2Line } from 'react-icons/ri';
 import { MdClose, MdImage, MdPushPin, MdVerticalAlignTop } from 'react-icons/md';
 import { BiDuplicate, BiArchive, BiArchiveIn, BiCopy } from 'react-icons/bi';
 import { createPortal } from 'react-dom';

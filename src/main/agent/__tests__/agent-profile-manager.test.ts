@@ -310,8 +310,29 @@ describe('AgentProfileManager', () => {
   });
 
   describe('Reload Profiles Behavior', () => {
-    it('should clear old profiles from directory when reloading', async () => {
-      // Add a profile
+    it('removes a profile whose directory no longer exists when reloading', async () => {
+      const profile1 = createMockAgentProfile({ id: 'profile-1', name: 'Profile 1' });
+      (agentProfileManager as any).profiles.set('profile-1', {
+        dirName: 'p1',
+        order: 0,
+        agentProfile: profile1,
+      });
+      expect(agentProfileManager.getAllProfiles()).toHaveLength(1);
+
+      // The directory listing is empty and the profile's own directory is gone
+      (fs.readdir as any).mockResolvedValue([]);
+      (fs.access as any).mockImplementation(async (target: string) => {
+        if (target === path.join(globalAgentsDir, 'p1')) {
+          throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        }
+      });
+
+      await (agentProfileManager as any).reloadProfiles(globalAgentsDir);
+
+      expect(agentProfileManager.getAllProfiles()).toHaveLength(0);
+    });
+
+    it('keeps a profile whose directory still exists when reloading', async () => {
       const profile1 = createMockAgentProfile({ id: 'profile-1', name: 'Profile 1' });
       (agentProfileManager as any).profiles.set('profile-1', {
         dirName: 'p1',
@@ -319,17 +340,15 @@ describe('AgentProfileManager', () => {
         agentProfile: profile1,
       });
 
-      const profilesBefore = agentProfileManager.getAllProfiles();
-      expect(profilesBefore.length).toBeGreaterThan(0);
-
-      // Simulate reload with empty directory
+      // The directory listing is empty (e.g. a transient read failure) but the profile's directory is still accessible
       (fs.readdir as any).mockResolvedValue([]);
       (fs.access as any).mockResolvedValue(undefined);
 
       await (agentProfileManager as any).reloadProfiles(globalAgentsDir);
 
       const profilesAfter = agentProfileManager.getAllProfiles();
-      expect(profilesAfter).toHaveLength(0);
+      expect(profilesAfter).toHaveLength(1);
+      expect(profilesAfter[0].id).toBe('profile-1');
     });
 
     it('should notify listeners after reloading', async () => {

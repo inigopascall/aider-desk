@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BrowserWindow } from 'electron';
 import { MessageRemovedData } from '@common/types';
 
@@ -95,6 +95,7 @@ describe('EventManager - coalesced streaming mode', () => {
   let mockWebContents: {
     send: ReturnType<typeof vi.fn>;
     isDestroyed: ReturnType<typeof vi.fn>;
+    isCrashed: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
@@ -103,6 +104,7 @@ describe('EventManager - coalesced streaming mode', () => {
     mockWebContents = {
       send: vi.fn(),
       isDestroyed: vi.fn(() => false),
+      isCrashed: vi.fn(() => false),
     };
 
     mockMainWindow = {
@@ -148,7 +150,6 @@ describe('EventManager - coalesced streaming mode', () => {
       taskId,
       messageId,
       chunk: 'Hello ',
-      reflectedMessage: false,
     });
 
     eventManager.sendResponseChunk({
@@ -156,7 +157,6 @@ describe('EventManager - coalesced streaming mode', () => {
       taskId,
       messageId,
       chunk: 'World',
-      reflectedMessage: false,
     });
 
     eventManager.sendResponseChunk({
@@ -164,7 +164,6 @@ describe('EventManager - coalesced streaming mode', () => {
       taskId,
       messageId,
       chunk: '!',
-      reflectedMessage: false,
     });
 
     // No event should have been emitted yet (buffered)

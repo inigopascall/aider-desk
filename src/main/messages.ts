@@ -289,6 +289,8 @@ export interface SubscribeEventsMessage extends Message {
   action: 'subscribe-events';
   eventTypes?: string[];
   baseDirs?: string[];
+  streamMode?: 'live' | 'coalesced';
+  streamFlushIntervalMs?: number;
 }
 
 export const isSubscribeEventsMessage = (message: Message): message is SubscribeEventsMessage => {
@@ -307,6 +309,8 @@ export interface ReadonlySubscribeEventsMessage extends Message {
   action: 'readonly-subscribe-events';
   projectDir: string;
   eventTypes: string[];
+  streamMode?: 'live' | 'coalesced';
+  streamFlushIntervalMs?: number;
 }
 
 export const isReadonlySubscribeEventsMessage = (message: Message): message is ReadonlySubscribeEventsMessage => {

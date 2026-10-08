@@ -56,7 +56,7 @@ export const PromptSidecarEditorOverlay = ({ profileId, profileName, filename, t
         setContent(value);
         setLoading(false);
       })
-      .catch((err) => {
+      .catch(() => {
         if (cancelled) return;
         showErrorNotification(
           t('settings.agent.promptSidecar.loadError', {

@@ -28,7 +28,7 @@ const getIcon = (kind: OutlineItem['kind']) => {
       return <VscTools className="w-3.5 h-3.5" />;
     case 'group':
       return <MdOutlineLayers className="w-3.5 h-3.5" />;
-    case 'workflow-log':
+    case 'workflow-run':
       return <VscTerminal className="w-3.5 h-3.5" />;
     case 'reflected':
       return <MdOutlineRefresh className="w-3.5 h-3.5" />;

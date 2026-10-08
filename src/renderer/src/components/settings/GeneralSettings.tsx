@@ -8,6 +8,7 @@ import { Select, Option } from '../common/Select';
 import { Section } from '../common/Section';
 import { InfoIcon } from '../common/InfoIcon';
 import { Input } from '../common/Input';
+import { Slider } from '../common/Slider';
 
 import { LanguageSelector } from './LanguageSelector';
 

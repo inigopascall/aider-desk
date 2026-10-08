@@ -63,6 +63,8 @@ interface McpConnector {
   tools: McpTool[];
   toolDefinitions: ListToolsResult;
   serverConfig: McpServerConfig;
+  projectDir: string | null;
+  taskDir: string | null;
 }
 
 export interface McpServerFailure {
@@ -75,6 +77,7 @@ export interface McpServerFailure {
 }
 
 type McpClientTransport = Parameters<typeof createMCPClient>[0]['transport'];
+type McpToolDefinition = ListToolsResult['tools'][number];
 
 export class McpManager {
   private mcpConnectors: Map<string, Promise<McpConnector>> = new Map();
@@ -188,16 +191,7 @@ export class McpManager {
           continue;
         }
 
-        toolSet[normalizedToolId] = this.wrapMcpTool(
-          mcpConnector,
-          toolDefinition.name,
-          task,
-          profile,
-          mcpTool,
-          approvalManager,
-          lastToolCallTimeRef,
-          promptContext,
-        );
+        toolSet[normalizedToolId] = this.wrapMcpTool(mcpConnector, toolDefinition, task, profile, mcpTool, approvalManager, lastToolCallTimeRef, promptContext);
       }
     }
 
@@ -206,7 +200,7 @@ export class McpManager {
 
   private wrapMcpTool(
     connector: McpConnector,
-    toolName: string,
+    toolDefinition: McpToolDefinition,
     task: Task,
     profile: AgentProfile,
     toolDef: Tool,
@@ -214,6 +208,7 @@ export class McpManager {
     lastToolCallTimeRef: { value: number },
     promptContext?: PromptContext,
   ): Tool {
+    const toolName = toolDefinition.name;
     const serverName = connector.serverName;
     const toolId = `${serverName}${TOOL_GROUP_NAME_SEPARATOR}${toolName}`;
     const originalExecute = toolDef.execute;
@@ -247,7 +242,26 @@ export class McpManager {
       try {
         const timeoutSignal = AbortSignal.timeout(MCP_CLIENT_TIMEOUT);
         const abortSignal = options.abortSignal ? AbortSignal.any([options.abortSignal, timeoutSignal]) : timeoutSignal;
-        const response = await originalExecute(args, { ...options, abortSignal });
+        const callTool = (target: McpConnector) => {
+          const targetExecute = target === connector ? originalExecute : this.getToolExecute(target, toolDefinition);
+          return targetExecute(args, { ...options, abortSignal });
+        };
+
+        // Resolve the pooled connector at call time: a reload or reconnect may have
+        // replaced the connector this toolset was built with.
+        let target = await this.resolveLiveConnector(connector);
+        let response;
+        try {
+          response = await callTool(target);
+        } catch (error) {
+          if (abortSignal.aborted || !this.isClosedClientError(error)) {
+            throw error;
+          }
+          // The request never left this process, so reconnecting and retrying once is safe.
+          logger.warn(`MCP client for server ${serverName} is closed; reconnecting and retrying tool '${toolName}' once`);
+          target = await this.reconnectConnector(target);
+          response = await callTool(target);
+        }
 
         logger.debug(`Tool ${toolName} returned response`, this.describeToolResponse(response));
 
@@ -733,7 +747,15 @@ export class McpManager {
         handles.transport = transport;
 
         logger.debug(`Connecting to MCP server using STDIO: ${serverName}`);
-        handles.client = await this.createClient(transport);
+        const stdioClient = await this.createClient(transport);
+        handles.client = stdioClient;
+        // The AI SDK client set transport.onclose in its constructor; chain onto it so an
+        // unexpected exit of the server process evicts the pooled connector immediately.
+        const sdkOnClose = transport.onclose;
+        transport.onclose = () => {
+          sdkOnClose?.();
+          this.handleTransportClosed(poolKey, serverName, stdioClient);
+        };
         logger.debug(`Connected to MCP server: ${serverName}`);
       } else if (config.url) {
         const headers = config.headers ? { ...config.headers } : undefined;
@@ -798,6 +820,8 @@ export class McpManager {
         serverName,
         poolKey,
         serverConfig: config,
+        projectDir,
+        taskDir,
         toolDefinitions: toolsResponse,
         tools: toolsList.map((tool) => ({
           serverName,
@@ -1043,7 +1067,91 @@ export class McpManager {
 
   private isConnectionClosedError(error: unknown): boolean {
     const message = error instanceof Error ? error.message : String(error);
-    return /connection closed|not connected|transport (is )?closed|EPIPE|ECONNRESET|ECONNREFUSED/i.test(message);
+    return /connection closed|closed client|not connected|transport (is )?closed|EPIPE|ECONNRESET|ECONNREFUSED/i.test(message);
+  }
+
+  /** The AI SDK's error for a request issued after its client closed; the request never reached the server. */
+  private isClosedClientError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return /from a closed client/i.test(message);
+  }
+
+  private async resolveLiveConnector(connector: McpConnector): Promise<McpConnector> {
+    const pooled = this.mcpConnectors.get(connector.poolKey);
+    if (!pooled) {
+      return connector;
+    }
+    try {
+      return await pooled;
+    } catch {
+      return connector;
+    }
+  }
+
+  private getToolExecute(target: McpConnector, toolDefinition: McpToolDefinition): NonNullable<Tool['execute']> {
+    const tool = target.client.toolsFromDefinitions({ tools: [toolDefinition] })[toolDefinition.name];
+    if (!tool?.execute) {
+      throw new Error(`AI SDK MCP tool ${target.serverName}${TOOL_GROUP_NAME_SEPARATOR}${toolDefinition.name} does not have an execute function`);
+    }
+    return tool.execute;
+  }
+
+  private async reconnectConnector(connector: McpConnector): Promise<McpConnector> {
+    const { poolKey, serverName } = connector;
+    const scope = poolKey.slice(0, poolKey.length - serverName.length - 1);
+
+    const pooled = this.mcpConnectors.get(poolKey);
+    if (pooled) {
+      const resolved = await pooled.catch(() => null);
+      const current = this.mcpConnectors.get(poolKey);
+      if (current && current !== pooled) {
+        // Another caller already replaced the connector while we waited.
+        return current;
+      }
+      if (resolved && resolved !== connector) {
+        return resolved;
+      }
+    }
+
+    const configJson = this.connectorConfigs.get(poolKey);
+    const poolConfig = configJson ? (JSON.parse(configJson) as McpServerConfig) : connector.serverConfig;
+    this.mcpConnectors.delete(poolKey);
+    this.connectorServerUrls.delete(poolKey);
+    this.connectorConfigs.delete(poolKey);
+    connector.client.close().catch(() => undefined);
+
+    logger.warn(`Reconnecting MCP server ${serverName} (${poolKey}) after its client closed`);
+    const promise = this.createMcpConnector(serverName, connector.serverConfig, connector.projectDir, connector.taskDir, poolKey);
+    promise.catch(() => undefined);
+    this.setPooledConnector(scope, serverName, promise, poolConfig);
+
+    try {
+      const fresh = await promise;
+      this.clearQuarantine(poolKey);
+      this.updateToolsCache(serverName, fresh.tools);
+      void this.saveToolsCache();
+      return fresh;
+    } catch (error) {
+      if (this.mcpConnectors.get(poolKey) === promise) {
+        this.markFailed(poolKey, serverName, scope, error);
+      }
+      throw error;
+    }
+  }
+
+  private handleTransportClosed(poolKey: string, serverName: string, client: MCPClient): void {
+    const pooled = this.mcpConnectors.get(poolKey);
+    if (!pooled) {
+      return;
+    }
+    pooled.then(
+      (resolved) => {
+        if (resolved.client === client && this.mcpConnectors.get(poolKey) === pooled) {
+          this.evictConnector(resolved, `MCP server ${serverName} process exited`);
+        }
+      },
+      () => undefined,
+    );
   }
 
   private markFailed(poolKey: string, serverName: string, scope: string, error: unknown): McpServerFailure {

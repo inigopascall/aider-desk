@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Message } from '@common/types';
+import { AssistantGroupMessage, GroupMessage, Message } from '@common/types';
 
 import { buildOutline, deriveToolTitle, extractFirstLine, getGroupDisplayName, truncateTitle } from '../outline';
 
@@ -61,7 +61,7 @@ describe('outline helpers', () => {
   });
 
   it('maps assistant-group children to the assistant group scroll target', () => {
-    const messages = [
+    const messages: AssistantGroupMessage[] = [
       {
         id: 'assistant-group-1',
         type: 'assistant-group',
@@ -69,7 +69,7 @@ describe('outline helpers', () => {
         responseMessage: { id: 'response-1', type: 'response', content: 'Response' },
         toolMessages: [{ id: 'tool-1', type: 'tool', content: '', serverName: 'power', toolName: 'bash', args: {} }],
       },
-    ] as Message[];
+    ];
 
     const outline = buildOutline(messages, t);
 
@@ -80,7 +80,7 @@ describe('outline helpers', () => {
   });
 
   it('represents a sub-agent group as one non-bookmarkable row and excludes its children', () => {
-    const messages = [
+    const messages: GroupMessage[] = [
       {
         id: 'group-1',
         type: 'group',
@@ -91,7 +91,7 @@ describe('outline helpers', () => {
           { id: 'response-1', type: 'response', content: 'Response' },
         ],
       },
-    ] as Message[];
+    ];
 
     const outline = buildOutline(messages, t);
 

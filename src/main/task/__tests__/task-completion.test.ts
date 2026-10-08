@@ -50,6 +50,7 @@ vi.mock('@/utils', () => ({
 vi.mock('@/constants', () => ({
   PROBE_BINARY_PATH: '/probe',
   AIDER_DESK_TASKS_DIR: '.aider-desk/tasks',
+  AIDER_DESK_WORKFLOW_EVENTS_FILE: 'workflow-events.jsonl',
   AIDER_DESK_DIR: '.aider-desk',
   AIDER_DESK_TODOS_FILE: 'todos.json',
   AIDER_DESK_RULES_DIR: 'rules',
@@ -272,6 +273,7 @@ describe('Task - task-state determination (determineTaskState)', () => {
         [],
         false,
         expect.any(AbortSignal),
+        'test-task-id',
       );
     });
 

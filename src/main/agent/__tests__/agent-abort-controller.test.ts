@@ -62,6 +62,7 @@ const createTask = () =>
     getContextMessages: vi.fn(async () => []),
     getContextFiles: vi.fn(async () => []),
     addContextMessage: vi.fn(async () => {}),
+    flushContext: vi.fn(async () => {}),
     addLogMessage: vi.fn(),
     updateTask: vi.fn(async () => {}),
   }) as unknown as Task;

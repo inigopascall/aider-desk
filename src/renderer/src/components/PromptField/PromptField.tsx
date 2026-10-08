@@ -1290,7 +1290,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
               {
                 key: enterSubmits ? 'Enter' : 'Ctrl-Enter',
                 preventDefault: true,
-                run: (view: { state: { selection: { main: { head: number } }; doc: { length: number } } }) => {
+                run: (view: EditorView) => {
                   // On mobile, allow default (newline)
                   if (isMobile) {
                     return false;
@@ -1320,7 +1320,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
               {
                 key: enterSubmits ? 'Ctrl-Enter' : 'Enter',
                 preventDefault: true,
-                run: (view: { state: { selection: { main: { head: number } } } }) => {
+                run: (view: EditorView) => {
                   const cursorPos = view.state.selection.main.head;
                   view.dispatch({
                     changes: { from: cursorPos, insert: '\n' },

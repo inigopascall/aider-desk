@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isWorkflowRunMessage, Message, WorkflowLogData } from '@common/types';
+import { GroupMessage, isWorkflowRunMessage, Message, ToolMessage, WorkflowLogData } from '@common/types';
 
 import { composeMessagesWithWorkflowRuns, groupWorkflowLogsByRun } from '@/utils/workflow-messages';
 import { groupMessagesByPromptContext } from '@/components/message/utils';
@@ -128,7 +128,7 @@ describe('workflow-run panels and prompt-context grouping', () => {
   it('a run panel interleaved before subagent-group messages survives groupMessagesByPromptContext with the group intact', () => {
     const invocation = makeInvocation('inv-1', 'run-1');
     const groupId = 'group-1';
-    const subagentTool: Message = {
+    const subagentTool: ToolMessage = {
       id: 'tool-1',
       type: 'tool',
       content: '',
@@ -151,9 +151,10 @@ describe('workflow-run panels and prompt-context grouping', () => {
     const grouped = groupMessagesByPromptContext(composed);
 
     // The run panel is inserted after the invocation, before the group messages.
-    expect(grouped.map((m) => m.id)).toEqual(['inv-1', 'workflow-run-run-1', groupId]);
-    const group = grouped[2];
+    expect(grouped.map((m) => m.id)).toEqual(['inv-1', 'workflow-run-run-1', 'tool-1']);
+    const group = grouped[2] as GroupMessage;
     expect(group.type).toBe('group');
+    expect(group.group.id).toBe(groupId);
     expect(group.children.map((child) => child.id)).toEqual(['tool-1', 'resp-1']);
   });
 

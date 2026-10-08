@@ -87,8 +87,10 @@ export const composeMessagesWithWorkflowRuns = (messages: Message[], runs: Workf
 
   // Mark the final workflow-run panel as the latest run.
   for (let i = result.length - 1; i >= 0; i--) {
-    if (isWorkflowRunMessage(result[i])) {
-      result[i] = { ...result[i], isLatestRun: true };
+    const message = result[i];
+    if (isWorkflowRunMessage(message)) {
+      const latestRun: WorkflowRunMessage = { ...message, isLatestRun: true };
+      result[i] = latestRun;
       break;
     }
   }

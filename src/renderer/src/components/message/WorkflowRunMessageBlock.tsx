@@ -52,7 +52,7 @@ const WorkflowLogRow = ({ baseDir, log }: { baseDir: string; log: WorkflowLogDat
   );
 };
 
-export const WorkflowRunMessageBlock = ({ baseDir, taskId, message, inProgress = false }: Props) => {
+export const WorkflowRunMessageBlock = ({ baseDir, message, inProgress = false }: Props) => {
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {

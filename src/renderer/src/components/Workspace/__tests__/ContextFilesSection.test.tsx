@@ -26,6 +26,21 @@ vi.mock('../EmptyContextInfo', () => ({
   EmptyContextInfo: () => null,
 }));
 
+// jsdom has no layout, so the real virtualizer measures a 0-height viewport and renders no rows.
+vi.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: ({ count }: { count: number }) => {
+    const items = Array.from({ length: count }, (_, index) => ({ index, key: index, start: index * 24, size: 24 }));
+    return {
+      getTotalSize: () => count * 24,
+      getVirtualItems: () => items,
+      measure: () => undefined,
+      measureElement: () => 24,
+      scrollToIndex: () => undefined,
+      scrollOffset: 0,
+    };
+  },
+}));
+
 const BASE_DIR = '/project';
 const TASK_ID = 'task-1';
 const NO_FILES: ContextFile[] = [];
