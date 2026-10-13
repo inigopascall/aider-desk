@@ -1,0 +1,212 @@
+diff --git a/node_modules/@legendapp/list/react-native.web.js b/node_modules/@legendapp/list/react-native.web.js
+index a0f962c..7ee204f 100644
+--- a/node_modules/@legendapp/list/react-native.web.js
++++ b/node_modules/@legendapp/list/react-native.web.js
+@@ -409,6 +409,7 @@
+ 
+ // src/core/containerLayoutBaseline.ts
+ var containerLayoutBaselines = /* @__PURE__ */ new WeakMap();
++var lastContainerMeasureAt = /* @__PURE__ */ new WeakMap();
+ function getContainerLayoutBaseline(element) {
+   return containerLayoutBaselines.get(element);
+ }
+@@ -5208,6 +5209,9 @@
+   };
+ }
+ function updateOneItemSize(ctx, itemKey, sizeObj, resolvedMeasurementItem, notifyTotalSize = true) {
++  if (sizeObj.width === 0 && sizeObj.height === 0) {
++    return 0;
++  }
+   var _a3, _b;
+   const state = ctx.state;
+   const {
+@@ -5278,6 +5282,9 @@
+     const element = viewRef == null ? void 0 : viewRef.current;
+     if (itemKey !== void 0 && element) {
+       const rect = element.getBoundingClientRect();
++      if (rect.width === 0 && rect.height === 0) {
++        continue;
++      }
+       setContainerLayoutBaseline(element, rect);
+       measurements.push({
+         containerId,
+@@ -5303,7 +5310,19 @@
+     {
+       const targetContainerIds = getContainerLayoutEffectScope(ctx);
+       if (targetContainerIds !== void 0) {
+-        measureContainersInLayoutEffect(ctx, targetContainerIds);
++        const now = Date.now();
++        const lastMeasureAt = lastContainerMeasureAt.get(ctx) || 0;
++        if (now - lastMeasureAt < 50) {
++          const deferredCtx = ctx;
++          const deferredTargets = targetContainerIds;
++          requestAnimationFrame(() => {
++            lastContainerMeasureAt.set(deferredCtx, Date.now());
++            measureContainersInLayoutEffect(deferredCtx, deferredTargets);
++          });
++        } else {
++          lastContainerMeasureAt.set(ctx, now);
++          measureContainersInLayoutEffect(ctx, targetContainerIds);
++        }
+       }
+     }
+   }, [ctx, containerLayoutEpoch]);
+diff --git a/node_modules/@legendapp/list/react-native.web.mjs b/node_modules/@legendapp/list/react-native.web.mjs
+index 9338287..bede150 100644
+--- a/node_modules/@legendapp/list/react-native.web.mjs
++++ b/node_modules/@legendapp/list/react-native.web.mjs
+@@ -388,6 +388,7 @@
+ 
+ // src/core/containerLayoutBaseline.ts
+ var containerLayoutBaselines = /* @__PURE__ */ new WeakMap();
++var lastContainerMeasureAt = /* @__PURE__ */ new WeakMap();
+ function getContainerLayoutBaseline(element) {
+   return containerLayoutBaselines.get(element);
+ }
+@@ -5187,6 +5188,9 @@
+   };
+ }
+ function updateOneItemSize(ctx, itemKey, sizeObj, resolvedMeasurementItem, notifyTotalSize = true) {
++  if (sizeObj.width === 0 && sizeObj.height === 0) {
++    return 0;
++  }
+   var _a3, _b;
+   const state = ctx.state;
+   const {
+@@ -5257,6 +5261,9 @@
+     const element = viewRef == null ? void 0 : viewRef.current;
+     if (itemKey !== void 0 && element) {
+       const rect = element.getBoundingClientRect();
++      if (rect.width === 0 && rect.height === 0) {
++        continue;
++      }
+       setContainerLayoutBaseline(element, rect);
+       measurements.push({
+         containerId,
+@@ -5282,7 +5289,19 @@
+     {
+       const targetContainerIds = getContainerLayoutEffectScope(ctx);
+       if (targetContainerIds !== void 0) {
+-        measureContainersInLayoutEffect(ctx, targetContainerIds);
++        const now = Date.now();
++        const lastMeasureAt = lastContainerMeasureAt.get(ctx) || 0;
++        if (now - lastMeasureAt < 50) {
++          const deferredCtx = ctx;
++          const deferredTargets = targetContainerIds;
++          requestAnimationFrame(() => {
++            lastContainerMeasureAt.set(deferredCtx, Date.now());
++            measureContainersInLayoutEffect(deferredCtx, deferredTargets);
++          });
++        } else {
++          lastContainerMeasureAt.set(ctx, now);
++          measureContainersInLayoutEffect(ctx, targetContainerIds);
++        }
+       }
+     }
+   }, [ctx, containerLayoutEpoch]);
+diff --git a/node_modules/@legendapp/list/react.js b/node_modules/@legendapp/list/react.js
+index a0f962c..7ee204f 100644
+--- a/node_modules/@legendapp/list/react.js
++++ b/node_modules/@legendapp/list/react.js
+@@ -409,6 +409,7 @@
+ 
+ // src/core/containerLayoutBaseline.ts
+ var containerLayoutBaselines = /* @__PURE__ */ new WeakMap();
++var lastContainerMeasureAt = /* @__PURE__ */ new WeakMap();
+ function getContainerLayoutBaseline(element) {
+   return containerLayoutBaselines.get(element);
+ }
+@@ -5208,6 +5209,9 @@
+   };
+ }
+ function updateOneItemSize(ctx, itemKey, sizeObj, resolvedMeasurementItem, notifyTotalSize = true) {
++  if (sizeObj.width === 0 && sizeObj.height === 0) {
++    return 0;
++  }
+   var _a3, _b;
+   const state = ctx.state;
+   const {
+@@ -5278,6 +5282,9 @@
+     const element = viewRef == null ? void 0 : viewRef.current;
+     if (itemKey !== void 0 && element) {
+       const rect = element.getBoundingClientRect();
++      if (rect.width === 0 && rect.height === 0) {
++        continue;
++      }
+       setContainerLayoutBaseline(element, rect);
+       measurements.push({
+         containerId,
+@@ -5303,7 +5310,19 @@
+     {
+       const targetContainerIds = getContainerLayoutEffectScope(ctx);
+       if (targetContainerIds !== void 0) {
+-        measureContainersInLayoutEffect(ctx, targetContainerIds);
++        const now = Date.now();
++        const lastMeasureAt = lastContainerMeasureAt.get(ctx) || 0;
++        if (now - lastMeasureAt < 50) {
++          const deferredCtx = ctx;
++          const deferredTargets = targetContainerIds;
++          requestAnimationFrame(() => {
++            lastContainerMeasureAt.set(deferredCtx, Date.now());
++            measureContainersInLayoutEffect(deferredCtx, deferredTargets);
++          });
++        } else {
++          lastContainerMeasureAt.set(ctx, now);
++          measureContainersInLayoutEffect(ctx, targetContainerIds);
++        }
+       }
+     }
+   }, [ctx, containerLayoutEpoch]);
+diff --git a/node_modules/@legendapp/list/react.mjs b/node_modules/@legendapp/list/react.mjs
+index 9338287..bede150 100644
+--- a/node_modules/@legendapp/list/react.mjs
++++ b/node_modules/@legendapp/list/react.mjs
+@@ -388,6 +388,7 @@
+ 
+ // src/core/containerLayoutBaseline.ts
+ var containerLayoutBaselines = /* @__PURE__ */ new WeakMap();
++var lastContainerMeasureAt = /* @__PURE__ */ new WeakMap();
+ function getContainerLayoutBaseline(element) {
+   return containerLayoutBaselines.get(element);
+ }
+@@ -5187,6 +5188,9 @@
+   };
+ }
+ function updateOneItemSize(ctx, itemKey, sizeObj, resolvedMeasurementItem, notifyTotalSize = true) {
++  if (sizeObj.width === 0 && sizeObj.height === 0) {
++    return 0;
++  }
+   var _a3, _b;
+   const state = ctx.state;
+   const {
+@@ -5257,6 +5261,9 @@
+     const element = viewRef == null ? void 0 : viewRef.current;
+     if (itemKey !== void 0 && element) {
+       const rect = element.getBoundingClientRect();
++      if (rect.width === 0 && rect.height === 0) {
++        continue;
++      }
+       setContainerLayoutBaseline(element, rect);
+       measurements.push({
+         containerId,
+@@ -5282,7 +5289,19 @@
+     {
+       const targetContainerIds = getContainerLayoutEffectScope(ctx);
+       if (targetContainerIds !== void 0) {
+-        measureContainersInLayoutEffect(ctx, targetContainerIds);
++        const now = Date.now();
++        const lastMeasureAt = lastContainerMeasureAt.get(ctx) || 0;
++        if (now - lastMeasureAt < 50) {
++          const deferredCtx = ctx;
++          const deferredTargets = targetContainerIds;
++          requestAnimationFrame(() => {
++            lastContainerMeasureAt.set(deferredCtx, Date.now());
++            measureContainersInLayoutEffect(deferredCtx, deferredTargets);
++          });
++        } else {
++          lastContainerMeasureAt.set(ctx, now);
++          measureContainersInLayoutEffect(ctx, targetContainerIds);
++        }
+       }
+     }
+   }, [ctx, containerLayoutEpoch]);

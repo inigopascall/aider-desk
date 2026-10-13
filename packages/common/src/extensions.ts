@@ -40,11 +40,11 @@ import {
   UpdatedFile,
   UsageReportData,
   VoiceSession,
-  WorktreeUncommittedFiles,
+  UncommittedFiles,
 } from '@common/types';
 
 export { AutonomyMode, ContextMemoryMode, InvocationMode, OS, ToolApprovalState };
-export type { ModelCallSettings, ModelCallTimeout, Reasoning, SwitchToLocalOptions, SwitchToWorktreeOptions, WorktreeUncommittedFiles };
+export type { ModelCallSettings, ModelCallTimeout, Reasoning, SwitchToLocalOptions, SwitchToWorktreeOptions, UncommittedFiles };
 
 export type AgentStepResult = unknown;
 export type { ModeDefinition };
@@ -98,9 +98,13 @@ export interface ToolResult {
  * Definition of a tool that is part of the tool set. This tool can be executed internally by extension, but it won't be propagated to UI.
  *
  * @execute - Optional execute function. If not provided, the tool has other unsupported means of execution.
+ * @description - Optional tool description as provided to the LLM.
+ * @inputSchema - Optional input schema of the tool (zod schema or JSON schema, depending on the tool origin).
  */
 export interface Tool {
   execute?: (input: Record<string, unknown>) => Promise<unknown>;
+  description?: string;
+  inputSchema?: unknown;
 }
 
 /**
@@ -220,6 +224,7 @@ export type UIComponentPlacement =
   | 'task-message-above'
   | 'task-message-below'
   | 'task-message-bar'
+  | 'task-message-bar-menu'
   | 'task-top-bar-left'
   | 'task-top-bar-right'
   | 'task-state-actions'
@@ -528,6 +533,28 @@ export interface ToolFinishedEvent {
   output: unknown;
 }
 
+/** A tool entry as exposed to extensions in toolset events */
+export interface ToolsetToolEntry {
+  description?: string;
+  inputSchema?: unknown;
+  execute?(input: Record<string, unknown>, options?: unknown): Promise<unknown>;
+}
+
+/** Event payload for toolset created events */
+export interface ToolsetCreatedEvent {
+  readonly mode: Mode;
+  readonly agentProfile: AgentProfile;
+  readonly providerProfile: ProviderProfile;
+  readonly model: string;
+  readonly promptContext?: PromptContext;
+  /**
+   * The complete toolset (built-in, MCP, and extension tools) for the agent run.
+   * Return `{ tools }` with a new record to replace it (e.g. to add or remove tools).
+   * Return a new record instead of mutating - when multiple extensions return tools, the last one wins.
+   */
+  tools: Record<string, ToolsetToolEntry>;
+}
+
 /** Event payload for files added events */
 export interface FilesAddedEvent {
   files: ContextFile[];
@@ -634,6 +661,7 @@ export interface InterruptedEvent {
 export interface BeforeCommitEvent {
   message: string;
   amend: boolean;
+  skipGitHooks?: boolean;
   blocked?: boolean;
 }
 
@@ -648,6 +676,54 @@ export interface QuestionOptions {
   subject?: string;
   answers?: Array<{ text: string; shortkey: string }>;
   defaultAnswer?: string;
+}
+
+/** Selection of individual smart compaction passes. Omitted flags default to true. */
+export interface SmartCompactionPasses {
+  /** Remove errored/no-op power tool calls */
+  erroredTools?: boolean;
+  /** Collapse repeated file edit/write calls into <file-edited> markers */
+  fileEdits?: boolean;
+  /** Remove file reads that precede later edits of the same file */
+  staleFileReads?: boolean;
+  /** Truncate/redact file read outputs */
+  fileReads?: boolean;
+  /** Remove glob/grep searches made obsolete by later edits */
+  searches?: boolean;
+  /** Remove/deduplicate semantic search results */
+  semanticSearches?: boolean;
+  /** Deduplicate bash commands and redact their outputs */
+  bash?: boolean;
+  /** Redact fetch outputs */
+  fetch?: boolean;
+  /** Truncate results of non-power (MCP/extension) tools */
+  otherTools?: boolean;
+  /** Remove tool calls with verbose inputs */
+  verboseToolCalls?: boolean;
+  /** Remove reasoning parts from assistant messages */
+  reasoning?: boolean;
+}
+
+/** Options for manual smart compaction of the task context. */
+export interface SmartCompactionOptions {
+  /** Number of most-recent messages protected from compaction (default: 10) */
+  protectedMessageCount?: number;
+  /** Compaction level 1 (mild) to 5 (max). Omit to keep the automatic level. */
+  compactionLevel?: number;
+  /** Which compaction passes to run. Omitted = all passes enabled. */
+  passes?: SmartCompactionPasses;
+}
+
+/** Result of a smart compaction run. */
+export interface SmartCompactionResult {
+  /** Context message count before compaction */
+  messagesBefore: number;
+  /** Context message count after compaction */
+  messagesAfter: number;
+  /** Estimated next-prompt token count before compaction */
+  tokensBefore: number;
+  /** Estimated next-prompt token count after compaction */
+  tokensAfter: number;
 }
 
 /**
@@ -1077,6 +1153,22 @@ export interface TaskContext {
   compactConversation(instructions?: string): Promise<void>;
 
   /**
+   * Run smart (rule-based) compaction on the task's context with manual controls.
+   * Backs up the current context (undoable), applies the selected compaction passes,
+   * reloads the UI and connectors, and refreshes the context info.
+   * @param options - Optional settings: protected message window, compaction level (1-5), and pass selection
+   * @returns Message and estimated token counts before and after compaction
+   */
+  smartCompact(options?: SmartCompactionOptions): Promise<SmartCompactionResult>;
+
+  /**
+   * Estimate the number of tokens the next agent prompt would use
+   * (system prompt, tools, context messages, and context files included).
+   * @returns Estimated token count, or 0 if no agent profile is configured
+   */
+  getEstimatedTokens(): Promise<number>;
+
+  /**
    * Generate a markdown representation of the context messages in the context manager.
    * Formats user and assistant messages as text, and tool messages with tool name and JSON result.
    * @returns Markdown string of the context messages, or null if generation fails
@@ -1180,7 +1272,7 @@ export interface TaskContext {
    * Get uncommitted files from the project's main repository (not from a worktree).
    * @returns Object containing arrays of unstaged, staged, and untracked file paths
    */
-  getLocalUncommittedFiles(): Promise<WorktreeUncommittedFiles>;
+  getLocalUncommittedFiles(): Promise<UncommittedFiles>;
 
   /**
    * Apply uncommitted changes from the task's worktree to the branch currently checked out
@@ -1514,6 +1606,13 @@ export interface ExtensionContext {
   getSetting(key: string): Promise<unknown>;
 
   /**
+   * Get the configured provider profiles (LLM provider settings including API keys).
+   * Results are read-only snapshots from the ModelManager; empty array when not available.
+   * @returns Array of ProviderProfile currently configured by the user
+   */
+  getProviders(): ProviderProfile[];
+
+  /**
    * Get the merged MCP server configurations (global servers overridden by project-specific ones)
    * available for the current project context. Returns an empty object if no project context is
    * available or the MCP config manager is not wired up.
@@ -1618,15 +1717,17 @@ export interface ExtensionContext {
 export interface MemoryContext {
   /**
    * Store a new memory entry
+   * @param scopeId - Memory scope: the project directory, or `agent-profile:{profileId}` when the agent profile has memory isolation (`useAgentMemoryScope`) enabled
    * @returns The ID of the created memory
    */
-  storeMemory(projectId: string, taskId: string, type: MemoryEntryType, content: string): Promise<string>;
+  storeMemory(scopeId: string, taskId: string, type: MemoryEntryType, content: string): Promise<string>;
 
   /**
    * Retrieve memories by semantic similarity
+   * @param scopeId - Memory scope: the project directory, or `agent-profile:{profileId}` when the agent profile has memory isolation (`useAgentMemoryScope`) enabled
    * @returns Array of matching memory entries, ranked by relevance
    */
-  retrieveMemories(projectId: string, query: string, limit?: number): Promise<MemoryEntry[]>;
+  retrieveMemories(scopeId: string, query: string, limit?: number): Promise<MemoryEntry[]>;
 
   /**
    * Get a single memory by ID
@@ -1992,6 +2093,13 @@ export interface Extension {
    * @returns void or partial event to modify result
    */
   onToolFinished?(event: ToolFinishedEvent, context: ExtensionContext): Promise<void | Partial<ToolFinishedEvent>>;
+
+  /**
+   * Called after the complete toolset for an agent run has been created (built-in, MCP, and extension tools)
+   * Return { tools } with a new record to replace the toolset (e.g. to add or remove tools)
+   * @returns void or partial event to modify the toolset
+   */
+  onToolsetCreated?(event: ToolsetCreatedEvent, context: ExtensionContext): Promise<void | Partial<ToolsetCreatedEvent>>;
 
   // File Events
 

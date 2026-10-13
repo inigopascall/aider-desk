@@ -55,6 +55,7 @@ describe('addProjectsFromEnv', () => {
       updatedFilesGroupMode: 'flat',
       disabledRuleFiles: [],
       disabledRepositoryMappingFiles: [],
+      disabledSkills: [],
       contextSidebarSectionsOrder: [],
       contextSidebarSectionsHidden: [],
     });

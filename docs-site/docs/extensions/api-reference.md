@@ -35,6 +35,7 @@ interface Extension {
   onTaskCreated?(event, context): Promise<void | Partial<Event>>;
   onTaskDeleted?(event, context): Promise<void | Partial<Event>>;
   onPromptTemplate?(event, context): Promise<void | Partial<PromptTemplateEvent>>;
+  onToolsetCreated?(event, context): Promise<void | Partial<ToolsetCreatedEvent>>;
   // ... and more event handlers
 }
 ```
@@ -115,6 +116,9 @@ interface ExtensionContext {
   getSetting(key: string): Promise<unknown>;
   updateSettings(updates: Partial<SettingsData>): Promise<void>;
 
+  // Providers
+  getProviders(): ProviderProfile[];
+
   // MCP Servers
   getMcpServers(projectDir?: string): Promise<Record<string, McpServerConfig>>;
 
@@ -125,6 +129,19 @@ interface ExtensionContext {
   // Navigation
   openUrl(url: string, target?: 'external' | 'window' | 'modal-overlay'): Promise<void>;
   openPath(path: string): Promise<boolean>;
+
+  // Electron access
+  getElectronApp(): Promise<ElectronApp | null>;
+
+  // Advanced
+  truncateToolResult(
+    content: string,
+    maxLines?: number,
+    maxSizeKB?: number,
+    maxTokens?: number,
+    saveToFile?: boolean,
+    truncationSuffix?: string,
+  ): Promise<string>;
 }
 ```
 
@@ -147,6 +164,9 @@ interface ExtensionContext {
 | `triggerUIComponentsReload()` | Reload all UI component definitions for this extension |
 | `openUrl(url, target?)` | Open URL in external browser, new window, or modal overlay |
 | `openPath(path)` | Open file or directory in system's default application |
+| `getProviders()` | Get configured provider profiles (read-only snapshots from ModelManager including API keys; empty array when not available) |
+| `getElectronApp()` | Get a narrowed Electron `App` object for host-level APIs (e.g., `getAppMetrics()`); returns `null` when not running in Electron |
+| `truncateToolResult(content, maxLines?, maxSizeKB?, maxTokens?, saveToFile?, truncationSuffix?)` | Truncate a tool-result string exceeding line/size/token limits, preserving head and tail (defaults: 1000 lines, 50 KB, 50000 tokens; saves full content to a temp file unless `saveToFile: false`) |
 
 ## TaskContext
 
@@ -211,6 +231,8 @@ interface TaskContext {
   clearContext(): Promise<void>;
   resetContext(): Promise<void>;
   compactConversation(instructions?: string): Promise<void>;
+  smartCompact(options?: SmartCompactionOptions): Promise<SmartCompactionResult>;
+  getEstimatedTokens(): Promise<number>;
   handoffConversation(focus?: string, execute?: boolean): Promise<void>;
   updateAutocompletionWords(words?: string[]): Promise<void>;
 
@@ -416,7 +438,7 @@ const myComponent: UIComponentDefinition = {
 
 ## UIComponentPlacement
 
-Available placement locations for UI components (27 total).
+Available placement locations for UI components (28 total).
 
 ```typescript
 type UIComponentPlacement =
@@ -435,6 +457,7 @@ type UIComponentPlacement =
   | 'task-message-above'          // Above each message (receives message prop)
   | 'task-message-below'          // Below each message (receives message prop)
   | 'task-message-bar'            // In message action bar (receives message prop)
+  | 'task-message-bar-menu'       // In message bar dropdown menu (receives message prop)
 
   // Task Usage Info
   | 'task-usage-info-bottom'      // Below usage info (tokens, costs)
@@ -745,10 +768,12 @@ interface ToolResult {
 
 Provides access to AiderDesk's memory system — the same underlying vector store used by the built-in memory MCP tools. Available via `context.getMemoryContext()` in any extension lifecycle hook or method.
 
+Memories are scoped by the first parameter of `storeMemory`/`retrieveMemories`. Use the project directory (`context.getProjectDir()`) for project-scoped memories, or `agent-profile:{profileId}` to share memories across projects for agents with memory isolation (`useAgentMemoryScope`) enabled.
+
 ```typescript
 interface MemoryContext {
-  storeMemory(projectId: string, taskId: string, type: MemoryEntryType, content: string): Promise<string>;
-  retrieveMemories(projectId: string, query: string, limit?: number): Promise<MemoryEntry[]>;
+  storeMemory(scopeId: string, taskId: string, type: MemoryEntryType, content: string): Promise<string>;
+  retrieveMemories(scopeId: string, query: string, limit?: number): Promise<MemoryEntry[]>;
   getMemory(id: string): Promise<MemoryEntry | null>;
   deleteMemory(id: string): Promise<boolean>;
   updateMemory(id: string, content: string): Promise<boolean>;
@@ -762,8 +787,8 @@ interface MemoryContext {
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `storeMemory(projectId, taskId, type, content)` | `Promise<string>` | Store a new memory entry. Returns the created memory ID. |
-| `retrieveMemories(projectId, query, limit?)` | `Promise<MemoryEntry[]>` | Retrieve memories by semantic similarity, ranked by relevance. |
+| `storeMemory(scopeId, taskId, type, content)` | `Promise<string>` | Store a new memory entry. Returns the created memory ID. |
+| `retrieveMemories(scopeId, query, limit?)` | `Promise<MemoryEntry[]>` | Retrieve memories by semantic similarity, ranked by relevance. |
 | `getMemory(id)` | `Promise<MemoryEntry \| null>` | Get a single memory by ID. |
 | `deleteMemory(id)` | `Promise<boolean>` | Delete a specific memory by ID. Returns `true` if successful. |
 | `updateMemory(id, content)` | `Promise<boolean>` | Update the content of an existing memory. Returns `true` if successful. |
@@ -791,7 +816,7 @@ interface MemoryEntry {
   content: string;       // Memory content text
   type: MemoryEntryType; // Category of memory
   taskId?: string;       // Associated task ID (if applicable)
-  projectId?: string;    // Associated project directory path
+  projectId?: string;    // Memory scope: project directory path, or agent profile scope (`agent-profile:{id}`)
   timestamp: number;     // Creation timestamp
 }
 ```
@@ -806,19 +831,19 @@ export default class MemoryExtension implements Extension {
     const memory = context.getMemoryContext();
     if (!memory.isMemoryEnabled()) return;
 
-    const projectId = context.getProjectDir();
+    const scopeId = context.getProjectDir();
     const taskId = context.getTaskContext()?.data.id ?? '';
 
     // Store a code pattern discovered during the task
     await memory.storeMemory(
-      projectId,
+      scopeId,
       taskId,
       'code-pattern',
       'Always use clsx for conditional class names in React components',
     );
 
     // Retrieve relevant memories
-    const memories = await memory.retrieveMemories(projectId, 'React class naming conventions');
+    const memories = await memory.retrieveMemories(scopeId, 'React class naming conventions');
     context.log(`Found ${memories.length} relevant memories`, 'info');
   }
 }

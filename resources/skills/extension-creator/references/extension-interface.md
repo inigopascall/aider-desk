@@ -328,6 +328,10 @@ interface ExtensionContext {
   /** Get a specific setting value from global settings using dot-notation (e.g., 'general.theme'). */
   getSetting(key: string): Promise<unknown>;
 
+  /** Get the configured provider profiles (LLM provider settings including API keys).
+   *  Read-only snapshots from the ModelManager; empty array when not available. */
+  getProviders(): ProviderProfile[];
+
   /** Update global settings by merging the provided partial updates. */
   updateSettings(updates: Partial<SettingsData>): Promise<void>;
 
@@ -620,6 +624,20 @@ interface TaskContext {
   /** Compact the conversation by summarizing history via a compact-conversation agent. */
   compactConversation(instructions?: string): Promise<void>;
 
+  /**
+   * Run deterministic (rule-based) smart compaction on the task context.
+   * Passes: erroredTools, fileEdits, staleFileReads, fileReads, searches, semanticSearches,
+   * bash, fetch, otherTools, verboseToolCalls, reasoning. Omitted flags default to true.
+   * @param options.protectedMessageCount - Number of most-recent messages protected from compaction (default: 10)
+   * @param options.compactionLevel - Compaction level 1 (mild) to 5 (max). Omit to keep the automatic level.
+   * @param options.passes - Which compaction passes to run. Omitted = all passes enabled.
+   * @returns Message counts and estimated next-prompt token counts before and after compaction.
+   */
+  smartCompact(options?: SmartCompactionOptions): Promise<SmartCompactionResult>;
+
+  /** Estimate the token count of the next agent prompt for this task. */
+  getEstimatedTokens(): Promise<number>;
+
   /** Generate a markdown representation of the context messages. */
   generateContextMarkdown(): Promise<string | null>;
 
@@ -750,11 +768,13 @@ Provides access to AiderDesk's memory system. Uses the same underlying vector st
 
 ```typescript
 interface MemoryContext {
-  /** Store a new memory entry. Returns the ID of the created memory. */
-  storeMemory(projectId: string, taskId: string, type: MemoryEntryType, content: string): Promise<string>;
+  /** Store a new memory entry. Returns the ID of the created memory.
+   * @param scopeId - Memory scope: the project directory, or `agent-profile:{profileId}` when the agent profile has memory isolation (`useAgentMemoryScope`) enabled */
+  storeMemory(scopeId: string, taskId: string, type: MemoryEntryType, content: string): Promise<string>;
 
-  /** Retrieve memories by semantic similarity. Returns array ranked by relevance. */
-  retrieveMemories(projectId: string, query: string, limit?: number): Promise<MemoryEntry[]>;
+  /** Retrieve memories by semantic similarity. Returns array ranked by relevance.
+   * @param scopeId - Memory scope: the project directory, or `agent-profile:{profileId}` when the agent profile has memory isolation (`useAgentMemoryScope`) enabled */
+  retrieveMemories(scopeId: string, query: string, limit?: number): Promise<MemoryEntry[]>;
 
   /** Get a single memory by ID. */
   getMemory(id: string): Promise<MemoryEntry | null>;
@@ -794,6 +814,7 @@ interface MemoryEntry {
   content: string;
   type: MemoryEntryType;
   taskId?: string;
+  /** Memory scope: project directory path, or agent profile scope (`agent-profile:{id}`) */
   projectId?: string;
   timestamp: number;
 }
@@ -885,6 +906,63 @@ interface QuestionOptions {
   answers?: Array<{ text: string; shortkey: string }>;
   /** Default answer if user doesn't choose */
   defaultAnswer?: string;
+}
+```
+
+### SmartCompactionPasses
+
+```typescript
+interface SmartCompactionPasses {
+  /** Remove errored/no-op power tool calls */
+  erroredTools?: boolean;
+  /** Collapse repeated file edit/write calls into <file-edited> markers */
+  fileEdits?: boolean;
+  /** Remove file reads that precede later edits of the same file */
+  staleFileReads?: boolean;
+  /** Truncate/redact file read outputs */
+  fileReads?: boolean;
+  /** Remove glob/grep searches made obsolete by later edits */
+  searches?: boolean;
+  /** Remove/deduplicate semantic search results */
+  semanticSearches?: boolean;
+  /** Deduplicate bash commands and redact their outputs */
+  bash?: boolean;
+  /** Redact fetch outputs */
+  fetch?: boolean;
+  /** Truncate results of non-power (MCP/extension) tools */
+  otherTools?: boolean;
+  /** Remove tool calls with verbose inputs */
+  verboseToolCalls?: boolean;
+  /** Remove reasoning parts from assistant messages */
+  reasoning?: boolean;
+}
+```
+
+### SmartCompactionOptions
+
+```typescript
+interface SmartCompactionOptions {
+  /** Number of most-recent messages protected from compaction (default: 10) */
+  protectedMessageCount?: number;
+  /** Compaction level 1 (mild) to 5 (max). Omit to keep the automatic level. */
+  compactionLevel?: number;
+  /** Which compaction passes to run. Omitted = all passes enabled. */
+  passes?: SmartCompactionPasses;
+}
+```
+
+### SmartCompactionResult
+
+```typescript
+interface SmartCompactionResult {
+  /** Context message count before compaction */
+  messagesBefore: number;
+  /** Context message count after compaction */
+  messagesAfter: number;
+  /** Estimated next-prompt token count before compaction */
+  tokensBefore: number;
+  /** Estimated next-prompt token count after compaction */
+  tokensAfter: number;
 }
 ```
 

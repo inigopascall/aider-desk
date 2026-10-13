@@ -52,6 +52,7 @@ type Props = {
   isExpanded: boolean;
   onToggleExpand: (taskId: string) => void;
   hasChildren: boolean;
+  showSpinner: boolean;
   draggedTaskIds: Set<string>;
   draggedSubtreeHeight: number;
   dragOverTaskId: string | null;
@@ -102,7 +103,8 @@ const arePropsEqual = (prevProps: Props, nextProps: Props): boolean => {
     prevProps.isMultiselectMode !== nextProps.isMultiselectMode ||
     prevProps.activeTaskId !== nextProps.activeTaskId ||
     prevProps.isExpanded !== nextProps.isExpanded ||
-    prevProps.hasChildren !== nextProps.hasChildren
+    prevProps.hasChildren !== nextProps.hasChildren ||
+    prevProps.showSpinner !== nextProps.showSpinner
   ) {
     return false;
   }
@@ -196,6 +198,7 @@ export const TaskItem = memo(
     isExpanded,
     onToggleExpand,
     hasChildren,
+    showSpinner,
     draggedTaskIds,
     draggedSubtreeHeight,
     dragOverTaskId,
@@ -377,7 +380,7 @@ export const TaskItem = memo(
                   </div>
                 )}
                 <TaskStateChip state={task.state || DefaultTaskState.Todo} className={hasChildren ? '' : '-ml-0.5'} />
-                <TaskStatusIcon taskId={task.id} state={task.state} isCollapsed={false} />
+                <TaskStatusIcon taskId={task.id} state={task.state} isCollapsed={false} showSpinner={showSpinner} />
                 <ExtensionComponentWrapper
                   placement="task-sidebar-item-badges"
                   renderNullOnEmpty
@@ -398,6 +401,7 @@ export const TaskItem = memo(
               </div>
             </div>
           </div>
+
 
           {!isMultiselectMode && (
             <div className="flex items-center">

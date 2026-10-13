@@ -70,6 +70,7 @@ import { extractReasoningMiddleware } from './middlewares/extract-reasoning-midd
 import { CompactionLevel, generateCompactedSummary, getReloadableMessages, getSubagentOldResultIds, smartCompactMessages } from './compaction';
 import { sanitizeMessagesForModel } from './message-sanitizer';
 
+import type { ToolsetToolEntry } from '@common/extensions';
 import type { TextPart } from '@ai-sdk/provider-utils';
 import type { z } from 'zod';
 import type { LanguageModelV4 } from '@ai-sdk/provider';
@@ -481,7 +482,23 @@ export class Agent {
       Object.assign(toolSet, extensionTools);
     }
 
-    return this.wrapToolsWithHooks(task, profile, toolSet, abortSignal, promptContext);
+    // Let extensions modify the complete toolset (built-in, MCP, and extension tools)
+    const toolsetCreatedEvent = await this.extensionManager.dispatchEvent(
+      'onToolsetCreated',
+      {
+        mode,
+        agentProfile: profile,
+        providerProfile: provider,
+        model,
+        promptContext,
+        tools: { ...toolSet } as unknown as Record<string, ToolsetToolEntry>,
+      },
+      task.project,
+      task,
+    );
+    const finalToolSet = (toolsetCreatedEvent.tools ?? toolSet) as unknown as ToolSet;
+
+    return this.wrapToolsWithHooks(task, profile, finalToolSet, abortSignal, promptContext);
   }
 
   private wrapToolsWithHooks(task: Task, profile: AgentProfile, toolSet: ToolSet, abortSignal?: AbortSignal, promptContext?: PromptContext): ToolSet {
@@ -615,7 +632,10 @@ export class Agent {
         contextFiles = extensionResult.contextFiles;
         systemPrompt = extensionResult.systemPrompt;
         images = extensionResult.images ?? images;
-        skillsToActivate = extensionResult.skillsToActivate;
+        if (extensionResult.skillsToActivate && extensionResult.skillsToActivate.length > 0) {
+          const enabledSkillNames = new Set((await task.getSkillManager().getEnabledSkills()).map((skill) => skill.name));
+          skillsToActivate = extensionResult.skillsToActivate.filter((skillName) => enabledSkillNames.has(skillName));
+        }
         modelCallSettings = {
           ...modelCallSettings,
           ...extensionResult.modelCallSettings,

@@ -46,6 +46,7 @@ export class ReadonlyBrowserApi implements ExtensionDisplayAPI {
   private readonly client: AxiosInstance;
   private readonly socket: Socket;
   private readonly listeners = new Set<EventListener>();
+  private readonly reconnectListeners = new Set<() => void>();
   private readonly libraryTaskIds = new Map<string, string | undefined>();
   private readonly extensionListeners = new Set<(data: ExtensionUIRefreshData) => void>();
 
@@ -65,6 +66,10 @@ export class ReadonlyBrowserApi implements ExtensionDisplayAPI {
         eventTypes: EVENT_TYPES,
       });
     });
+    // 'reconnect' is only emitted on the Manager (socket.io does not forward it to the Socket)
+    this.socket.io.on('reconnect', () => {
+      this.reconnectListeners.forEach((listener) => listener());
+    });
     this.socket.on('event', (event: ReadonlyEvent) => {
       this.listeners.forEach((listener) => listener(event));
       if (event.type === 'extension-ui-refresh') {
@@ -78,7 +83,13 @@ export class ReadonlyBrowserApi implements ExtensionDisplayAPI {
     this.socket.emit('message', { action: 'readonly-unsubscribe-events' });
     this.socket.disconnect();
     this.listeners.clear();
+    this.reconnectListeners.clear();
     this.extensionListeners.clear();
+  }
+
+  onReconnect(listener: () => void): () => void {
+    this.reconnectListeners.add(listener);
+    return () => this.reconnectListeners.delete(listener);
   }
 
   onEvent(callback: EventListener): () => void {

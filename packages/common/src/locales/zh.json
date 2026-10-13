@@ -24,6 +24,8 @@
     "setAutonomyMode": "切换自主模式",
     "openSettingsPage": "打开设置页面",
     "showLogs": "显示日志",
+    "showArchivedTasks": "显示已归档任务",
+    "hideArchivedTasks": "隐藏已归档任务",
     "createNewTask": "创建新任务",
     "createNewSubtask": "创建新子任务",
     "createNewSiblingTask": "创建新的同级任务",
@@ -126,7 +128,32 @@
       "aider": "Aider",
       "agent": "AI代理",
       "providers": "提供商",
-      "finish": "完成"
+      "finish": "完成",
+      "choosePath": "选择使用方式",
+      "configure": "配置"
+    },
+    "choice": {
+      "title": "您打算如何使用 AiderDesk？",
+      "description": "这将定制您的设置流程并设置默认模式。您可以随时在“设置 → 常规”中更改。",
+      "recommended": "推荐",
+      "agent": {
+        "title": "Agent 优先",
+        "subtitle": "默认",
+        "description": "拥有完整工具权限的自主 Agent。描述目标，它会规划并执行。",
+        "feature1": "多步骤规划与文件编辑",
+        "feature2": "Power 工具、MCP 服务器和技能",
+        "feature3": "Aider 模式仍可一键切换",
+        "modeLabel": "默认模式设为 Agent"
+      },
+      "aider": {
+        "title": "来自 Aider",
+        "subtitle": "Aider 模式为主",
+        "description": "您已经熟悉 Aider——让 Code、Ask 和 Architect 保持核心地位。",
+        "feature1": "Aider 设置直接配置",
+        "feature2": "编辑格式、自动提交、环境变量",
+        "feature3": "需要时可随时使用 Agent 模式",
+        "modeLabel": "默认模式设为 Code"
+      }
     },
     "language": {
       "title": "选择您的语言",
@@ -143,7 +170,8 @@
       "configureLater": "您也可以稍后在设置中进行配置。",
       "fineTuneTitle": "微调 Aider（可选）",
       "fineTuneDescription": "高级用户可以配置额外的 Aider 设置和环境变量。此步骤完全可选，可以安全跳过。",
-      "fineTuneNote": "注意：这些设置适用于想要自定义 Aider 行为的高级用户。大多数用户可以跳过此步骤，如需要可稍后在设置中配置。"
+      "fineTuneNote": "注意：这些设置适用于想要自定义 Aider 行为的高级用户。大多数用户可以跳过此步骤，如需要可稍后在设置中配置。",
+      "agentSwitchNote": "提示：Agent 模式一键即可切换——随时使用输入框上方的模式选择器即可获得完全自主能力。"
     },
     "providers": {
       "title": "模型提供商",
@@ -190,7 +218,24 @@
       "title": "设置完成！",
       "description": "恭喜！您已成功设置 AiderDesk。现在您可以以完全透明和可控的方式驾驭 AI 辅助开发。",
       "ready": "点击'完成设置'开始您的编程之旅。",
-      "success": "引导完成成功！欢迎使用 AiderDesk。"
+      "success": "引导完成成功！欢迎使用 AiderDesk。",
+      "mode": "新任务将以 {{mode}} 模式开始——您可以随时在“设置 → 常规”中更改。",
+      "modeAgent": "Agent",
+      "modeCode": "Code",
+      "customizeTitle": "定制你的 AiderDesk",
+      "customizeDescription": "还有更多可探索的设置——推荐看看这几处：",
+      "general": {
+        "title": "设置 → 常规",
+        "description": "外观、语言、默认模式和启动行为"
+      },
+      "mcp": {
+        "title": "设置 → MCP",
+        "description": "连接 MCP 服务器，为 Agent 提供更多工具"
+      },
+      "tasks": {
+        "title": "设置 → 任务",
+        "description": "任务行为、自动化和智能状态"
+      }
     },
     "errors": {
       "navigationFailed": "导航失败。请重试。",
@@ -395,6 +440,10 @@
     "getApiKeyLink": "获取 Synthetic API 密钥",
     "apiKey": "API 密钥"
   },
+  "llmApi": {
+    "getApiKeyLink": "获取 LLM API 密钥",
+    "apiKey": "API 密钥"
+  },
   "gemini": {
     "getApiKeyLink": "获取 Gemini API 密钥",
     "apiKey": "API 密钥",
@@ -491,6 +540,7 @@
     "gpustack": "GPUStack",
     "lmstudio": "LM Studio",
     "litellm": "LiteLLM",
+    "llmapi": "LLM API",
     "minimax": "Minimax",
     "mistral": "Mistral",
     "neuralwatt": "Neuralwatt",
@@ -720,6 +770,11 @@
       "autoGenerateTaskNameTooltip": "启用后，模型会根据您的提示生成简洁的任务名称。禁用时，将使用提示的前5个词作为任务名称。",
       "showTaskStateActions": "显示任务状态操作",
       "showTaskStateActionsTooltip": "启用后，任务状态操作将显示在消息底部。禁用以隐藏这些操作。",
+      "defaultTaskMode": "新任务的默认模式",
+      "defaultTaskModeTooltip": "在已有任务的项目中创建新任务时使用。“使用最近任务的模式”将沿用最近一次任务的模式。",
+      "defaultTaskModeLast": "使用最近任务的模式",
+      "defaultProjectMode": "新项目的默认模式",
+      "defaultProjectModeTooltip": "作为项目第一个任务（没有可继承的前置任务时）的初始模式。会在引导流程中自动设置。",
       "contextManagement": "上下文管理",
       "contextCompactingThreshold": "自动压缩阈值",
       "contextCompactingThresholdTooltip": "当令牌使用量超过此阈值时，将根据所选的压缩类型自动管理对话。设置为 0 可禁用。",
@@ -824,6 +879,9 @@
       "includeFilesTooltip": "将上下文文件内容添加到代理的聊天中。这将增加令牌使用量。",
       "includeRepoMappings": "包含仓库映射",
       "includeRepoMappingsTooltip": "在普通上下文文件之前包含 .aider-desk/mappings 中所有生成的只读文件。这可能会增加令牌使用量。",
+      "memory": "记忆",
+      "useAgentMemoryScope": "按智能体隔离记忆",
+      "useAgentMemoryScopeTooltip": "启用后，该智能体将使用自己的记忆范围存储和检索记忆，而不是项目目录。这些记忆在该智能体使用的所有项目之间共享。",
       "autonomyMode": "自主模式",
       "override": "覆盖",
       "clearOverride": "清除覆盖",
@@ -845,6 +903,7 @@
       "envVarFoundPlaceholder": "找到于: {{source}}",
       "createNewProfile": "创建新配置",
       "genericTools": "工具",
+      "extensionTools": "扩展工具",
       "noGenericToolsConfigured": "未配置工具。",
       "todoTools": "待办工具",
       "includeTodoToolsTooltip": "允许代理管理待办事项列表，包括设置、获取、更新和清除它们。",
@@ -1004,7 +1063,8 @@
       "viewModeFull": "完整",
       "viewModeCompact": "紧凑",
       "fullMessageRendering": "使用完整消息渲染（旧版）",
-      "fullMessageRenderingTooltip": "在 DOM 中渲染所有消息而不使用虚拟化。在对话历史较多时可能影响性能。"
+      "fullMessageRenderingTooltip": "在 DOM 中渲染所有消息而不使用虚拟化。在对话历史较多时可能影响性能。",
+      "messageMap": "显示消息地图"
     },
     "memory": {
       "configuration": "配置",
@@ -1031,8 +1091,8 @@
       },
       "memories": {
         "title": "记忆",
-        "project": "项目",
-        "allProjects": "所有项目",
+        "scope": "范围",
+        "all": "全部",
         "loading": "正在加载记忆...",
         "empty": "未找到记忆。",
         "delete": "删除",
@@ -1041,6 +1101,9 @@
         "deleteDialogText": "删除记忆",
         "deleteProjectDialogTitle": "删除项目记忆",
         "deleteProjectDialogText": "删除该项目的所有记忆",
+        "deleteAllForAgent": "删除智能体的全部记忆",
+        "deleteAgentMemoriesDialogTitle": "删除智能体记忆",
+        "deleteAgentMemoriesDialogText": "删除该智能体的全部记忆",
         "projectId": "projectId",
         "id": "id"
       }
@@ -1075,6 +1138,14 @@
     "scrollToBottom": "滚动到底部",
     "previousUserMessage": "上一条用户消息",
     "nextUserMessage": "下一条用户消息",
+    "map": {
+      "title": "消息地图",
+      "turn": "第 {{number}} 轮",
+      "userPrompt": "你的提问",
+      "assistantReply": "最新回复",
+      "emptyPreview": "无文本预览",
+      "goToMessage": "跳转到第 {{number}} 轮的{{label}}"
+    },
     "messageBar": "消息栏",
     "execute": "执行",
     "resume": "继续",
@@ -1232,10 +1303,14 @@
     "skillActivate": "激活",
     "skillDeactivate": "停用",
     "skillActivating": "...",
+    "skillDisable": "禁用技能",
+    "skillEnable": "启用技能",
     "globalSkill": "全局技能",
     "projectSkill": "项目技能",
     "builtinSkill": "内置技能",
     "extensionSkill": "扩展技能",
+    "manualSkillOnly": "仅限手动调用 (disable-model-invocation)",
+    "agentSkillOnly": "仅限代理调用 (user-invocable: false)",
     "disableRuleFile": "禁用规则文件",
     "enableRuleFile": "启用规则文件",
     "disableAllRuleFiles": "禁用文件夹中的所有规则文件",
@@ -1264,6 +1339,8 @@
     "generateMessage": "生成信息",
     "amend": "修改",
     "amendTooltip": "修改上一次提交而不是创建新提交",
+    "skipGitHooks": "跳过 Git 钩子",
+    "skipGitHooksTooltip": "创建提交时不运行 Git 钩子（git commit --no-verify）",
     "commit": "提交",
     "generatingMessage": "生成中...",
     "committing": "提交中...",
@@ -1735,11 +1812,13 @@
     "confirmLocalTitle": "切换到本地模式",
     "confirmLocalMessage": "此工作树有未保存的工作：\n{{warnings}}",
     "localOptionMergeLabel": "先合并更改，然后切换",
+    "localOptionMergeOnlyLabel": "合并并仅切换此任务",
     "localOptionMergeDescription": "在切换此任务到本地模式之前，将工作树提交合并回主分支",
     "localOptionMergeAllLabel": "合并并切换工作树中的所有任务",
     "localOptionMergeAllDescription": "将工作树提交合并回主分支，然后将共享此工作树的所有任务切换到本地模式",
     "localOptionRemoveLabel": "删除工作树并切换",
     "localOptionRemoveDescription": "丢弃未提交和未合并的更改，删除工作树，并切换到本地模式",
+    "localOptionRemoveSharedDescription": "丢弃未提交和未合并的更改，并将此任务切换到本地模式 - 工作树会被保留给共享它的其他任务",
     "confirmWorktreeTitle": "切换到工作树模式",
     "confirmWorktreeMessage": "项目目录中有 {{count}} 个未提交的文件。",
     "worktreeOptionJustSwitchLabel": "直接切换，不携带更改",
@@ -1935,8 +2014,7 @@
     "tabLabel": "终端",
     "copyOutput": "复制终端输出到提示",
     "minimize": "最小化终端",
-    "addTerminal": "添加新终端",
-    "restartHint": "会话已结束。按任意键重新启动。"
+    "addTerminal": "添加新终端"
   },
   "contextMenu": {
     "copy": "复制",
@@ -1944,6 +2022,7 @@
     "close": "关闭",
     "closeOtherTabs": "关闭其他标签页",
     "closeAllTabs": "关闭所有标签页",
+    "openProjectFolder": "打开项目文件夹",
     "openInNewWindow": "在新窗口中打开",
     "copyLink": "复制链接地址"
   },

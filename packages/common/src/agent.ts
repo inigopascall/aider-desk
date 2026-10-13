@@ -48,6 +48,7 @@ export type LlmProviderName =
   | 'alibaba-plan'
   | 'kimi-plan'
   | 'litellm'
+  | 'llmapi'
   | 'lmstudio'
   | 'minimax'
   | 'mistral'
@@ -97,6 +98,7 @@ export const AVAILABLE_PROVIDERS: LlmProviderName[] = [
   'groq',
   'kimi-plan',
   'litellm',
+  'llmapi',
   'lmstudio',
   'minimax',
   'mistral',
@@ -346,6 +348,12 @@ export interface SyntheticProvider extends LlmProviderBase {
 }
 export const isSyntheticProvider = (provider: LlmProviderBase): provider is SyntheticProvider => provider.name === 'synthetic';
 
+export interface LlmApiProvider extends LlmProviderBase {
+  name: 'llmapi';
+  apiKey: string;
+}
+export const isLlmApiProvider = (provider: LlmProviderBase): provider is LlmApiProvider => provider.name === 'llmapi';
+
 export interface ExtensionLlmProvider extends LlmProviderBase {
   [key: string]: unknown;
 }
@@ -378,28 +386,29 @@ export type LlmProvider =
   | MinimaxProvider
   | MistralProvider
   | NeuralwattProvider
+  | LlmApiProvider
   | ExtensionLlmProvider;
 
 export const DEFAULT_PROVIDER_MODELS: Partial<Record<LlmProviderName, string>> = {
   'alibaba-plan': 'qwen3-coder-plus',
-  anthropic: 'claude-sonnet-5',
-  bedrock: 'global.anthropic.claude-sonnet-5',
+  anthropic: 'claude-opus-5',
+  bedrock: 'global.anthropic.claude-opus-5',
   cerebras: 'gpt-oss-120b',
-  clinepass: 'deepseek-v4-flash',
-  deepseek: 'deepseek-v4-pro',
-  gemini: 'gemini-3.5-flash',
+  clinepass: 'deepseek-v4.1-flash',
+  deepseek: 'deepseek-flash',
+  gemini: 'gemini-3.8-flash',
   groq: 'openai/gpt-oss-120b',
   'kimi-plan': 'k2p6',
-  openai: 'gpt-5.5',
-  openrouter: 'anthropic/claude-sonnet-5',
-  opencode: 'claude-sonnet-5',
-  'opencode-go': 'grok-4.5',
-  requesty: 'anthropic/claude-sonnet-5',
+  openai: 'gpt-6-sol',
+  openrouter: 'anthropic/claude-opus-5',
+  opencode: 'claude-opus-5',
+  'opencode-go': 'glm-5.3',
+  requesty: 'anthropic/claude-opus-5',
   synthetic: 'hf:zai-org/GLM-5.2',
-  'zai-plan': 'glm-5.2',
+  'zai-plan': 'glm-5.3',
   minimax: 'MiniMax-M2.7',
   mistral: 'mistral-large-latest',
-  neuralwatt: 'glm-5.2',
+  neuralwatt: 'glm-5.3',
 };
 
 export const DEFAULT_AIDER_MAIN_MODEL = `anthropic/${DEFAULT_PROVIDER_MODELS.anthropic}`;
@@ -461,6 +470,7 @@ export const DEFAULT_AGENT_PROFILE: AgentProfile = {
   useTaskTools: false,
   useMemoryTools: true,
   useSkillsTools: true,
+  useAgentMemoryScope: false,
   useExtensionTools: true,
   disabledExtensionTools: [],
   customInstructions: '',
@@ -631,6 +641,10 @@ export const HANDOFF_AGENT_PROFILE: AgentProfile = {
   },
 };
 
+export const AGENT_MEMORY_SCOPE_PREFIX = 'agent-profile:';
+
+export const getAgentMemoryScopeId = (profileId: string): string => `${AGENT_MEMORY_SCOPE_PREFIX}${profileId}`;
+
 export const getDefaultProviderParams = <T extends LlmProvider>(providerName: LlmProviderName): T => {
   let provider: LlmProvider;
 
@@ -770,6 +784,12 @@ export const getDefaultProviderParams = <T extends LlmProvider>(providerName: Ll
         apiKey: '',
         baseUrl: 'http://localhost:4000',
       } satisfies LitellmProvider;
+      break;
+    case 'llmapi':
+      provider = {
+        name: 'llmapi',
+        apiKey: '',
+      } satisfies LlmApiProvider;
       break;
     case 'ollama':
       provider = {

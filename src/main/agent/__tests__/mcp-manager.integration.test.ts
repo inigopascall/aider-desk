@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMCPClient, type JSONRPCMessage, type ListToolsResult, type MCPClient, type MCPTransport } from '@ai-sdk/mcp';
 import { type Tool, type ToolExecutionOptions } from 'ai';
 import { TOOL_GROUP_NAME_SEPARATOR } from '@common/tools';
-import { ToolApprovalState, type AgentProfile, type McpServerConfig, type McpTool } from '@common/types';
+import { ToolApprovalState, type AgentProfile, type McpServerConfig, type McpTool, type McpToolInputSchema } from '@common/types';
 
 import { McpManager, type McpServerFailure } from '../mcp-manager';
 import { type ApprovalManager } from '../tools/approval-manager';
@@ -142,7 +142,7 @@ describe('McpManager - AI SDK MCP integration', () => {
         serverName: 'test-server',
         name: tool.name,
         description: tool.description,
-        inputSchema: tool.inputSchema,
+        inputSchema: tool.inputSchema as McpToolInputSchema,
       })),
     };
     vi.spyOn(manager as unknown as TestableMcpManager, 'initMcpConnectors').mockResolvedValue({ connectors: [connector], failures: [] });
@@ -216,7 +216,7 @@ describe('McpManager - AI SDK MCP integration', () => {
         {
           serverName: 'test-server',
           name: 'delete_file',
-          inputSchema: definitions.tools[0].inputSchema,
+          inputSchema: definitions.tools[0].inputSchema as McpToolInputSchema,
         },
       ],
     };

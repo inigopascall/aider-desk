@@ -8,6 +8,7 @@ import { twMerge } from 'tailwind-merge';
 
 import { MessageBlockWrapper } from './MessageBlockWrapper';
 import { flashMessageElement } from './outline';
+import { MessageMap } from './MessageMap';
 
 import { IconButton } from '@/components/common/IconButton';
 import { useUserMessageNavigation } from '@/hooks/useUserMessageNavigation';
@@ -15,6 +16,9 @@ import { MessagesTaskProvider } from '@/contexts/MessagesTaskContext';
 import { useProcessedMessages } from '@/hooks/useProcessedMessages';
 import { composeMessagesWithWorkflowRuns } from '@/utils/workflow-messages';
 import { EMPTY_WORKFLOW_RUNS, WorkflowRunState } from '@/stores/taskStore';
+import { useVirtualizedListActivation } from '@/hooks/useVirtualizedListActivation';
+import { useSettingsStore } from '@/stores/settingsStore';
+import { getVirtualizedListBottomOffset } from '@/utils/virtualizedList';
 
 export type VirtualizedMessagesRef = {
   exportToImage: () => void;
@@ -26,6 +30,7 @@ type Props = {
   baseDir: string;
   taskId: string;
   inProgress: boolean;
+  isActive?: boolean;
   messages: Message[];
   workflowRuns?: WorkflowRunState[];
   allFiles?: string[];
@@ -46,6 +51,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
       baseDir,
       taskId,
       inProgress,
+      isActive = true,
       messages,
       workflowRuns,
       allFiles = [],
@@ -62,6 +68,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
     ref,
   ) => {
     const { t } = useTranslation();
+    const showMessageMap = useSettingsStore((state) => state.settings?.showMessageMap ?? true);
     const listRef = useRef<LegendListRef>(null);
     const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(null);
 
@@ -106,10 +113,24 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
     }
 
     const [scrollingPaused, setScrollingPaused] = useState(false);
+    const [visibleIndex, setVisibleIndex] = useState(0);
     const scrollingPausedRef = useRef(false);
     const isProgrammaticScrollRef = useRef(false);
     const prevScrollTopRef = useRef(0);
     const pointerDownRef = useRef(false);
+    const itemKeys = useMemo(() => processedMessages.map((message) => message.id), [processedMessages]);
+    const alignToBottom = useCallback(() => {
+      const element = listRef.current?.getScrollableNode();
+      if (!isActive || !element || !element.clientWidth || !element.clientHeight || scrollingPausedRef.current) {
+        return;
+      }
+      const target = getVirtualizedListBottomOffset(element);
+      if (Math.abs(element.scrollTop - target) > 2) {
+        isProgrammaticScrollRef.current = true;
+        element.scrollTop = target;
+      }
+    }, [isActive]);
+    const isRestoringRef = useVirtualizedListActivation({ isActive, listRef, itemKeys, scrollingPausedRef, onRestored: alignToBottom });
 
     const updateScrollingPaused = useCallback((paused: boolean) => {
       scrollingPausedRef.current = paused;
@@ -137,7 +158,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
       }
 
       const isMoreThanThresholdFromBottom = () => {
-        return element.scrollHeight - element.scrollTop - element.clientHeight > 30;
+        return getVirtualizedListBottomOffset(element) - element.scrollTop > 30;
       };
 
       const handleWheel = (e: WheelEvent) => {
@@ -195,19 +216,13 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
       }
 
       const scrollToEndIfFollowing = () => {
-        const tempPaddingBottom = parseFloat(content.style.paddingBottom) || 0;
-        const effectiveScrollHeight = element.scrollHeight - tempPaddingBottom;
-
-        if (effectiveScrollHeight <= element.clientHeight) {
+        if (!isActive || isRestoringRef.current || !element.clientWidth || !element.clientHeight) {
+          return;
+        }
+        if (getVirtualizedListBottomOffset(element) === 0) {
           updateScrollingPaused(false);
         }
-        if (!scrollingPausedRef.current) {
-          const target = effectiveScrollHeight - element.clientHeight;
-          if (Math.abs(element.scrollTop - target) > 2) {
-            isProgrammaticScrollRef.current = true;
-            element.scrollTop = target;
-          }
-        }
+        alignToBottom();
       };
 
       const innerContent = content.firstElementChild;
@@ -218,27 +233,40 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
       return () => {
         observer.disconnect();
       };
-    }, [scrollContainer, updateScrollingPaused]);
+    }, [alignToBottom, isActive, isRestoringRef, scrollContainer, updateScrollingPaused]);
 
     useLayoutEffect(() => {
-      const element = listRef.current?.getScrollableNode();
-      if (!element || scrollingPausedRef.current) {
-        return;
+      if (!isRestoringRef.current) {
+        alignToBottom();
       }
-      const content = element.querySelector('.legend-list-content-container') as HTMLElement | null;
-      const tempPaddingBottom = parseFloat(content?.style.paddingBottom ?? '') || 0;
-      const target = element.scrollHeight - element.clientHeight - tempPaddingBottom;
-      if (Math.abs(element.scrollTop - target) > 2) {
-        isProgrammaticScrollRef.current = true;
-        element.scrollTop = target;
+    }, [alignToBottom, isRestoringRef, processedMessages]);
+
+    const updateVisibleIndex = useCallback(() => {
+      if (showMessageMap) {
+        const range = listRef.current?.getState();
+        if (range) {
+          setVisibleIndex(range.end);
+        }
       }
-    }, [processedMessages]);
+    }, [showMessageMap]);
+
+    useEffect(() => {
+      if (!showMessageMap || !scrollContainer) {
+        return undefined;
+      }
+      const frame = requestAnimationFrame(updateVisibleIndex);
+      return () => cancelAnimationFrame(frame);
+    }, [scrollContainer, showMessageMap, updateVisibleIndex]);
 
     const handleScrollState = useCallback(() => {
+      if (!isActive || isRestoringRef.current) {
+        return;
+      }
       const element = scrollContainer;
       if (!element) {
         return;
       }
+      updateVisibleIndex();
       const scrollTop = element.scrollTop;
       const scrolledUp = scrollTop < prevScrollTopRef.current - 1;
       prevScrollTopRef.current = scrollTop;
@@ -246,15 +274,13 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
         isProgrammaticScrollRef.current = false;
         return;
       }
-      const content = element.querySelector('.legend-list-content-container') as HTMLElement | null;
-      const tempPaddingBottom = parseFloat(content?.style.paddingBottom ?? '') || 0;
-      const distanceFromEnd = element.scrollHeight - tempPaddingBottom - scrollTop - element.clientHeight;
+      const distanceFromEnd = getVirtualizedListBottomOffset(element) - scrollTop;
       if (distanceFromEnd <= 2) {
         updateScrollingPaused(false);
       } else if (scrolledUp && distanceFromEnd > 30 && pointerDownRef.current) {
         updateScrollingPaused(true);
       }
-    }, [scrollContainer, updateScrollingPaused]);
+    }, [isActive, isRestoringRef, scrollContainer, updateScrollingPaused, updateVisibleIndex]);
 
     const scrollToBottom = useCallback(() => {
       updateScrollingPaused(false);
@@ -301,21 +327,28 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
       return state ? { startIndex: state.start, endIndex: state.end } : null;
     }, []);
 
-    const scrollToUserMessageIndex = useCallback(
-      (index: number) => {
+    const scrollToMessageIndex = useCallback(
+      (index: number, animated = true) => {
         isProgrammaticScrollRef.current = true;
         updateScrollingPaused(true);
-        void listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0 });
+        void listRef.current?.scrollToIndex({ index, animated, viewPosition: 0 });
       },
       [updateScrollingPaused],
     );
 
-    const { hasPreviousUserMessage, hasNextUserMessage, renderGoToPrevious, renderGoToNext } = useUserMessageNavigation({
+    const {
+      hasPreviousUserMessage,
+      hasNextUserMessage,
+      handleNavigateToPreviousUserMessage,
+      handleNavigateToNextUserMessage,
+      renderGoToPrevious,
+      renderGoToNext,
+    } = useUserMessageNavigation({
       containerRef: scrollContainerRef,
       userMessageIds,
       userMessageIndices,
       getVisibleRange,
-      scrollToIndex: scrollToUserMessageIndex,
+      scrollToIndex: scrollToMessageIndex,
       buttonClassName: 'hidden group-hover:block',
     });
 
@@ -435,6 +468,19 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
             drawDistance={250}
             className="absolute inset-0 scrollbar-thin scrollbar-track-bg-primary-light scrollbar-thumb-bg-tertiary hover:scrollbar-thumb-bg-fourth px-4"
           />
+          {showMessageMap && (
+            <MessageMap
+              key={`map-${taskId}`}
+              messages={processedMessages}
+              visibleIndex={visibleIndex}
+              onNavigate={scrollToMessageIndex}
+              onPreviousUserMessage={handleNavigateToPreviousUserMessage}
+              onNextUserMessage={handleNavigateToNextUserMessage}
+              hasPreviousUserMessage={hasPreviousUserMessage}
+              hasNextUserMessage={hasNextUserMessage}
+              onScrollToBottom={scrollToBottom}
+            />
+          )}
           <div className="absolute left-1/2 -translate-x-1/2 bottom-0 w-[140px] z-10 flex justify-center gap-1 pt-6 pb-1 group">
             {(hasPreviousUserMessage || hasNextUserMessage) && renderGoToPrevious()}
             {scrollingPaused && (

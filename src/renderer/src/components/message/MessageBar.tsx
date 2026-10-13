@@ -19,6 +19,7 @@ import { TaskActivityIndicator } from '@/components/common/TaskActivityIndicator
 import { useApi } from '@/contexts/ApiContext';
 import { useClickOutside } from '@/hooks/useClickOutside';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
+import { useExtensionComponentsWrapper } from '@/components/extensions/useExtensionComponentsWrapper';
 import { includeMessageProperty } from '@/components/message/utils';
 import { useMessagesTaskId } from '@/contexts/MessagesTaskContext';
 import { toggleBookmark, useIsBookmarked } from '@/stores/bookmarkStore';
@@ -71,6 +72,11 @@ export const MessageBar = ({
   const additionalProps = {
     message: message && includeMessageProperty(message) ? message : null,
   };
+  const { isEmpty: isExtensionMenuEmpty, renderComponents: renderExtensionMenuItems } = useExtensionComponentsWrapper({
+    placement: 'task-message-bar-menu',
+    additionalProps,
+  });
+  const hasMenuItems = remove || redo || edit || onFork || onRemoveUpTo || !isExtensionMenuEmpty;
 
   useClickOutside(
     [menuRef, buttonRef],
@@ -157,6 +163,7 @@ export const MessageBar = ({
         <ExtensionComponentWrapper placement="task-message-bar" additionalProps={additionalProps} />
         {usageReport && <UsageInfo usageReport={usageReport} className="mt-[4px]" />}
         {bookmarkTaskId && (
+
           <IconButton
             icon={bookmarked ? <MdBookmark className="w-4 h-4" /> : <MdBookmarkBorder className="w-4 h-4" />}
             onClick={() => toggleBookmark(bookmarkTaskId, message.id, bookmarkLabel)}
@@ -166,7 +173,7 @@ export const MessageBar = ({
           />
         )}
         {content && <CopyMessageButton content={content} className="transition-colors text-text-dark hover:text-text-primary" alwaysShow={true} />}
-        {(remove || redo || edit || onFork || onRemoveUpTo) && (
+        {hasMenuItems && (
           <div ref={buttonRef}>
             <IconButton
               icon={<FaEllipsisVertical className="w-4 h-4" />}
@@ -178,7 +185,7 @@ export const MessageBar = ({
       </div>
       {isMenuOpen &&
         menuPosition &&
-        (remove || redo || edit || onFork || onRemoveUpTo) &&
+        hasMenuItems &&
         createPortal(
           <div
             ref={menuRef}
@@ -245,6 +252,7 @@ export const MessageBar = ({
                 </li>
               )}
             </ul>
+            {!isExtensionMenuEmpty && <div className="border-t border-border-dark-light flex flex-col">{renderExtensionMenuItems()}</div>}
           </div>,
           document.body,
         )}

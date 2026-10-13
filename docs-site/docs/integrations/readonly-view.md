@@ -89,7 +89,7 @@ The readonly UI subscribes to a curated set of Socket.IO events for live updates
 - `tool`, `tool-input-chunk`
 - `log`, `command-output`
 - `clear-task`, `message-removed`
-- `extension-ui-refresh`
+- `extension-ui-refresh`, `extensions-updated`
 
 Direct Socket.IO mutations (e.g., running prompts, sending messages) are blocked — only these read-only event types are forwarded to browser clients.
 
@@ -115,7 +115,7 @@ All extension UI placements are available in the readonly shell, including:
 - `task-status-bar-left`, `task-status-bar-right`
 - `task-top-bar-left`, `task-top-bar-right`
 - `task-messages-top`, `task-messages-bottom`
-- `task-message-above`, `task-message-below`, `task-message-bar`
+- `task-message-above`, `task-message-below`, `task-message-bar`, `task-message-bar-menu`
 - `app-floating`, `project-floating`, `task-floating`
 
 See [Creating Extensions](../extensions/creating-extensions.md#available-placements) for the complete list.

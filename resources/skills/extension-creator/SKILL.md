@@ -401,21 +401,22 @@ After completing this skill, verify:
 - When: Extension wants to persist knowledge across tasks (user preferences, code patterns, architectural decisions)
 - Then: Use `context.getMemoryContext()` to access the Memory API
 - Check: Always call `isMemoryEnabled()` before using memory operations
-- Store: `memory.storeMemory(projectId, taskId, type, content)` — returns the created memory ID
-- Retrieve: `memory.retrieveMemories(projectId, query, limit?)` — returns semantically similar memories
+- Store: `memory.storeMemory(scopeId, taskId, type, content)` — returns the created memory ID
+- Retrieve: `memory.retrieveMemories(scopeId, query, limit?)` — returns semantically similar memories
 - Types: Use `MemoryEntryType` enum ('task', 'user-preference', 'code-pattern')
-- Note: Works outside of project/task scope — pass empty strings for `projectId`/`taskId` if not applicable
+- Scope: use the project directory (`context.getProjectDir()`) for project-scoped memories, or `agent-profile:{profileId}` to share memories across projects for agents with memory isolation (`useAgentMemoryScope`) enabled
+- Note: Works outside of project/task scope — pass empty strings for `scopeId`/`taskId` if not applicable
 - Example:
   ```typescript
   async onAgentFinished(event: AgentFinishedEvent, context: ExtensionContext) {
     const memory = context.getMemoryContext();
     if (!memory.isMemoryEnabled()) return;
 
-    const projectId = context.getProjectDir();
+    const scopeId = context.getProjectDir();
     const taskId = context.getTaskContext()?.data.id ?? '';
 
-    await memory.storeMemory(projectId, taskId, 'code-pattern', 'Always use clsx for conditional classes');
-    const memories = await memory.retrieveMemories(projectId, 'React class naming');
+    await memory.storeMemory(scopeId, taskId, 'code-pattern', 'Always use clsx for conditional classes');
+    const memories = await memory.retrieveMemories(scopeId, 'React class naming');
     context.log(`Found ${memories.length} relevant memories`, 'info');
   }
   ```
@@ -439,6 +440,16 @@ After completing this skill, verify:
 - Props: Component receives `message` prop — for `assistant-group` type, access `message.responseMessage` and `message.toolMessages`
 - Style: Prefer `props.ui.ExpandableMessageBlock` for the standard collapsible tool-message layout and `props.ui.CodeBlock` for code or structured results
 - Reference: [ui-components.md](references/ui-components.md) for full details, `MessageFilter` type, and JSX examples
+
+**Situation:** Extension needs custom actions in the message context menu
+
+**Pattern:**
+- When: Extension wants to add extra actions to a message's vertical-dots dropdown menu (e.g. "undo changes")
+- Then: Use the `task-message-bar-menu` placement — components render as menu items below the built-in actions, separated by a divider
+- Props: Component receives `message` prop for the specific message
+- Must: Style JSX as a menu item (flex row, `hover:bg-bg-tertiary`, `text-2xs`) to match built-in menu entries
+- Note: The menu button appears when there are built-in menu actions or components registered for this placement; use `task-message-bar` for inline actions shown directly in the bar instead
+- Reference: [ui-components.md](references/ui-components.md)
 
 **Situation:** Extension needs a floating panel
 

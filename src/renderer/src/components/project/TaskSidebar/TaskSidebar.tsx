@@ -39,6 +39,7 @@ import { Tooltip } from '@/components/ui/Tooltip';
 import { Checkbox } from '@/components/common/Checkbox';
 import { Toggle } from '@/components/common/Toggle';
 import { getTaskStateLabel, getStateTextClass } from '@/components/common/TaskStateChip';
+import { useTaskSidebarStore } from '@/stores/taskSidebarStore';
 
 export const COLLAPSED_WIDTH = 44;
 export const EXPANDED_WIDTH = 256;
@@ -101,7 +102,8 @@ const TaskSidebarComponent = (
   const [deleteConfirmTaskId, setDeleteConfirmTaskId] = useState<string | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [selectedStates, setSelectedStates] = useState<Set<string>>(() => new Set([...Object.values(DefaultTaskState)]));
-  const [showArchived, setShowArchived] = useState<boolean>(false);
+  const showArchived = useTaskSidebarStore((state) => state.showArchived);
+  const setShowArchived = useTaskSidebarStore((state) => state.setShowArchived);
   const [sortByDateModified, setSortByDateModified] = useState<boolean>(false);
   const [isFilterVisible, setIsFilterVisible] = useState<boolean>(false);
   const [isSearchVisible, setIsSearchVisible] = useState<boolean>(false);
@@ -239,6 +241,46 @@ const TaskSidebarComponent = (
   );
 
   const expandedIdsSet = useMemo(() => new Set(expandedIds ?? []), [expandedIds]);
+
+  const spinnerTaskIds = useMemo(() => {
+    const ids = new Set<string>();
+    const tasksById = new Map(tasks.map((task) => [task.id, task]));
+    tasks.forEach((task) => {
+      if (task.state !== DefaultTaskState.InProgress) {
+        return;
+      }
+      const visited = new Set<string>();
+      let current = task;
+      while (current.parentId && !visited.has(current.parentId)) {
+        visited.add(current.parentId);
+        const parent = tasksById.get(current.parentId);
+        if (!parent) {
+          break;
+        }
+        if (expandedIdsSet.has(parent.id)) {
+          current = parent;
+          continue;
+        }
+        // propagate through the whole chain of collapsed ancestors so that
+        // the closest visible ancestor of the in-progress subtask shows the spinner
+        ids.add(parent.id);
+        let hiddenAncestor = parent;
+        while (hiddenAncestor.parentId) {
+          const next = tasksById.get(hiddenAncestor.parentId);
+          if (!next) {
+            break;
+          }
+          if (expandedIdsSet.has(next.id)) {
+            break;
+          }
+          ids.add(next.id);
+          hiddenAncestor = next;
+        }
+        break;
+      }
+    });
+    return ids;
+  }, [tasks, expandedIdsSet]);
 
   const virtualItems = useMemo(
     () => flattenTasksForVirtualization(tasks, expandedIdsSet, selectedStates, showArchived, debouncedSearchQuery, sortByDateModified ? 'updatedAt' : 'createdAt'),
@@ -406,6 +448,13 @@ const TaskSidebarComponent = (
     setIsSearchVisible(false);
     setSearchQuery('');
   };
+
+  const handleToggleShowArchived = useCallback(
+    (checked: boolean) => {
+      setShowArchived(checked);
+    },
+    [setShowArchived],
+  );
 
   const handleArchiveTask = useCallback(
     async (taskId: string) => {
@@ -862,7 +911,7 @@ const TaskSidebarComponent = (
               />
             ))}
             <div className="flex items-center gap-2 pt-1 border-t border-border-dark-light">
-              <Toggle color="tertiary" size="sm" checked={showArchived} onChange={setShowArchived} />
+              <Toggle color="tertiary" size="sm" checked={showArchived} onChange={handleToggleShowArchived} />
               <span className="text-2xs">{t('taskSidebar.archived')}</span>
             </div>
             <div className="flex items-center gap-2">
@@ -1044,6 +1093,7 @@ const TaskSidebarComponent = (
                           isExpanded={isExpanded}
                           onToggleExpand={handleToggleExpand}
                           hasChildren={subtasks.length > 0}
+                          showSpinner={spinnerTaskIds.has(task.id)}
                           draggedTaskIds={effectiveDraggedIds}
                           draggedSubtreeHeight={draggedSubtreeHeight}
                           dragOverTaskId={dragOverTaskId}

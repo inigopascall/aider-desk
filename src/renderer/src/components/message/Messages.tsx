@@ -1,4 +1,4 @@
-import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { toPng } from 'html-to-image';
 import { MdKeyboardDoubleArrowDown } from 'react-icons/md';
 import { useTranslation } from 'react-i18next';
@@ -6,6 +6,7 @@ import { GroupMessage, isAssistantGroupMessage, isGroupMessage, isLoadingMessage
 
 import { MessageBlockWrapper } from './MessageBlockWrapper';
 import { flashMessageElement } from './outline';
+import { MessageMap } from './MessageMap';
 
 import { useScrollingPaused } from '@/hooks/useScrollingPaused';
 import { useUserMessageNavigation } from '@/hooks/useUserMessageNavigation';
@@ -14,6 +15,7 @@ import { useProcessedMessages } from '@/hooks/useProcessedMessages';
 import { composeMessagesWithWorkflowRuns } from '@/utils/workflow-messages';
 import { EMPTY_WORKFLOW_RUNS, WorkflowRunState } from '@/stores/taskStore';
 import { IconButton } from '@/components/common/IconButton';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 export type MessagesRef = {
   exportToImage: () => void;
@@ -61,8 +63,10 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
     ref,
   ) => {
     const { t } = useTranslation();
+    const showMessageMap = useSettingsStore((state) => state.settings?.showMessageMap ?? true);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const messagesContainerRef = useRef<HTMLDivElement>(null);
+    const [visibleIndex, setVisibleIndex] = useState(0);
 
     const activityMessageId = useMemo(() => {
       if (!inProgress) {
@@ -105,14 +109,16 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
 
     useEffect(() => {
       if (!scrollingPaused) {
-        requestAnimationFrame(() => {
+        const frame = requestAnimationFrame(() => {
           messagesEndRef.current?.scrollIntoView({
             block: 'end',
             inline: 'end',
             behavior: 'instant',
           });
         });
+        return () => cancelAnimationFrame(frame);
       }
+      return undefined;
     }, [processedMessages, scrollingPaused]);
 
     // Get all user message IDs
@@ -120,7 +126,14 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
       return processedMessages.filter(isUserMessage).map((message) => message.id);
     }, [processedMessages]);
 
-    const { hasPreviousUserMessage, hasNextUserMessage, renderGoToPrevious, renderGoToNext } = useUserMessageNavigation({
+    const {
+      hasPreviousUserMessage,
+      hasNextUserMessage,
+      handleNavigateToPreviousUserMessage,
+      handleNavigateToNextUserMessage,
+      renderGoToPrevious,
+      renderGoToNext,
+    } = useUserMessageNavigation({
       containerRef: messagesContainerRef,
       userMessageIds,
       scrollToMessageByElement: (element: HTMLElement) => {
@@ -129,6 +142,62 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
       },
       buttonClassName: 'hidden group-hover:block',
     });
+
+    const scrollToMessageIndex = useCallback(
+      (index: number, animated = true) => {
+        const element = messagesContainerRef.current?.children.item(index);
+        if (element) {
+          setScrollingPaused(true);
+          element.scrollIntoView({ behavior: animated ? 'smooth' : 'instant', block: 'start' });
+        }
+      },
+      [setScrollingPaused],
+    );
+
+    const getVisibleIndex = useCallback(() => {
+      const container = messagesContainerRef.current;
+      if (!container || processedMessages.length === 0) {
+        return 0;
+      }
+      // Anchor to the last item whose top has entered the viewport. Children are in vertical order.
+      const bottom = container.getBoundingClientRect().bottom;
+      let start = 0;
+      let end = Math.min(processedMessages.length, container.children.length);
+      while (start < end) {
+        const middle = Math.floor((start + end) / 2);
+        if (container.children[middle].getBoundingClientRect().top < bottom) {
+          start = middle + 1;
+        } else {
+          end = middle;
+        }
+      }
+      return Math.max(0, start - 1);
+    }, [processedMessages.length]);
+
+    useEffect(() => {
+      const container = messagesContainerRef.current;
+      if (!showMessageMap || !container) {
+        return undefined;
+      }
+      let frame: number | null = null;
+      const handleScroll = () => {
+        if (frame !== null) {
+          cancelAnimationFrame(frame);
+        }
+        frame = requestAnimationFrame(() => {
+          setVisibleIndex(getVisibleIndex());
+          frame = null;
+        });
+      };
+      container.addEventListener('scroll', handleScroll);
+      handleScroll();
+      return () => {
+        container.removeEventListener('scroll', handleScroll);
+        if (frame !== null) {
+          cancelAnimationFrame(frame);
+        }
+      };
+    }, [getVisibleIndex, showMessageMap]);
 
     useEffect(() => {
       onContainerRef?.(messagesContainerRef.current);
@@ -202,6 +271,19 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
             ))}
             <div ref={messagesEndRef} />
           </div>
+          {showMessageMap && (
+            <MessageMap
+              key={taskId}
+              messages={processedMessages}
+              visibleIndex={visibleIndex}
+              onNavigate={scrollToMessageIndex}
+              onPreviousUserMessage={handleNavigateToPreviousUserMessage}
+              onNextUserMessage={handleNavigateToNextUserMessage}
+              hasPreviousUserMessage={hasPreviousUserMessage}
+              hasNextUserMessage={hasNextUserMessage}
+              onScrollToBottom={scrollToBottom}
+            />
+          )}
           <div className="relative">
             <div className="absolute left-1/2 -translate-x-1/2 bottom-0 w-[140px] z-10 flex justify-center gap-1 pt-6 pb-1 group">
               {(hasPreviousUserMessage || hasNextUserMessage) && renderGoToPrevious()}

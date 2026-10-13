@@ -24,6 +24,8 @@
     "setAutonomyMode": "자율 모드 전환",
     "openSettingsPage": "설정 페이지 열기",
     "showLogs": "로그 표시",
+    "showArchivedTasks": "보관된 작업 표시",
+    "hideArchivedTasks": "보관된 작업 숨기기",
     "createNewTask": "새 작업 만들기",
     "createNewSubtask": "새 하위 작업 만들기",
     "createNewSiblingTask": "새 형제 작업 만들기",
@@ -126,7 +128,32 @@
       "aider": "Aider",
       "agent": "AI 에이전트",
       "providers": "공급자",
-      "finish": "완료"
+      "finish": "완료",
+      "choosePath": "경로 선택",
+      "configure": "구성"
+    },
+    "choice": {
+      "title": "AiderDesk를 어떻게 사용하실 건가요?",
+      "description": "이 선택에 따라 설정 과정이 맞춤화되고 기본 모드가 지정됩니다. 설정 → 일반에서 언제든 변경할 수 있습니다.",
+      "recommended": "추천",
+      "agent": {
+        "title": "에이전트 우선",
+        "subtitle": "기본값",
+        "description": "전체 도구 접근 권한을 가진 자율 에이전트. 결과만 설명하면 계획하고 실행합니다.",
+        "feature1": "다단계 계획 및 파일 편집",
+        "feature2": "파워 도구, MCP 서버 및 스킬",
+        "feature3": "Aider 모드도 한 번에 전환 가능",
+        "modeLabel": "기본 모드 → 에이전트"
+      },
+      "aider": {
+        "title": "Aider 사용자",
+        "subtitle": "Aider 모드 중심",
+        "description": "이미 Aider에 익숙하다면 Code, Ask, Architect를 중심으로 사용하세요.",
+        "feature1": "Aider 설정을 바로 구성",
+        "feature2": "편집 형식, 자동 커밋, 환경 변수",
+        "feature3": "필요할 때 에이전트 모드 사용 가능",
+        "modeLabel": "기본 모드 → Code"
+      }
     },
     "language": {
       "title": "언어 선택",
@@ -143,7 +170,8 @@
       "configureLater": "이 작업은 나중에 설정에서도 할 수 있습니다.",
       "fineTuneTitle": "Aider 세부 조정 (선택 사항)",
       "fineTuneDescription": "고급 사용자는 추가 Aider 설정과 환경 변수를 구성할 수 있습니다. 이 단계는 완전히 선택 사항이며 건너뛰어도 안전합니다.",
-      "fineTuneNote": "참고: 이 설정은 Aider의 동작을 사용자 지정하려는 고급 사용자를 위한 것입니다. 대부분의 사용자는 이 단계를 건너뛰고 필요할 때 설정에서 나중에 구성해도 됩니다."
+      "fineTuneNote": "참고: 이 설정은 Aider의 동작을 사용자 지정하려는 고급 사용자를 위한 것입니다. 대부분의 사용자는 이 단계를 건너뛰고 필요할 때 설정에서 나중에 구성해도 됩니다.",
+      "agentSwitchNote": "팁: 에이전트 모드는 한 번에 전환할 수 있습니다 — 완전한 자율성이 필요할 때 프롬프트 위의 모드 선택기를 사용하세요."
     },
     "providers": {
       "title": "모델 공급자",
@@ -190,7 +218,24 @@
       "title": "설정 완료!",
       "description": "축하합니다! AiderDesk 설정을 성공적으로 완료했습니다. 이제 완전한 투명성과 제어로 AI 지원 개발을 이끌어 나갈 준비가 되었습니다.",
       "ready": "'설정 완료'를 클릭하여 코딩 여정을 시작하세요.",
-      "success": "온보딩이 성공적으로 완료되었습니다! AiderDesk에 오신 것을 환영합니다."
+      "success": "온보딩이 성공적으로 완료되었습니다! AiderDesk에 오신 것을 환영합니다.",
+      "mode": "새 작업은 {{mode}} 모드로 시작됩니다 — 설정 → 일반에서 언제든 변경할 수 있습니다.",
+      "modeAgent": "에이전트",
+      "modeCode": "Code",
+      "customizeTitle": "AiderDesk를 나에게 맞게",
+      "customizeDescription": "더 살펴볼 만한 곳들이 있습니다:",
+      "general": {
+        "title": "설정 → 일반",
+        "description": "외관, 언어, 기본 모드 및 시작 동작"
+      },
+      "mcp": {
+        "title": "설정 → MCP",
+        "description": "MCP 서버를 연결해 에이전트에 더 많은 도구 제공"
+      },
+      "tasks": {
+        "title": "설정 → 작업",
+        "description": "작업 동작, 자동화 및 스마트 상태"
+      }
     },
     "errors": {
       "navigationFailed": "이동에 실패했습니다. 다시 시도해 주세요.",
@@ -445,6 +490,10 @@
     "getApiKeyLink": "Synthetic API 키 받기",
     "apiKey": "API 키"
   },
+  "llmApi": {
+    "getApiKeyLink": "LLM API 키 받기",
+    "apiKey": "API 키"
+  },
   "zaiPlan": {
     "getApiKeyLink": "Z.AI API 키 받기",
     "apiKey": "API 키",
@@ -494,6 +543,7 @@
     "gpustack": "GPUStack",
     "lmstudio": "LM Studio",
     "litellm": "LiteLLM",
+    "llmapi": "LLM API",
     "minimax": "MiniMax",
     "mistral": "Mistral",
     "neuralwatt": "Neuralwatt",
@@ -720,6 +770,11 @@
       "autoGenerateTaskNameTooltip": "활성화하면 모델이 프롬프트로부터 간결한 작업 이름을 생성합니다. 비활성화하면 프롬프트의 처음 5단어가 작업 이름으로 사용됩니다.",
       "showTaskStateActions": "작업 상태 액션 표시",
       "showTaskStateActionsTooltip": "활성화하면 메시지 하단에 작업 상태 액션이 표시됩니다. 비활성화하면 이 액션들이 숨겨집니다.",
+      "defaultTaskMode": "새 작업 기본 모드",
+      "defaultTaskModeTooltip": "이미 작업이 있는 프로젝트에서 새 작업을 만들 때 사용됩니다. '마지막 작업 모드 사용'을 선택하면 가장 최근 작업의 모드를 유지합니다.",
+      "defaultTaskModeLast": "마지막 작업 모드 사용",
+      "defaultProjectMode": "새 프로젝트 기본 모드",
+      "defaultProjectModeTooltip": "이전 작업이 없어 상속받을 수 없을 때, 프로젝트의 첫 작업에 사용되는 초기 모드입니다. 온보딩 중 자동으로 설정됩니다.",
       "contextManagement": "컨텍스트 관리",
       "contextCompactingThreshold": "자동 압축 임계값",
       "contextCompactingThresholdTooltip": "토큰 사용량이 이 임계값을 초과하면 선택한 압축 유형에 따라 대화가 자동으로 관리됩니다. 비활성화하려면 0으로 설정하세요.",
@@ -817,6 +872,9 @@
       "includeFilesTooltip": "에이전트의 채팅에 컨텍스트 파일의 내용을 추가합니다. 토큰 사용량이 늘어납니다.",
       "includeRepoMappings": "저장소 매핑 포함",
       "includeRepoMappingsTooltip": "일반 컨텍스트 파일보다 먼저 .aider-desk/mappings의 생성된 읽기 전용 파일을 모두 포함합니다. 토큰 사용량이 늘어날 수 있습니다.",
+      "memory": "메모리",
+      "useAgentMemoryScope": "에이전트별 메모리 격리",
+      "useAgentMemoryScopeTooltip": "활성화하면 이 에이전트는 프로젝트 디렉터리 대신 자체 메모리 범위에 메모리를 저장하고 검색합니다. 이 메모리는 이 에이전트가 사용되는 모든 프로젝트에서 공유됩니다.",
       "autonomyMode": "자율성 모드",
       "override": "재정의",
       "clearOverride": "재정의 지우기",
@@ -838,6 +896,7 @@
       "envVarFoundPlaceholder": "다음에서 찾음: {{source}}",
       "createNewProfile": "새로 만들기",
       "genericTools": "도구",
+      "extensionTools": "확장 도구",
       "noGenericToolsConfigured": "구성된 도구가 없습니다.",
       "todoTools": "할 일 도구",
       "includeTodoToolsTooltip": "에이전트가 할 일 항목 목록을 설정, 조회, 업데이트, 삭제하는 등 관리할 수 있게 합니다.",
@@ -1072,7 +1131,8 @@
       "viewModeFull": "전체",
       "viewModeCompact": "간략히",
       "fullMessageRendering": "전체 메시지 렌더링 사용 (레거시)",
-      "fullMessageRenderingTooltip": "가상화 없이 모든 메시지를 DOM에 렌더링합니다. 대화 기록이 많으면 성능에 영향을 줄 수 있습니다."
+      "fullMessageRenderingTooltip": "가상화 없이 모든 메시지를 DOM에 렌더링합니다. 대화 기록이 많으면 성능에 영향을 줄 수 있습니다.",
+      "messageMap": "메시지 맵 표시"
     },
     "memory": {
       "configuration": "구성",
@@ -1099,8 +1159,8 @@
       },
       "memories": {
         "title": "메모리",
-        "project": "프로젝트",
-        "allProjects": "모든 프로젝트",
+        "scope": "범위",
+        "all": "전체",
         "loading": "메모리를 불러오는 중...",
         "empty": "메모리가 없습니다.",
         "delete": "삭제",
@@ -1109,6 +1169,9 @@
         "deleteDialogText": "메모리 삭제",
         "deleteProjectDialogTitle": "프로젝트 메모리 삭제",
         "deleteProjectDialogText": "프로젝트의 모든 메모리 삭제",
+        "deleteAllForAgent": "에이전트의 모든 메모리 삭제",
+        "deleteAgentMemoriesDialogTitle": "에이전트 메모리 삭제",
+        "deleteAgentMemoriesDialogText": "에이전트의 모든 메모리 삭제",
         "projectId": "projectId",
         "id": "id"
       }
@@ -1143,6 +1206,14 @@
     "scrollToBottom": "맨 아래로 스크롤",
     "previousUserMessage": "이전 사용자 메시지",
     "nextUserMessage": "다음 사용자 메시지",
+    "map": {
+      "title": "메시지 지도",
+      "turn": "{{number}}번째 대화",
+      "userPrompt": "내 프롬프트",
+      "assistantReply": "마지막 답변",
+      "emptyPreview": "텍스트 미리보기 없음",
+      "goToMessage": "{{number}}번째 대화의 {{label}}(으)로 이동"
+    },
     "messageBar": "메시지 바",
     "execute": "실행",
     "resume": "재개",
@@ -1305,10 +1376,14 @@
     "skillActivate": "활성화",
     "skillDeactivate": "비활성화",
     "skillActivating": "...",
+    "skillDisable": "스킬 비활성화",
+    "skillEnable": "스킬 활성화",
     "globalSkill": "전역 스킬",
     "projectSkill": "프로젝트 스킬",
     "builtinSkill": "내장 스킬",
     "extensionSkill": "확장 스킬",
+    "manualSkillOnly": "수동 호출 전용 (disable-model-invocation)",
+    "agentSkillOnly": "에이전트 전용 (user-invocable: false)",
     "disableRuleFile": "규칙 파일 비활성화",
     "enableRuleFile": "규칙 파일 활성화",
     "disableAllRuleFiles": "폴더의 모든 규칙 파일 비활성화",
@@ -1337,6 +1412,8 @@
     "generateMessage": "메시지 생성",
     "amend": "수정(Amend)",
     "amendTooltip": "새 커밋을 만드는 대신 마지막 커밋을 수정합니다",
+    "skipGitHooks": "Git 훅 건너뛰기",
+    "skipGitHooksTooltip": "Git 훅을 실행하지 않고 커밋을 생성합니다 (git commit --no-verify)",
     "commit": "커밋",
     "generatingMessage": "생성하는 중...",
     "committing": "커밋하는 중...",
@@ -1788,11 +1865,13 @@
     "confirmLocalTitle": "로컬 모드로 전환",
     "confirmLocalMessage": "이 워크트리에는 저장되지 않은 작업이 있습니다:\n{{warnings}}",
     "localOptionMergeLabel": "먼저 변경 사항을 병합한 후 전환",
+    "localOptionMergeOnlyLabel": "병합 후 이 작업만 전환",
     "localOptionMergeDescription": "이 작업을 로컬 모드로 전환하기 전에 워크트리 커밋을 메인 브랜치로 병합합니다",
     "localOptionMergeAllLabel": "병합 후 워크트리의 모든 작업 전환",
     "localOptionMergeAllDescription": "워크트리 커밋을 메인 브랜치로 병합한 다음 이 워크트리를 공유하는 모든 작업을 로컬 모드로 전환합니다",
     "localOptionRemoveLabel": "워크트리를 제거하고 전환",
     "localOptionRemoveDescription": "커밋되지 않고 병합되지 않은 변경 사항을 버리고, 워크트리를 제거한 후 로컬 모드로 전환합니다",
+    "localOptionRemoveSharedDescription": "커밋되지 않고 병합되지 않은 변경 사항을 버리고 이 작업을 로컬 모드로 전환합니다 - 워크트리는 이를 공유하는 다른 작업을 위해 유지됩니다",
     "confirmWorktreeTitle": "워크트리 모드로 전환",
     "confirmWorktreeMessage": "프로젝트 디렉터리에 커밋되지 않은 파일이 {{count}}개 있습니다.",
     "worktreeOptionJustSwitchLabel": "변경 사항을 가져오지 않고 전환",
@@ -1929,8 +2008,7 @@
     "tabLabel": "터미널",
     "copyOutput": "터미널 출력을 프롬프트로 복사",
     "minimize": "터미널 최소화",
-    "addTerminal": "새 터미널 추가",
-    "restartHint": "세션이 종료되었습니다. 아무 키나 눌러 재시작하세요."
+    "addTerminal": "새 터미널 추가"
   },
   "contextMenu": {
     "copy": "복사",
@@ -1938,6 +2016,7 @@
     "close": "닫기",
     "closeOtherTabs": "다른 탭 닫기",
     "closeAllTabs": "모든 탭 닫기",
+    "openProjectFolder": "프로젝트 폴더 열기",
     "openInNewWindow": "새 창에서 열기",
     "copyLink": "링크 복사"
   },

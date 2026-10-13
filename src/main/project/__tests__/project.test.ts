@@ -23,6 +23,7 @@ vi.mock('@/constants');
 vi.mock('@/utils');
 vi.mock('@/repository-mappings');
 vi.mock('fs/promises');
+vi.mock('@/utils/atomic-write');
 let uuidCounter = 0;
 vi.mock('uuid', () => ({
   v4: vi.fn(() => `uuid-${String(uuidCounter++).padStart(8, '0')}-${Math.random()}`),

@@ -17,7 +17,35 @@ const SKILL_MARKDOWN_FILE = 'SKILL.md';
 
 const TOOL_NAME = `${SKILLS_TOOL_GROUP_NAME}${TOOL_GROUP_NAME_SEPARATOR}${SKILLS_TOOL_ACTIVATE_SKILL}`;
 
-const parseSkillFrontMatter = (markdown: string): { name: string; description: string } | null => {
+const TRUTHY_BOOLEAN_VALUES = new Set(['true', 'yes', 'on', '1']);
+const FALSY_BOOLEAN_VALUES = new Set(['false', 'no', 'off', '0']);
+
+const parseBooleanFrontMatterField = (value: unknown, defaultValue: boolean): boolean => {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    const normalized = value.toString();
+    if (TRUTHY_BOOLEAN_VALUES.has(normalized)) {
+      return true;
+    }
+    if (FALSY_BOOLEAN_VALUES.has(normalized)) {
+      return false;
+    }
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (TRUTHY_BOOLEAN_VALUES.has(normalized)) {
+      return true;
+    }
+    if (FALSY_BOOLEAN_VALUES.has(normalized)) {
+      return false;
+    }
+  }
+  return defaultValue;
+};
+
+const parseSkillFrontMatter = (markdown: string): { name: string; description: string; disableModelInvocation: boolean; userInvocable: boolean } | null => {
   const parsed = loadFront(markdown);
   const name = typeof parsed.name === 'string' ? parsed.name : undefined;
   const description = typeof parsed.description === 'string' ? parsed.description : undefined;
@@ -26,7 +54,12 @@ const parseSkillFrontMatter = (markdown: string): { name: string; description: s
     return null;
   }
 
-  return { name, description };
+  return {
+    name,
+    description,
+    disableModelInvocation: parseBooleanFrontMatterField(parsed['disable-model-invocation'], false),
+    userInvocable: parseBooleanFrontMatterField(parsed['user-invocable'], true),
+  };
 };
 
 const safeReadDir = async (dirPath: string): Promise<string[]> => {
@@ -79,6 +112,8 @@ const loadSkillsFromDir = async (skillsRootDir: string, location: SkillLocation)
       description: parsed.description,
       location,
       dirPath,
+      disableModelInvocation: parsed.disableModelInvocation,
+      userInvocable: parsed.userInvocable,
     });
   }
 
@@ -87,19 +122,19 @@ const loadSkillsFromDir = async (skillsRootDir: string, location: SkillLocation)
 
 export class SkillManager {
   private extensionManager: ExtensionManager | undefined;
-  private projectDir: string;
+  private project: Project;
 
-  constructor(projectDir: string, extensionManager?: ExtensionManager) {
-    this.projectDir = projectDir;
+  constructor(project: Project, extensionManager?: ExtensionManager) {
+    this.project = project;
     this.extensionManager = extensionManager;
   }
 
   async loadAllSkills(): Promise<Skill[]> {
     const globalSkillsDir = path.join(AIDER_DESK_HOME_DIR, SKILLS_DIR_NAME);
-    const projectSkillsDir = path.join(this.projectDir, AIDER_DESK_DIR, SKILLS_DIR_NAME);
+    const projectSkillsDir = path.join(this.project.baseDir, AIDER_DESK_DIR, SKILLS_DIR_NAME);
 
     const extensionSkills: Skill[] = this.extensionManager
-      ? this.extensionManager.getSkills({ baseDir: this.projectDir } as Project, { getTaskDir: () => this.projectDir } as Task)
+      ? this.extensionManager.getSkills(this.project, { getTaskDir: () => this.project.baseDir } as Task)
       : [];
 
     const [globalSkills, projectSkills, builtinSkills] = await Promise.all([
@@ -130,6 +165,13 @@ export class SkillManager {
       ...skill,
       activated: activatedSkillNames.has(skill.name),
     }));
+  }
+
+  async getEnabledSkills(): Promise<Skill[]> {
+    const disabledSkills = this.project.getProjectSettings().disabledSkills ?? [];
+    const skills = await this.loadAllSkills();
+
+    return skills.filter((skill) => !disabledSkills.includes(skill.name));
   }
 
   async getSkillContent(skillName: string): Promise<string | null> {

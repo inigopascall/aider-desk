@@ -2,7 +2,7 @@ import { ProjectData } from '@common/types';
 import { compareBaseDirs } from '@common/utils';
 import { CSS } from '@dnd-kit/utilities';
 import { MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { Tab, TabGroup, TabList, Listbox, ListboxButton, ListboxOption, ListboxOptions, Transition } from '@headlessui/react';
+import { Tab, TabGroup, TabList, Listbox, ListboxButton, ListboxOption, ListboxOptions } from '@headlessui/react';
 import { clsx } from 'clsx';
 import { MdAdd, MdChevronLeft, MdChevronRight } from 'react-icons/md';
 import { CgSpinner } from 'react-icons/cg';
@@ -137,19 +137,11 @@ export const ProjectTabs = ({
                 <span className="flex-1 min-w-0 truncate text-left">{selectedProject?.baseDir.split(/[\\/]/).pop()}</span>
                 <HiChevronDown className="h-4 w-4 flex-shrink-0 text-text-muted" aria-hidden="true" />
               </ListboxButton>
-              <Transition
-                as="div"
-                leave="transition ease-in duration-100"
-                leaveFrom="opacity-100"
-                leaveTo="opacity-0"
-                className="absolute left-0 top-full z-50 mt-2"
-              >
-                <ListboxOptions className="max-h-60 max-w-[300px] overflow-auto rounded-sm bg-bg-primary py-1 shadow-lg ring-1 ring-border-default focus:outline-none">
-                  {openProjects.map((project) => (
-                    <MobileTabItem key={project.baseDir} project={project} />
-                  ))}
-                </ListboxOptions>
-              </Transition>
+              <ListboxOptions className="absolute left-0 top-full z-50 mt-2 max-h-60 max-w-[300px] overflow-auto rounded-sm bg-bg-primary py-1 shadow-lg ring-1 ring-border-default focus:outline-none">
+                {openProjects.map((project) => (
+                  <MobileTabItem key={project.baseDir} project={project} />
+                ))}
+              </ListboxOptions>
             </div>
           </Listbox>
         )}
@@ -285,6 +277,12 @@ const SortableTabItem = ({ project, isActive, onCloseProject, onCloseOtherProjec
     event.preventDefault();
 
     const options: MenuOption[] = [
+      {
+        label: t('contextMenu.openProjectFolder'),
+        action: () => {
+          void api.openPath(project.baseDir);
+        },
+      },
       {
         label: t('contextMenu.openInNewWindow'),
         action: () => {

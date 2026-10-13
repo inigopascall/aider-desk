@@ -214,6 +214,7 @@ UI components can be placed in 21 different locations throughout the interface:
 | `task-message-above` | Per message | Above each individual message |
 | `task-message-below` | Per message | Below each individual message |
 | `task-message-bar` | Per message | In the message action bar (on hover) |
+| `task-message-bar-menu` | Per message | In the message bar's dropdown menu (vertical dots) |
 | `task-input-above` | Input area | Above the task input field |
 | `task-input-toolbar-left` | Input toolbar | Left side of input toolbar (below input) |
 | `task-input-toolbar-right` | Input toolbar | Right side of input toolbar |
@@ -574,17 +575,17 @@ export default class MemoryInsightsExtension implements Extension {
     const memory = context.getMemoryContext();
     if (!memory.isMemoryEnabled()) return;
 
-    const projectId = context.getProjectDir();
+    const scopeId = context.getProjectDir();
     const taskContext = context.getTaskContext();
     const taskId = taskContext?.data.id ?? '';
 
     // Retrieve relevant context from previous tasks
-    const memories = await memory.retrieveMemories(projectId, 'project conventions');
+    const memories = await memory.retrieveMemories(scopeId, 'project conventions');
     context.log(`Loaded ${memories.length} memories for context`, 'info');
 
     // Store a pattern observed during this task
     await memory.storeMemory(
-      projectId,
+      scopeId,
       taskId,
       'code-pattern',
       'Use Zod schemas for all runtime input validation',
@@ -614,7 +615,7 @@ export default class SmartMemoryExtension implements Extension {
     const taskContext = context.getTaskContext();
     if (!taskContext) return;
 
-    const projectId = context.getProjectDir();
+    const scopeId = context.getProjectDir();
     const taskId = taskContext.data.id;
 
     // Use a cheap model to extract insights from the conversation
@@ -629,7 +630,7 @@ export default class SmartMemoryExtension implements Extension {
     try {
       const insights = JSON.parse(extractionResult);
       for (const insight of insights) {
-        await memory.storeMemory(projectId, taskId, insight.type, insight.content);
+        await memory.storeMemory(scopeId, taskId, insight.type, insight.content);
       }
       context.log(`Stored ${insights.length} extracted memories`, 'info');
     } catch {

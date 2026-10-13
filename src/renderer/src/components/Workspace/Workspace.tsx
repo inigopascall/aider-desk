@@ -67,6 +67,7 @@ const SortableSectionWrapper = ({ id, editMode, isHidden, children }: SortableSe
 type Props = {
   baseDir: string;
   taskId: string;
+  taskDir: string;
   allFiles: string[];
   contextFiles: ContextFile[];
   showFileDialog: () => void;
@@ -82,6 +83,7 @@ type Props = {
 export const Workspace = ({
   baseDir,
   taskId,
+  taskDir,
   allFiles,
   contextFiles,
   showFileDialog,
@@ -338,6 +340,7 @@ export const Workspace = ({
           <UpdatedFilesSection
             baseDir={baseDir}
             taskId={taskId}
+            taskDir={taskDir}
             isOpen={activeSection === 'updated' && !editMode}
             fileTokensInfo={fileTokensInfo}
             os={os}

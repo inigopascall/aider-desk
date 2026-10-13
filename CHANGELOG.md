@@ -1,12 +1,68 @@
 # Changelog
 
-## [UNRELEASED]
+## [0.87.0]
 
-- added find in file support to the file editor with a themed search panel opened via Ctrl+F / Cmd+F
-- fixed duplicate keys in git branches popup rows causing React rendering issues
-- fixed crash with React error #185 (maximum update depth exceeded) during message streaming by ensuring message list item ids are always unique and updating @legendapp/list to 3.3.11
-- fixed committing deleted files failing to stage by retrying with `git add -A -f`
-- added passing images attached to the prompt to custom extension commands, allowing extensions to include the screenshot in the prompt they run
+- added option to skip Git hooks on commit
+- added icon support for extension custom modes from icon packs
+- fixed terminal staying open with a dead session when the shell exits (e.g. Ctrl+D)
+- fixed crash (React maximum update depth exceeded) when interacting with diff viewer dropdown while task is running
+- removed diff view mode switcher from code block headers in favor of global Settings (also improves code block rendering performance)
+- patched @legendapp/list to prevent crash in the message list from excessive container measurements
+- fixed task state not resyncing after socket reconnect
+- fixed delayed paste (Ctrl+V) on Linux when the app was idle
+- updated Electron to 44.7.0
+- added message map with color-coded users and assistants, hover previews, and click-to-scroll navigation
+- added arrow-key path segment completion with fuzzy matching in the prompt field
+- fixed delayed expand/collapse of folders in the updated files diff sidebar
+- fixed confirmation dialogs being clipped inside messages when deleting memories
+- fixed stale "(Not found)" shown in the stored memory tool message
+- fixed paused chat scroll position being lost when switching between tasks
+
+## [0.86.0]
+
+- added getProviders to extension context to access configured provider profiles
+- added option to isolate memories per agent profile
+- fixed crash during streaming (React maximum update depth exceeded) in message list
+- added agent-based conflict resolution support also on project root level, not only in worktrees
+- fixed updated files section not refreshing for tasks sharing the same worktree or project root
+- added pressing ArrowUp in an empty prompt field entering edit mode of the last user message
+- added onboarding path choice with default agent or code mode
+- added `smartCompact` and `getEstimatedTokens` to the extension task context
+- added extension tools section to agent selector with auto-refresh on extension changes
+- added automatic state resync for tasks and readonly view after socket reconnect
+- fixed task.json and todo.json being left half-written when the app crashes during save
+- fixed commit failing for already-staged file deletions
+- added default mode setting for new tasks and new projects
+- fixed todo list not auto-expanding again when a completed list is replaced with new items
+- fixed subagent token usage overwriting the main run's context size info
+- added onToolsetCreated extension event to modify the agent run toolset
+
+## [0.85.0]
+
+- added file watcher for refreshing task files, worktree status and autocompletion while a task runs
+- added find in file support to the file editor with Ctrl+F / Cmd+F
+- fixed duplicate keys in git branches popup rows
+- fixed crash during message streaming (React maximum update depth exceeded)
+- fixed committing deleted files with `git add -A -f` retry
+- added passing prompt-attached images to custom extension commands
+- fixed in-progress tasks being evicted from the task mount pool when switching tasks
+- fixed find in file shortcut being swallowed by inactive background project task views
+- updated default models for built-in providers to their latest versions
+- added built-in skill names to the `/` command autocompletion
+- improved task sidebar spinner visibility for collapsed parent subtasks
+- clarified worktree to local mode switch dialog for shared worktrees
+- added command palette actions to show or hide archived tasks
+- added context menu action to open project folder from project tabs
+- added low reasoning effort option for Z.ai plan provider
+- fixed code highlighting fallback when auto-detected language yields no matches
+- added disable-model-invocation and user-invocable skill frontmatter options
+- fixed wrong scroll offset in updated files diff modal when tracking headers were not found
+- fixed provider options leaking into task context messages
+- fixed partial commits including unrelated staged files by committing only selected files via pathspec mode
+- added `/resume` command to prompt autocompletion for resuming tasks
+- added option to disable skills per project
+- added LLM API provider
+- added task-message-bar-menu extension UI placement for message dropdown menu actions
 
 ## [0.84.0]
 

@@ -24,8 +24,10 @@ import { AIDER_DESK_TASKS_DIR, AIDER_DESK_WATCH_FILES_LOCK } from '@/constants';
 import { ensureRepositoryMappingsInitialized } from '@/repository-mappings';
 import { PythonDependenciesInstaller } from '@/python-dependencies-installer';
 import { determineMainModel, determineWeakModel } from '@/utils';
+import { FileWatcherManager } from '@/file-watcher-manager';
 
 export class Project {
+  private readonly fileWatcherManager: FileWatcherManager;
   private readonly customCommandManager: CustomCommandManager;
   private readonly tasksLoadingPromise: Promise<void> | null = null;
   private readonly tasks = new Map<string, Task>();
@@ -51,6 +53,7 @@ export class Project {
     private readonly extensionManager: ExtensionManager,
     private readonly pythonInstaller: PythonDependenciesInstaller,
   ) {
+    this.fileWatcherManager = new FileWatcherManager(this.store);
     this.customCommandManager = new CustomCommandManager(this, this.eventManager, this.extensionManager, this.store);
     this.tasksLoadingPromise = this.loadTasks();
   }
@@ -120,17 +123,21 @@ export class Project {
     }
 
     const sourceTask = parentTask || this.getMostRecentTask();
-    const defaultWorkingMode = this.store.getSettings().taskSettings.defaultWorkingMode || 'local';
+    const taskSettings = this.store.getSettings().taskSettings;
+    const defaultWorkingMode = taskSettings.defaultWorkingMode || 'local';
+    const defaultProjectMode = taskSettings.defaultProjectMode ?? 'agent';
+    const defaultTaskMode = taskSettings.defaultTaskMode ?? 'last';
     let initialTaskData: Partial<TaskData>;
 
     if (sourceTask) {
+      const inheritedMode = parentTask ? parentTask.task.currentMode : defaultTaskMode === 'last' ? sourceTask.task.currentMode : defaultTaskMode;
       initialTaskData = {
         mainModel: sourceTask.task.mainModel,
         weakModel: sourceTask.task.weakModel,
         architectModel: sourceTask.task.architectModel,
         reasoningEffort: sourceTask.task.reasoningEffort,
         thinkingTokens: sourceTask.task.thinkingTokens,
-        currentMode: sourceTask.task.currentMode,
+        currentMode: inheritedMode,
         agentProfileId: parentTask?.task.agentProfileId,
         provider: parentTask?.task.provider,
         model: parentTask?.task.model,
@@ -149,7 +156,7 @@ export class Project {
       initialTaskData = {
         mainModel: determineMainModel(this.store.getSettings(), this.modelManager.getProviders(), providerModels.models || [], this.baseDir),
         weakModel: determineWeakModel(this.baseDir),
-        currentMode: 'agent',
+        currentMode: defaultProjectMode,
         workingMode: defaultWorkingMode,
         ...normalizedParams,
       };
@@ -755,6 +762,10 @@ export class Project {
     void this.customCommandManager.settingsChanged(oldSettings, newSettings);
   }
 
+  public getFileWatcherManager(): FileWatcherManager {
+    return this.fileWatcherManager;
+  }
+
   async projectSettingsChanged(oldSettings: ProjectSettings, newSettings: ProjectSettings) {
     this.forEachTask((task) => {
       void task.projectSettingsChanged(oldSettings, newSettings);
@@ -776,6 +787,7 @@ export class Project {
     await this.extensionManager.dispatchEvent('onProjectStopped', { baseDir: this.baseDir }, this);
 
     this.customCommandManager.dispose();
+    await this.fileWatcherManager.dispose();
     this.agentProfileManager.removeProject(this.baseDir);
     this.mcpConfigManager.removeProject(this.baseDir);
     await this.promptsManager.unwatchProject(this.baseDir);

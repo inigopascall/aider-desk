@@ -64,9 +64,9 @@ import {
   GitSyncCommits,
   SwitchToLocalOptions,
   SwitchToWorktreeOptions,
-  WorktreeIntegrationStatus,
-  WorktreeIntegrationStatusUpdatedData,
-  WorktreeUncommittedFiles,
+  TaskGitStatus,
+  TaskGitStatusUpdatedData,
+  UncommittedFiles,
   TaskCreatedData,
   UpdatedFilesUpdatedData,
   RepositoryMappingsUpdatedData,
@@ -76,6 +76,7 @@ import {
   ExtensionConfigComponent,
   ExtensionToolInfo,
   ExtensionUIComponent,
+  ExtensionsUpdatedData,
   ModalOverlayUrlData,
   InputPromptData,
   AiderConnectorStatus,
@@ -118,9 +119,10 @@ type EventDataMap = {
   'provider-models-updated': ProviderModelsData;
   'providers-updated': ProvidersUpdatedData;
   'project-settings-updated': { baseDir: string; settings: ProjectSettings };
-  'worktree-integration-status-updated': WorktreeIntegrationStatusUpdatedData;
+  'task-git-status-updated': TaskGitStatusUpdatedData;
   'agent-profiles-updated': AgentProfilesUpdatedData;
   'mcp-servers-updated': McpServersData;
+  'extensions-updated': ExtensionsUpdatedData;
   'updated-files-updated': UpdatedFilesUpdatedData;
   'repository-mappings-updated': RepositoryMappingsUpdatedData;
   'skills-updated': SkillsUpdatedData;
@@ -148,6 +150,7 @@ interface ListenerEntry<T> {
   callback: EventCallback<T>;
   baseDir?: string;
   taskId?: string;
+  taskDir?: string;
 }
 
 class UnsupportedError extends Error {
@@ -161,6 +164,7 @@ const TERMINAL_WRITE_FLUSH_INTERVAL_MS = 25;
 
 export class BrowserApi implements ApplicationAPI {
   private readonly socket: Socket;
+  private readonly reconnectListeners = new Set<() => void>();
   private readonly listeners: {
     [K in keyof EventDataMap]: Map<string, ListenerEntry<EventDataMap[K]>>;
   };
@@ -209,7 +213,7 @@ export class BrowserApi implements ApplicationAPI {
       'input-history-updated': new Map(),
       'clear-task': new Map(),
       'project-started': new Map(),
-      'worktree-integration-status-updated': new Map(),
+      'task-git-status-updated': new Map(),
       'provider-models-updated': new Map(),
       'providers-updated': new Map(),
       'updated-files-updated': new Map(),
@@ -225,6 +229,7 @@ export class BrowserApi implements ApplicationAPI {
       'task-cancelled': new Map(),
       'agent-profiles-updated': new Map(),
       'mcp-servers-updated': new Map(),
+      'extensions-updated': new Map(),
       notification: new Map(),
       'message-removed': new Map(),
       'terminal-data': new Map(),
@@ -264,6 +269,10 @@ export class BrowserApi implements ApplicationAPI {
       // eslint-disable-next-line no-console
       console.log('Disconnected from Socket.IO server');
     });
+    // 'reconnect' is only emitted on the Manager (socket.io does not forward it to the Socket)
+    this.socket.io.on('reconnect', () => {
+      this.reconnectListeners.forEach((callback) => callback());
+    });
     this.socket.on('connect_error', (error) => {
       // eslint-disable-next-line no-console
       console.error('Socket.IO connection error:', error);
@@ -289,6 +298,12 @@ export class BrowserApi implements ApplicationAPI {
 
           // Filter by taskId for task-level events
           if (entry.taskId && taskId && entry.taskId !== taskId) {
+            return;
+          }
+
+          // Filter by taskDir for directory-scoped events (paths compared cross-platform)
+          const taskDir = (typedData as { taskDir?: string })?.taskDir;
+          if (entry.taskDir && taskDir && !compareBaseDirs(entry.taskDir, taskDir, this.appOS || undefined)) {
             return;
           }
 
@@ -340,11 +355,17 @@ export class BrowserApi implements ApplicationAPI {
     }
   }
 
-  private addListener<T extends keyof EventDataMap>(eventType: T, callback: EventCallback<EventDataMap[T]>, baseDir?: string, taskId?: string): () => void {
+  private addListener<T extends keyof EventDataMap>(
+    eventType: T,
+    callback: EventCallback<EventDataMap[T]>,
+    baseDir?: string,
+    taskId?: string,
+    taskDir?: string,
+  ): () => void {
     void this.ensureSocketConnected();
     const eventListeners = this.listeners[eventType];
     const id = uuidv4();
-    eventListeners.set(id, { callback, baseDir, taskId });
+    eventListeners.set(id, { callback, baseDir, taskId, taskDir });
     this.scheduleSubscriptionUpdate();
 
     return () => {
@@ -660,12 +681,13 @@ export class BrowserApi implements ApplicationAPI {
     );
     return res.message;
   }
-  async commitChanges(baseDir: string, taskId: string, message: string, amend: boolean, filePaths?: string[]): Promise<void> {
+  async commitChanges(baseDir: string, taskId: string, message: string, amend: boolean, skipGitHooks: boolean, filePaths?: string[]): Promise<void> {
     await this.post('/project/worktree/commit-changes', {
       projectDir: baseDir,
       taskId,
       message,
       amend,
+      skipGitHooks,
       filePaths,
     });
   }
@@ -1030,8 +1052,8 @@ export class BrowserApi implements ApplicationAPI {
   addContextInfoUpdatedListener(baseDir: string, taskId: string, callback: (data: ContextInfoData) => void): () => void {
     return this.addListener('context-info-updated', callback, baseDir, taskId);
   }
-  addUpdatedFilesUpdatedListener(baseDir: string, taskId: string, callback: (data: UpdatedFilesUpdatedData) => void): () => void {
-    return this.addListener('updated-files-updated', callback, baseDir, taskId);
+  addUpdatedFilesUpdatedListener(baseDir: string, taskDir: string, callback: (data: UpdatedFilesUpdatedData) => void): () => void {
+    return this.addListener('updated-files-updated', callback, baseDir, undefined, taskDir);
   }
   addRepositoryMappingsUpdatedListener(baseDir: string, callback: (data: RepositoryMappingsUpdatedData) => void): () => void {
     return this.addListener('repository-mappings-updated', callback, baseDir);
@@ -1091,6 +1113,14 @@ export class BrowserApi implements ApplicationAPI {
     return () => {};
   }
 
+  addSocketReconnectListener(callback: () => void): () => void {
+    void this.ensureSocketConnected();
+    this.reconnectListeners.add(callback);
+    return () => {
+      this.reconnectListeners.delete(callback);
+    };
+  }
+
   addProviderModelsUpdatedListener(callback: (data: ProviderModelsData) => void): () => void {
     return this.addListener('provider-models-updated', callback);
   }
@@ -1107,12 +1137,16 @@ export class BrowserApi implements ApplicationAPI {
     return this.addListener('mcp-servers-updated', callback);
   }
 
+  addExtensionsUpdatedListener(callback: (data: ExtensionsUpdatedData) => void): () => void {
+    return this.addListener('extensions-updated', callback);
+  }
+
   addProjectSettingsUpdatedListener(baseDir: string, callback: (data: { baseDir: string; settings: ProjectSettings }) => void): () => void {
     return this.addListener('project-settings-updated', callback, baseDir);
   }
 
-  addWorktreeIntegrationStatusUpdatedListener(baseDir: string, taskId: string, callback: (data: WorktreeIntegrationStatusUpdatedData) => void): () => void {
-    return this.addListener('worktree-integration-status-updated', callback, baseDir, taskId);
+  addTaskGitStatusUpdatedListener(baseDir: string, taskId: string, callback: (data: TaskGitStatusUpdatedData) => void): () => void {
+    return this.addListener('task-git-status-updated', callback, baseDir, taskId);
   }
 
   // Task lifecycle event listeners
@@ -1165,8 +1199,8 @@ export class BrowserApi implements ApplicationAPI {
       extensionCommands: response.extensionCommands,
     };
   }
-  getCustomModes(baseDir: string): Promise<ModeDefinition[]> {
-    return this.get<ModeDefinition[]>('/project/custom-modes', { projectDir: baseDir });
+  getCustomModes(baseDir?: string): Promise<ModeDefinition[]> {
+    return this.get<ModeDefinition[]>('/project/custom-modes', baseDir ? { projectDir: baseDir } : {});
   }
   runCustomCommand(baseDir: string, taskId: string, commandName: string, args: string[], mode: Mode, images?: string[]): Promise<void> {
     return this.post('/project/custom-commands', {
@@ -1316,7 +1350,7 @@ export class BrowserApi implements ApplicationAPI {
     });
   }
 
-  getLocalUncommittedFiles(baseDir: string, taskId: string): Promise<WorktreeUncommittedFiles> {
+  getLocalUncommittedFiles(baseDir: string, taskId: string): Promise<UncommittedFiles> {
     return this.get('/project/local-uncommitted-files', {
       projectDir: baseDir,
       taskId,
@@ -1483,8 +1517,8 @@ export class BrowserApi implements ApplicationAPI {
     });
   }
 
-  getWorktreeIntegrationStatus(baseDir: string, taskId: string, targetBranch?: string): Promise<WorktreeIntegrationStatus> {
-    return this.get('/project/worktree/status', {
+  getTaskGitStatus(baseDir: string, taskId: string, targetBranch?: string): Promise<TaskGitStatus> {
+    return this.get('/project/git/status', {
       projectDir: baseDir,
       taskId,
       targetBranch,
@@ -1499,22 +1533,22 @@ export class BrowserApi implements ApplicationAPI {
     });
   }
 
-  abortWorktreeRebase(baseDir: string, taskId: string): Promise<void> {
-    return this.post('/project/worktree/abort-rebase', {
+  abortRebase(baseDir: string, taskId: string): Promise<void> {
+    return this.post('/project/git/abort-rebase', {
       projectDir: baseDir,
       taskId,
     });
   }
 
-  continueWorktreeRebase(baseDir: string, taskId: string): Promise<void> {
-    return this.post('/project/worktree/continue-rebase', {
+  continueRebase(baseDir: string, taskId: string): Promise<void> {
+    return this.post('/project/git/continue-rebase', {
       projectDir: baseDir,
       taskId,
     });
   }
 
-  resolveWorktreeConflictsWithAgent(baseDir: string, taskId: string): Promise<void> {
-    return this.post('/project/worktree/resolve-conflicts-with-agent', {
+  resolveConflictsWithAgent(baseDir: string, taskId: string): Promise<void> {
+    return this.post('/project/git/resolve-conflicts-with-agent', {
       projectDir: baseDir,
       taskId,
     });
@@ -1546,10 +1580,10 @@ export class BrowserApi implements ApplicationAPI {
     return this.get('/memories/embedding-progress');
   }
 
-  async deleteProjectMemories(projectId: string): Promise<number> {
+  async deleteScopeMemories(scopeId: string): Promise<number> {
     const { data } = await this.apiClient.delete<{ deletedCount: number }>('/memories', {
       data: {
-        projectId,
+        scopeId,
       },
     });
     return data.deletedCount;

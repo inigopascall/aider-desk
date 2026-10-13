@@ -24,6 +24,8 @@
     "setAutonomyMode": "Switch autonomy mode",
     "openSettingsPage": "Open settings page",
     "showLogs": "Show Logs",
+    "showArchivedTasks": "Show archived tasks",
+    "hideArchivedTasks": "Hide archived tasks",
     "createNewTask": "Create new task",
     "createNewSubtask": "Create new subtask",
     "createNewSiblingTask": "Create new sibling task",
@@ -126,7 +128,32 @@
       "aider": "Aider",
       "agent": "AI Agent",
       "providers": "Providers",
-      "finish": "Finish"
+      "finish": "Finish",
+      "choosePath": "Choose Path",
+      "configure": "Configure"
+    },
+    "choice": {
+      "title": "How will you use AiderDesk?",
+      "description": "This tailors your setup and sets your default mode. You can change it anytime in Settings → General.",
+      "recommended": "Recommended",
+      "agent": {
+        "title": "Agent-first",
+        "subtitle": "Default",
+        "description": "Autonomous agent with full tool access. Describe the outcome — it plans and executes.",
+        "feature1": "Multi-step planning and file edits",
+        "feature2": "Power tools, MCP servers and skills",
+        "feature3": "Aider modes still one switch away",
+        "modeLabel": "Sets default mode → Agent"
+      },
+      "aider": {
+        "title": "Coming from Aider",
+        "subtitle": "Aider modes primary",
+        "description": "You already know aider — keep Code, Ask and Architect front and center.",
+        "feature1": "Aider settings set up in-line",
+        "feature2": "Edit formats, auto-commits, env vars",
+        "feature3": "Agent mode available when you want it",
+        "modeLabel": "Sets default mode → Code"
+      }
     },
     "language": {
       "title": "Choose Your Language",
@@ -143,7 +170,8 @@
       "configureLater": "You can also do that later in the Settings.",
       "fineTuneTitle": "Fine-Tune Aider (Optional)",
       "fineTuneDescription": "Advanced users can configure additional Aider settings and environment variables. This step is completely optional and can be safely skipped.",
-      "fineTuneNote": "Note: These settings are for advanced users who want to customize Aider's behavior. Most users can skip this step and configure these later in Settings if needed."
+      "fineTuneNote": "Note: These settings are for advanced users who want to customize Aider's behavior. Most users can skip this step and configure these later in Settings if needed.",
+      "agentSwitchNote": "Tip: Agent mode is one switch away — use the mode picker above the prompt anytime you want full autonomy."
     },
     "providers": {
       "title": "Model Providers",
@@ -190,7 +218,24 @@
       "title": "Setup Complete!",
       "description": "Congratulations! You've successfully set up AiderDesk. You're now ready to steer AI-assisted development with full transparency and control.",
       "ready": "Click 'Finish Setup' to begin your coding journey.",
-      "success": "Onboarding completed successfully! Welcome to AiderDesk."
+      "success": "Onboarding completed successfully! Welcome to AiderDesk.",
+      "mode": "New tasks will start in {{mode}} mode — you can change this anytime in Settings → General.",
+      "modeAgent": "Agent",
+      "modeCode": "Code",
+      "customizeTitle": "Make AiderDesk yours",
+      "customizeDescription": "There's more to explore — a few places worth a look:",
+      "general": {
+        "title": "Settings → General",
+        "description": "Appearance, language, default mode and startup behavior"
+      },
+      "mcp": {
+        "title": "Settings → MCP",
+        "description": "Connect MCP servers to give the agent more tools"
+      },
+      "tasks": {
+        "title": "Settings → Tasks",
+        "description": "Task behavior, automation and smart states"
+      }
     },
     "errors": {
       "navigationFailed": "Navigation failed. Please try again.",
@@ -441,6 +486,10 @@
     "getApiKeyLink": "Get Synthetic API key",
     "apiKey": "API Key"
   },
+  "llmApi": {
+    "getApiKeyLink": "Get LLM API key",
+    "apiKey": "API Key"
+  },
   "zaiPlan": {
     "getApiKeyLink": "Get Z.AI API key",
     "apiKey": "API Key",
@@ -490,6 +539,7 @@
     "gpustack": "GPUStack",
     "lmstudio": "LM Studio",
     "litellm": "LiteLLM",
+    "llmapi": "LLM API",
     "minimax": "MiniMax",
     "mistral": "Mistral",
     "neuralwatt": "Neuralwatt",
@@ -726,6 +776,11 @@
       "showTaskStateActionsTooltip": "When enabled, task state actions are displayed at the bottom of messages. Disable to hide these actions.",
       "allowSubSubTasks": "Allow Sub-Subtasks",
       "allowSubSubTasksTooltip": "When enabled, a subtask can itself have subtasks, giving three levels of nesting. When disabled, creating a subtask of a subtask places it alongside that subtask under the same top-level task instead. Turning this off later keeps any existing sub-subtasks where they are; it only prevents new ones from being created.",
+      "defaultTaskMode": "Default Mode for New Tasks",
+      "defaultTaskModeTooltip": "Used when a new task is created in a project that already has tasks. 'Use latest task's mode' keeps the mode from the most recent task.",
+      "defaultTaskModeLast": "Use latest task's mode",
+      "defaultProjectMode": "Default Mode for New Projects",
+      "defaultProjectModeTooltip": "Used as the initial mode for a project's first task (when there are no previous tasks to inherit from). Set automatically during onboarding.",
       "contextManagement": "Context Management",
       "contextCompactingThreshold": "Auto-compact Threshold",
       "contextCompactingThresholdTooltip": "When token usage exceeds this threshold, the conversation will be automatically managed according to the selected compaction type. Set to 0 to disable.",
@@ -831,6 +886,9 @@
       "includeFilesTooltip": "Adds content of context files into the chat of agent. This will increase token usage.",
       "includeRepoMappings": "Include repository mappings",
       "includeRepoMappingsTooltip": "Includes all generated read-only files in .aider-desk/mappings before normal context files. This can increase token usage.",
+      "memory": "Memory",
+      "useAgentMemoryScope": "Isolate memories by agent",
+      "useAgentMemoryScopeTooltip": "When enabled, this agent stores and retrieves memories in its own scope instead of the project directory. These memories are shared across all projects where this agent is used.",
       "autonomyMode": "Autonomy mode",
       "override": "Override",
       "clearOverride": "Clear Override",
@@ -852,6 +910,7 @@
       "envVarFoundPlaceholder": "Found in: {{source}}",
       "createNewProfile": "Create New",
       "genericTools": "Tools",
+      "extensionTools": "Extension tools",
       "noGenericToolsConfigured": "No tools configured.",
       "todoTools": "Todo tools",
       "includeTodoToolsTooltip": "Allows the agent to manage a list of todo items, including setting, getting, updating, and clearing them.",
@@ -1091,7 +1150,8 @@
       "fullMessageRendering": "Use full message rendering (Legacy)",
       "fullMessageRenderingTooltip": "Renders all messages in the DOM without virtualization. May impact performance with large conversation histories.",
       "disableCssStreamingAnimations": "Disable CSS animations",
-      "disableCssAnimationsTooltip": "Disables all CSS animations and transitions throughout the interface. Uses React-timer blinking red dots where task activity must remain visible."
+      "disableCssAnimationsTooltip": "Disables all CSS animations and transitions throughout the interface. Uses React-timer blinking red dots where task activity must remain visible.",
+      "messageMap": "Show message map"
     },
     "promptField": {
       "agentModeOnly": "This command is only available in agent mode",
@@ -1125,8 +1185,8 @@
       },
       "memories": {
         "title": "Memories",
-        "project": "Project",
-        "allProjects": "All projects",
+        "scope": "Scope",
+        "all": "All",
         "loading": "Loading memories...",
         "empty": "No memories found.",
         "delete": "Delete",
@@ -1135,6 +1195,9 @@
         "deleteDialogText": "Delete memory",
         "deleteProjectDialogTitle": "Delete project memories",
         "deleteProjectDialogText": "Delete all memories for project",
+        "deleteAllForAgent": "Delete all for agent",
+        "deleteAgentMemoriesDialogTitle": "Delete agent memories",
+        "deleteAgentMemoriesDialogText": "Delete all memories for agent",
         "projectId": "projectId",
         "id": "id"
       }
@@ -1169,6 +1232,14 @@
     "scrollToBottom": "Scroll to bottom",
     "previousUserMessage": "Previous user message",
     "nextUserMessage": "Next user message",
+    "map": {
+      "title": "Message map",
+      "turn": "Turn {{number}}",
+      "userPrompt": "Your prompt",
+      "assistantReply": "Last reply",
+      "emptyPreview": "No text preview",
+      "goToMessage": "Go to {{label}} in turn {{number}}"
+    },
     "messageBar": "Message Bar",
     "execute": "Execute",
     "resume": "Resume",
@@ -1335,10 +1406,14 @@
     "skillActivate": "Activate",
     "skillDeactivate": "Deactivate",
     "skillActivating": "...",
+    "skillDisable": "Disable skill",
+    "skillEnable": "Enable skill",
     "globalSkill": "Global skill",
     "projectSkill": "Project skill",
     "builtinSkill": "Built-in skill",
     "extensionSkill": "Extension skill",
+    "manualSkillOnly": "Manual invocation only (disable-model-invocation)",
+    "agentSkillOnly": "Agent-only skill (user-invocable: false)",
     "disableRuleFile": "Disable rule file",
     "enableRuleFile": "Enable rule file",
     "disableAllRuleFiles": "Disable all rule files in folder",
@@ -1367,6 +1442,8 @@
     "generateMessage": "Generate Message",
     "amend": "Amend",
     "amendTooltip": "Amend the last commit instead of creating a new one",
+    "skipGitHooks": "Skip Git hooks",
+    "skipGitHooksTooltip": "Create the commit without running Git hooks (git commit --no-verify)",
     "commit": "Commit",
     "generatingMessage": "Generating...",
     "committing": "Committing...",
@@ -1829,11 +1906,13 @@
     "confirmLocalTitle": "Switch to Local Mode",
     "confirmLocalMessage": "This worktree has unsaved work:\n{{warnings}}",
     "localOptionMergeLabel": "Merge changes first, then switch",
+    "localOptionMergeOnlyLabel": "Merge and switch only this task",
     "localOptionMergeDescription": "Merge worktree commits back to the main branch before switching this task to local mode",
     "localOptionMergeAllLabel": "Merge and switch all tasks in worktree",
     "localOptionMergeAllDescription": "Merge worktree commits back to the main branch, then switch all tasks sharing this worktree to local mode",
     "localOptionRemoveLabel": "Remove worktree and switch",
     "localOptionRemoveDescription": "Discard uncommitted and unmerged changes, remove the worktree, and switch to local mode",
+    "localOptionRemoveSharedDescription": "Discard uncommitted and unmerged changes and switch this task to local mode - the worktree is kept for the other tasks sharing it",
     "confirmWorktreeTitle": "Switch to Worktree Mode",
     "confirmWorktreeMessage": "You have {{count}} uncommitted file(s) in the project directory.",
     "worktreeOptionJustSwitchLabel": "Switch without taking changes",
@@ -1971,8 +2050,7 @@
     "tabLabel": "Terminal",
     "copyOutput": "Copy terminal output to prompt",
     "minimize": "Minimize terminal",
-    "addTerminal": "Add new terminal",
-    "restartHint": "Session ended. Press any key to restart."
+    "addTerminal": "Add new terminal"
   },
   "contextMenu": {
     "copy": "Copy",
@@ -1980,6 +2058,7 @@
     "close": "Close",
     "closeOtherTabs": "Close other tabs",
     "closeAllTabs": "Close all tabs",
+    "openProjectFolder": "Open project folder",
     "openInNewWindow": "Open in new window",
     "copyLink": "Copy Link"
   },

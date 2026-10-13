@@ -66,6 +66,7 @@ const readApiKeyFromConfFile = (filePath: string, envVarName: string): string | 
           SYNTHETIC_API_KEY: ['synthetic'],
           MISTRAL_API_KEY: ['mistral'],
           NEURALWATT_API_KEY: ['neuralwatt'],
+          LLMAPI_API_KEY: ['llmapi'],
         };
 
         const providerNames = envVarToProviderName[envVarName] || [envVarName.replace(/_API_KEY$/, '').toLowerCase()];
@@ -306,12 +307,13 @@ export const getDefaultProjectSettings = (
     mainModel: determineMainModel(store.getSettings(), providers ?? store.getProviders(), providerModels, baseDir),
     weakModel: determineWeakModel(baseDir),
     modelEditFormats: {},
-    currentMode: 'agent',
+    currentMode: store.getSettings().taskSettings.defaultProjectMode ?? 'agent',
     agentProfileId: defaultAgentProfileId,
     autonomyModeLocked: false,
     updatedFilesGroupMode: 'flat',
     disabledRuleFiles: [],
     disabledRepositoryMappingFiles: [],
+    disabledSkills: [],
     contextSidebarSectionsOrder: [],
     contextSidebarSectionsHidden: [],
   };

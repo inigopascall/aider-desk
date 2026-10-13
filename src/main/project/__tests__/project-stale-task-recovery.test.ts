@@ -45,6 +45,7 @@ vi.mock('@/constants', () => ({
   LOGS_DIR: '/logs',
 }));
 vi.mock('@/utils');
+vi.mock('@/utils/atomic-write');
 vi.mock('fs/promises', () => {
   const mocks = {
     readFile: vi.fn(),
@@ -71,6 +72,7 @@ import { DefaultTaskState, TaskData } from '@common/types';
 import { Project } from '../project';
 
 import { INTERNAL_TASK_ID } from '@/task';
+import { atomicWriteJsonFile } from '@/utils/atomic-write';
 
 const createTaskData = (id: string, state?: DefaultTaskState): TaskData => ({
   id,
@@ -188,9 +190,9 @@ describe('Project - stale task recovery on initial load', () => {
 
     // The conversion is written through the normal save/update path
     expect(mockEventManager.sendTaskUpdated).toHaveBeenCalledWith(task!.task);
-    const settingsWrite = vi.mocked(fs.writeFile).mock.calls.find(([filePath]) => String(filePath).endsWith('settings.json'));
+    const settingsWrite = vi.mocked(atomicWriteJsonFile).mock.calls.find(([filePath]) => String(filePath).endsWith('settings.json'));
     expect(settingsWrite).toBeDefined();
-    const written = JSON.parse(settingsWrite![1] as string);
+    const written = settingsWrite![1] as TaskData;
     expect(written.state).toBe(DefaultTaskState.Interrupted);
     expect(written.interruptedAt).toBe(task!.task.interruptedAt);
   });

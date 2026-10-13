@@ -52,6 +52,7 @@ resources/
   connector/
     connector.py
 scripts/
+  after-pack.js
   before-pack.js
   download-probe.mjs
   test-proxy-server.mjs
@@ -136,6 +137,7 @@ src/
         groq.ts
         kimi-plan.ts
         litellm.ts
+        llmapi.ts
         lm-studio.ts
         minimax.ts
         mistral.ts
@@ -240,6 +242,7 @@ src/
       index.ts
       terminal-manager.ts
     utils/
+      atomic-write.ts
       environment.ts
       errors.ts
       file-system.ts
@@ -261,6 +264,7 @@ src/
     app.ts
     constants.ts
     events-handler.ts
+    file-watcher-manager.ts
     index.ts
     ipc-handlers.ts
     logger.ts
@@ -286,6 +290,7 @@ src/
       components/
         AgentSelector/
           AgentSelector.tsx
+          ExtensionToolsSelectorItem.tsx
           index.ts
           McpServerSelectorItem.tsx
         common/
@@ -394,6 +399,10 @@ src/
           MessageBlock.tsx
           MessageBlockWrapper.tsx
           MessageImages.tsx
+          messageMap.ts
+          MessageMap.tsx
+          MessageMapMarker.tsx
+          MessageMapPreview.tsx
           Messages.tsx
           RebaseConflictsActions.tsx
           RebaseResolvedActions.tsx
@@ -442,6 +451,7 @@ src/
             index.ts
             KimiPlanParameters.tsx
             LitellmParameters.tsx
+            LlmApiParameters.tsx
             LmStudioParameters.tsx
             MinimaxParameters.tsx
             MistralParameters.tsx
@@ -492,6 +502,7 @@ src/
           ProviderProfileForm.tsx
           ProviderSelection.tsx
         onboarding/
+          OnboardingPathChoice.tsx
           OnboardingProviderSetup.tsx
           OnboardingStepper.tsx
         project/
@@ -528,6 +539,7 @@ src/
           WorktreeActionDialog.tsx
           WorktreeRevertButton.tsx
         PromptField/
+          acceptPathSegment.ts
           AudioAnalyzer.tsx
           AutoApprove.tsx
           AutonomySelector.tsx
@@ -539,6 +551,7 @@ src/
           PromptField.tsx
           QueuedPromptsList.tsx
           usePromptFieldText.ts
+          wordCompletions.ts
         readonly/
           ReadonlyHeader.tsx
           ReadonlyProjectView.tsx
@@ -682,8 +695,10 @@ src/
         useCustomModes.ts
         useDropdownState.ts
         useEffectiveEnvironmentVariable.ts
+        useExtensionTools.ts
         useIndexedDB.ts
         useLmStudioModels.ts
+        useModes.ts
         useOllamaModels.ts
         useOpenRouterModels.ts
         useOS.ts
@@ -700,6 +715,7 @@ src/
         useTaskActions.ts
         useTaskCommandHandlers.ts
         useTaskDataHandlers.ts
+        useTaskGitStatus.ts
         useTaskLifecycleHandlers.ts
         useTaskLogHandlers.ts
         useTaskMessageHandlers.ts
@@ -710,7 +726,6 @@ src/
         useUpdatedFileDiff.ts
         useUserMessageNavigation.tsx
         useVersions.ts
-        useWorktreeIntegrationStatus.ts
       i18n/
         index.ts
       icons/
@@ -729,6 +744,7 @@ src/
         index.ts
         KimiPlanIcon.tsx
         LitellmIcon.tsx
+        LlmApiIcon.tsx
         LmStudioIcon.tsx
         MinimaxIcon.tsx
         MistralIcon.tsx
@@ -755,6 +771,7 @@ src/
         actionsStore.ts
         commandPaletteStore.ts
         commitStore.ts
+        extensionToolsStore.ts
         extensionUIStore.ts
         fileEditorStore.ts
         overlayStore.ts
@@ -762,6 +779,7 @@ src/
         settingsNavigationStore.ts
         settingsStore.ts
         taskFilesStore.ts
+        taskSidebarStore.ts
         taskStore.ts
         terminalStore.ts
       themes/
@@ -1575,11 +1593,32 @@ posthog_api_key = os.getenv("POSTHOG_API_KEY")
 # Set OpenRouter site and app name
 
 ================
+File: scripts/after-pack.js
+================
+const restore = (dir, rel) =>
+⋮----
+// Moves everything packaged-pruned in scripts/before-pack.js back into node_modules,
+// so the dev environment and other platform builds keep all platform binaries.
+
+================
 File: scripts/before-pack.js
 ================
-// Copy all files from source directory to target directory
+const nodePlatform = (platformName)
 ⋮----
-// Copy all files from source directory to target directory
+const pruneToBackup = (nodeModulesDir, relPaths, key) =>
+⋮----
+const pruneOnnxruntimeNode = (nodeModulesDir, nodePlatformName, nodeArch, key) =>
+⋮----
+// CUDA and TensorRT execution providers are loaded dynamically and are not used (embeddings run on CPU); they add ~344MB on linux/x64.
+⋮----
+const pruneLanceDb = (nodeModulesDir, nodePlatformName, nodeArch, key) =>
+⋮----
+// lancedb ships glibc (gnu) and musl builds; our Linux targets (AppImage/deb/rpm) use glibc, so only keep the gnu flavor
+⋮----
+// only prune when we found a matching subpackage for the current platform/arch, otherwise keep everything to be safe
+⋮----
+// Moves platform-mismatched native binaries away from node_modules for the duration of packaging,
+// so they are not included in the bundle; restored again in scripts/after-pack.js.
 
 ================
 File: scripts/download-probe.mjs
@@ -1760,6 +1799,7 @@ File: src/main/agent/tools/memory.ts
 ================
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
+import { getAgentMemoryScopeId } from '@common/agent';
 import { AgentProfile, MemoryEntryType, PromptContext, ToolApprovalState } from '@common/types';
 import {
   MEMORY_TOOL_DELETE as TOOL_DELETE,
@@ -1782,7 +1822,7 @@ export const createMemoryToolset = (task: Task, profile: AgentProfile, memoryMan
 ⋮----
 // Get the memory to show its content in the approval question
 ⋮----
-// Filter by project and type if specified
+// Filter by memory scope and type if specified
 ⋮----
 // Get the memory to show its content in the approval question
 ⋮----
@@ -1996,7 +2036,17 @@ import {
   TASKS_TOOL_SEARCH_TASK,
   TOOL_GROUP_NAME_SEPARATOR,
 } from '@common/tools';
-import { AgentProfile, AutonomyMode, DefaultTaskState, PromptContext, SettingsData, TaskData, TaskExecutionMode, ToolApprovalState } from '@common/types';
+import {
+  AgentProfile,
+  AutonomyMode,
+  ContextMessage,
+  DefaultTaskState,
+  PromptContext,
+  SettingsData,
+  TaskData,
+  TaskExecutionMode,
+  ToolApprovalState,
+} from '@common/types';
 import { fileExists, isUuid } from '@common/utils';
 ⋮----
 import { ApprovalManager } from './approval-manager';
@@ -2007,6 +2057,8 @@ import logger from '@/logger';
 import { isAbortError } from '@/utils/errors';
 import { deriveDirName } from '@/utils';
 import { Task } from '@/task';
+⋮----
+const stripProviderOptions = (content: ContextMessage['content']): ContextMessage['content']
 ⋮----
 export const createTasksToolset = (settings: SettingsData, task: Task, profile: AgentProfile, promptContext?: PromptContext): ToolSet =>
 ⋮----
@@ -2393,6 +2445,7 @@ import {
 import { extractReasoningMiddleware } from './middlewares/extract-reasoning-middleware';
 import { CompactionLevel, generateCompactedSummary, getReloadableMessages, getSubagentOldResultIds, smartCompactMessages } from './compaction';
 ⋮----
+import type { ToolsetToolEntry } from '@common/extensions';
 import type { TextPart } from '@ai-sdk/provider-utils';
 import type { z } from 'zod';
 import type { LanguageModelV4 } from '@ai-sdk/provider';
@@ -2475,6 +2528,8 @@ private async getAvailableTools(
 // Add provider-specific tools
 ⋮----
 // Add extension tools
+⋮----
+// Let extensions modify the complete toolset (built-in, MCP, and extension tools)
 ⋮----
 private wrapToolsWithHooks(task: Task, profile: AgentProfile, toolSet: ToolSet, abortSignal?: AbortSignal, promptContext?: PromptContext): ToolSet
 ⋮----
@@ -2916,6 +2971,8 @@ private stripUnsupportedSchemaKeywords(schema: Record<string, unknown>): Record<
 ⋮----
 const processObject = (obj: Record<string, unknown>): Record<string, unknown> =>
 ⋮----
+private normalizeToolInputSchema(inputSchema: ListToolsResult['tools'][number]['inputSchema']): McpToolInputSchema
+⋮----
 private fixInputSchema(provider: LlmProviderName, inputSchema: McpToolInputSchema): McpToolInputSchema
 ⋮----
 private async initMcpConnectors(
@@ -3247,6 +3304,21 @@ export enum CompactionLevel {
   Max = CompactionLevel.Five,
 }
 ⋮----
+export type SmartCompactionPass =
+  | 'erroredTools'
+  | 'fileEdits'
+  | 'staleFileReads'
+  | 'fileReads'
+  | 'searches'
+  | 'semanticSearches'
+  | 'bash'
+  | 'fetch'
+  | 'otherTools'
+  | 'verboseToolCalls'
+  | 'reasoning';
+⋮----
+export type SmartCompactionPassSelection = Partial<Record<SmartCompactionPass, boolean>>;
+⋮----
 type ToolInfo = {
   messageIndex: number;
   toolCallId: string;
@@ -3299,7 +3371,13 @@ export const smartCompactMessages = async (
   messages: ContextMessage[],
   protectedMessageCount = 10,
   compactionLevel = CompactionLevel.One,
+  passes?: SmartCompactionPassSelection,
 ): Promise<ContextMessage[]> =>
+⋮----
+const isPassEnabled = (pass: SmartCompactionPass): boolean
+⋮----
+// explicitly selected passes (manual compaction) respect the safe window and run on any level;
+// automatic compaction keeps the extended protection window and level gates
 ⋮----
 export const removeErroredTools = (messages: ContextMessage[], protectedMessageCount = 10): ContextMessage[] =>
 ⋮----
@@ -3949,8 +4027,8 @@ import {
   AgentProfile,
   AgentProfilesUpdatedData,
   McpServersData,
-  WorktreeIntegrationStatus,
-  WorktreeIntegrationStatusUpdatedData,
+  TaskGitStatus,
+  TaskGitStatusUpdatedData,
   TaskCreatedData,
   UpdatedFile,
   UpdatedFilesUpdatedData,
@@ -3960,6 +4038,7 @@ import {
   SkillsUpdatedData,
   CommandsData,
   ExtensionUIRefreshData,
+  ExtensionsUpdatedData,
   ModalOverlayUrlData,
   InputPromptData,
   ContextInfoData,
@@ -3997,7 +4076,7 @@ sendFileAdded(baseDir: string, taskId: string, file: ContextFile): void
 ⋮----
 sendContextFilesUpdated(baseDir: string, taskId: string, files: ContextFile[]): void
 ⋮----
-sendUpdatedFilesUpdated(baseDir: string, taskId: string, files: UpdatedFile[]): void
+sendUpdatedFilesUpdated(baseDir: string, taskId: string, taskDir: string, files: UpdatedFile[]): void
 ⋮----
 sendSkillsUpdated(baseDir: string, taskId: string, skills: SkillDefinition[]): void
 ⋮----
@@ -4050,7 +4129,7 @@ sendCommandsUpdated(data: CommandsData): void
 ⋮----
 sendCustomCommandError(baseDir: string, taskId: string, error: string): void
 ⋮----
-sendWorktreeIntegrationStatusUpdated(baseDir: string, taskId: string, status: WorktreeIntegrationStatus | null): void
+sendTaskGitStatusUpdated(baseDir: string, taskId: string, status: TaskGitStatus | null): void
 ⋮----
 // Terminal events
 sendTerminalData(data: TerminalData): void
@@ -4074,6 +4153,9 @@ sendAgentProfilesUpdated(profiles: AgentProfile[]): void
 ⋮----
 // MCP servers events
 sendMcpServersUpdated(data: McpServersData): void
+⋮----
+// Extension events
+sendExtensionsUpdated(data: ExtensionsUpdatedData =
 ⋮----
 // Task lifecycle events
 sendTaskCreated(task: TaskData, activate?: boolean): void
@@ -4491,6 +4573,7 @@ import type {
   ToolCalledEvent,
   ToolDefinition,
   ToolFinishedEvent,
+  ToolsetCreatedEvent,
 } from '@common/extensions';
 import type { AgentProfile } from '@common/types';
 import type { Store } from '@/store';
@@ -4573,6 +4656,7 @@ export type ExtensionEventMap = {
   onToolApproval: ToolApprovalEvent;
   onToolCalled: ToolCalledEvent;
   onToolFinished: ToolFinishedEvent;
+  onToolsetCreated: ToolsetCreatedEvent;
   onFilesAdded: FilesAddedEvent;
   onFilesDropped: FilesDroppedEvent;
   onRuleFilesRetrieved: RuleFilesRetrievedEvent;
@@ -4787,7 +4871,7 @@ getAgents(project?: Project): RegisteredAgent[]
 ⋮----
 getAgentById(agentId: string, project?: Project): RegisteredAgent | undefined
 ⋮----
-getModes(project: Project): RegisteredMode[]
+getModes(project?: Project): RegisteredMode[]
 ⋮----
 validateModeDefinition(mode: ModeDefinition):
 ⋮----
@@ -4835,7 +4919,7 @@ validateUIComponentDefinition(component: UIComponentDefinition):
 ⋮----
 async updateAgentProfile(profile: AgentProfile): Promise<AgentProfile | null>
 ⋮----
-async executeCommand(commandName: string, args: string[], project: Project, task?: Task): Promise<void>
+async executeCommand(commandName: string, args: string[], project: Project, task?: Task, images?: string[]): Promise<void>
 ⋮----
 /**
    * Fetch available extensions from a repository URL
@@ -5078,10 +5162,10 @@ import {
   TodoItem,
   UpdatedFile,
   UsageReportData,
-  WorktreeUncommittedFiles,
+  UncommittedFiles,
 } from '@common/types';
 ⋮----
-import type { QuestionOptions, TaskContext, ResponseMessage } from '@common/extensions';
+import type { QuestionOptions, SmartCompactionOptions, SmartCompactionResult, TaskContext, ResponseMessage } from '@common/extensions';
 import type { z } from 'zod';
 import type { Task } from '@/task';
 ⋮----
@@ -5169,7 +5253,7 @@ async setTodos(items: TodoItem[], initialUserPrompt = ''): Promise<void>
 ⋮----
 // Execution
 ⋮----
-async runPrompt(prompt: string, mode?: string): Promise<void>
+async runPrompt(prompt: string, mode?: string, images?: string[]): Promise<void>
 ⋮----
 async runPromptInAgent(
     profile: AgentProfile,
@@ -5222,6 +5306,10 @@ async resetContext(): Promise<void>
 ⋮----
 async compactConversation(instructions?: string): Promise<void>
 ⋮----
+async smartCompact(options?: SmartCompactionOptions): Promise<SmartCompactionResult>
+⋮----
+async getEstimatedTokens(): Promise<number>
+⋮----
 async generateContextMarkdown(): Promise<string | null>
 ⋮----
 isInitialized(): boolean
@@ -5246,7 +5334,7 @@ async switchToWorktreeWorkingMode(options?: SwitchToWorktreeOptions): Promise<vo
 ⋮----
 async switchToLocalWorkingMode(options?: SwitchToLocalOptions): Promise<void>
 ⋮----
-async getLocalUncommittedFiles(): Promise<WorktreeUncommittedFiles>
+async getLocalUncommittedFiles(): Promise<UncommittedFiles>
 ⋮----
 async applyUncommittedChanges(): Promise<void>
 ⋮----
@@ -5326,8 +5414,8 @@ import {
   UpdatedFilesGroupMode,
   WorkingMode,
   Worktree,
-  WorktreeAheadCommits,
-  WorktreeUncommittedFiles,
+  GitAheadCommits,
+  UncommittedFiles,
 } from '@common/types';
 // @ts-expect-error istextorbinary library does not provide TypeScript definitions
 import { isBinary } from 'istextorbinary';
@@ -5872,7 +5960,7 @@ async checkWorktreeForUnmergedWork(
 ⋮----
 // On error, return safe defaults (assume there might be work)
 ⋮----
-async getAheadCommits(worktreePath: string, targetBranch: string): Promise<WorktreeAheadCommits>
+async getAheadCommits(worktreePath: string, targetBranch: string): Promise<GitAheadCommits>
 ⋮----
 /**
    * Get outgoing and incoming commits relative to a target branch, or relative to the
@@ -5885,7 +5973,7 @@ const parseCommits = (stdout: string)
 ⋮----
 private async fetchRemote(repoPath: string): Promise<void>
 ⋮----
-async getUncommittedFiles(worktreePath: string): Promise<WorktreeUncommittedFiles>
+async getUncommittedFiles(worktreePath: string): Promise<UncommittedFiles>
 ⋮----
 private parseGitStatusEntries(stdout: string): string[]
 ⋮----
@@ -6016,10 +6104,13 @@ private async markConflictingFiles(worktreePath: string, files: UpdatedFile[]): 
 ⋮----
 async addFileToGit(worktreePath: string, filePath: string): Promise<void>
 ⋮----
-// Files explicitly added by the user should be staged even when ignored (e.g. .aider-desk rules)
+// Files explicitly added by the user should always be staged: -f handles ignored files
+// (git check-ignore is unreliable here: negation rules under an excluded parent directory,
+// e.g. .aider* + !.aider-desk/rules, report "not ignored" but git add still refuses),
+// -A stages deletions (git add fails with "pathspec did not match any files" for files removed on disk)
 ⋮----
-// git check-ignore is unreliable here: negation rules under an excluded parent directory
-// (e.g. .aider* + !.aider-desk/rules) report "not ignored" but git add still refuses
+// The file exists neither on disk nor in the index (e.g. an already-staged deletion):
+// there is nothing to stage, so treat it as a no-op instead of failing
 ⋮----
 async stageFile(worktreePath: string, filePath: string): Promise<boolean>
 ⋮----
@@ -6053,19 +6144,36 @@ async getUncommittedDiff(worktreePath: string, filePaths?: string[]): Promise<st
 ⋮----
 cancelCommitChanges(worktreePath: string): boolean
 ⋮----
-async commitChanges(worktreePath: string, message: string, amend: boolean, filePaths?: string[]): Promise<boolean>
+async commitChanges(worktreePath: string, message: string, amend: boolean, skipGitHooks: boolean, filePaths?: string[]): Promise<boolean>
 ⋮----
 // Get the list of updated files (unstaged changes that are shown in the UI)
 ⋮----
-// Stage updated files before committing
+// Stage updated files before committing. With a file selection the commit runs in the
+// --only pathspec form (see below), which takes tracked files directly from the working
+// tree — so staging is only needed for files not yet tracked (untracked, incl. ignored ones).
+// Without a selection (full commit / amend) everything must be staged, because a plain
+// `git commit` only takes what is in the index.
 ⋮----
-// Retry with --force: files explicitly selected in the UI should be staged even
-// when ignored (git check-ignore misses directory-traversal exclusions like
-// .aider* ignoring .aider-desk/rules despite a negation pattern)
+// A selection that covers all updated files is effectively a full commit — keep the
+// plain index commit (shorter command, everything is committed anyway)
+⋮----
+// Retry with -A -f: untracked files must always be staged for the commit.
+// -A stages deletions (git add fails with "pathspec did not match any files" for
+// files removed on disk), -f handles ignored files (git check-ignore misses
+// directory-traversal exclusions like .aider* ignoring .aider-desk/rules
+// despite a negation pattern)
+⋮----
+// The file exists neither on disk nor in the index (e.g. an already-staged
+// deletion): there is nothing to stage, the commit picks up the staged
+// deletion from the index, so skip instead of aborting the commit
 ⋮----
 // Escape the commit message for shell
 ⋮----
 // If amending and message is empty, use --no-edit to keep previous message
+⋮----
+// When a file selection is provided, commit only those paths (--only pathspec form).
+// Plain `git commit` would also include any other files already staged in the index,
+// which breaks partial commits when edited files are left staged.
 ⋮----
 async getRebaseState(worktreePath: string): Promise<RebaseState>
 ⋮----
@@ -6365,28 +6473,28 @@ private async getEmbedding(text: string): Promise<number[]>
 // Convert Float32Array to standard number array for LanceDB
 ⋮----
 /**
-   * Creates and stores a new memory for a specific project.
+   * Creates and stores a new memory for a specific scope (project directory or agent profile).
    */
-async storeMemory(projectId: string, taskId: string, type: MemoryEntryType, content: string): Promise<string>
+async storeMemory(scopeId: string, taskId: string, type: MemoryEntryType, content: string): Promise<string>
 ⋮----
 // Create the table if it doesn't exist yet
 ⋮----
 // Add to existing table
 ⋮----
 /**
-   * Retrieves memories for a specific project relevant to the user's query.
-   * @param projectId - The project to filter by
+   * Retrieves memories for a specific scope (project directory or agent profile) relevant to the user's query.
+   * @param scopeId - The scope to filter by (project directory or `agent-profile:{id}`)
    * @param query - The user's search query
    * @param limit - Max number of memories to return (default 5)
    */
-async retrieveMemories(projectId: string, query: string, limit: number = 5): Promise<MemoryEntry[]>
+async retrieveMemories(scopeId: string, query: string, limit: number = 5): Promise<MemoryEntry[]>
 ⋮----
 return []; // No memories exist yet
 ⋮----
 // Perform Vector Search + SQL Filtering with distance information
 ⋮----
 .nearestTo(queryVector) // Vector similarity search
-.where(`projectid = '${projectId}'`) // SQL-like filtering for the project
+.where(`projectid = '${scopeId}'`) // SQL-like filtering for the memory scope
 ⋮----
 // Map results back to MemoryEntry interface
 // Note: LanceDB returns rows, we cast them to our interface
@@ -6404,7 +6512,7 @@ async getAllMemories(): Promise<MemoryEntry[]>
 // Map results back to MemoryEntry interface
 // Note: LanceDB returns rows, we cast them to our interface
 ⋮----
-async deleteMemoriesForProject(projectId: string): Promise<number>
+async deleteMemoriesForScope(scopeId: string): Promise<number>
 ⋮----
 async clearAllMemories(): Promise<boolean>
 ⋮----
@@ -7094,6 +7202,61 @@ export const getLitellmAiderMapping = (provider: ProviderProfile, modelId: strin
 export const createLitellmLlm = (profile: ProviderProfile, model: Model, settings: SettingsData, projectDir: string): LanguageModel =>
 ⋮----
 apiKey = 'sk-dummy'; // Dummy key for OpenAI-compatible client which expects a key.
+⋮----
+// === Complete Strategy Implementation ===
+⋮----
+// Core LLM functions
+⋮----
+// Model discovery functions
+
+================
+File: src/main/models/providers/llmapi.ts
+================
+import { Model, ProviderProfile, SettingsData, UsageReportData } from '@common/types';
+import { isLlmApiProvider, LlmApiProvider } from '@common/agent';
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+⋮----
+import type { LanguageModel, LanguageModelUsage } from 'ai';
+⋮----
+import { AIDER_DESK_TITLE, AIDER_DESK_WEBSITE } from '@/constants';
+import { AiderModelMapping, LlmProviderStrategy, LoadModelsResponse } from '@/models';
+import logger from '@/logger';
+import { getEffectiveEnvironmentVariable } from '@/utils';
+import { getDefaultUsageReport } from '@/models/providers/default';
+import { Task } from '@/task/task';
+⋮----
+interface LlmApiPricing {
+  prompt?: string;
+  completion?: string;
+  input_cache_read?: string;
+  input_cache_write?: string;
+}
+⋮----
+interface LlmApiModel {
+  id: string;
+  context_length?: number;
+  pricing: LlmApiPricing;
+}
+⋮----
+interface LlmApiModelsResponse {
+  data: LlmApiModel[];
+}
+⋮----
+const parsePrice = (price: string | undefined): number | undefined =>
+⋮----
+const loadLlmApiModels = async (profile: ProviderProfile, settings: SettingsData): Promise<LoadModelsResponse> =>
+⋮----
+export const hasLlmApiEnvVars = (settings: SettingsData): boolean =>
+⋮----
+export const getLlmApiAiderMapping = (provider: ProviderProfile, modelId: string, settings: SettingsData, projectDir: string): AiderModelMapping =>
+⋮----
+// LLMAPI is OpenAI-compatible, so we use the OpenAI endpoint for Aider
+⋮----
+// === LLM Creation Functions ===
+export const createLlmApiLlm = (profile: ProviderProfile, model: Model, settings: SettingsData, projectDir: string): LanguageModel =>
+⋮----
+// === Cost and Usage Functions ===
+export const getLlmApiUsageReport = (task: Task, provider: ProviderProfile, model: Model, usage: LanguageModelUsage): UsageReportData
 ⋮----
 // === Complete Strategy Implementation ===
 ⋮----
@@ -7986,6 +8149,7 @@ import { groqProviderStrategy } from './providers/groq';
 import { alibabaPlanProviderStrategy } from './providers/alibaba-plan';
 import { kimiPlanProviderStrategy } from './providers/kimi-plan';
 import { litellmProviderStrategy } from './providers/litellm';
+import { llmApiProviderStrategy } from './providers/llmapi';
 import { lmStudioProviderStrategy } from './providers/lm-studio';
 import { minimaxProviderStrategy } from './providers/minimax';
 import { mistralProviderStrategy } from './providers/mistral';
@@ -8537,7 +8701,7 @@ projectSettingsChanged(baseDir: string, oldSettings: ProjectSettings, newSetting
 ⋮----
 public getCommands(baseDir: string)
 ⋮----
-public getCustomModes(baseDir: string): ModeDefinition[]
+public getCustomModes(baseDir?: string): ModeDefinition[]
 ⋮----
 public getProjects(): Project[]
 ⋮----
@@ -8571,6 +8735,7 @@ import { ExtensionManager } from '@/extensions/extension-manager';
 import { AIDER_DESK_TASKS_DIR, AIDER_DESK_WATCH_FILES_LOCK } from '@/constants';
 import { PythonDependenciesInstaller } from '@/python-dependencies-installer';
 import { determineMainModel, determineWeakModel } from '@/utils';
+import { FileWatcherManager } from '@/file-watcher-manager';
 ⋮----
 export class Project
 ⋮----
@@ -8692,6 +8857,8 @@ private async reloadTasksInternal(): Promise<TaskData[]>
 forEachTask(callback: (task: Task) => void, initializedOnly = true)
 ⋮----
 async settingsChanged(oldSettings: SettingsData, newSettings: SettingsData)
+⋮----
+public getFileWatcherManager(): FileWatcherManager
 ⋮----
 async projectSettingsChanged(oldSettings: ProjectSettings, newSettings: ProjectSettings)
 ⋮----
@@ -9203,6 +9370,8 @@ import { BaseApi } from './base-api';
 ⋮----
 import { EventsHandler } from '@/events-handler';
 ⋮----
+projectId: z.string().min(1).optional(), // legacy field name, kept for backward compatibility
+⋮----
 export class MemoryApi extends BaseApi
 ⋮----
 constructor(private readonly eventsHandler: EventsHandler)
@@ -9345,15 +9514,24 @@ registerRoutes(router: Router): void
 ⋮----
 // Git push
 ⋮----
-// Worktree status
+// Task git status (current branch, uncommitted files, rebase state, worktree integration)
+⋮----
+// Deprecated: use /project/git/status. Returns the legacy flat WorktreeIntegrationStatus shape,
+// or null when the task has no materialized worktree (matches the documented pre-deprecation contract).
 ⋮----
 // Rebase worktree from branch
 ⋮----
-// Abort worktree rebase
+// Abort rebase (worktree or local branch)
 ⋮----
-// Continue worktree rebase
+// Continue rebase (worktree or local branch)
 ⋮----
-// Resolve worktree conflicts with agent
+// Resolve conflicts with agent (worktree or local branch)
+⋮----
+// Deprecated: use /project/git/abort-rebase
+⋮----
+// Deprecated: use /project/git/continue-rebase
+⋮----
+// Deprecated: use /project/git/resolve-conflicts-with-agent
 ⋮----
 // Resolve git error with agent
 ⋮----
@@ -9903,6 +10081,8 @@ import type { Task } from '@/task';
 import { AIDER_DESK_BUILTIN_SKILLS_DIR, AIDER_DESK_DIR, AIDER_DESK_HOME_DIR } from '@/constants';
 import { ExtensionManager } from '@/extensions/extension-manager';
 ⋮----
+const parseBooleanFrontMatterField = (value: unknown, defaultValue: boolean): boolean =>
+⋮----
 const parseSkillFrontMatter = (markdown: string):
 ⋮----
 const safeReadDir = async (dirPath: string): Promise<string[]> =>
@@ -9913,11 +10093,13 @@ const loadSkillsFromDir = async (skillsRootDir: string, location: SkillLocation)
 ⋮----
 export class SkillManager
 ⋮----
-constructor(projectDir: string, extensionManager?: ExtensionManager)
+constructor(project: Project, extensionManager?: ExtensionManager)
 ⋮----
 async loadAllSkills(): Promise<Skill[]>
 ⋮----
 async getSkills(contextMessages?: ContextMessage[]): Promise<Skill[]>
+⋮----
+async getEnabledSkills(): Promise<Skill[]>
 ⋮----
 async getSkillContent(skillName: string): Promise<string | null>
 ⋮----
@@ -10474,6 +10656,7 @@ import { AIDER_TOOL_GROUP_NAME, AIDER_TOOL_RUN_PROMPT, SUBAGENTS_TOOL_GROUP_NAME
 import logger from '@/logger';
 import { Task } from '@/task';
 import { isDirectory, isFileIgnored, withLock } from '@/utils';
+import { atomicWriteJsonFile, cleanupStaleTempFiles } from '@/utils/atomic-write';
 import { extractPromptContextFromToolResult } from '@/agent/utils';
 import { migrateContextV1toV2 } from '@/task/migrations/v1-to-v2';
 import { AIDER_DESK_TASKS_DIR } from '@/constants';
@@ -10579,12 +10762,6 @@ async save(): Promise<void>
 ⋮----
 // Write atomically: write to a temp file, then rename over the target so a
 // crash mid-write never leaves context.json half-written.
-⋮----
-/**
-   * Removes temp files orphaned by a crash between writeFile and rename.
-   * Only safe to call while holding the save lock for this task's storage path.
-   */
-private async cleanupStaleTempFiles(dir: string): Promise<void>
 ⋮----
 /**
    * Creates a backup of the current context.json file before a destructive operation
@@ -10784,8 +10961,10 @@ import {
   UserMessageData,
   SwitchToLocalOptions,
   SwitchToWorktreeOptions,
+  TaskGitStatus,
+  TaskGitWorktreeStatus,
   WorkingMode,
-  WorktreeUncommittedFiles,
+  UncommittedFiles,
 } from '@common/types';
 import { parsePartialJson } from 'ai';
 import {
@@ -10821,9 +11000,13 @@ import { isEqual } from 'lodash';
 import type { z } from 'zod';
 import type { ToolContent, JSONValue } from '@common/types';
 import type { RegisteredCommand } from '@/extensions/extension-manager';
+import type { WatchHandle } from '@/file-watcher-manager';
+import type { SmartCompactionPassSelection } from '@/agent/smart-compaction';
+import type { SmartCompactionOptions } from '@common/extensions';
 ⋮----
 import { ExtensionEventMap, ExtensionManager } from '@/extensions/extension-manager';
 import { getAllFiles, isValidProjectFile } from '@/utils/file-system';
+import { atomicWriteJsonFile } from '@/utils/atomic-write';
 import {
   AIDER_DESK_GLOBAL_RULES_DIR,
   AIDER_DESK_PROJECT_RULES_DIR,
@@ -10944,6 +11127,15 @@ public async saveTask(updates?: Partial<TaskData>, updateTimestamps = true): Pro
 ⋮----
 // only save if task is not new
 ⋮----
+/**
+   * Starts/stops watching the task dir for file changes while the task is in progress.
+   */
+private syncFileWatching(previousTaskState: TaskData['state'] | undefined)
+⋮----
+private stopFileWatching()
+⋮----
+public async onWatchedFilesChanged()
+⋮----
 public async init(readonly = false)
 ⋮----
 private async initInternal(readonly: boolean)
@@ -11024,7 +11216,7 @@ public async waitForIdle(): Promise<void>
 ⋮----
 public async runPrompt(
     prompt: string,
-    mode: Mode = this.task.currentMode || 'agent',
+    mode: Mode = this.getCurrentMode(),
     addToInputHistory = true,
     userMessageId = uuidv4(),
     sendNotification = true,
@@ -11368,7 +11560,10 @@ public addToolMessage(
 ⋮----
 // Update total costs when adding the tool message
 ⋮----
-private updateTotalCosts(usageReport: UsageReportData)
+private updateTotalCosts(usageReport: UsageReportData, promptContext?: PromptContext)
+⋮----
+// Subagent and other grouped runs use their own (different) model/context, so they must
+// not override the main run's context size — only update the accumulated cost.
 ⋮----
 addUserMessage(id: string, content: string, promptContext?: PromptContext, images?: string[])
 ⋮----
@@ -11422,7 +11617,11 @@ private findSkillActivationMessages(contextMessages: ContextMessage[]): ContextM
 ⋮----
 // Create a filtered assistant message that only contains the skill activation tool-call
 ⋮----
-public async smartCompactConversation(contextMessages?: ContextMessage[], infoMessage = 'Conversation smart-compacted.'): Promise<ContextMessage[]>
+public async smartCompactConversation(
+    contextMessages?: ContextMessage[],
+    infoMessage = 'Conversation smart-compacted.',
+    options?: SmartCompactionOptions,
+): Promise<ContextMessage[]>
 ⋮----
 // backing up the current context before compacting for debugging purposes
 ⋮----
@@ -11494,6 +11693,8 @@ public async updateAutocompletionData(words?: string[], force = false, useGit = 
 ⋮----
 async updateAgentEstimatedTokens(checkContextFilesIncluded = false, checkRepoMapIncluded = false)
 ⋮----
+public async getEstimatedTokens(): Promise<number>
+⋮----
 async settingsChanged(oldSettings: SettingsData, newSettings: SettingsData)
 ⋮----
 // For old profile, we can't easily get it from old settings since they're now file-based
@@ -11546,11 +11747,16 @@ async initProjectAgentsFile(args?: string): Promise<void>
 ⋮----
 // Check if the AGENTS.md file was created
 ⋮----
-private async runExtensionCommand(extensionCommand: RegisteredCommand, args: string[], mode: Mode): Promise<void>
+private async runExtensionCommand(extensionCommand: RegisteredCommand, args: string[], mode: Mode, images?: string[]): Promise<void>
+⋮----
+// Images attached to the prompt are automatically included in the first prompt submitted
+// by the extension (via runPrompt/runPromptInAgent), unless it passes images explicitly
 ⋮----
 // Execute the command - extension is fully responsible for its logic
 ⋮----
-public async runCustomCommand(commandName: string, args: string[], mode: Mode = 'agent'): Promise<void>
+takePendingCommandImages(): string[] | undefined
+⋮----
+public async runCustomCommand(commandName: string, args: string[], mode: Mode = 'agent', images?: string[]): Promise<void>
 ⋮----
 // Queue the custom command for later execution
 ⋮----
@@ -11584,7 +11790,7 @@ public async updateTask(updates: Partial<TaskData>): Promise<TaskData>
 ⋮----
 // no need to save if nothing changed
 ⋮----
-private async sendWorktreeIntegrationStatusUpdated()
+private async sendTaskGitStatusUpdated()
 ⋮----
 // These methods are often invoked fire-and-forget (void); never let them produce unhandled rejections
 ⋮----
@@ -11622,7 +11828,7 @@ public async switchToLocalWorkingMode(options?: SwitchToLocalOptions): Promise<v
 ⋮----
 public async switchToWorktreeWorkingMode(options?: SwitchToWorktreeOptions): Promise<void>
 ⋮----
-public async getLocalUncommittedFiles(): Promise<WorktreeUncommittedFiles>
+public async getLocalUncommittedFiles(): Promise<UncommittedFiles>
 ⋮----
 public async applyUncommittedChanges(): Promise<void>
 ⋮----
@@ -11642,11 +11848,11 @@ public async generateCommitMessage(filePaths?: string[]): Promise<string>
 ⋮----
 // Continue without commit history
 ⋮----
-public async commitChanges(message: string, amend: boolean, filePaths?: string[]): Promise<void>
+public async commitChanges(message: string, amend: boolean, skipGitHooks: boolean, filePaths?: string[]): Promise<void>
 ⋮----
 public cancelCommitChanges(): void
 ⋮----
-public async getWorktreeIntegrationStatus(targetBranch?: string)
+public async getTaskGitStatus(targetBranch?: string): Promise<TaskGitStatus | null>
 ⋮----
 public async rebaseWorktreeFromBranch(fromBranch?: string): Promise<void>
 ⋮----
@@ -11659,7 +11865,7 @@ public async rebaseWorktreeFromBranch(fromBranch?: string): Promise<void>
 ⋮----
 // keep the marker if we cannot determine the rebase state
 ⋮----
-public async abortWorktreeRebase(): Promise<void>
+public async abortRebase(): Promise<void>
 ⋮----
 public async renameBranch(newBranchName: string): Promise<void>
 ⋮----
@@ -11723,9 +11929,12 @@ public reportGitActionError(action: string, error: unknown): void
 ⋮----
 public async resolveGitErrorWithAgent(): Promise<void>
 ⋮----
-public async continueWorktreeRebase(): Promise<void>
+public async continueRebase(): Promise<void>
 ⋮----
 // Clear any remaining merge state after successful rebase continuation
+⋮----
+// The 'Continuing rebase...' loading message must be closed explicitly,
+// otherwise it stays visible forever when the rebase pauses on conflicts
 ⋮----
 public async duplicateFrom(sourceTask: Task): Promise<void>
 ⋮----
@@ -11915,6 +12124,13 @@ public getTerminalForTask(taskId: string): TerminalInstance | undefined
 public getTerminalsForTask(taskId: string): TerminalInstance[]
 ⋮----
 public close(): void
+
+================
+File: src/main/utils/atomic-write.ts
+================
+export const atomicWriteJsonFile = async (filePath: string, data: unknown): Promise<void> =>
+⋮----
+export const cleanupStaleTempFiles = async (filePath: string): Promise<void> =>
 
 ================
 File: src/main/utils/environment.ts
@@ -13012,9 +13228,9 @@ runCommand(baseDir: string, taskId: string, command: string): void
 ⋮----
 async getCommands(baseDir: string): Promise<CommandsData>
 ⋮----
-async getCustomModes(baseDir: string): Promise<ModeDefinition[]>
+async getCustomModes(baseDir?: string): Promise<ModeDefinition[]>
 ⋮----
-async runCustomCommand(baseDir: string, taskId: string, commandName: string, args: string[], mode: Mode): Promise<void>
+async runCustomCommand(baseDir: string, taskId: string, commandName: string, args: string[], mode: Mode, images?: string[]): Promise<void>
 ⋮----
 async updateMainModel(baseDir: string, taskId: string, mainModel: string): Promise<void>
 ⋮----
@@ -13098,7 +13314,7 @@ async saveFile(baseDir: string, taskId: string, filePath: string, content: strin
 ⋮----
 async generateCommitMessage(baseDir: string, taskId: string, filePaths?: string[]): Promise<string>
 ⋮----
-async commitChanges(baseDir: string, taskId: string, message: string, amend: boolean, filePaths?: string[]): Promise<void>
+async commitChanges(baseDir: string, taskId: string, message: string, amend: boolean, skipGitHooks: boolean, filePaths?: string[]): Promise<void>
 ⋮----
 cancelCommitChanges(baseDir: string, taskId: string): void
 ⋮----
@@ -13128,13 +13344,13 @@ async gitPull(baseDir: string, taskId: string, rebase?: boolean): Promise<
 ⋮----
 async gitPush(baseDir: string, taskId: string, force?: boolean, setUpstream?: boolean): Promise<
 ⋮----
-async getWorktreeIntegrationStatus(baseDir: string, taskId: string, targetBranch?: string)
+async getTaskGitStatus(baseDir: string, taskId: string, targetBranch?: string)
 ⋮----
 async rebaseWorktreeFromBranch(baseDir: string, taskId: string, fromBranch?: string): Promise<void>
 ⋮----
-async abortWorktreeRebase(baseDir: string, taskId: string): Promise<void>
+async abortRebase(baseDir: string, taskId: string): Promise<void>
 ⋮----
-async continueWorktreeRebase(baseDir: string, taskId: string): Promise<void>
+async continueRebase(baseDir: string, taskId: string): Promise<void>
 ⋮----
 async resolveConflictsWithAgent(baseDir: string, taskId: string): Promise<void>
 ⋮----
@@ -13278,7 +13494,7 @@ async listAllMemories(): Promise<MemoryEntry[]>
 ⋮----
 async deleteMemory(id: string): Promise<boolean>
 ⋮----
-async deleteProjectMemories(projectId: string): Promise<number>
+async deleteScopeMemories(scopeId: string): Promise<number>
 ⋮----
 getMemoryEmbeddingProgress()
 ⋮----
@@ -13316,6 +13532,95 @@ getExtensionConfigComponent(extensionId: string, projectDir?: string): Extension
 async getExtensionConfig(extensionId: string, projectDir?: string): Promise<unknown>
 ⋮----
 async saveExtensionConfig(extensionId: string, configData: unknown, projectDir?: string): Promise<unknown>
+
+================
+File: src/main/file-watcher-manager.ts
+================
+import fs from 'fs/promises';
+import path from 'path';
+⋮----
+import { FSWatcher, watch } from 'chokidar';
+import debounce from 'lodash/debounce';
+import { simpleGit } from 'simple-git';
+⋮----
+import type { Store } from '@/store';
+⋮----
+import { shouldUsePolling } from '@/utils/file-watch';
+import logger from '@/logger';
+⋮----
+export type FileWatchOptions = {
+  ignored?: (string | RegExp)[] | ((matchingPath: string) => boolean);
+  debounceMs?: number;
+};
+⋮----
+export interface WatchHandle {
+  unwatch: () => void;
+}
+⋮----
+type WatcherEntry = {
+  dir: string;
+  watcher: FSWatcher | null;
+  handles: Set<() => Promise<void>>;
+  notify: (() => void) & { cancel: () => void };
+  loggedEnospc?: boolean;
+};
+⋮----
+// Heavy directories excluded from watching by default
+⋮----
+const getErrorMessage = (error: unknown): string
+⋮----
+const tryCatchAsync = async (fn: () => void | Promise<void>, context: string) =>
+⋮----
+/**
+ * Lists paths ignored by git rules (collapsed to top-level entries), e.g. `out/`, `.aider-desk/tmp/`.
+ * Returns paths relative to `dir` (dirs end with `/`), or an empty list for non-git dirs / failures.
+ */
+const getGitIgnoredEntries = async (dir: string): Promise<string[]> =>
+⋮----
+const countWatchedEntries = async (dir: string, isIgnored: (watcherPath: string) => boolean, isCancelled: () => boolean): Promise<number> =>
+⋮----
+export class FileWatcherManager
+⋮----
+constructor(private readonly store: Store)
+⋮----
+/**
+   * Starts watching `dir` (one shared chokidar watcher per dir + options combination,
+   * handles are ref-counted) and returns a handle that must be released with `unwatch()`.
+   * The debounced `onChange` is invoked for file changes (add/change/unlink).
+   *
+   * Watching is skipped (no-op handle) when the directory tree is too large to watch safely.
+   */
+async watch(dir: string, onChange: () => void | Promise<void>, options: FileWatchOptions =
+⋮----
+const handler = () => tryCatchAsync(onChange, `watch '$
+⋮----
+const isCancelled = ()
+⋮----
+async dispose(): Promise<void>
+⋮----
+private createIgnoredList(dir: string, gitIgnoredEntries: string[], userIgnored?: FileWatchOptions['ignored']): ((watcherPath: string) => boolean)[]
+⋮----
+const matcher = (relativePath: string): boolean =>
+⋮----
+// path itself or one of its ancestors matches a gitignored entry
+⋮----
+const matchFn = (watcherPath: string): boolean =>
+⋮----
+private getWatchKey(dir: string, options: FileWatchOptions): string
+⋮----
+private createEntry(dir: string, options: FileWatchOptions, ignoredForWatcher: ((watcherPath: string) => boolean)[]): WatcherEntry
+⋮----
+private bindWatcherEvents(entry: WatcherEntry)
+⋮----
+private handleWatcherError(entry: WatcherEntry, error: unknown): void
+⋮----
+// Log once per watcher instead of spamming an error for every unwatchable path
+⋮----
+private async closeEntry(entry: WatcherEntry): Promise<void>
+⋮----
+private deleteEntry(entry: WatcherEntry): void
+⋮----
+private async closeWatcher(entry: WatcherEntry): Promise<void>
 
 ================
 File: src/main/index.ts
@@ -14212,6 +14517,7 @@ import {
   ContextMenuParams,
   CreateTaskParams,
   ExtensionUIRefreshData,
+  ExtensionsUpdatedData,
   FileEdit,
   InputHistoryData,
   LogData,
@@ -14244,7 +14550,7 @@ import {
   SkillsUpdatedData,
   UserMessageData,
   VersionsInfo,
-  WorktreeIntegrationStatusUpdatedData,
+  TaskGitStatusUpdatedData,
   AiderConnectorStatus,
   InputPromptData,
 } from '@common/types';
@@ -14406,9 +14712,9 @@ import {
   GitSyncCommits,
   SwitchToLocalOptions,
   SwitchToWorktreeOptions,
-  WorktreeIntegrationStatus,
-  WorktreeIntegrationStatusUpdatedData,
-  WorktreeUncommittedFiles,
+  TaskGitStatus,
+  TaskGitStatusUpdatedData,
+  UncommittedFiles,
   TaskCreatedData,
   UpdatedFilesUpdatedData,
   QueuedPromptsUpdatedData,
@@ -14417,6 +14723,7 @@ import {
   ExtensionConfigComponent,
   ExtensionToolInfo,
   ExtensionUIComponent,
+  ExtensionsUpdatedData,
   ModalOverlayUrlData,
   InputPromptData,
   AiderConnectorStatus,
@@ -14456,9 +14763,10 @@ type EventDataMap = {
   'provider-models-updated': ProviderModelsData;
   'providers-updated': ProvidersUpdatedData;
   'project-settings-updated': { baseDir: string; settings: ProjectSettings };
-  'worktree-integration-status-updated': WorktreeIntegrationStatusUpdatedData;
+  'task-git-status-updated': TaskGitStatusUpdatedData;
   'agent-profiles-updated': AgentProfilesUpdatedData;
   'mcp-servers-updated': McpServersData;
+  'extensions-updated': ExtensionsUpdatedData;
   'updated-files-updated': UpdatedFilesUpdatedData;
   'skills-updated': SkillsUpdatedData;
   notification: NotificationData;
@@ -14484,6 +14792,7 @@ interface ListenerEntry<T> {
   callback: EventCallback<T>;
   baseDir?: string;
   taskId?: string;
+  taskDir?: string;
 }
 ⋮----
 class UnsupportedError extends Error
@@ -14498,11 +14807,15 @@ constructor()
 ⋮----
 // eslint-disable-next-line no-console
 ⋮----
+// 'reconnect' is only emitted on the Manager (socket.io does not forward it to the Socket)
+⋮----
 // eslint-disable-next-line no-console
 ⋮----
 // Filter by baseDir
 ⋮----
 // Filter by taskId for task-level events
+⋮----
+// Filter by taskDir for directory-scoped events (paths compared cross-platform)
 ⋮----
 private ensureSocketConnected(): Promise<void>
 ⋮----
@@ -14512,7 +14825,13 @@ const onConnect = () =>
 ⋮----
 const onDisconnect = () =>
 ⋮----
-private addListener<T extends keyof EventDataMap>(eventType: T, callback: EventCallback<EventDataMap[T]>, baseDir?: string, taskId?: string): () => void
+private addListener<T extends keyof EventDataMap>(
+    eventType: T,
+    callback: EventCallback<EventDataMap[T]>,
+    baseDir?: string,
+    taskId?: string,
+    taskDir?: string,
+): () => void
 ⋮----
 private async post<B, R>(endpoint: string, body: B): Promise<R>
 ⋮----
@@ -14578,7 +14897,7 @@ getUpdatedFiles(baseDir: string, taskId: string): Promise<
 getUpdatedFileDiff(baseDir: string, taskId: string, filePath: string, commitHash?: string): Promise<string>
 getUpdatedFileContents(baseDir: string, taskId: string, filePath: string, commitHash?: string): Promise<
 async generateCommitMessage(baseDir: string, taskId: string, filePaths?: string[]): Promise<string>
-async commitChanges(baseDir: string, taskId: string, message: string, amend: boolean, filePaths?: string[]): Promise<void>
+async commitChanges(baseDir: string, taskId: string, message: string, amend: boolean, skipGitHooks: boolean, filePaths?: string[]): Promise<void>
 async cancelCommitChanges(baseDir: string, taskId: string): Promise<void>
 addFile(baseDir: string, taskId: string, filePath: string, readOnly?: boolean): void
 async isValidPath(baseDir: string, path: string): Promise<boolean>
@@ -14668,7 +14987,7 @@ addResponseCompletedListener(baseDir: string, taskId: string, callback: (data: R
 addLogListener(baseDir: string, taskId: string, callback: (data: LogData) => void): () => void
 addContextFilesUpdatedListener(baseDir: string, taskId: string, callback: (data: ContextFilesUpdatedData) => void): () => void
 addContextInfoUpdatedListener(baseDir: string, taskId: string, callback: (data: ContextInfoData) => void): () => void
-addUpdatedFilesUpdatedListener(baseDir: string, taskId: string, callback: (data: UpdatedFilesUpdatedData) => void): () => void
+addUpdatedFilesUpdatedListener(baseDir: string, taskDir: string, callback: (data: UpdatedFilesUpdatedData) => void): () => void
 addSkillsUpdatedListener(baseDir: string, taskId: string, callback: (data: SkillsUpdatedData) => void): () => void
 addCommandsUpdatedListener(baseDir: string, callback: (data: CommandsData) => void): () => void
 addUpdateAutocompletionListener(baseDir: string, taskId: string, callback: (data: AutocompletionData) => void): () => void
@@ -14689,6 +15008,8 @@ addMessageRemovedListener(baseDir: string, taskId: string, callback: (data: Mess
 addProjectStartedListener(baseDir: string, callback: (data: ProjectStartedData) => void): () => void
 addVersionsInfoUpdatedListener(callback: (data: VersionsInfo) => void): () => void
 ⋮----
+addSocketReconnectListener(callback: () => void): () => void
+⋮----
 addProviderModelsUpdatedListener(callback: (data: ProviderModelsData) => void): () => void
 ⋮----
 addProvidersUpdatedListener(callback: (data: ProvidersUpdatedData) => void): () => void
@@ -14697,9 +15018,11 @@ addAgentProfilesUpdatedListener(callback: (data: AgentProfilesUpdatedData) => vo
 ⋮----
 addMcpServersUpdatedListener(callback: (data: McpServersData) => void): () => void
 ⋮----
+addExtensionsUpdatedListener(callback: (data: ExtensionsUpdatedData) => void): () => void
+⋮----
 addProjectSettingsUpdatedListener(baseDir: string, callback: (data:
 ⋮----
-addWorktreeIntegrationStatusUpdatedListener(baseDir: string, taskId: string, callback: (data: WorktreeIntegrationStatusUpdatedData) => void): () => void
+addTaskGitStatusUpdatedListener(baseDir: string, taskId: string, callback: (data: TaskGitStatusUpdatedData) => void): () => void
 ⋮----
 // Task lifecycle event listeners
 addTaskCreatedListener(baseDir: string, callback: (data: TaskCreatedData) => void): () => void
@@ -14720,8 +15043,8 @@ addTerminalExitListener(baseDir: string, callback: (data: TerminalExitData) => v
 addContextMenuListener(callback: (params: ContextMenuParams) => void): () => void
 addShowViewListener(callback: (viewId: string) => void): () => void
 async getCommands(baseDir: string): Promise<CommandsData>
-getCustomModes(baseDir: string): Promise<ModeDefinition[]>
-runCustomCommand(baseDir: string, taskId: string, commandName: string, args: string[], mode: Mode): Promise<void>
+getCustomModes(baseDir?: string): Promise<ModeDefinition[]>
+runCustomCommand(baseDir: string, taskId: string, commandName: string, args: string[], mode: Mode, images?: string[]): Promise<void>
 isTerminalSupported(): boolean
 async createTerminal(baseDir: string, taskId: string, cols?: number, rows?: number): Promise<string>
 async writeToTerminal(terminalId: string, data: string): Promise<boolean>
@@ -14755,7 +15078,7 @@ switchToLocalWorkingMode(baseDir: string, taskId: string, options?: SwitchToLoca
 ⋮----
 switchToWorktreeWorkingMode(baseDir: string, taskId: string, options?: SwitchToWorktreeOptions): Promise<void>
 ⋮----
-getLocalUncommittedFiles(baseDir: string, taskId: string): Promise<WorktreeUncommittedFiles>
+getLocalUncommittedFiles(baseDir: string, taskId: string): Promise<UncommittedFiles>
 ⋮----
 applyUncommittedChanges(baseDir: string, taskId: string): Promise<void>
 ⋮----
@@ -14797,15 +15120,15 @@ gitPush(baseDir: string, taskId: string, force?: boolean): Promise<
 ⋮----
 resolveGitErrorWithAgent(baseDir: string, taskId: string): Promise<void>
 ⋮----
-getWorktreeIntegrationStatus(baseDir: string, taskId: string, targetBranch?: string): Promise<WorktreeIntegrationStatus>
+getTaskGitStatus(baseDir: string, taskId: string, targetBranch?: string): Promise<TaskGitStatus>
 ⋮----
 rebaseWorktreeFromBranch(baseDir: string, taskId: string, fromBranch?: string): Promise<void>
 ⋮----
-abortWorktreeRebase(baseDir: string, taskId: string): Promise<void>
+abortRebase(baseDir: string, taskId: string): Promise<void>
 ⋮----
-continueWorktreeRebase(baseDir: string, taskId: string): Promise<void>
+continueRebase(baseDir: string, taskId: string): Promise<void>
 ⋮----
-resolveWorktreeConflictsWithAgent(baseDir: string, taskId: string): Promise<void>
+resolveConflictsWithAgent(baseDir: string, taskId: string): Promise<void>
 ⋮----
 renameGitBranch(baseDir: string, taskId: string, newBranchName: string): Promise<void>
 ⋮----
@@ -14818,7 +15141,7 @@ async deleteMemory(id: string): Promise<boolean>
 ⋮----
 getMemoryEmbeddingProgress(): Promise<MemoryEmbeddingProgress>
 ⋮----
-async deleteProjectMemories(projectId: string): Promise<number>
+async deleteScopeMemories(scopeId: string): Promise<number>
 ⋮----
 async writeToClipboard(text: string): Promise<void>
 ⋮----
@@ -14928,7 +15251,11 @@ export class ReadonlyBrowserApi implements ExtensionDisplayAPI
 ⋮----
 constructor(private readonly projectDir: string)
 ⋮----
+// 'reconnect' is only emitted on the Manager (socket.io does not forward it to the Socket)
+⋮----
 destroy(): void
+⋮----
+onReconnect(listener: () => void): () => void
 ⋮----
 onEvent(callback: EventListener): () => void
 ⋮----
@@ -14972,8 +15299,10 @@ import { LuBrain, LuClipboardList } from 'react-icons/lu';
 import { Checkbox } from '../common/Checkbox';
 ⋮----
 import { McpServerSelectorItem } from './McpServerSelectorItem';
+import { ExtensionToolsSelectorItem } from './ExtensionToolsSelectorItem';
 ⋮----
 import { useClickOutside } from '@/hooks/useClickOutside';
+import { useExtensionTools } from '@/hooks/useExtensionTools';
 import { IconButton } from '@/components/common/IconButton';
 import { Accordion } from '@/components/common/Accordion';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -15004,6 +15333,28 @@ const calculateEnabledTools = async () =>
 // Remove tool approvals for this server
 ⋮----
 const handleToggleSubagent = (subagentProfile: AgentProfile) =>
+⋮----
+if (activeGlobalProfile)
+
+================
+File: src/renderer/src/components/AgentSelector/ExtensionToolsSelectorItem.tsx
+================
+import { ExtensionToolInfo, ToolApprovalState } from '@common/types';
+import { TOOL_GROUP_NAME_SEPARATOR } from '@common/tools';
+import { useTranslation } from 'react-i18next';
+⋮----
+import { Checkbox } from '../common/Checkbox';
+⋮----
+type Props = {
+  extensionInfo: ExtensionToolInfo;
+  disabled: boolean;
+  toolApprovals: Record<string, ToolApprovalState>;
+  onToggle: (extensionId: string) => void;
+};
+⋮----
+export const ExtensionToolsSelectorItem = (
+⋮----
+const handleToggle = ()
 
 ================
 File: src/renderer/src/components/AgentSelector/index.ts
@@ -15527,6 +15878,7 @@ File: src/renderer/src/components/common/BaseDialog.tsx
 ================
 import { FocusTrap } from 'focus-trap-react';
 import { ReactNode, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { twMerge } from 'tailwind-merge';
 import { useHotkeys } from 'react-hotkeys-hook';
@@ -15656,7 +16008,7 @@ onRemove=
 ================
 File: src/renderer/src/components/common/CodeBlock.tsx
 ================
-import { startTransition, useEffect, useMemo, useOptimistic, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { twMerge } from 'tailwind-merge';
 import { AiOutlineLoading3Quarters } from 'react-icons/ai';
@@ -15668,12 +16020,10 @@ import { CopyMessageButton } from '../message/CopyMessageButton';
 ⋮----
 import { MermaidDiagram } from './MermaidDiagram';
 import { IconButton } from './IconButton';
-import { CompactSelect } from './CompactSelect';
 ⋮----
 import { DiffViewer, UDiffViewer, CompactDiffViewer } from '@/components/common/DiffViewer';
 import { useApi } from '@/contexts/ApiContext';
-import { useSaveSettings, useSettingsStore } from '@/stores/settingsStore';
-import { useResponsive } from '@/hooks/useResponsive';
+import { useSettingsStore } from '@/stores/settingsStore';
 import { highlightWithLowlight } from '@/utils/highlighter';
 ⋮----
 const isCustomDiffContent = (content: string): boolean =>
@@ -15699,8 +16049,6 @@ type Props = {
   hideCopyButton?: boolean;
 };
 ⋮----
-const handleDiffViewModeChange = (value: string) =>
-⋮----
 diffOldValue = oldValue!; // Known to be string
 diffNewValue = newValue!; // Known to be string
 ⋮----
@@ -15716,8 +16064,6 @@ const parsed = parseDiffContent(children!); // children is non-null and a diff
 const handleRevertChanges = () =>
 ⋮----
 className=
-⋮----
-<div onClick=
 
 ================
 File: src/renderer/src/components/common/CodeInline.tsx
@@ -15737,8 +16083,8 @@ className=
 ================
 File: src/renderer/src/components/common/CompactSelect.tsx
 ================
-import { Listbox, ListboxButton, ListboxOption, ListboxOptions, Transition } from '@headlessui/react';
-import { Fragment, ReactNode } from 'react';
+import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from '@headlessui/react';
+import { ReactNode } from 'react';
 import { HiCheck, HiChevronDown } from 'react-icons/hi2';
 import { clsx } from 'clsx';
 ⋮----
@@ -15791,24 +16137,6 @@ type Props = {
   additionalAction?: AdditionalAction;
   enableFocusTrap?: boolean;
 };
-⋮----
-export const ConfirmDialog = ({
-  title,
-  onConfirm,
-  onCancel,
-  confirmButtonText,
-  cancelButtonText,
-  contentClass,
-  children,
-  disabled = false,
-  confirmButtonClass,
-  confirmButtonColor,
-  width,
-  closeOnEscape = false,
-  footerAdditionalComponents,
-  additionalAction,
-  enableFocusTrap,
-}: Props) =>
 
 ================
 File: src/renderer/src/components/common/DatePicker.css
@@ -15906,8 +16234,6 @@ type Props = {
   minHeight?: number;
   className?: string;
 };
-⋮----
-onDragStop=
 ⋮----
 icon=
 ⋮----
@@ -16982,7 +17308,6 @@ checked=
 {/* Auto-scroll */}
 ⋮----
 {/* Clear logs button */}
-<Button onClick=
 ⋮----
 {/* Clear confirmation dialog */}
 ⋮----
@@ -17286,9 +17611,6 @@ const handleUnarchiveClick = () =>
 ⋮----
 const renderSection = (icon: ReactNode, text: string, actions: ReactNode) =>
 ⋮----
-
-⋮----
-onClose=
 
 ================
 File: src/renderer/src/components/message/DeleteMemoryToolMessage.tsx
@@ -17857,6 +18179,7 @@ import { UsageInfo } from './UsageInfo';
 import { useApi } from '@/contexts/ApiContext';
 import { useClickOutside } from '@/hooks/useClickOutside';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
+import { useExtensionComponentsWrapper } from '@/components/extensions/useExtensionComponentsWrapper';
 import { includeMessageProperty } from '@/components/message/utils';
 ⋮----
 type MenuPosition = {
@@ -18076,15 +18399,134 @@ e.stopPropagation();
 handleExpandedClick();
 
 ================
+File: src/renderer/src/components/message/messageMap.ts
+================
+import { isAssistantGroupMessage, isGroupMessage, isResponseMessage, isUserMessage, Message } from '@common/types';
+⋮----
+export enum MessageMapRole {
+  User = 'user',
+  Assistant = 'assistant',
+}
+⋮----
+export type MessageMapEntry = {
+  id: string;
+  index: number;
+  role: MessageMapRole;
+  preview: string;
+};
+⋮----
+export type MessageMapTurn = {
+  id: string;
+  number: number;
+  startIndex: number;
+  userIndex: number | null;
+  userPreview: string;
+  lastAssistantIndex: number | null;
+  lastAssistantPreview: string;
+};
+⋮----
+export const createMessageMapEntries = (messages: Message[]): MessageMapEntry[] =>
+⋮----
+const addMessage = (message: Message, index: number, path: string) =>
+⋮----
+// Collapses the flat message entries into conversation turns. A turn starts at each user prompt and
+// absorbs the assistant replies that follow it, tracking the last reply of the turn. Assistant
+// replies that appear before any user prompt form a leading turn with no user message.
+export const createMessageMapTurns = (messages: Message[]): MessageMapTurn[] =>
+⋮----
+export type MessageMapMarkerItem = {
+  id: string;
+  turnNumber: number;
+  role: MessageMapRole;
+  index: number;
+  preview: string;
+};
+⋮----
+// Flattens turns into individually navigable markers: a green user-prompt marker and a blue
+// last-assistant-reply marker per turn, kept in ascending rendered order for scroll tracking.
+export const createMessageMapMarkers = (turns: MessageMapTurn[]): MessageMapMarkerItem[] =>
+⋮----
+// Selection follows user messages only: the active marker is the user message currently in the
+// scroll view, or the previous one when the viewport sits within that turn's replies.
+export const getActiveMarkerId = (markers: MessageMapMarkerItem[], visibleIndex: number): string | null =>
+
+================
+File: src/renderer/src/components/message/MessageMap.tsx
+================
+import { memo, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { MdKeyboardArrowDown, MdKeyboardArrowUp, MdKeyboardDoubleArrowDown } from 'react-icons/md';
+import { Message } from '@common/types';
+⋮----
+import { createMessageMapMarkers, createMessageMapTurns, getActiveMarkerId } from './messageMap';
+import { MessageMapMarker } from './MessageMapMarker';
+⋮----
+import { Tooltip } from '@/components/ui/Tooltip';
+⋮----
+type Props = {
+  messages: Message[];
+  visibleIndex: number;
+  onNavigate: (index: number, animated: boolean) => void;
+  onPreviousUserMessage: () => void;
+  onNextUserMessage: () => void;
+  hasPreviousUserMessage: boolean;
+  hasNextUserMessage: boolean;
+  onScrollToBottom: () => void;
+};
+
+================
+File: src/renderer/src/components/message/MessageMapMarker.tsx
+================
+import { memo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { clsx } from 'clsx';
+⋮----
+import { MessageMapRole } from './messageMap';
+import { MessageMapPreview } from './MessageMapPreview';
+⋮----
+import { Tooltip } from '@/components/ui/Tooltip';
+⋮----
+type Props = {
+  turnNumber: number;
+  role: MessageMapRole;
+  index: number;
+  preview: string;
+  active: boolean;
+  onNavigate: (index: number, animated: boolean) => void;
+};
+⋮----
+const handleClick = ()
+
+================
+File: src/renderer/src/components/message/MessageMapPreview.tsx
+================
+import { useTranslation } from 'react-i18next';
+import { clsx } from 'clsx';
+⋮----
+import { MessageMapRole } from './messageMap';
+⋮----
+type Props = {
+  turnNumber: number;
+  role: MessageMapRole;
+  preview: string;
+};
+⋮----
+export const MessageMapPreview = (
+⋮----
+className=
+⋮----
+
+================
 File: src/renderer/src/components/message/Messages.tsx
 ================
-import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { toPng } from 'html-to-image';
 import { MdKeyboardDoubleArrowDown } from 'react-icons/md';
 import { useTranslation } from 'react-i18next';
 import { GroupMessage, isUserMessage, Message, MessageViewMode } from '@common/types';
 ⋮----
 import { MessageBlockWrapper } from './MessageBlockWrapper';
+import { MessageMap } from './MessageMap';
 ⋮----
 import { IconButton } from '@/components/common/IconButton';
 import { groupAssistantMessages, groupMessagesByPromptContext } from '@/components/message/utils';
@@ -18118,6 +18560,10 @@ type Props = {
 ⋮----
 // Get all user message IDs
 ⋮----
+// Anchor to the last item whose top has entered the viewport. Children are in vertical order.
+⋮----
+const handleScroll = () =>
+⋮----
 // eslint-disable-next-line no-console
 ⋮----
 aria-label=
@@ -18127,7 +18573,7 @@ File: src/renderer/src/components/message/RebaseConflictsActions.tsx
 ================
 import { TiWarning } from 'react-icons/ti';
 import { useTranslation } from 'react-i18next';
-import { WorktreeIntegrationStatus } from '@common/types';
+import { TaskGitStatus } from '@common/types';
 ⋮----
 import { Button } from '@/components/common/Button';
 import { useApi } from '@/contexts/ApiContext';
@@ -18135,7 +18581,7 @@ import { useApi } from '@/contexts/ApiContext';
 type Props = {
   projectDir: string;
   taskId: string;
-  worktreeStatus: WorktreeIntegrationStatus;
+  status: TaskGitStatus;
 };
 ⋮----
 const handleContinueRebase = () =>
@@ -18149,7 +18595,6 @@ File: src/renderer/src/components/message/RebaseResolvedActions.tsx
 ================
 import { TiInfo } from 'react-icons/ti';
 import { useTranslation } from 'react-i18next';
-import { WorktreeIntegrationStatus } from '@common/types';
 ⋮----
 import { Button } from '@/components/common/Button';
 import { useApi } from '@/contexts/ApiContext';
@@ -18157,7 +18602,6 @@ import { useApi } from '@/contexts/ApiContext';
 type Props = {
   projectDir: string;
   taskId: string;
-  worktreeStatus: WorktreeIntegrationStatus;
 };
 ⋮----
 const handleContinueRebase = () =>
@@ -18492,7 +18936,7 @@ import { ExtensionComponentRenderer } from '@/components/extensions/ExtensionCom
 import { useExtensionComponentsWrapper } from '@/components/extensions/useExtensionComponentsWrapper';
 import { RebaseConflictsActions } from '@/components/message/RebaseConflictsActions';
 import { RebaseResolvedActions } from '@/components/message/RebaseResolvedActions';
-import { useWorktreeIntegrationStatus } from '@/hooks/useWorktreeIntegrationStatus';
+import { useTaskGitStatus } from '@/hooks/useTaskGitStatus';
 ⋮----
 type Props = {
   projectDir: string;
@@ -18896,6 +19340,10 @@ export const includeMessageProperty = (message: Message): boolean =>
  */
 export const groupAssistantMessages = (messages: Message[]): Message[] =>
 ⋮----
+const nextUniqueId = (message: Message): string =>
+⋮----
+const pushWithUniqueId = (message: Message) =>
+⋮----
 const flushCurrentGroup = () =>
 ⋮----
 // Create an AssistantGroupMessage
@@ -18922,6 +19370,9 @@ export const areMessagesEqual = (prevMessage: Message, nextMessage: Message): bo
 ⋮----
 // Check args for ToolMessage
 ⋮----
+// LegendList keys items by id; duplicate ids in the list data cause a
+// measurement/re-render feedback loop that crashes with React error #185,
+// so every item pushed here must have a unique id.
 export const groupMessagesByPromptContext = (messages: Message[]): Message[] =>
 ⋮----
 // First pass: collect messages with groups
@@ -18944,6 +19395,7 @@ import { GroupMessage, isUserMessage, Message, MessageViewMode } from '@common/t
 import { twMerge } from 'tailwind-merge';
 ⋮----
 import { MessageBlockWrapper } from './MessageBlockWrapper';
+import { MessageMap } from './MessageMap';
 ⋮----
 import { IconButton } from '@/components/common/IconButton';
 import { groupAssistantMessages, groupMessagesByPromptContext } from '@/components/message/utils';
@@ -19066,6 +19518,8 @@ type Props = {
   provider: AnthropicCompatibleProvider;
   onChange: (updated: AnthropicCompatibleProvider) => void;
 };
+⋮----
+export const AnthropicCompatibleParameters = (
 ⋮----
 const handleBaseUrlChange = (e: ChangeEvent<HTMLInputElement>) =>
 ⋮----
@@ -19420,6 +19874,8 @@ type Props = {
   onChange: (updated: GpustackProvider) => void;
 };
 ⋮----
+export const GpustackParameters = (
+⋮----
 const handleBaseUrlChange = (e: ChangeEvent<HTMLInputElement>) =>
 ⋮----
 const handleApiKeyChange = (e: ChangeEvent<HTMLInputElement>) =>
@@ -19488,7 +19944,28 @@ type Props = {
   onChange: (updated: LitellmProvider) => void;
 };
 ⋮----
+export const LitellmParameters = (
+⋮----
 const handleBaseUrlChange = (e: ChangeEvent<HTMLInputElement>) =>
+⋮----
+const handleApiKeyChange = (e: ChangeEvent<HTMLInputElement>) =>
+⋮----
+label=
+
+================
+File: src/renderer/src/components/ModelLibrary/providers/LlmApiParameters.tsx
+================
+import { ChangeEvent } from 'react';
+import { useTranslation } from 'react-i18next';
+import { LlmApiProvider } from '@common/agent';
+⋮----
+import { Input } from '@/components/common/Input';
+import { useEffectiveEnvironmentVariable } from '@/hooks/useEffectiveEnvironmentVariable';
+⋮----
+type Props = {
+  provider: LlmApiProvider;
+  onChange: (updated: LlmApiProvider) => void;
+};
 ⋮----
 const handleApiKeyChange = (e: ChangeEvent<HTMLInputElement>) =>
 ⋮----
@@ -19508,6 +19985,8 @@ type Props = {
   provider: LmStudioProvider;
   onChange: (updated: LmStudioProvider) => void;
 };
+⋮----
+export const LmStudioParameters = (
 ⋮----
 const handleBaseUrlChange = (e: ChangeEvent<HTMLInputElement>) =>
 ⋮----
@@ -19633,6 +20112,8 @@ type Props = {
   onChange: (updated: OllamaProvider) => void;
 };
 ⋮----
+export const OllamaParameters = (
+⋮----
 const handleBaseUrlChange = (e: ChangeEvent<HTMLInputElement>) =>
 ⋮----
 label=
@@ -19737,6 +20218,8 @@ type Props = {
   provider: OpenAiCompatibleProvider;
   onChange: (updated: OpenAiCompatibleProvider) => void;
 };
+⋮----
+export const OpenAiCompatibleParameters = (
 ⋮----
 const handleBaseUrlChange = (e: ChangeEvent<HTMLInputElement>) =>
 ⋮----
@@ -20471,6 +20954,8 @@ const handleBulkToggleHidden = async (modelIds: string[], isHidden: boolean) =>
 <ModalOverlayLayout title=
 ⋮----
 // Show provider configuration form
+⋮----
+onCancel=
 
 ================
 File: src/renderer/src/components/ModelLibrary/ModelParameterOverrides.tsx
@@ -20637,6 +21122,7 @@ import {
   GpustackIcon,
   GroqIcon,
   LitellmIcon,
+  LlmApiIcon,
   LmStudioIcon,
   MinimaxIcon,
   MistralIcon,
@@ -20744,6 +21230,7 @@ import {
   AlibabaPlanParameters,
   KimiPlanParameters,
   LitellmParameters,
+  LlmApiParameters,
   LmStudioParameters,
   MinimaxParameters,
   MistralParameters,
@@ -20838,6 +21325,7 @@ import {
   GroqIcon,
   KimiPlanIcon,
   LitellmIcon,
+  LlmApiIcon,
   LmStudioIcon,
   MinimaxIcon,
   MistralIcon,
@@ -20861,6 +21349,35 @@ type Props = {
 };
 ⋮----
 onClick=
+
+================
+File: src/renderer/src/components/onboarding/OnboardingPathChoice.tsx
+================
+import { HiOutlineCpuChip, HiOutlineCommandLine } from 'react-icons/hi2';
+import { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
+import { clsx } from 'clsx';
+⋮----
+export type OnboardingPath = 'agent' | 'aider';
+⋮----
+type PathOption = {
+  path: OnboardingPath;
+  icon: ReactNode;
+  title: string;
+  subtitle: string;
+  description: string;
+  features: readonly string[];
+  modeLabel: string;
+};
+⋮----
+type Props = {
+  selectedPath: OnboardingPath | null;
+  onSelectPath: (path: OnboardingPath) => void;
+};
+⋮----
+<span className=
+⋮----
+className=
 
 ================
 File: src/renderer/src/components/onboarding/OnboardingProviderSetup.tsx
@@ -20971,6 +21488,7 @@ type Props = {
   isExpanded: boolean;
   onToggleExpand: (taskId: string) => void;
   hasChildren: boolean;
+  showSpinner: boolean;
   draggedTaskIds: Set<string>;
   dragOverTaskId: string | null;
   onDragStart: (taskId: string) => void;
@@ -21147,6 +21665,7 @@ import { Tooltip } from '@/components/ui/Tooltip';
 import { Checkbox } from '@/components/common/Checkbox';
 import { Toggle } from '@/components/common/Toggle';
 import { getTaskStateLabel, getStateTextClass } from '@/components/common/TaskStateChip';
+import { useTaskSidebarStore } from '@/stores/taskSidebarStore';
 ⋮----
 type Props = {
   loading: boolean;
@@ -21190,6 +21709,9 @@ const handleMultiselectClose = () =>
 const handleKeyDown = (e: globalThis.KeyboardEvent) =>
 ⋮----
 // Handle click outside for multiselect menu
+⋮----
+// propagate through the whole chain of collapsed ancestors so that
+// the closest visible ancestor of the in-progress subtask shows the spinner
 ⋮----
 // eslint-disable-next-line react-hooks/incompatible-library
 ⋮----
@@ -21299,6 +21821,7 @@ type Props = {
   taskId: string;
   state?: string;
   isCollapsed?: boolean;
+  showSpinner?: boolean;
 };
 ⋮----
 export const TaskStatusIcon = (
@@ -21467,7 +21990,7 @@ import { MdKeyboardArrowDown } from 'react-icons/md';
 import { useTranslation } from 'react-i18next';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useLocalStorage } from '@reactuses/core';
-import { BranchInfo, GitSyncCommits, WorktreeIntegrationStatus } from '@common/types';
+import { BranchInfo, GitSyncCommits, TaskGitStatus } from '@common/types';
 ⋮----
 import { useApi } from '@/contexts/ApiContext';
 import { useClickOutside } from '@/hooks/useClickOutside';
@@ -21499,7 +22022,7 @@ type Props = {
   baseDir: string;
   taskId: string;
   worktreePath?: string;
-  status?: WorktreeIntegrationStatus | null;
+  status?: TaskGitStatus | null;
   taskName?: string;
   disabled?: boolean;
   onSwitchToLocal: () => void;
@@ -21616,7 +22139,7 @@ label=
 ================
 File: src/renderer/src/components/project/GitBranchesPopup.tsx
 ================
-import { MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CgSpinner } from 'react-icons/cg';
 import { FaChevronDown, FaChevronRight, FaFolder, FaFolderOpen, FaMagnifyingGlass } from 'react-icons/fa6';
@@ -21656,23 +22179,13 @@ const buildBranchTree = (branches: BranchInfo[]): BranchTreeNode[] =>
 ⋮----
 const rowKey = (row?: RowItem) =>
 ⋮----
-const isFolderCollapsed = (fullPath: string) =>
-⋮----
 // Collapsed by default; only folders on the current branch's path start expanded
 ⋮----
 const walk = (nodes: BranchTreeNode[], depth: number) =>
 ⋮----
-// eslint-disable-next-line react-hooks/exhaustive-deps
-⋮----
-const getSubmenuItems = (branch: BranchInfo) =>
-⋮----
-// eslint-disable-next-line react-hooks/exhaustive-deps
-⋮----
 const handleFilterChange = (value: string) =>
 ⋮----
 const toggleFolder = (fullPath: string, currentlyCollapsed: boolean) =>
-⋮----
-const openSubmenuFor = (branch: BranchInfo, e?: MouseEvent<HTMLElement>) =>
 ⋮----
 className=
 ⋮----
@@ -21681,6 +22194,8 @@ className=
 const handleKeyDown = (e: KeyboardEvent) =>
 ⋮----
 return <div key=
+⋮----
+<div key=
 ⋮----
 setOpenSubmenu(null);
 item.action();
@@ -21730,12 +22245,12 @@ import { useTranslation } from 'react-i18next';
 import { CgArrowBottomLeft, CgArrowTopRight } from 'react-icons/cg';
 import { TiWarning } from 'react-icons/ti';
 ⋮----
-import type { WorktreeIntegrationStatus } from '@common/types';
+import type { TaskGitStatus } from '@common/types';
 ⋮----
 import { Tooltip } from '@/components/ui/Tooltip';
 ⋮----
 type Props = {
-  status?: WorktreeIntegrationStatus | null;
+  status?: TaskGitStatus | null;
   showOutgoing: boolean;
   showIncoming: boolean;
 };
@@ -21798,8 +22313,6 @@ export const MobileSidebar = ({
 className=
 ⋮----
 <div onClick=
-⋮----
-showFileDialog=
 
 ================
 File: src/renderer/src/components/project/MountedTaskView.tsx
@@ -21817,6 +22330,7 @@ type Props = {
   projectDir: string;
   task: TaskData;
   isActive: boolean;
+  isProjectActive: boolean;
   inputHistory: string[];
   shouldFocusPrompt: boolean;
   updateTask: (taskId: string, updates: Partial<TaskData>, useOptimistic?: boolean) => void;
@@ -21948,7 +22462,7 @@ import { ProjectData } from '@common/types';
 import { compareBaseDirs } from '@common/utils';
 import { CSS } from '@dnd-kit/utilities';
 import { MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { Tab, TabGroup, TabList, Listbox, ListboxButton, ListboxOption, ListboxOptions, Transition } from '@headlessui/react';
+import { Tab, TabGroup, TabList, Listbox, ListboxButton, ListboxOption, ListboxOptions } from '@headlessui/react';
 import { clsx } from 'clsx';
 import { CgSpinner } from 'react-icons/cg';
 import { MdAdd, MdChevronLeft, MdChevronRight } from 'react-icons/md';
@@ -22046,7 +22560,8 @@ type Props = {
 };
 ⋮----
 // Keep recently-active tasks mounted (LRU) so switching back is instant. The active task is
-// always at the front and therefore never evicted.
+// always at the front and therefore never evicted. In-progress tasks are never evicted
+// either, so a running task stays mounted while other tasks are used.
 ⋮----
 // eslint-disable-next-line no-console
 ⋮----
@@ -22091,6 +22606,8 @@ const initProject = async () =>
 // Startup-on-first-activation: background projects do not load any task until they are first
 // activated, then the configured startup mode is applied once (also serving as a self-healing
 // fallback if the startup race was lost or task creation failed).
+⋮----
+// Track in-progress task ids so the mount pool can protect them from eviction.
 ⋮----
 // Release backend/store state for tasks evicted from the mount pool (mirrors unmount cleanup).
 ⋮----
@@ -22249,7 +22766,7 @@ const handleAutonomyLockChanged = (locked: boolean) =>
 ================
 File: src/renderer/src/components/project/TaskGitControls.tsx
 ================
-import { SwitchToLocalOptions, SwitchToWorktreeOptions, TaskData, WorkingMode, WorktreeUncommittedFiles } from '@common/types';
+import { SwitchToLocalOptions, SwitchToWorktreeOptions, TaskData, WorkingMode, UncommittedFiles } from '@common/types';
 import { useCallback, useEffect, useState, useMemo } from 'react';
 import { MdClose } from 'react-icons/md';
 import { CgSpinner } from 'react-icons/cg';
@@ -22265,7 +22782,7 @@ import { WorktreeRevertButton } from '@/components/project/WorktreeRevertButton'
 import { BaseDialog } from '@/components/common/BaseDialog';
 import { RadioButton } from '@/components/common/RadioButton';
 import { useApi } from '@/contexts/ApiContext';
-import { useWorktreeIntegrationStatus } from '@/hooks/useWorktreeIntegrationStatus';
+import { useTaskGitStatus } from '@/hooks/useTaskGitStatus';
 import { useCommitChanges } from '@/hooks/useCommitChanges';
 import { useProjectTasks } from '@/stores/projectStore';
 ⋮----
@@ -22325,14 +22842,14 @@ const handleSwitchToWorktree = () =>
 ⋮----
 const handleCancelCommit = () =>
 ⋮----
-title=
-⋮----
 <Button onClick=
-
 ⋮----
 onChange=
 ⋮----
 <div className="font-medium">
+⋮----
+title=
+⋮----
 
 ================
 File: src/renderer/src/components/project/TaskView.tsx
@@ -22430,6 +22947,7 @@ type Props = {
   updateOptimisticTaskState: (taskId: string, taskState: string) => void;
   inputHistory: string[];
   isActive?: boolean;
+  isProjectActive?: boolean;
   shouldFocusPrompt?: boolean;
   onArchiveTask?: () => void;
   onUnarchiveTask?: () => void;
@@ -22529,7 +23047,7 @@ onChange=
 ================
 File: src/renderer/src/components/project/TodoWindow.tsx
 ================
-import { KeyboardEvent, useEffect, useState } from 'react';
+import { KeyboardEvent, useEffect, useRef, useState } from 'react';
 import { MdAdd, MdExpandLess, MdOutlineChecklist, MdPlaylistRemove } from 'react-icons/md';
 import { useTranslation } from 'react-i18next';
 import { TodoItem } from '@common/types';
@@ -22563,7 +23081,9 @@ const handleCancelAdd = () =>
 ⋮----
 const handleKeyPress = (e: KeyboardEvent) =>
 ⋮----
-// Auto-collapse when all items are completed
+// Auto-collapse when all items are completed, auto-expand again when the completed set is replaced with new items
+⋮----
+// Keep the last non-empty evaluation so a fully-completed set followed by clearing still re-expands later
 ⋮----
 // eslint-disable-next-line react-hooks/set-state-in-effect
 ⋮----
@@ -22686,6 +23206,14 @@ tooltip=
 title=
 ⋮----
 confirmButtonText=
+
+================
+File: src/renderer/src/components/PromptField/acceptPathSegment.ts
+================
+import { acceptCompletion, completionStatus, selectedCompletion } from '@codemirror/autocomplete';
+import { type EditorView } from '@codemirror/view';
+⋮----
+export const acceptPathSegment = (view: EditorView, mentionMode: boolean): boolean =>
 
 ================
 File: src/renderer/src/components/PromptField/AudioAnalyzer.tsx
@@ -22826,28 +23354,17 @@ const handleScroll = () =>
 ================
 File: src/renderer/src/components/PromptField/ModeSelector.tsx
 ================
-import { ElementType, memo, useMemo } from 'react';
-import { CgTerminal } from 'react-icons/cg';
-import { FaRegQuestionCircle } from 'react-icons/fa';
-import { AiOutlineFileSearch } from 'react-icons/ai';
-import { RiRobot2Line } from 'react-icons/ri';
-import { GoProjectRoadmap } from 'react-icons/go';
-import { FiLayers } from 'react-icons/fi';
-import { TbTargetArrow } from 'react-icons/tb';
-import { Mode, ModeDefinition } from '@common/types';
+import { memo } from 'react';
+import { Mode } from '@common/types';
 ⋮----
-import { ItemSelector, ItemConfig } from '@/components/common/ItemSelector';
-import { useCustomModes } from '@/hooks/useCustomModes';
+import { ItemSelector } from '@/components/common/ItemSelector';
+import { useModes } from '@/hooks/useModes';
 ⋮----
 type Props = {
   baseDir: string;
   mode: Mode;
   onModeChange: (mode: Mode) => void;
 };
-⋮----
-const getIconComponent = (iconName?: string): ElementType =>
-⋮----
-const customModeToItemConfig = (mode: ModeDefinition): ItemConfig<Mode> => (
 
 ================
 File: src/renderer/src/components/PromptField/PromptField.tsx
@@ -22856,6 +23373,7 @@ File: src/renderer/src/components/PromptField/PromptField.tsx
 import {
   acceptCompletion,
   autocompletion,
+  completionStatus,
   type Completion,
   CompletionContext,
   type CompletionResult,
@@ -22880,6 +23398,8 @@ import { getSubagentId } from '@common/agent';
 ⋮----
 import { QueuedPromptsList } from './QueuedPromptsList';
 import { usePromptFieldText } from './usePromptFieldText';
+import { wordCompletions } from './wordCompletions';
+import { acceptPathSegment } from './acceptPathSegment';
 ⋮----
 import { useTaskQueuedPrompts } from '@/stores/taskStore';
 import { InputHistoryMenu } from '@/components/PromptField/InputHistoryMenu';
@@ -22933,6 +23453,7 @@ type Props = {
   runTests: (testCmd?: string) => void;
   redoLastUserPrompt: () => void;
   editUserMessage: () => void;
+  lastMessageIsUserMessage?: boolean;
   isEditingLastMessage?: boolean;
   canSaveEditedPrompt?: boolean;
   disabled?: boolean;
@@ -22994,6 +23515,8 @@ const handleSavePrompt = async () =>
 return false; // Allow default behavior (new line)
 ⋮----
 // Desktop behavior: submit or handle special cases
+⋮----
+// only strip a non-empty path segment; ignore command words like "/add"
 ⋮----
 onClick=
 ⋮----
@@ -23058,6 +23581,13 @@ import { useIndexedDB } from '@/hooks/useIndexedDB';
 export const usePromptFieldText = (baseDir: string, taskId: string, onLoad?: (value: string) => void) =>
 
 ================
+File: src/renderer/src/components/PromptField/wordCompletions.ts
+================
+import { type CompletionResult } from '@codemirror/autocomplete';
+⋮----
+export const wordCompletions = (from: number, words: string[], files: string[]): CompletionResult => (
+
+================
 File: src/renderer/src/components/readonly/ReadonlyHeader.tsx
 ================
 import { ReadonlyProjectData } from '@common/types';
@@ -23105,7 +23635,12 @@ type Props = {
 ⋮----
 const load = async () =>
 ⋮----
+// Resync after a socket reconnect: events emitted while disconnected are lost forever,
+// so refetch the task list and the selected task state.
+⋮----
 const handleSelectTask = (taskId: string) =>
+⋮----
+messages=
 
 ================
 File: src/renderer/src/components/readonly/ReadonlyTaskSidebar.tsx
@@ -23354,7 +23889,7 @@ type AgentRulesProps = {
 ================
 File: src/renderer/src/components/settings/agent/AgentSettings.tsx
 ================
-import { AgentProfile, ExtensionToolInfo, McpServersData, Model, ProjectData, SettingsData, ToolApprovalState } from '@common/types';
+import { AgentProfile, McpServersData, Model, ProjectData, SettingsData, ToolApprovalState } from '@common/types';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { FaChevronLeft, FaChevronRight, FaPaste, FaPlus } from 'react-icons/fa';
@@ -23375,8 +23910,8 @@ import { ProfileToolsSection } from './sections/ProfileToolsSection';
 import { ProfileSubagentsSection } from './sections/ProfileSubagentsSection';
 ⋮----
 import { useBooleanState } from '@/hooks/useBooleanState';
+import { useExtensionTools } from '@/hooks/useExtensionTools';
 import { useResponsive } from '@/hooks/useResponsive';
-import { useApi } from '@/contexts/ApiContext';
 import { useMcpServers } from '@/contexts/McpServersContext';
 import { getPathBasename } from '@/utils/path-utils';
 import { IconButton } from '@/components/common/IconButton';
@@ -24282,6 +24817,8 @@ const handleDiffViewModeChange = (value: string) =>
 ⋮----
 const handleMessageViewModeChange = (value: string) =>
 ⋮----
+const handleShowMessageMapChange = (checked: boolean) =>
+⋮----
 const handleSuggestionModeChange = (mode: SuggestionMode) =>
 ⋮----
 const handleSuggestionModeClick = (value: string) =>
@@ -24298,11 +24835,11 @@ label=
 ⋮----
 setSettings(
 ⋮----
+<Checkbox label=
+⋮----
 onChange=
 ⋮----
 {/* Vim key bindings */}
-⋮----
-<Checkbox label=
 
 ================
 File: src/renderer/src/components/settings/HotkeyConfig.tsx
@@ -24333,6 +24870,8 @@ type RecordingDialogProps = {
 const handleConfirm = () =>
 ⋮----
 title=
+⋮----
+value=
 ⋮----
 // Parse the value into an array of shortcuts
 ⋮----
@@ -24404,10 +24943,11 @@ export const LanguageSelector = (
 ================
 File: src/renderer/src/components/settings/MemorySettings.tsx
 ================
-import { MemoryEmbeddingProgress, MemoryEmbeddingProgressPhase, MemoryEmbeddingProvider, MemoryEntry, SettingsData } from '@common/types';
+import { AGENT_MEMORY_SCOPE_PREFIX, getAgentMemoryScopeId } from '@common/agent';
+import { AgentProfile, MemoryEmbeddingProgress, MemoryEmbeddingProgressPhase, MemoryEmbeddingProvider, MemoryEntry, SettingsData } from '@common/types';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FaTrash } from 'react-icons/fa';
+import { FaFolderOpen, FaRobot, FaTrash } from 'react-icons/fa';
 import { useMount } from '@reactuses/core';
 ⋮----
 import { Checkbox } from '../common/Checkbox';
@@ -24429,9 +24969,13 @@ type Props = {
 ⋮----
 const poll = async () =>
 ⋮----
+const getScopeLabel = (scopeId: string): string =>
+⋮----
+// agent scopes with memories but no matching isolated profile (e.g. the flag was turned off) stay visible for cleanup
+⋮----
 const handleDeleteMemory = async () =>
 ⋮----
-const handleDeleteProjectMemories = async () =>
+const handleDeleteScopeMemories = async () =>
 ⋮----
 const handleEnabledChange = (enabled: boolean) =>
 ⋮----
@@ -24450,6 +24994,7 @@ onClick=
 title=
 ⋮----
 confirmButtonText=
+⋮----
 
 ================
 File: src/renderer/src/components/settings/NetworkSettings.tsx
@@ -24618,7 +25163,7 @@ const handleZoomChange = (zoomLevel: number) =>
 File: src/renderer/src/components/settings/TaskSettings.tsx
 ================
 import { useCallback } from 'react';
-import { SettingsData, ContextCompactionType, Model, WorkingMode } from '@common/types';
+import { Mode, SettingsData, ContextCompactionType, Model, WorkingMode } from '@common/types';
 import { useTranslation } from 'react-i18next';
 import { AiFillFolderOpen } from 'react-icons/ai';
 import { IoGitBranch } from 'react-icons/io5';
@@ -24627,11 +25172,13 @@ import { getProviderModelId } from '@common/agent';
 import { Checkbox } from '../common/Checkbox';
 import { Section } from '../common/Section';
 import { InfoIcon } from '../common/InfoIcon';
+import { Select, Option } from '../common/Select';
 import { Slider } from '../common/Slider';
 import { ModelSelectorWrapper } from '../common/ModelSelectorWrapper';
 import { ItemConfig, ItemSelector } from '../common/ItemSelector';
 import { ChipListInput } from '../common/ChipListInput';
 ⋮----
+import { useModes } from '@/hooks/useModes';
 import { Input } from '@/components/common/Input';
 import { Tooltip } from '@/components/ui/Tooltip';
 ⋮----
@@ -24663,6 +25210,10 @@ const handleTaskNameModelChange = (model: Model | null) =>
 const handleTaskStateModelChange = (model: Model | null) =>
 ⋮----
 const handleCommitMessageModelChange = (model: Model | null) =>
+⋮----
+const handleDefaultTaskModeChange = (mode: string) =>
+⋮----
+const handleDefaultProjectModeChange = (mode: string) =>
 ⋮----
 const handleWorktreeBranchPrefixChange = (value: string) =>
 ⋮----
@@ -24814,6 +25365,7 @@ type Props = {
   visible: boolean;
   ptyId: string | null;
   className?: string;
+  onClose: () => void;
 };
 ⋮----
 const useIsTouchDevice = (): boolean =>
@@ -24855,8 +25407,6 @@ const attach = async () =>
 ⋮----
 // A freshly created PTY has an empty buffer - subscribe directly without a replay round trip
 ⋮----
-// Handle restart on keypress after exit
-⋮----
 // Handle resize when visibility changes
 ⋮----
 // Touch input: forward soft keyboard input to the PTY
@@ -24864,8 +25414,6 @@ const attach = async () =>
 const handleKeyDown = (e: KeyboardEvent) =>
 ⋮----
 const handleBeforeInput = (e: InputEvent) =>
-⋮----
-const restartSession = () =>
 ⋮----
 const handleTouchInputChange = (e: ChangeEvent<HTMLTextAreaElement>) =>
 ⋮----
@@ -24919,6 +25467,8 @@ type Props = {
 // Close a terminal tab and kill its PTY process
 const closeTerminalTab = (tabId: string) =>
 ⋮----
+// Close the tab when its PTY exits (e.g. shell ended via Ctrl+D or exit command)
+⋮----
 // Ensure there is at least one tab when the terminal view becomes visible
 ⋮----
 // Only react to visibility changes, not to tab count changes
@@ -24936,6 +25486,8 @@ const handleCopyOutput = () =>
 onClick=
 ⋮----
 {/* Terminal content */}
+⋮----
+onClose=
 
 ================
 File: src/renderer/src/components/ui/Tooltip.tsx
@@ -25430,8 +25982,6 @@ const expandFolders = (treeData: Record<string, TreeItem>, files: ContextFile[])
 const checkChild = (childKey: string | number) =>
 ⋮----
 <Tooltip content=
-⋮----
-onFileDiffClick=
 
 ================
 File: src/renderer/src/components/Workspace/ContextFilesSectionInner.tsx
@@ -25578,6 +26128,10 @@ eq(other: WidgetType): boolean
 ⋮----
 toDOM(): HTMLElement
 ⋮----
+onEdit=
+⋮----
+onRemove=
+⋮----
 destroy(dom: HTMLElement): void
 ⋮----
 ignoreEvent(): boolean
@@ -25597,6 +26151,8 @@ import { MdLibraryAddCheck, MdSave } from 'react-icons/md';
 import { useHotkeys, useHotkeysContext } from 'react-hotkeys-hook';
 import { LanguageDescription } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
+import { openSearchPanel } from '@codemirror/search';
+import { Prec } from '@codemirror/state';
 import { EditorView, GutterMarker, gutter, lineNumbers } from '@codemirror/view';
 import { githubDarkInit } from '@uiw/codemirror-theme-github';
 import CodeMirror, { type Extension } from '@uiw/react-codemirror';
@@ -25969,6 +26525,10 @@ type SidebarGroupTreeProps = {
   onToggleFolderSelection: (filePaths: string[], selected: boolean) => void;
 };
 ⋮----
+// useTree keeps a mutable instance whose results (tree.getItems(), item.isExpanded())
+// React Compiler cannot track — memoizing this component defers expand/collapse
+// re-commits until an unrelated prop change busts the cache.
+⋮----
 const handleClick = () =>
 ⋮----
 const handleToggleSelection = () =>
@@ -25984,7 +26544,7 @@ import { SkillDefinition } from '@common/types';
 import { Activity, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { HiX } from 'react-icons/hi';
-import { MdOutlinePublic, MdOutlineRefresh } from 'react-icons/md';
+import { MdOutlinePublic, MdOutlineRefresh, MdOutlineSmartToy, MdOutlineTouchApp } from 'react-icons/md';
 import { RiPlayCircleLine, RiRocketLine, RiRobot2Line } from 'react-icons/ri';
 import { VscFileCode } from 'react-icons/vsc';
 import { motion } from 'framer-motion';
@@ -25994,7 +26554,9 @@ import { SectionHeader } from './SectionHeader';
 import { SectionLoading } from './SectionLoading';
 ⋮----
 import { Tooltip } from '@/components/ui/Tooltip';
+import { TriStateCheckbox } from '@/components/common/TriStateCheckbox';
 import { useApi } from '@/contexts/ApiContext';
+import { useProjectSettings } from '@/contexts/ProjectSettingsContext';
 import { useFileEditorStore } from '@/stores/fileEditorStore';
 ⋮----
 className=
@@ -26003,6 +26565,8 @@ className=
 ⋮----
 if (skill.dirPath)
 openFile(baseDir, `$
+⋮----
+
 ⋮----
 onClick=
 
@@ -26151,8 +26715,8 @@ import { clsx } from 'clsx';
 ⋮----
 import { sortFilesByTreeOrder } from './group-files';
 ⋮----
-import { IconButton } from '@/components/common/IconButton';
 import { ModalOverlayLayout } from '@/components/common/ModalOverlayLayout';
+import { IconButton } from '@/components/common/IconButton';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { DiffLineCommentPanel, PierreDiffViewer, PierreLineClickInfo, type DiffComment } from '@/components/common/DiffViewer';
 import { CompactSelect } from '@/components/common/CompactSelect';
@@ -26192,6 +26756,11 @@ type Props = {
   openInWindowUrl?: string;
   openInWindowTitle?: string;
 };
+⋮----
+// Full file context for the current file (single-file view), loaded on demand via the header button.
+// Tracks which file is expanded so switching files collapses automatically.
+⋮----
+// Lazily fetched diff for the current file (single-file view)
 ⋮----
 // Sort each group's files to match the sidebar tree order so the all-files view,
 // navigation and scroll spy agree with the sidebar
@@ -26239,9 +26808,6 @@ const cancelPin = () =>
 ⋮----
 const pinScroll = () =>
 ⋮----
-// Lazily fetched diff for the current file (single-file view)
-⋮----
-// Full file context for the current file (single-file view), loaded on demand via the header button.
 // Tracks which file is expanded so switching files collapses automatically.
 ⋮----
 // Sync currentFile when initialFile prop changes (user clicks a different file)
@@ -26369,8 +26935,6 @@ className=
                               section={'updated' as SectionType}
                               treeData={tree}
                               expandedItems={expanded}
-setExpandedItems=
-⋮----
 setExpandedItems=
 ⋮----
 onClose=
@@ -27039,7 +27603,8 @@ import { usePrevious } from '@reactuses/core';
 import { DefaultTaskState, TaskData, TodoItem, ModelsData, isLoadingMessage, Message } from '@common/types';
 ⋮----
 import { setMessages, setTodoItems, setAiderModelsData, updateTaskState, unloadTask, useTaskStore, useTaskLoaded } from '@/stores/taskStore';
-import { useProjectStore } from '@/stores/projectStore';
+import { setProjectTasks, useProjectStore } from '@/stores/projectStore';
+import { useApi } from '@/contexts/ApiContext';
 import { releaseTaskFiles } from '@/stores/taskFilesStore';
 import { cleanupTaskCache } from '@/stores/extensionUIStore';
 import { cleanupProcessingResponseMessage, useTaskResponseHandlers } from '@/hooks/useTaskResponseHandlers';
@@ -27082,6 +27647,11 @@ type Props = {
   activeTaskId?: string | null;
   children: ReactNode;
 };
+⋮----
+// Resync after a socket reconnect: events emitted while disconnected are lost forever, so
+// refetch task metadata and reload already-loaded tasks to bring the UI back in sync.
+⋮----
+// eslint-disable-next-line no-console
 ⋮----
 export const useTask = (): TaskContextType =>
 
@@ -27214,7 +27784,7 @@ import { showErrorNotification, showSuccessNotification } from '@/utils/notifica
 ⋮----
 type UseCommitChanges = {
   isCommitting: boolean;
-  commit: (message: string, amend: boolean, filePaths?: string[]) => Promise<void>;
+  commit: (message: string, amend: boolean, skipGitHooks: boolean, filePaths?: string[]) => Promise<void>;
   cancelCommit: () => void;
 };
 ⋮----
@@ -27241,7 +27811,7 @@ import type { ModeDefinition } from '@common/types';
 ⋮----
 import { useApi } from '@/contexts/ApiContext';
 ⋮----
-export const useCustomModes = (baseDir: string) =>
+export const useCustomModes = (baseDir?: string) =>
 
 ================
 File: src/renderer/src/hooks/useDropdownState.ts
@@ -27272,6 +27842,17 @@ type UseEffectiveEnvironmentVariableResult = {
 export const useEffectiveEnvironmentVariable = (key: string, baseDir?: string): UseEffectiveEnvironmentVariableResult =>
 ⋮----
 const fetchEnvironmentVariable = async () =>
+
+================
+File: src/renderer/src/hooks/useExtensionTools.ts
+================
+import { useEffect } from 'react';
+import { ExtensionToolInfo } from '@common/types';
+⋮----
+import { useApi } from '@/contexts/ApiContext';
+import { useExtensionToolsInfo, useExtensionToolsStore } from '@/stores/extensionToolsStore';
+⋮----
+export const useExtensionTools = (projectDir?: string): ExtensionToolInfo[] =>
 
 ================
 File: src/renderer/src/hooks/useIndexedDB.ts
@@ -27315,6 +27896,27 @@ export const useLmStudioModels = (baseUrl: string) =>
 const loadModels = async () =>
 ⋮----
 const normalized = baseUrl.replace(/\/+$/g, ''); // Remove all trailing slashes
+
+================
+File: src/renderer/src/hooks/useModes.ts
+================
+import { ElementType, useMemo } from 'react';
+import { AiOutlineFileSearch } from 'react-icons/ai';
+import { CgTerminal } from 'react-icons/cg';
+import { FaRegQuestionCircle } from 'react-icons/fa';
+import { FiLayers } from 'react-icons/fi';
+import { RiRobot2Line } from 'react-icons/ri';
+import { GoProjectRoadmap } from 'react-icons/go';
+import { TbTargetArrow } from 'react-icons/tb';
+import { Mode } from '@common/types';
+⋮----
+import { useReactIcons, type ReactIconsMap } from '@/utils/extension-icons';
+import { useCustomModes } from '@/hooks/useCustomModes';
+import { ItemConfig } from '@/components/common/ItemSelector';
+⋮----
+const getIconComponent = (iconName: string | undefined, iconPacks: ReactIconsMap | null): ElementType =>
+⋮----
+export const useModes = (baseDir?: string): ItemConfig<Mode>[] =>
 
 ================
 File: src/renderer/src/hooks/useOllamaModels.ts
@@ -27390,6 +27992,7 @@ import { useConfiguredHotkeys } from '@/hooks/useConfiguredHotkeys';
 import { invokeAction, registerAction, unregisterAction } from '@/stores/actionsStore';
 import { openSettingsPage } from '@/stores/settingsNavigationStore';
 import { PaletteItem, PaletteItemType, useCommandPaletteStore } from '@/stores/commandPaletteStore';
+import { useTaskSidebarStore } from '@/stores/taskSidebarStore';
 ⋮----
 const buildShortcuts = (hotkeys: ReturnType<typeof useConfiguredHotkeys>): Record<string, string> => (
 ⋮----
@@ -27513,6 +28116,9 @@ import { IconButton } from '@/components/common/IconButton';
 ⋮----
 const handleKeyDown = (event: KeyboardEvent) =>
 ⋮----
+// Ignore the event when disabled without preventing default, so the
+// enabled (visible) instance can still handle it.
+⋮----
 // Clear previous search when opening
 ⋮----
 markInstance.current.unmark(); // Remove previous highlights
@@ -27600,6 +28206,21 @@ import { getTaskDir } from '@/utils/task-utils';
 const getTaskDirById = (baseDir: string, taskId: string) =>
 ⋮----
 export const useTaskDataHandlers = (baseDir: string, taskId: string) =>
+
+================
+File: src/renderer/src/hooks/useTaskGitStatus.ts
+================
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { TaskGitStatus } from '@common/types';
+⋮----
+import { useApi } from '@/contexts/ApiContext';
+⋮----
+type UseTaskGitStatus = {
+  taskGitStatus: TaskGitStatus | null;
+  refreshStatus: () => void;
+};
+⋮----
+export const useTaskGitStatus = (projectDir: string, taskId: string): UseTaskGitStatus =>
 
 ================
 File: src/renderer/src/hooks/useTaskLifecycleHandlers.ts
@@ -27810,21 +28431,6 @@ export const useVersions = () =>
 // Optionally set versions to indicate an error or keep them null
 ⋮----
 // eslint-disable-next-line react-hooks/set-state-in-effect
-
-================
-File: src/renderer/src/hooks/useWorktreeIntegrationStatus.ts
-================
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { WorktreeIntegrationStatus } from '@common/types';
-⋮----
-import { useApi } from '@/contexts/ApiContext';
-⋮----
-type UseWorktreeIntegrationStatus = {
-  worktreeStatus: WorktreeIntegrationStatus | null;
-  refreshStatus: () => void;
-};
-⋮----
-export const useWorktreeIntegrationStatus = (projectDir: string, taskId: string, isWorktree: boolean): UseWorktreeIntegrationStatus =>
 
 ================
 File: src/renderer/src/i18n/index.ts
@@ -28182,6 +28788,98 @@ export const LitellmIcon = ({ width = 64, height = 64, className }: Props) => (
     }}
   >
     <div style={{ fontSize: `${width * 0.6}px` }}>🚅</div>
+  </div>
+);
+
+================
+File: src/renderer/src/icons/LlmApiIcon.tsx
+================
+type Props = {
+  width?: number;
+  height?: number;
+  className?: string;
+};
+⋮----
+export const LlmApiIcon = ({ width = 64, height = 64, className }: Props) => (
+  <div
+    aria-label="LLM API"
+    className={`flex items-center justify-center rounded-md ${className || ''}`}
+    style={{
+      backgroundColor: '#3578FF',
+      height: `${height}px`,
+      width: `${width}px`,
+    }}
+  >
+    <svg viewBox="0 0 40 40" width={width} height={height} fill="none" xmlns="http://www.w3.org/2000/svg">
+      <title>LLM API</title>
+      <path d="M13.4093 18.8597L6.6792 15.0605L13.4093 11.2612L20.1394 15.0605L13.4093 18.8597Z" fill="white" />
+      <path
+        d="M13.2819 10.7731C13.407 10.7405 13.5415 10.7568 13.657 10.822L20.3875 14.6206C20.5461 14.7101 20.6438 14.879 20.6438 15.0611C20.6437 15.2431 20.546 15.4111 20.3875 15.5006L13.657 19.2992C13.5029 19.3861 13.315 19.3862 13.1609 19.2992L6.43042 15.5006C6.27201 15.4111 6.17424 15.2431 6.17407 15.0611C6.17407 14.879 6.27183 14.7102 6.43042 14.6206L13.1609 10.822L13.2819 10.7731ZM7.70661 15.06L13.4084 18.2794L19.1113 15.06L13.4084 11.8407L7.70661 15.06Z"
+        fill="black"
+      />
+      <path d="M6.6792 15.0608V24.5112L13.4093 28.3104V23.7513V18.86L6.6792 15.0608Z" fill="black" />
+      <path
+        d="M12.9046 19.1552L7.18393 15.9259V24.2167L12.9046 27.446V19.1552ZM13.9144 28.3105C13.9144 28.49 13.8187 28.6572 13.6636 28.7477C13.5087 28.838 13.3172 28.8391 13.1609 28.751L6.43042 24.9513C6.272 24.8617 6.17411 24.6939 6.17407 24.5118V15.0614C6.17407 14.8818 6.2698 14.7158 6.42487 14.6253C6.57988 14.5349 6.77133 14.5337 6.92758 14.6219L13.657 18.4205C13.8156 18.5101 13.9144 18.6789 13.9144 18.8611V28.3105Z"
+        fill="black"
+      />
+      <path d="M20.1395 15.0608V24.5112L13.4094 28.3104V23.7513V18.86L20.1395 15.0608Z" fill="white" />
+      <path
+        d="M19.8912 14.622C20.0475 14.5338 20.2388 14.5349 20.3939 14.6254C20.5489 14.7159 20.6447 14.8819 20.6447 15.0615V24.5119C20.6446 24.6941 20.5458 24.8618 20.3872 24.9514L13.6578 28.7511C13.5016 28.8393 13.3101 28.838 13.1551 28.7478C13 28.6572 12.9043 28.4901 12.9043 28.3105V18.8612C12.9043 18.679 13.0021 18.5102 13.1606 18.4206L19.8912 14.622ZM13.9142 27.445L19.6348 24.2167V15.9248L13.9142 19.1553V27.445Z"
+        fill="black"
+      />
+      <path d="M26.8695 18.8597L20.1394 15.0605L26.8695 11.2612L33.5996 15.0605L26.8695 18.8597Z" fill="white" />
+      <path
+        d="M26.7419 10.7731C26.867 10.7405 27.0014 10.7568 27.1169 10.822L33.8475 14.6206C34.0061 14.7101 34.1038 14.879 34.1038 15.0611C34.1036 15.2431 34.006 15.4111 33.8475 15.5006L27.1169 19.2992C26.9629 19.3861 26.775 19.3862 26.6209 19.2992L19.8904 15.5006C19.732 15.4111 19.6342 15.2431 19.634 15.0611C19.634 14.879 19.7318 14.7102 19.8904 14.6206L26.6209 10.822L26.7419 10.7731ZM21.1666 15.06L26.8684 18.2794L32.5713 15.06L26.8684 11.8407L21.1666 15.06Z"
+        fill="black"
+      />
+      <path d="M33.5997 15.0608V24.5112L26.8696 28.3104V23.7513V18.86L33.5997 15.0608Z" fill="white" />
+      <path
+        d="M33.3514 14.622C33.5077 14.5338 33.699 14.5349 33.8541 14.6254C34.0091 14.7159 34.1049 14.8819 34.1049 15.0615V24.5119C34.1048 24.6941 34.006 24.8618 33.8474 24.9514L27.118 28.7511C26.9618 28.8393 26.7703 28.838 26.6153 28.7478C26.4602 28.6572 26.3645 28.4901 26.3645 28.3105V18.8612C26.3645 18.679 26.4623 18.5102 26.6208 18.4206L33.3514 14.622ZM27.3744 27.445L33.095 24.2167V15.9248L27.3744 19.1553V27.445Z"
+        fill="black"
+      />
+      <path d="M13.4093 26.4557L6.6792 22.6564L13.4093 18.8572L20.1394 22.6564L13.4093 26.4557Z" fill="white" />
+      <path
+        d="M13.2819 18.3693C13.407 18.3367 13.5415 18.353 13.657 18.4182L20.3875 22.2168C20.5461 22.3063 20.6438 22.4751 20.6438 22.6573C20.6437 22.8393 20.546 23.0073 20.3875 23.0968L13.657 26.8954C13.5029 26.9823 13.315 26.9824 13.1609 26.8954L6.43042 23.0968C6.27201 23.0073 6.17424 22.8393 6.17407 22.6573C6.17407 22.4752 6.27183 22.3063 6.43042 22.2168L13.1609 18.4182L13.2819 18.3693ZM7.70661 22.6562L13.4084 25.8756L19.1113 22.6562L13.4084 19.4369L7.70661 22.6562Z"
+        fill="black"
+      />
+      <path d="M6.6792 22.657V32.1095L13.4093 35.9088V31.3497V26.4562L6.6792 22.657Z" fill="black" />
+      <path
+        d="M12.9046 26.7514L7.18393 23.5221V31.8151L12.9046 35.0444V26.7514ZM13.9144 35.9089C13.9144 36.0884 13.8186 36.2544 13.6636 36.345C13.5086 36.4355 13.3173 36.4376 13.1609 36.3494L6.43042 32.5497C6.272 32.4601 6.17412 32.2923 6.17407 32.1103V22.6576C6.17407 22.478 6.2698 22.312 6.42487 22.2215C6.57988 22.1311 6.77133 22.1299 6.92758 22.2181L13.657 26.0167C13.8156 26.1063 13.9144 26.2751 13.9144 26.4573V35.9089Z"
+        fill="black"
+      />
+      <path d="M20.1395 22.657V32.1095L13.4094 35.9088V31.3497V26.4562L20.1395 22.657Z" fill="white" />
+      <path
+        d="M19.8912 22.2182C20.0475 22.13 20.2388 22.131 20.3939 22.2215C20.5489 22.3121 20.6447 22.4781 20.6447 22.6577V32.1103C20.6446 32.2925 20.5458 32.4603 20.3872 32.5498L13.6578 36.3495C13.5015 36.4378 13.3101 36.4355 13.1551 36.3451C13 36.2545 12.9043 36.0885 12.9043 35.909V26.4574C12.9043 26.2752 13.0021 26.1064 13.1606 26.0168L19.8912 22.2182ZM13.9142 35.0434L19.6348 31.8152V23.521L13.9142 26.7515V35.0434Z"
+        fill="black"
+      />
+      <path d="M26.8695 26.4557L20.1394 22.6564L26.8695 18.8572L33.5996 22.6564L26.8695 26.4557Z" fill="white" />
+      <path
+        d="M26.7419 18.3693C26.867 18.3367 27.0014 18.353 27.1169 18.4182L33.8475 22.2168C34.0061 22.3063 34.1038 22.4751 34.1038 22.6573C34.1036 22.8393 34.006 23.0073 33.8475 23.0968L27.1169 26.8954C26.9629 26.9823 26.775 26.9824 26.6209 26.8954L19.8904 23.0968C19.732 23.0073 19.6342 22.8393 19.634 22.6573C19.634 22.4752 19.7318 22.3063 19.8904 22.2168L26.6209 18.4182L26.7419 18.3693ZM21.1666 22.6562L26.8684 25.8756L32.5713 22.6562L26.8684 19.4369L21.1666 22.6562Z"
+        fill="black"
+      />
+      <path d="M20.1394 22.657V32.1095L26.8695 35.9088V31.3497V26.4562L20.1394 22.657Z" fill="black" />
+      <path
+        d="M26.3645 26.7514L20.6439 23.5221V31.8151L26.3645 35.0444V26.7514ZM27.3744 35.9089C27.3744 36.0884 27.2786 36.2544 27.1236 36.345C26.9686 36.4355 26.7772 36.4376 26.6209 36.3494L19.8904 32.5497C19.732 32.4601 19.6341 32.2923 19.634 32.1103V22.6576C19.634 22.478 19.7298 22.312 19.8848 22.2215C20.0398 22.1311 20.2313 22.1299 20.3875 22.2181L27.1169 26.0167C27.2756 26.1063 27.3744 26.2751 27.3744 26.4573V35.9089Z"
+        fill="black"
+      />
+      <path d="M33.5997 22.657V32.1095L26.8696 35.9088V31.3497V26.4562L33.5997 22.657Z" fill="white" />
+      <path
+        d="M33.3514 22.2182C33.5077 22.13 33.699 22.131 33.8541 22.2215C34.0091 22.3121 34.1049 22.4781 34.1049 22.6577V32.1103C34.1048 32.2925 34.006 32.4603 33.8474 32.5498L27.118 36.3495C26.9617 36.4378 26.7703 36.4355 26.6153 36.3451C26.4602 36.2545 26.3645 36.0885 26.3645 35.909V26.4574C26.3645 26.2752 26.4623 26.1064 26.6208 26.0168L33.3514 22.2182ZM27.3744 35.0434L33.095 31.8152V23.521L27.3744 26.7515V35.0434Z"
+        fill="black"
+      />
+      <path
+        d="M19.9649 22.2719C24.9857 22.2719 29.0558 18.2018 29.0558 13.181C29.0558 8.16023 24.9857 4.09009 19.9649 4.09009C14.9442 4.09009 10.874 8.16023 10.874 13.181C10.874 18.2018 14.9442 22.2719 19.9649 22.2719Z"
+        fill="white"
+      />
+      <path
+        d="M28.5507 13.1818C28.5507 8.43993 24.7066 4.59579 19.9647 4.59579C15.2229 4.59579 11.3788 8.43993 11.3788 13.1818C11.3788 17.9236 15.2229 21.7678 19.9647 21.7678C24.7066 21.7678 28.5507 17.9236 28.5507 13.1818ZM29.5606 13.1818C29.5606 18.4815 25.2644 22.7776 19.9647 22.7776C14.665 22.7776 10.3689 18.4815 10.3689 13.1818C10.3689 7.88207 14.665 3.58594 19.9647 3.58594C25.2644 3.58594 29.5606 7.88207 29.5606 13.1818Z"
+        fill="black"
+      />
+      <path d="M14.0549 12.8784H17.6913V16.5148H14.0549V12.8784Z" fill="black" />
+      <path d="M15.1921 14.0149H16.5558V16.5149H15.1921V14.0149Z" fill="white" />
+      <path d="M22.2368 12.8784H25.8732V16.5148H22.2368V12.8784Z" fill="black" />
+      <path d="M23.3733 14.0149H24.7369V16.5149H23.3733V14.0149Z" fill="white" />
+    </svg>
   </div>
 );
 
@@ -28727,22 +29425,29 @@ import { LogsPage } from '@/components/logs/LogsPage';
 File: src/renderer/src/pages/Onboarding.tsx
 ================
 import { useCallback, useEffect, useState } from 'react';
+import { clsx } from 'clsx';
 import { HiArrowRight, HiArrowLeft } from 'react-icons/hi2';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { isEqual } from 'lodash';
+import { DEFAULT_AGENT_PROFILE, DEFAULT_PROVIDER_MODELS } from '@common/agent';
 import { SettingsData } from '@common/types';
 ⋮----
 import { useSaveSettings, useSettingsStore } from '@/stores/settingsStore';
 import { useAgents } from '@/contexts/AgentsContext';
+import { useModelProviders } from '@/contexts/ModelProviderContext';
 import { AiderSettings } from '@/components/settings/AiderSettings';
 import { LanguageSelector } from '@/components/settings/LanguageSelector';
 import { OnboardingProviderSetup } from '@/components/onboarding/OnboardingProviderSetup';
+import { OnboardingPathChoice, OnboardingPath } from '@/components/onboarding/OnboardingPathChoice';
 import { AgentSettings } from '@/components/settings/agent/AgentSettings';
 import { Button } from '@/components/common/Button';
 import { OnboardingStepper } from '@/components/onboarding/OnboardingStepper';
 import { ROUTES } from '@/utils/routes';
 import { showErrorNotification, showInfoNotification } from '@/utils/notifications';
+⋮----
+// Point the untouched default agent profile to the first provider configured during onboarding,
+// so the agent doesn't keep a hardcoded provider the user never set up.
 ⋮----
 const handleNext = async () =>
 ⋮----
@@ -28772,8 +29477,11 @@ const handleFinish = async () =>
 ⋮----
 // eslint-disable-next-line no-console
 ⋮----
+const handleSelectPath = (path: OnboardingPath) =>
+⋮----
 {/* Language Selector in top-right corner */}
 ⋮----
+<div className=
 {/* Stepper */}
 ⋮----
 {/* Step Content */}
@@ -29027,6 +29735,45 @@ interface CommitStore {
 const getCommitKey = (baseDir: string, taskId: string) => `$
 ⋮----
 export const useIsCommitting = (baseDir: string, taskId: string)
+
+================
+File: src/renderer/src/stores/extensionToolsStore.ts
+================
+import { useShallow } from 'zustand/react/shallow';
+import { createWithEqualityFn } from 'zustand/traditional';
+import { devtools } from 'zustand/middleware';
+import { shallow } from 'zustand/vanilla/shallow';
+import { ExtensionToolInfo } from '@common/types';
+import { ApplicationAPI } from '@common/api';
+⋮----
+const getToolsCacheKey = (projectDir?: string): string
+⋮----
+interface ExtensionToolsState {
+  toolsInfoMap: Map<string, ExtensionToolInfo[]>;
+  loadingTools: Set<string>;
+  initialized: boolean;
+}
+⋮----
+interface ExtensionToolsActions {
+  loadToolsInfo: (api: ApplicationAPI, projectDir?: string, forceRefresh?: boolean) => Promise<ExtensionToolInfo[]>;
+  refreshAllToolsInfo: (api: ApplicationAPI) => Promise<ExtensionToolInfo[]>;
+  getToolsInfo: (projectDir?: string) => ExtensionToolInfo[] | undefined;
+  isLoadingTools: (projectDir?: string) => boolean;
+}
+⋮----
+type ExtensionToolsStore = ExtensionToolsState & ExtensionToolsActions;
+⋮----
+// Return cached if available and not forcing refresh
+⋮----
+// If a request is already in flight, return cached data immediately or wait for it
+⋮----
+const checkLoaded = () =>
+⋮----
+// eslint-disable-next-line no-console
+⋮----
+export const useExtensionToolsInfo = (projectDir?: string): ExtensionToolInfo[]
+⋮----
+export const useExtensionToolsLoading = (projectDir?: string): boolean
 
 ================
 File: src/renderer/src/stores/extensionUIStore.ts
@@ -29332,6 +30079,17 @@ export const releaseTaskFiles = (taskId: string)
 export const useTaskAllFiles = (taskDir: string | undefined)
 ⋮----
 export const useTaskAutocompletionWords = (taskDir: string | undefined)
+
+================
+File: src/renderer/src/stores/taskSidebarStore.ts
+================
+import { devtools } from 'zustand/middleware';
+import { createWithEqualityFn } from 'zustand/traditional';
+⋮----
+type TaskSidebarStore = {
+  showArchived: boolean;
+  setShowArchived: (show: boolean) => void;
+};
 
 ================
 File: src/renderer/src/stores/taskStore.ts
@@ -31594,7 +32352,7 @@ File: src/renderer/src/utils/extension-icons.ts
 ================
 import { useEffect, useRef, useState } from 'react';
 ⋮----
-type ReactIconsMap = Record<string, Record<string, unknown>>;
+export type ReactIconsMap = Record<string, Record<string, unknown>>;
 ⋮----
 export const loadReactIcons = (): Promise<ReactIconsMap> =>
 ⋮----
@@ -32452,6 +33210,10 @@ files:
   - '!.aider-desk/*'
   - '!llms.txt'
   - '!packages/*'
+  - '!node_modules/react-icons/**'
+  - '!node_modules/mermaid/**'
+  - '!node_modules/@mermaid-js/**'
+  - '!node_modules/@shikijs/**'
 extraResources:
   - from: ./resources/connector
     to: connector
@@ -32466,6 +33228,7 @@ extraResources:
     filter:
       - '**/*'
 beforePack: scripts/before-pack.js
+afterPack: scripts/after-pack.js
 win:
   executableName: aider-desk
   icon: resources/icon.png
@@ -32536,7 +33299,7 @@ File: package.json
 ================
 {
   "name": "aider-desk",
-  "version": "0.84.0-dev",
+  "version": "0.87.0-dev",
   "description": "Aider desktop application wrapper",
   "main": "./out/main/index.js",
   "author": "Hotovo",
@@ -32565,7 +33328,7 @@ File: package.json
     "build:server": "vite build --config vite.config.server.ts && mkdir -p out/resources && cp -r resources/* out/resources",
     "postbuild:server": "npm rebuild",
     "build": "npm run typecheck && electron-vite build",
-    "postinstall": "electron-builder install-app-deps && node scripts/download-probe.mjs && patch-package && npm run build:extensions",
+    "postinstall": "electron-builder install-app-deps && node node_modules/electron/install.js && node scripts/download-probe.mjs && patch-package && npm run build:extensions",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
@@ -32586,21 +33349,21 @@ File: package.json
     "validate": "npm-run-all --parallel lint typecheck test:web test:node validate:locales"
   },
   "dependencies": {
-    "@ai-sdk/alibaba": "2.0.30",
-    "@ai-sdk/amazon-bedrock": "5.0.52",
-    "@ai-sdk/anthropic": "4.0.37",
-    "@ai-sdk/azure": "4.0.39",
-    "@ai-sdk/cerebras": "3.0.29",
-    "@ai-sdk/deepseek": "3.0.27",
-    "@ai-sdk/google": "4.0.41",
-    "@ai-sdk/google-vertex": "5.0.50",
-    "@ai-sdk/groq": "4.0.27",
-    "@ai-sdk/mcp": "2.0.30",
-    "@ai-sdk/mistral": "4.0.28",
-    "@ai-sdk/openai": "4.0.38",
-    "@ai-sdk/openai-compatible": "3.0.29",
-    "@ai-sdk/otel": "1.0.60",
-    "@ai-sdk/provider": "4.0.7",
+    "@ai-sdk/alibaba": "2.0.60",
+    "@ai-sdk/amazon-bedrock": "5.0.105",
+    "@ai-sdk/anthropic": "4.0.71",
+    "@ai-sdk/azure": "4.0.90",
+    "@ai-sdk/cerebras": "3.0.62",
+    "@ai-sdk/deepseek": "3.0.58",
+    "@ai-sdk/google": "4.0.87",
+    "@ai-sdk/google-vertex": "5.0.101",
+    "@ai-sdk/groq": "4.0.54",
+    "@ai-sdk/mcp": "2.0.66",
+    "@ai-sdk/mistral": "4.0.56",
+    "@ai-sdk/openai": "4.0.83",
+    "@ai-sdk/openai-compatible": "3.0.62",
+    "@ai-sdk/otel": "1.0.127",
+    "@ai-sdk/provider": "4.0.21",
     "@aiderdesk/extensions": "workspace:*",
     "@aws-crypto/sha256-js": "5.2.0",
     "@aws-sdk/client-bedrock": "3.1059.0",
@@ -32610,6 +33373,7 @@ File: package.json
     "@codemirror/autocomplete": "6.20.0",
     "@codemirror/language": "6.12.2",
     "@codemirror/language-data": "6.5.2",
+    "@codemirror/search": "6.6.0",
     "@codemirror/state": "6.5.4",
     "@codemirror/view": "6.39.14",
     "@dnd-kit/core": "6.3.1",
@@ -32620,17 +33384,19 @@ File: package.json
     "@electron-toolkit/utils": "4.0.0",
     "@google-cloud/aiplatform": "5.14.0",
     "@google/genai": "1.52.0",
+    "@headless-tree/core": "1.7.0",
+    "@headless-tree/react": "1.7.0",
     "@headlessui/react": "2.2.9",
     "@homebridge/node-pty-prebuilt-multiarch": "0.13.1",
     "@huggingface/transformers": "3.8.1",
     "@lancedb/lancedb": "0.22.3",
-    "@legendapp/list": "3.3.7",
-    "@openrouter/ai-sdk-provider": "3.0.0",
+    "@legendapp/list": "3.6.0",
+    "@openrouter/ai-sdk-provider": "3.1.0",
     "@opentelemetry/auto-instrumentations-node": "0.79.0",
     "@opentelemetry/exporter-trace-otlp-http": "0.219.0",
     "@opentelemetry/sdk-node": "0.221.0",
     "@opentelemetry/sdk-trace-base": "2.10.0",
-    "@pierre/diffs": "1.2.12",
+    "@pierre/diffs": "1.4.3",
     "@posthog/ai": "8.4.0",
     "@radix-ui/react-tooltip": "1.2.8",
     "@reactuses/core": "6.1.11",
@@ -32647,9 +33413,9 @@ File: package.json
     "@uiw/codemirror-theme-github": "4.25.4",
     "@uiw/react-codemirror": "4.25.1",
     "@uiw/react-color-sketch": "2.9.5",
-    "ai": "7.0.60",
+    "ai": "7.0.127",
     "apache-arrow": "18.1.0",
-    "axios": "1.18.1",
+    "axios": "1.20.0",
     "babel-plugin-react-compiler": "1.0.0",
     "cheerio": "1.2.0",
     "chokidar": "4.0.3",
@@ -32686,10 +33452,7 @@ File: package.json
     "mermaid": "11.16.1",
     "ollama-ai-provider-v2": "4.0.1",
     "os-name": "6.1.0",
-    "patch-package": "8.0.1",
     "posthog-node": "5.29.1",
-    "@headless-tree/core": "1.7.0",
-    "@headless-tree/react": "1.7.0",
     "prismjs": "1.30.0",
     "react-country-flag": "3.1.0",
     "react-datepicker": "8.10.0",
@@ -32705,7 +33468,7 @@ File: package.json
     "recharts": "3.0.2",
     "refractor": "5.0.0",
     "remark-gfm": "4.0.1",
-    "simple-git": "3.36.0",
+    "simple-git": "4.0.2",
     "slugify": "1.6.6",
     "socket.io": "4.8.3",
     "socket.io-client": "4.8.3",
@@ -32714,7 +33477,7 @@ File: package.json
     "tmp": "0.2.7",
     "tree-kill": "1.2.2",
     "turndown": "7.2.2",
-    "undici": "8.10.0",
+    "undici": "8.11.2",
     "unidiff": "1.0.4",
     "unist-util-map": "4.0.0",
     "use-sync-external-store": "1.6.0",
@@ -32732,7 +33495,7 @@ File: package.json
     "@electron-toolkit/tsconfig": "2.0.0",
     "@electron/notarize": "3.1.1",
     "@eslint/js": "9.39.5",
-    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "@playwright/test": "1.60.0",
     "@tailwindcss/typography": "0.5.19",
     "@testing-library/jest-dom": "6.9.1",
@@ -32755,7 +33518,7 @@ File: package.json
     "autoprefixer": "10.4.24",
     "concurrently": "10.0.4",
     "dts-bundle-generator": "9.5.1",
-    "electron": "44.3.0",
+    "electron": "44.7.0",
     "electron-builder": "26.15.7",
     "electron-vite": "5.0.0",
     "encoding": "0.1.13",
@@ -32773,6 +33536,7 @@ File: package.json
     "jsdom": "27.4.0",
     "lint-staged": "15.5.2",
     "npm-run-all": "4.1.5",
+    "patch-package": "8.0.1",
     "prettier": "3.8.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -32787,8 +33551,8 @@ File: package.json
     "vitest": "4.1.11"
   },
   "overrides": {
-    "@ai-sdk/provider": "4.0.7",
-    "@ai-sdk/provider-utils": "5.0.26",
+    "@ai-sdk/provider": "4.0.21",
+    "@ai-sdk/provider-utils": "5.0.53",
     "@huggingface/transformers": {
       "sharp": "npm:empty-npm-package@1.0.0"
     },

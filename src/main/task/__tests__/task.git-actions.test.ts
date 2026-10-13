@@ -178,7 +178,7 @@ describe('Task - git actions', () => {
       sendTaskUpdated: vi.fn(),
       sendTaskCreated: vi.fn(),
       sendTaskDeleted: vi.fn(),
-      sendWorktreeIntegrationStatusUpdated: vi.fn(),
+      sendTaskGitStatusUpdated: vi.fn(),
       sendUpdatedFilesUpdated: vi.fn(),
     };
 
@@ -194,6 +194,11 @@ describe('Task - git actions', () => {
       gitPull: vi.fn().mockResolvedValue({ output: 'pulled' }),
       gitPush: vi.fn().mockResolvedValue({ output: 'pushed' }),
       renameBranch: vi.fn().mockResolvedValue('renamed-branch'),
+      getUncommittedFiles: vi.fn().mockResolvedValue({ count: 0, files: [] }),
+      getRebaseState: vi.fn().mockResolvedValue({ inProgress: false, hasUnmergedPaths: false }),
+      getProjectMainBranch: vi.fn().mockResolvedValue('main'),
+      checkWorktreeForUnmergedWork: vi.fn().mockResolvedValue({ unmergedCommitCount: 0, unmergedCommits: [], uncommittedFiles: [] }),
+      checkForRebaseConflicts: vi.fn().mockResolvedValue(null),
     };
 
     task = createTask();
@@ -267,23 +272,31 @@ describe('Task - git actions', () => {
     });
   });
 
-  describe('worktree status refresh', () => {
-    it('sends worktree integration status update after a git action', async () => {
+  describe('task git status refresh', () => {
+    it('sends task git status update after a git action', async () => {
       await task.gitPush(true);
 
       await vi.waitFor(() => {
-        expect(mockEventManager.sendWorktreeIntegrationStatusUpdated).toHaveBeenCalledWith(baseDir, 'test-task-id', null);
+        expect(mockEventManager.sendTaskGitStatusUpdated).toHaveBeenCalledWith(
+          baseDir,
+          'test-task-id',
+          expect.objectContaining({ currentBranch: 'main', worktree: undefined }),
+        );
       });
     });
 
-    it('sends worktree integration status update when the git action fails', async () => {
+    it('sends task git status update when the git action fails', async () => {
       mockGitManager.gitPush.mockRejectedValue(new Error('push failed'));
       vi.spyOn(task, 'reportGitActionError').mockImplementation(() => undefined);
 
       await expect(task.gitPush(false)).rejects.toThrow('push failed');
 
       await vi.waitFor(() => {
-        expect(mockEventManager.sendWorktreeIntegrationStatusUpdated).toHaveBeenCalledWith(baseDir, 'test-task-id', null);
+        expect(mockEventManager.sendTaskGitStatusUpdated).toHaveBeenCalledWith(
+          baseDir,
+          'test-task-id',
+          expect.objectContaining({ currentBranch: 'main', worktree: undefined }),
+        );
       });
     });
   });
@@ -302,7 +315,7 @@ describe('Task - git actions', () => {
     });
   });
 
-  describe('getWorktreeIntegrationStatus', () => {
+  describe('getTaskGitStatus', () => {
     beforeEach(() => {
       mockGitManager.checkWorktreeForUnmergedWork = vi.fn().mockResolvedValue({ unmergedCommitCount: 0, unmergedCommits: [], uncommittedFiles: [] });
       mockGitManager.checkForRebaseConflicts = vi.fn().mockResolvedValue(null);
@@ -313,29 +326,29 @@ describe('Task - git actions', () => {
       mockGitManager.getProjectMainBranch = vi.fn();
       const worktreeTask = createTask('worktree', { baseBranch: 'main' });
 
-      const status = await worktreeTask.getWorktreeIntegrationStatus();
+      const status = await worktreeTask.getTaskGitStatus();
 
       expect(mockGitManager.getProjectMainBranch).not.toHaveBeenCalled();
       expect(mockGitManager.checkWorktreeForUnmergedWork).toHaveBeenCalledWith(baseDir, worktreePath, 'main', []);
-      expect(status?.targetBranch).toBe('main');
-      expect(status?.baseBranch).toBe('main');
+      expect(status?.worktree?.targetBranch).toBe('main');
+      expect(status?.worktree?.baseBranch).toBe('main');
     });
 
     it('falls back to the project main branch when baseBranch is missing', async () => {
       mockGitManager.getProjectMainBranch = vi.fn().mockResolvedValue('main');
       const worktreeTask = createTask('worktree');
 
-      const status = await worktreeTask.getWorktreeIntegrationStatus();
+      const status = await worktreeTask.getTaskGitStatus();
 
       expect(mockGitManager.getProjectMainBranch).toHaveBeenCalledWith(baseDir);
-      expect(status?.targetBranch).toBe('main');
+      expect(status?.worktree?.targetBranch).toBe('main');
     });
 
     it('returns null when no target branch can be determined', async () => {
       mockGitManager.getProjectMainBranch = vi.fn().mockRejectedValue(new Error('detached HEAD'));
       const worktreeTask = createTask('worktree');
 
-      const status = await worktreeTask.getWorktreeIntegrationStatus();
+      const status = await worktreeTask.getTaskGitStatus();
 
       expect(status).toBeNull();
       expect(mockGitManager.checkWorktreeForUnmergedWork).not.toHaveBeenCalled();
@@ -345,10 +358,10 @@ describe('Task - git actions', () => {
       mockGitManager.getProjectMainBranch = vi.fn();
       const worktreeTask = createTask('worktree', { baseBranch: 'main' });
 
-      const status = await worktreeTask.getWorktreeIntegrationStatus('develop');
+      const status = await worktreeTask.getTaskGitStatus('develop');
 
       expect(mockGitManager.getProjectMainBranch).not.toHaveBeenCalled();
-      expect(status?.targetBranch).toBe('develop');
+      expect(status?.worktree?.targetBranch).toBe('develop');
     });
   });
 
@@ -359,6 +372,29 @@ describe('Task - git actions', () => {
 
       await expect(worktreeTask.sendUpdatedFilesUpdated()).resolves.toBeUndefined();
       expect(mockEventManager.sendUpdatedFilesUpdated).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('sendUpdatedFilesUpdated', () => {
+    const updatedFiles = [{ path: 'src/a.ts', additions: 1, deletions: 2 }];
+
+    beforeEach(() => {
+      mockGitManager.getUpdatedFiles = vi.fn().mockResolvedValue(updatedFiles);
+      mockGitManager.getProjectMainBranch = vi.fn().mockResolvedValue('main');
+    });
+
+    it('emits the project baseDir as taskDir for local tasks', async () => {
+      await task.sendUpdatedFilesUpdated();
+
+      expect(mockEventManager.sendUpdatedFilesUpdated).toHaveBeenCalledWith(baseDir, 'test-task-id', baseDir, updatedFiles);
+    });
+
+    it('emits the worktree path as taskDir for worktree tasks', async () => {
+      const worktreeTask = createTask('worktree');
+
+      await worktreeTask.sendUpdatedFilesUpdated();
+
+      expect(mockEventManager.sendUpdatedFilesUpdated).toHaveBeenCalledWith(baseDir, 'test-task-id', worktreePath, updatedFiles);
     });
   });
 

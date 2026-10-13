@@ -1,5 +1,6 @@
 import { FocusTrap } from 'focus-trap-react';
 import { CSSProperties, ReactNode, useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { twMerge } from 'tailwind-merge';
 import { useHotkeys } from 'react-hotkeys-hook';
@@ -90,7 +91,7 @@ export const BaseDialog = ({
     </div>
   );
 
-  return (
+  return createPortal(
     <div
       role="presentation"
       className="fixed inset-0 top-0 bottom-0 left-0 right-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto"
@@ -102,6 +103,7 @@ export const BaseDialog = ({
       }}
     >
       {enableFocusTrap ? <FocusTrap focusTrapOptions={focusTrapOptions}>{dialogContent}</FocusTrap> : dialogContent}
-    </div>
+    </div>,
+    document.body,
   );
 };

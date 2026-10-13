@@ -55,6 +55,7 @@ export const DEFAULT_SETTINGS: SettingsData = {
   disableCssStreamingAnimations: true,
   aiderDeskAutoUpdate: true,
   messageViewMode: MessageViewMode.Compact,
+  showMessageMap: true,
   diffViewMode: DiffViewMode.SideBySide,
   aider: {
     options: '',
