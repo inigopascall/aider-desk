@@ -1,6 +1,6 @@
-# AiderDesk (Inigo's fork)
+# AiderDesk: the Inigo Fork
 
-This is a personal fork of [AiderDesk](https://github.com/hotovo/aider-desk), the desktop and browser app for working with AI coding agents. It tracks upstream releases and adds the features below. For everything else, including installation and general use, see the [upstream project](https://github.com/hotovo/aider-desk) and its [documentation](https://aiderdesk.hotovo.com/docs).
+This is a fork of [AiderDesk](https://github.com/hotovo/aider-desk), the desktop and browser app for working with AI coding agents. It tracks upstream releases and adds the features below. For everything else, including installation and general use, see the [upstream project](https://github.com/hotovo/aider-desk) and its [documentation](https://aiderdesk.hotovo.com/docs).
 
 ## What this fork adds
 
