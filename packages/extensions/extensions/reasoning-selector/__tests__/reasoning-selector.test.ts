@@ -1,4 +1,4 @@
-import type { ExtensionContext, TaskCreatedEvent } from '@aiderdesk/extensions';
+import type { AgentStartedEvent, ExtensionContext, TaskCreatedEvent } from '@aiderdesk/extensions';
 
 import ReasoningSelectorExtension from '../index';
 
@@ -90,6 +90,43 @@ describe('ReasoningSelectorExtension onTaskCreated', () => {
         },
       ]),
     );
+
+    expect(result).toBeUndefined();
+  });
+});
+
+
+describe('ReasoningSelectorExtension onAgentStarted', () => {
+  const createAgentContext = (metadata?: Record<string, unknown>): ExtensionContext => {
+    return {
+      getTaskContext: () => ({ data: { metadata } }),
+      log: () => undefined,
+    } as unknown as ExtensionContext;
+  };
+
+  const createAgentEvent = (isSubagent?: boolean): AgentStartedEvent => {
+    return {
+      agentProfile: { id: 'test', isSubagent },
+    } as unknown as AgentStartedEvent;
+  };
+
+  it('applies the selected reasoning to the top-level agent', async () => {
+    const extension = new ReasoningSelectorExtension();
+    const result = await extension.onAgentStarted(createAgentEvent(undefined), createAgentContext({ reasoningEffort: 'minimal' }));
+
+    expect(result).toEqual({ modelCallSettings: { reasoning: 'minimal' } });
+  });
+
+  it('does not apply the selected reasoning to sub-agents', async () => {
+    const extension = new ReasoningSelectorExtension();
+    const result = await extension.onAgentStarted(createAgentEvent(true), createAgentContext({ reasoningEffort: 'minimal' }));
+
+    expect(result).toBeUndefined();
+  });
+
+  it('returns nothing when no reasoning is selected', async () => {
+    const extension = new ReasoningSelectorExtension();
+    const result = await extension.onAgentStarted(createAgentEvent(undefined), createAgentContext({}));
 
     expect(result).toBeUndefined();
   });

@@ -582,9 +582,12 @@ export class Agent {
 
     let provider = providers.find((p) => p.id === profile.provider);
     let modelName = profile.model;
+    // The profile's own reasoning level is the base value; an onAgentStarted
+    // extension result (e.g. the reasoning selector) is spread over it below.
     let modelCallSettings: ModelCallSettings = {
       maxRetries: MAX_RETRIES,
       abortSignal,
+      ...(profile.reasoning && { reasoning: profile.reasoning }),
     };
 
     if (provider) {

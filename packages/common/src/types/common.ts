@@ -775,6 +775,7 @@ export interface AgentProfile {
   maxTokens?: number; // overrides model maxOutputTokens when set
   minTimeBetweenToolCalls: number; // in milliseconds
   temperature?: number; // overrides model temperature when set
+  reasoning?: Reasoning; // portable reasoning level for this agent; undefined = provider default
   enabledServers: string[];
   toolApprovals: Record<string, ToolApprovalState>;
   toolSettings: Record<string, ToolSettings>;

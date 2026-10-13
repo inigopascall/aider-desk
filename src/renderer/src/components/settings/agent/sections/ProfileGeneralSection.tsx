@@ -1,4 +1,4 @@
-import { AgentProfile, ContextCompactionType, SettingsData } from '@common/types';
+import { AgentProfile, ContextCompactionType, Reasoning, SettingsData } from '@common/types';
 import { useTranslation } from 'react-i18next';
 import { FaTimes } from 'react-icons/fa';
 import { clsx } from 'clsx';
@@ -9,6 +9,7 @@ import { Button } from '@/components/common/Button';
 import { IconButton } from '@/components/common/IconButton';
 import { InfoIcon } from '@/components/common/InfoIcon';
 import { Checkbox } from '@/components/common/Checkbox';
+import { Select } from '@/components/common/Select';
 import { Tooltip } from '@/components/ui/Tooltip';
 
 type Props = {
@@ -19,6 +20,16 @@ type Props = {
 
 export const ProfileGeneralSection = ({ profile, settings, onSettingChange }: Props) => {
   const { t } = useTranslation();
+
+  const reasoningOptions = [
+    { value: '', label: t('settings.agent.reasoningDefault') },
+    { value: 'none', label: 'None' },
+    { value: 'minimal', label: 'Minimal' },
+    { value: 'low', label: 'Low' },
+    { value: 'medium', label: 'Medium' },
+    { value: 'high', label: 'High' },
+    { value: 'xhigh', label: 'xHigh' },
+  ];
 
   const renderCompactionTypeButton = (type: ContextCompactionType, label: string, tooltip: string) => {
     const handleClick = () => {
@@ -150,6 +161,23 @@ export const ProfileGeneralSection = ({ profile, settings, onSettingChange }: Pr
               </div>
             )}
           </div>
+
+          {/* Reasoning */}
+          <div className="space-y-2">
+            <div className="flex items-center text-xs">
+              <span>{t('settings.agent.reasoning')}</span>
+              <InfoIcon tooltip={t('settings.agent.reasoningTooltip')} className="ml-1" />
+            </div>
+            <Select
+              size="sm"
+              options={reasoningOptions}
+              value={profile.reasoning ?? ''}
+              onChange={(value) => onSettingChange('reasoning', value ? (value as Reasoning) : undefined)}
+            />
+          </div>
+
+          {/* Placeholder keeps the two-column grid aligned */}
+          <div />
 
           {/* Auto-compact Threshold Percentage */}
           {profile.autoCompactThresholdPercentage === undefined ? (

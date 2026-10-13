@@ -22,7 +22,7 @@ const selectorJsx = readFileSync(join(__dirname, './ReasoningSelector.jsx'), 'ut
 export default class ReasoningSelectorExtension implements Extension {
   static metadata = {
     name: 'Reasoning Selector',
-    version: '1.1.0',
+    version: '1.2.0',
     description: 'Adds a reasoning effort selector dropdown next to the model selector in agent mode',
     author: 'wladimiiir',
     iconUrl: 'https://raw.githubusercontent.com/hotovo/aider-desk/refs/heads/main/packages/extensions/extensions/reasoning-selector/icon.png',
@@ -131,6 +131,12 @@ export default class ReasoningSelectorExtension implements Extension {
     event: AgentStartedEvent,
     context: ExtensionContext,
   ): Promise<void | Partial<AgentStartedEvent>> {
+    // The selector applies only to the task's top-level agent. Sub-agents and
+    // internal agents (compaction, conflict resolution) use their own profile setting.
+    if (event.agentProfile?.isSubagent) {
+      return undefined;
+    }
+
     const taskContext = context.getTaskContext();
     if (!taskContext) {
       return undefined;
