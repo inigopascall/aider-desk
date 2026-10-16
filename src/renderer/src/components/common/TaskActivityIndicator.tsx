@@ -65,9 +65,16 @@ export const TaskActivityIndicator = ({ active, className }: Props) => {
     return subscribe(setVisible);
   }, [isActive]);
 
-  if (!isActive || !visible) {
+  if (!isActive) {
     return null;
   }
 
-  return <span className={clsx('block w-[10px] h-[10px] rounded-full bg-error', className)} aria-label="Task in progress" />;
+  // Always keep the dot mounted while active and toggle only its visibility,
+  // so the blink never adds or removes a box from the layout.
+  return (
+    <span
+      className={clsx('block w-[10px] h-[10px] flex-shrink-0 rounded-full bg-error', !visible && 'invisible', className)}
+      aria-label="Task in progress"
+    />
+  );
 };

@@ -380,7 +380,6 @@ export const TaskItem = memo(
                   </div>
                 )}
                 <TaskStateChip state={task.state || DefaultTaskState.Todo} className={hasChildren ? '' : '-ml-0.5'} />
-                <TaskStatusIcon taskId={task.id} state={task.state} isCollapsed={false} showSpinner={showSpinner} />
                 <ExtensionComponentWrapper
                   placement="task-sidebar-item-badges"
                   renderNullOnEmpty
@@ -398,6 +397,7 @@ export const TaskItem = memo(
                     <BiArchiveIn className="w-3 h-3" />
                   </span>
                 )}
+                <TaskStatusIcon taskId={task.id} state={task.state} isCollapsed={false} showSpinner={showSpinner} />
               </div>
             </div>
           </div>
