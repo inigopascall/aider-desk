@@ -377,9 +377,15 @@ export const createTasksToolset = (settings: SettingsData, task: Task, profile: 
         .describe(
           'How to run the new task. create_only (default): only create the task and save the initial prompt without executing it. wait_for_finish: start the task immediately and wait for its prompt to complete before returning. run_in_background: start the task immediately and return right away.',
         ),
+      reasoning: z
+        .enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh'])
+        .optional()
+        .describe(
+          "Optional reasoning level for the new task's agent. When omitted, the agent profile's own reasoning setting applies, then the provider default.",
+        ),
     }),
     execute: async (input, { toolCallId }) => {
-      const { prompt, name, agentProfileId, modelId, mode = 'agent', asSubtask = false, autonomyMode, worktree, executionMode } = input;
+      const { prompt, name, agentProfileId, modelId, mode = 'agent', asSubtask = false, autonomyMode, worktree, executionMode, reasoning } = input;
       // `Project.createNewTask` clamps this to the configured maximum nesting
       // depth, so pass through the caller's actual intent.
       const parentTaskId: string | null | undefined = asSubtask ? task.taskId : 'parentTaskId' in input ? (input.parentTaskId as string | null) : undefined;
@@ -425,6 +431,7 @@ export const createTasksToolset = (settings: SettingsData, task: Task, profile: 
           name: name || '',
           autonomyMode,
           ...(worktree !== undefined && { workingMode: worktree ? 'worktree' : 'local' }),
+          ...(reasoning && { metadata: { reasoningEffort: reasoning } }),
           ...updates,
         });
 

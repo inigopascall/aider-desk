@@ -677,6 +677,47 @@ describe('Tasks Tools - search_task', () => {
         }),
       );
     });
+
+    it('passes the requested reasoning level as task metadata', async () => {
+      const taskInstance = {
+        init: vi.fn().mockResolvedValue(undefined),
+        saveTask: vi.fn().mockResolvedValue(undefined),
+        savePromptOnly: vi.fn().mockResolvedValue(undefined),
+        getContextMessages: vi.fn().mockResolvedValue([]),
+      };
+      Object.assign(mockProfile, { id: 'calling-profile', provider: 'anthropic', model: 'claude-sonnet' });
+
+      mockProject.createNewTask = vi.fn().mockResolvedValue({ id: 'new-task-id', name: 'New task' });
+      mockProject.getTask.mockReturnValue(taskInstance);
+
+      const tools = createTasksToolset(mockSettings, mockTask, mockProfile, mockPromptContext);
+      await tools[createTaskToolKey].execute({ prompt: 'Create a task', name: 'New task', asSubtask: true, reasoning: 'medium' }, { toolCallId: 'tool-call-123' });
+
+      expect(mockProject.createNewTask).toHaveBeenCalledWith(expect.objectContaining({ metadata: { reasoningEffort: 'medium' } }));
+    });
+
+    it('sets no metadata when no reasoning level is requested', async () => {
+      const taskInstance = {
+        init: vi.fn().mockResolvedValue(undefined),
+        saveTask: vi.fn().mockResolvedValue(undefined),
+        savePromptOnly: vi.fn().mockResolvedValue(undefined),
+        getContextMessages: vi.fn().mockResolvedValue([]),
+      };
+      Object.assign(mockProfile, { id: 'calling-profile', provider: 'anthropic', model: 'claude-sonnet' });
+
+      mockProject.createNewTask = vi.fn().mockResolvedValue({ id: 'new-task-id', name: 'New task' });
+      mockProject.getTask.mockReturnValue(taskInstance);
+
+      const tools = createTasksToolset(mockSettings, mockTask, mockProfile, mockPromptContext);
+      await tools[createTaskToolKey].execute({ prompt: 'Create a task', name: 'New task', asSubtask: true }, { toolCallId: 'tool-call-123' });
+
+      expect(mockProject.createNewTask).not.toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.anything() }));
+    });
+
+    it('rejects an unknown reasoning level', () => {
+      const tools = createTasksToolset(mockSettings, mockTask, mockProfile, mockPromptContext);
+      expect(() => tools[createTaskToolKey].inputSchema.parse({ prompt: 'p', name: 'n', reasoning: 'max' })).toThrow();
+    });
   });
 
   describe('search task tool approval flow', () => {

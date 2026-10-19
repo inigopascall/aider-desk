@@ -1305,6 +1305,7 @@ export interface CreateTaskParams {
   mode?: Mode;
   workingMode?: WorkingMode;
   addInitialContextFiles?: boolean;
+  metadata?: Record<string, unknown>; // initial task metadata, set before onTaskCreated fires
 }
 
 export interface TaskCreatedData {

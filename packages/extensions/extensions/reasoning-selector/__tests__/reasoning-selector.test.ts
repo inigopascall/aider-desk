@@ -95,7 +95,6 @@ describe('ReasoningSelectorExtension onTaskCreated', () => {
   });
 });
 
-
 describe('ReasoningSelectorExtension onAgentStarted', () => {
   const createAgentContext = (metadata?: Record<string, unknown>): ExtensionContext => {
     return {
@@ -129,5 +128,35 @@ describe('ReasoningSelectorExtension onAgentStarted', () => {
     const result = await extension.onAgentStarted(createAgentEvent(undefined), createAgentContext({}));
 
     expect(result).toBeUndefined();
+  });
+});
+
+describe('ReasoningSelectorExtension onTaskCreated for subtasks', () => {
+  const parentTasks = [
+    {
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-5',
+      updatedAt: '2026-07-27T12:00:00.000Z',
+      metadata: { reasoningEffort: 'xhigh' },
+    },
+  ];
+
+  it('does not copy a reasoning effort into a subtask', async () => {
+    const extension = new ReasoningSelectorExtension();
+    const event = { task: { parentId: 'parent-id' } } as unknown as TaskCreatedEvent;
+
+    const result = await extension.onTaskCreated(event, createContext(parentTasks));
+
+    expect(result).toBeUndefined();
+  });
+
+  it('preserves an explicit reasoning effort on a subtask', async () => {
+    const extension = new ReasoningSelectorExtension();
+    const event = { task: { parentId: 'parent-id', metadata: { reasoningEffort: 'medium' } } } as unknown as TaskCreatedEvent;
+
+    const result = await extension.onTaskCreated(event, createContext(parentTasks));
+
+    expect(result).toBeUndefined();
+    expect(event.task.metadata).toEqual({ reasoningEffort: 'medium' });
   });
 });
