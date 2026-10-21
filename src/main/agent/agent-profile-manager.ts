@@ -7,6 +7,9 @@ import { DEFAULT_AGENT_PROFILE, DEFAULT_AGENT_PROFILES } from '@common/agent';
 import { fileExists } from '@common/node-utils';
 import { PROMPT_SIDECAR_FILES, type AgentProfile, type PromptSidecarFilename, type SettingsData } from '@common/types';
 import { v4 as uuidv4 } from 'uuid';
+
+import { ensureProjectConfigLinks } from './project-config-links';
+
 import type { Store } from '@/store';
 
 import { Project } from '@/project';
@@ -144,6 +147,9 @@ export class AgentProfileManager {
     logger.debug(`Initializing agent profiles for project: ${projectDir}`);
 
     const projectAgentsDir = getProjectAgentsDir(projectDir);
+
+    // Link the project's agents and skills into the config repo when they are missing
+    await ensureProjectConfigLinks(projectDir);
 
     // Load project-specific profiles
     await this.loadProfilesFromDirectory(projectAgentsDir);
@@ -661,6 +667,8 @@ export class AgentProfileManager {
         : getGlobalAgentsDir();
     if (profile.workflowAgent) {
       profile.projectDir = undefined; // workflow agents are tier-scoped, never project-scoped
+    } else if (projectDir) {
+      await ensureProjectConfigLinks(projectDir);
     }
 
     // Get existing directory names for collision handling
