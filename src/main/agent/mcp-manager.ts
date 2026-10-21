@@ -80,15 +80,6 @@ export interface McpServerFailure {
 type McpClientTransport = Parameters<typeof createMCPClient>[0]['transport'];
 type McpToolDefinition = ListToolsResult['tools'][number];
 
-/** Describes an MCP server config for logging: the names of env vars and headers, never their values. */
-const summarizeServerConfig = (config: McpServerConfig): Record<string, unknown> => ({
-  command: config.command,
-  argsCount: config.args?.length ?? 0,
-  url: config.url?.split('?')[0],
-  envKeys: Object.keys(config.env ?? {}),
-  headerKeys: Object.keys(config.headers ?? {}),
-});
-
 export class McpManager {
   private mcpConnectors: Map<string, Promise<McpConnector>> = new Map();
   private connectorServerUrls: Map<string, string> = new Map();
@@ -723,7 +714,7 @@ export class McpManager {
     poolKey: string,
   ): Promise<McpConnector> {
     logger.info(`Initializing MCP client for server: ${serverName}`);
-    logger.debug(`Server configuration: ${JSON.stringify(summarizeServerConfig(config))}`);
+    logger.debug(`Server configuration: ${JSON.stringify(config)}`);
 
     // Held outside the timed block so anything created before a failure or timeout is torn down.
     const handles: { client: MCPClient | null; transport: { close: () => Promise<void> } | null } = { client: null, transport: null };
