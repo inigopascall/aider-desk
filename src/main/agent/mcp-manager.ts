@@ -25,6 +25,7 @@ import { TOOL_GROUP_NAME_SEPARATOR } from '@common/tools';
 import { ApprovalManager } from './tools/approval-manager';
 import { McpOAuthManager } from './mcp-oauth-manager';
 import { truncateToolResult } from './utils';
+import { loadMcpSecrets, resolveMcpSecrets } from './mcp-secrets';
 
 import logger from '@/logger';
 import { AIDER_DESK_CACHE_DIR } from '@/constants';
@@ -78,6 +79,15 @@ export interface McpServerFailure {
 
 type McpClientTransport = Parameters<typeof createMCPClient>[0]['transport'];
 type McpToolDefinition = ListToolsResult['tools'][number];
+
+/** Describes an MCP server config for logging: the names of env vars and headers, never their values. */
+const summarizeServerConfig = (config: McpServerConfig): Record<string, unknown> => ({
+  command: config.command,
+  argsCount: config.args?.length ?? 0,
+  url: config.url?.split('?')[0],
+  envKeys: Object.keys(config.env ?? {}),
+  headerKeys: Object.keys(config.headers ?? {}),
+});
 
 export class McpManager {
   private mcpConnectors: Map<string, Promise<McpConnector>> = new Map();
@@ -592,11 +602,12 @@ export class McpManager {
 
   private interpolateServerConfig(serverConfig: McpServerConfig, projectDir: string | null, taskDir: string | null): McpServerConfig {
     const config = JSON.parse(JSON.stringify(serverConfig)) as McpServerConfig;
+    const secrets = loadMcpSecrets();
 
     const interpolateValue = (value: string): string => {
       let result = value.replace(/\${projectDir}/g, projectDir || '.');
       result = result.replace(/\${taskDir}/g, taskDir || projectDir || '.');
-      return result;
+      return resolveMcpSecrets(result, secrets);
     };
 
     if (config.env) {
@@ -615,6 +626,21 @@ export class McpManager {
 
     if (config.args) {
       config.args = config.args.map(interpolateValue);
+    }
+
+    if (config.headers) {
+      const newHeaders: Record<string, string> = {};
+
+      Object.keys(config.headers).forEach((key) => {
+        const headerValue = config.headers![key];
+        newHeaders[key] = typeof headerValue === 'string' ? interpolateValue(headerValue) : headerValue;
+      });
+
+      config.headers = newHeaders;
+    }
+
+    if (config.url) {
+      config.url = interpolateValue(config.url);
     }
 
     return config;
@@ -697,7 +723,7 @@ export class McpManager {
     poolKey: string,
   ): Promise<McpConnector> {
     logger.info(`Initializing MCP client for server: ${serverName}`);
-    logger.debug(`Server configuration: ${JSON.stringify(config)}`);
+    logger.debug(`Server configuration: ${JSON.stringify(summarizeServerConfig(config))}`);
 
     // Held outside the timed block so anything created before a failure or timeout is torn down.
     const handles: { client: MCPClient | null; transport: { close: () => Promise<void> } | null } = { client: null, transport: null };
