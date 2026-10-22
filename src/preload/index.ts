@@ -227,6 +227,10 @@ const api: ApplicationAPI = {
   loadWorkflowLogs: (baseDir, taskId) => ipcRenderer.invoke('load-workflow-logs', baseDir, taskId),
 
   exportTaskToMarkdown: async (baseDir, taskId, copyOnly) => ipcRenderer.invoke('export-task-to-markdown', baseDir, taskId, copyOnly),
+  searchTasks: (query, limit) => ipcRenderer.invoke('task-navigation-search', query, limit),
+  getSearchIndexStatus: () => ipcRenderer.invoke('task-navigation-index-status'),
+  rebuildSearchIndex: () => ipcRenderer.invoke('task-navigation-rebuild-index'),
+  regenerateTaskSummary: (baseDir, taskId) => ipcRenderer.invoke('task-navigation-regenerate-summary', baseDir, taskId),
   getRecentProjects: () => ipcRenderer.invoke('get-recent-projects'),
   addRecentProject: (baseDir) => ipcRenderer.invoke('add-recent-project', baseDir),
   removeRecentProject: (baseDir) => ipcRenderer.invoke('remove-recent-project', baseDir),

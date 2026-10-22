@@ -52,6 +52,7 @@ import {
 import type { WindowManager } from '@/window-manager';
 
 import logger from '@/logger';
+import { notifyTaskNavigationEvent } from '@/task-navigation/hooks';
 
 export interface EventsConnectorConfig {
   eventTypes?: string[];
@@ -653,6 +654,7 @@ export class EventManager {
   }
 
   private broadcastToEventConnectors(eventType: string, data: unknown, log = true): void {
+    notifyTaskNavigationEvent(eventType, data);
     if (log) {
       logger.debug('Broadcasting event to connectors:', {
         connectors: this.eventsConnectors.length,

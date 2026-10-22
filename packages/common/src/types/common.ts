@@ -21,6 +21,8 @@ import { z } from 'zod';
 
 import { ContextFile, ContextMemoryMode, ContextMessage, PromptContext, UsageReportData } from './context';
 
+import type { TaskNavigationSettings } from './task-navigation';
+
 // Worktree schema definition
 export const WorktreeSchema = z.object({
   path: z.string(),
@@ -924,6 +926,8 @@ export interface HotkeyConfig {
   dialogHotkeys: {
     browseFolder: string;
     commandPalette: string;
+    quickSwitcher: string;
+    globalSearch: string;
   };
 }
 
@@ -1066,6 +1070,7 @@ export interface SettingsData {
   };
   fileWatchMode?: FileWatchMode;
   workflowConfigs?: Record<string, WorkflowConfig>;
+  taskNavigation?: Partial<TaskNavigationSettings>;
 }
 
 export interface ProviderProfile {

@@ -17,6 +17,7 @@ import { ChipListInput } from '../common/ChipListInput';
 import { useModes } from '@/hooks/useModes';
 import { Input } from '@/components/common/Input';
 import { Tooltip } from '@/components/ui/Tooltip';
+import { TaskNavigationSettings } from '@/components/task-navigation/TaskNavigationSettings';
 
 const WORKING_MODE_ITEMS: ItemConfig<WorkingMode>[] = [
   {
@@ -542,6 +543,7 @@ export const TaskSettings = ({ settings, setSettings }: Props) => {
           </div>
         </div>
       </Section>
+      <TaskNavigationSettings settings={settings} setSettings={setSettings} />
     </div>
   );
 };

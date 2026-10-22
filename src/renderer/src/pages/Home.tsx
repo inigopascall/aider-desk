@@ -31,6 +31,7 @@ import { useBooleanState } from '@/hooks/useBooleanState';
 import { PaletteItemType, useCommandPaletteStore } from '@/stores/commandPaletteStore';
 import { closeSettings, openSettingsPage, useSettingsNavigationStore } from '@/stores/settingsNavigationStore';
 import { registerAction, unregisterAction } from '@/stores/actionsStore';
+import { usePendingProjectActivation } from '@/components/task-navigation/hooks';
 
 const UsageDashboard = lazy(() => import('@/components/usage/UsageDashboard').then((module) => ({ default: module.UsageDashboard })));
 const SettingsPage = lazy(() => import('@/components/settings/SettingsPage').then((module) => ({ default: module.SettingsPage })));
@@ -419,6 +420,8 @@ export const Home = () => {
     window.addEventListener('keyup', handleKeyUp);
     return () => window.removeEventListener('keyup', handleKeyUp);
   }, []);
+
+  usePendingProjectActivation({ projectsLoaded, openProjects: optimisticOpenProjects, activeProject, setActiveProject });
 
   const handleAddProject = async (baseDir: string) => {
     const projects = await api.addOpenProject(baseDir);

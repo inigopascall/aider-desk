@@ -24,6 +24,7 @@ import { useResponsive } from '@/hooks/useResponsive';
 import { useModelProviders } from '@/contexts/ModelProviderContext';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
 import { useAiderConnectorStatus } from '@/hooks/useAiderConnectorStatus';
+import { TopicMapToggleButton } from '@/components/task-navigation/TopicMapToggleButton';
 
 export type TaskBarRef = {
   openMainModelSelector: (model?: string) => void;
@@ -647,6 +648,7 @@ export const TaskBar = forwardRef<TaskBarRef, Props>(
             )}
           </div>
           <div className="flex items-center space-x-1 mr-2">
+            <TopicMapToggleButton />
             <ExtensionComponentWrapper placement="task-top-bar-right" />
             <TaskGitControls
               task={task}

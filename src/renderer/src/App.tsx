@@ -30,6 +30,9 @@ import { loadBrowserBootstrap } from '@/api/readonly-browser-api';
 import { CommandPalette } from '@/components/common/CommandPalette';
 import { useCommandPaletteHotkeys } from '@/hooks/useCommandPaletteHotkeys';
 import { usePaletteCommands } from '@/hooks/usePaletteCommands';
+import { GlobalSearch } from '@/components/task-navigation/GlobalSearch';
+import { QuickSwitcher } from '@/components/task-navigation/QuickSwitcher';
+import { useTaskNavigationHotkeys } from '@/components/task-navigation/hooks';
 
 const Onboarding = lazy(() => import('@/pages/Onboarding').then((module) => ({ default: module.Onboarding })));
 
@@ -143,6 +146,7 @@ const AnimatedRoutes = () => {
 const AppContent = () => {
   useCommandPaletteHotkeys();
   usePaletteCommands();
+  useTaskNavigationHotkeys();
 
   return (
     <Router useTransitions={false}>
@@ -162,6 +166,8 @@ const AppContent = () => {
                         <ModalOverlayUrlHandler />
                         <InputPromptDialog />
                         <CommandPalette />
+                        <QuickSwitcher />
+                        <GlobalSearch />
                       </DiffsWorkerPoolProvider>
                     </ExtensionsProvider>
                   </ContextMenuProvider>

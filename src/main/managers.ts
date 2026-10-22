@@ -22,6 +22,7 @@ import { NetworkManager } from '@/network-manager';
 import { EventsHandler } from '@/events-handler';
 import { PromptsManager } from '@/prompts';
 import { PythonDependenciesInstaller } from '@/python-dependencies-installer';
+import { initTaskNavigation } from '@/task-navigation/task-navigation-manager';
 
 export interface ManagersResult {
   eventsHandler: EventsHandler;
@@ -146,6 +147,9 @@ export const initManagers = async (store: Store, windowManager?: WindowManager):
     pythonInstaller,
   );
 
+  // Initialize task navigation (task numbers, topic maps, global search index)
+  const taskNavigationManager = initTaskNavigation({ store, projectManager, modelManager });
+
   // Initialize terminal manager
   const terminalManager = new TerminalManager(eventManager, telemetryManager);
 
@@ -201,6 +205,7 @@ export const initManagers = async (store: Store, windowManager?: WindowManager):
       terminalManager.close();
       versionsManager.destroy();
       dataManager.close();
+      taskNavigationManager.dispose();
 
       await Promise.all([
         connectorManager.close(),

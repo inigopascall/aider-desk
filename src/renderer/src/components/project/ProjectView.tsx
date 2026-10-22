@@ -44,6 +44,7 @@ import { useActiveAgentProfile } from '@/utils/agents';
 import { PaletteItem, PaletteItemType, useCommandPaletteStore } from '@/stores/commandPaletteStore';
 import { invokeAction, registerAction, unregisterAction } from '@/stores/actionsStore';
 import { FileEditorModal } from '@/components/Workspace/FileEditorModal';
+import { usePendingTaskActivation } from '@/components/task-navigation/hooks';
 
 const MAX_MOUNTED_TASKS = 5;
 
@@ -127,6 +128,8 @@ export const ProjectView = ({ projectDir, isProjectActive = false, initialTaskId
     },
     [focusActiveTaskPrompt],
   );
+
+  usePendingTaskActivation(projectDir, optimisticTasks, !starting && !tasksLoading, activateTask);
 
   const isProjectActiveRef = useRef(isProjectActive);
   useEffect(() => {

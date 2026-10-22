@@ -54,6 +54,8 @@ export const DEFAULT_HOTKEY_CONFIG: HotkeyConfig = {
   dialogHotkeys: {
     browseFolder: 'mod+b',
     commandPalette: 'mod+shift+p',
+    quickSwitcher: 'mod+j',
+    globalSearch: 'mod+shift+f',
   },
 };
 
@@ -142,6 +144,8 @@ export const getHotkeys = (config?: HotkeyConfig) => {
     DIALOG_HOTKEYS: {
       BROWSE_FOLDER: dk.browseFolder || dkDef.browseFolder,
       COMMAND_PALETTE: dk.commandPalette || dkDef.commandPalette,
+      QUICK_SWITCHER: dk.quickSwitcher || dkDef.quickSwitcher,
+      GLOBAL_SEARCH: dk.globalSearch || dkDef.globalSearch,
     },
   };
 };

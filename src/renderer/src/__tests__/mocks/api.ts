@@ -36,7 +36,19 @@ import {
   OpenDialogResult,
   SystemLogsResponse,
   AiderConnectorStatus,
+  GlobalSearchResponse,
+  SearchIndexStatus,
 } from '@common/types';
+
+const EMPTY_SEARCH_INDEX_STATUS: SearchIndexStatus = {
+  state: 'idle',
+  tasksIndexed: 0,
+  tasksTotal: 0,
+  messagesIndexed: 0,
+  vectorsIndexed: 0,
+  conceptSearchAvailable: false,
+  embedding: false,
+};
 
 /**
  * Creates a comprehensive mock for ApplicationAPI
@@ -168,6 +180,10 @@ export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedOb
     loadTask: vi.fn((): Promise<TaskStateData> => Promise.resolve({} as TaskStateData)),
     loadWorkflowLogs: vi.fn((): Promise<WorkflowLogsStateData> => Promise.resolve({ hasWorkflowHistory: false, logs: [] })),
     exportTaskToMarkdown: vi.fn((): Promise<string | void> => Promise.resolve()),
+    searchTasks: vi.fn((): Promise<GlobalSearchResponse> => Promise.resolve({ query: '', results: [], status: EMPTY_SEARCH_INDEX_STATUS })),
+    getSearchIndexStatus: vi.fn((): Promise<SearchIndexStatus> => Promise.resolve(EMPTY_SEARCH_INDEX_STATUS)),
+    rebuildSearchIndex: vi.fn((): Promise<SearchIndexStatus> => Promise.resolve(EMPTY_SEARCH_INDEX_STATUS)),
+    regenerateTaskSummary: vi.fn((): Promise<TaskData | null> => Promise.resolve(null)),
 
     // Recent projects operations
     getRecentProjects: vi.fn((): Promise<string[]> => Promise.resolve([])),

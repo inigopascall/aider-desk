@@ -88,6 +88,8 @@ import {
   ExtensionOperationResult,
   WorkflowLogData,
   WorkflowLogsStateData,
+  GlobalSearchResponse,
+  SearchIndexStatus,
 } from '@common/types';
 
 export type ExtensionDisplayAPI = Pick<
@@ -238,6 +240,11 @@ export interface ApplicationAPI {
   loadTask: (baseDir: string, taskId: string) => Promise<TaskStateData>;
   loadWorkflowLogs: (baseDir: string, taskId: string) => Promise<WorkflowLogsStateData>;
   exportTaskToMarkdown: (baseDir: string, taskId: string, copyOnly?: boolean) => Promise<string | void>;
+  // Task navigation (rolling summaries, global search)
+  searchTasks: (query: string, limit?: number) => Promise<GlobalSearchResponse>;
+  getSearchIndexStatus: () => Promise<SearchIndexStatus>;
+  rebuildSearchIndex: () => Promise<SearchIndexStatus>;
+  regenerateTaskSummary: (baseDir: string, taskId: string) => Promise<TaskData | null>;
   getRecentProjects: () => Promise<string[]>;
   addRecentProject: (baseDir: string) => Promise<void>;
   removeRecentProject: (baseDir: string) => Promise<void>;

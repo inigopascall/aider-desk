@@ -138,6 +138,8 @@ export const HotkeysSettings = ({ settings, setSettings }: Props) => {
           <div className="px-5 py-3 space-y-1">
             {renderHotkeyConfig('dialogHotkeys', 'browseFolder', t('settings.hotkeys.browseFolder'))}
             {renderHotkeyConfig('dialogHotkeys', 'commandPalette', t('settings.hotkeys.commandPalette'))}
+            {renderHotkeyConfig('dialogHotkeys', 'quickSwitcher', t('settings.hotkeys.quickSwitcher'))}
+            {renderHotkeyConfig('dialogHotkeys', 'globalSearch', t('settings.hotkeys.globalSearch'))}
           </div>
         </Section>
       </div>

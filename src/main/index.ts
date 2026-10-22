@@ -16,6 +16,7 @@ import { performStartUp, UpdateProgressData } from '@/start-up';
 import { Store } from '@/store';
 import logger, { eventTransport } from '@/logger';
 import { initManagers } from '@/managers';
+import { setupTaskNavigationIpcHandlers } from '@/task-navigation/ipc';
 import { createLoadRetryHandler, getDefaultProjectSettings, initPath } from '@/utils';
 import { WindowManager } from '@/window-manager';
 
@@ -457,6 +458,7 @@ app.whenReady().then(async () => {
 
     // Initialize IPC handlers
     setupIpcHandlers(managers.eventsHandler, managers.serverController, managers.pythonInstaller);
+    setupTaskNavigationIpcHandlers();
 
     if (!HEADLESS_MODE) {
       // Create the first window

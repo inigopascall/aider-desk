@@ -18,6 +18,7 @@ import { LoadingText } from '@/components/common/LoadingText';
 import { TaskStateChip } from '@/components/common/TaskStateChip';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
 import { Tooltip } from '@/components/ui/Tooltip';
+import { TaskNamePreview } from '@/components/task-navigation/TaskNamePreview';
 
 type Props = {
   task: TaskData;
@@ -355,13 +356,7 @@ export const TaskItem = memo(
                     )}
                     style={highlightColor ? { textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)' } : undefined}
                   >
-                    {showNameTooltip ? (
-                      <Tooltip content={taskName} delayDuration={1000}>
-                        <span>{taskName}</span>
-                      </Tooltip>
-                    ) : (
-                      taskName
-                    )}
+                    <TaskNamePreview task={task} taskName={taskName} showNameTooltip={showNameTooltip} />
                   </div>
                   {task.pinned && <MdPushPin className="w-3 h-3 text-text-muted shrink-0 ml-1 rotate-45 group-hover:hidden" />}
                 </div>

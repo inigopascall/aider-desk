@@ -63,6 +63,7 @@ import { DataManager } from '@/data-manager';
 import { TerminalManager } from '@/terminal/terminal-manager';
 import { ExtensionManager, LoadedExtension } from '@/extensions';
 import { PromptsManager } from '@/prompts';
+import { prepareTaskNavigationUpdate } from '@/task-navigation/task-update';
 import logger, { eventTransport } from '@/logger';
 import {
   cloneProjectRepository,
@@ -1046,6 +1047,8 @@ export class EventsHandler {
     if (updates.parentId) {
       project.validateParentAssignment(id, updates.parentId);
     }
+
+    updates = prepareTaskNavigationUpdate(task.task, updates);
 
     // Delegate to Task.updateTask method which handles worktree logic
     return task.updateTask(updates);

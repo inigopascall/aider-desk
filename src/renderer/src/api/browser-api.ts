@@ -86,6 +86,8 @@ import {
   ExtensionOperationResult,
   WorkflowLogData,
   WorkflowLogsStateData,
+  GlobalSearchResponse,
+  SearchIndexStatus,
 } from '@common/types';
 import { ApplicationAPI, RendererProcessMemoryInfo } from '@common/api';
 import { type AxiosInstance, create } from 'axios';
@@ -897,6 +899,19 @@ export class BrowserApi implements ApplicationAPI {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     }
+  }
+
+  searchTasks(query: string, limit?: number): Promise<GlobalSearchResponse> {
+    return this.get('/task-navigation/search', { query, limit });
+  }
+  getSearchIndexStatus(): Promise<SearchIndexStatus> {
+    return this.get('/task-navigation/index-status');
+  }
+  rebuildSearchIndex(): Promise<SearchIndexStatus> {
+    return this.post('/task-navigation/rebuild-index', {});
+  }
+  regenerateTaskSummary(baseDir: string, taskId: string): Promise<TaskData | null> {
+    return this.post('/task-navigation/regenerate-summary', { projectDir: baseDir, taskId });
   }
 
   getRecentProjects(): Promise<string[]> {
