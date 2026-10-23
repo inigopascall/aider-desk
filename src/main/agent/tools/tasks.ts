@@ -362,7 +362,7 @@ export const createTasksToolset = (settings: SettingsData, task: Task, profile: 
         .enum(AutonomyMode)
         .optional()
         .describe(
-          'The autonomy mode for the new task. "manual" requires approval for every tool and plan, "guided" (default) auto-approves tools but waits for plan approval from user, "autonomous" runs without interruption.',
+          'The autonomy mode for the new task. "manual" requires approval for every tool and plan, "guided" auto-approves tools but waits for plan approval from user, "autonomous" runs without interruption. When omitted, defaults to "autonomous" if executionMode is wait_for_finish or run_in_background, and to "guided" for create_only.',
         ),
       worktree: z
         .boolean()
@@ -429,7 +429,10 @@ export const createTasksToolset = (settings: SettingsData, task: Task, profile: 
         const newTask = await task.getProject().createNewTask({
           parentId: parentTaskId || null,
           name: name || '',
-          autonomyMode,
+          // A task started by an agent runs its brief unattended, so it must not wait for plan approval.
+          autonomyMode:
+            autonomyMode ??
+            (executionMode === TaskExecutionMode.WaitForFinish || executionMode === TaskExecutionMode.RunInBackground ? AutonomyMode.Autonomous : undefined),
           ...(worktree !== undefined && { workingMode: worktree ? 'worktree' : 'local' }),
           ...(reasoning && { metadata: { reasoningEffort: reasoning } }),
           ...updates,

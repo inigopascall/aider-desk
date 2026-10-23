@@ -714,6 +714,51 @@ describe('Tasks Tools - search_task', () => {
       expect(mockProject.createNewTask).not.toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.anything() }));
     });
 
+    it.each([
+      { executionMode: 'wait_for_finish', expected: 'autonomous' },
+      { executionMode: 'run_in_background', expected: 'autonomous' },
+      { executionMode: 'create_only', expected: undefined },
+    ])('defaults autonomy mode to $expected when executionMode is $executionMode', async ({ executionMode, expected }) => {
+      const taskInstance = {
+        init: vi.fn().mockResolvedValue(undefined),
+        saveTask: vi.fn().mockResolvedValue(undefined),
+        savePromptOnly: vi.fn().mockResolvedValue(undefined),
+        runPrompt: vi.fn().mockResolvedValue([]),
+        getContextMessages: vi.fn().mockResolvedValue([]),
+      };
+      Object.assign(mockProfile, { id: 'calling-profile', provider: 'anthropic', model: 'claude-sonnet' });
+
+      mockProject.createNewTask = vi.fn().mockResolvedValue({ id: 'new-task-id', name: 'New task' });
+      mockProject.getTask.mockReturnValue(taskInstance);
+
+      const tools = createTasksToolset(mockSettings, mockTask, mockProfile, mockPromptContext);
+      await tools[createTaskToolKey].execute({ prompt: 'Create a task', name: 'New task', asSubtask: true, executionMode }, { toolCallId: 'tool-call-123' });
+
+      expect(mockProject.createNewTask).toHaveBeenCalledWith(expect.objectContaining({ autonomyMode: expected }));
+    });
+
+    it('keeps an explicitly requested autonomy mode', async () => {
+      const taskInstance = {
+        init: vi.fn().mockResolvedValue(undefined),
+        saveTask: vi.fn().mockResolvedValue(undefined),
+        savePromptOnly: vi.fn().mockResolvedValue(undefined),
+        runPrompt: vi.fn().mockResolvedValue([]),
+        getContextMessages: vi.fn().mockResolvedValue([]),
+      };
+      Object.assign(mockProfile, { id: 'calling-profile', provider: 'anthropic', model: 'claude-sonnet' });
+
+      mockProject.createNewTask = vi.fn().mockResolvedValue({ id: 'new-task-id', name: 'New task' });
+      mockProject.getTask.mockReturnValue(taskInstance);
+
+      const tools = createTasksToolset(mockSettings, mockTask, mockProfile, mockPromptContext);
+      await tools[createTaskToolKey].execute(
+        { prompt: 'Create a task', name: 'New task', asSubtask: true, executionMode: 'wait_for_finish', autonomyMode: 'guided' },
+        { toolCallId: 'tool-call-123' },
+      );
+
+      expect(mockProject.createNewTask).toHaveBeenCalledWith(expect.objectContaining({ autonomyMode: 'guided' }));
+    });
+
     it('rejects an unknown reasoning level', () => {
       const tools = createTasksToolset(mockSettings, mockTask, mockProfile, mockPromptContext);
       expect(() => tools[createTaskToolKey].inputSchema.parse({ prompt: 'p', name: 'n', reasoning: 'max' })).toThrow();
