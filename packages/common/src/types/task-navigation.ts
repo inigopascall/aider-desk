@@ -4,6 +4,14 @@
  * Task-level data lives in TaskData.metadata under TASK_NAVIGATION_METADATA_KEYS, so the persisted task schema is unchanged.
  */
 
+/** A display-only sub-header of a finished topic, summarising a run of its messages. */
+export interface TaskTopicSection {
+  /** One-line title of the section, five to twelve words. */
+  summary: string;
+  /** Id of the section's first message. The section runs up to the next section's start, or to the end of the topic. */
+  startMessageId: string;
+}
+
 export interface TaskTopic {
   /** Ultra-condensed summary of the topic, at most about twenty words. */
   summary: string;
@@ -11,6 +19,10 @@ export interface TaskTopic {
   messageIds: string[];
   /** The topic's messages were compacted or cleared out of the conversation; the topic is kept for history only. */
   detached?: boolean;
+  /** Sections of a finished topic, in conversation order; the first starts at the topic's first message. The current topic has none. */
+  sections?: TaskTopicSection[];
+  /** True once sectioning was done or deliberately skipped; false while it is pending after a failed model call. */
+  sectioned?: boolean;
 }
 
 export interface TaskSummary {

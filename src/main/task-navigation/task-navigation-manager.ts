@@ -38,9 +38,12 @@ import {
   buildSummaryPrompt,
   chunkEntries,
   cleanTitle,
+  findCurrentTopicIndex,
   getUnsummarizedEntries,
   markDetachedTopics,
   parseSummaryResponse,
+  sectionTopics,
+  selectTopicsToSection,
 } from './summary-model';
 
 import type { ModelManager } from '@/models';
@@ -666,8 +669,9 @@ export class TaskNavigationManager {
   }
 
   /**
-   * Extends the task's topic map with the messages it does not cover yet (or rebuilds it), then saves the topic map,
-   * the last-message preview and, unless the title is locked, the regenerated title.
+   * Extends the task's topic map with the messages it does not cover yet (or rebuilds it), divides the topics that
+   * closed into sections, then saves the topic map, the last-message preview and, unless the title is locked, the
+   * regenerated title.
    */
   private async summarize(baseDir: string, taskId: string, rebuild: boolean): Promise<TaskData | null> {
     const task = this.findTask(baseDir, taskId);
@@ -684,6 +688,8 @@ export class TaskNavigationManager {
     let model = existing?.model;
     let generated = false;
     let failure: unknown;
+    const previousCurrentIndex = findCurrentTopicIndex(topics);
+    const previousCount = topics.length;
 
     const pending = getUnsummarizedEntries(entries, topics);
     if (pending.length > 0) {
@@ -716,6 +722,27 @@ export class TaskNavigationManager {
 
     if (rebuild && failure && !generated) {
       throw failure instanceof Error ? failure : new Error(describeError(failure));
+    }
+
+    const sectionCandidates = generated || pending.length === 0 ? selectTopicsToSection(topics, previousCurrentIndex, previousCount) : [];
+    if (sectionCandidates.length > 0) {
+      const sectionModelId = generated && model ? model : await this.resolveSummaryModel(task, settings);
+      if (sectionModelId) {
+        const sectioning = await sectionTopics(
+          topics,
+          sectionCandidates,
+          entries,
+          (systemPrompt, prompt) => this.generate(sectionModelId, task.task.baseDir, taskId, systemPrompt, prompt),
+          SUMMARY_CHUNK_CHARACTERS,
+        );
+        topics = sectioning.topics;
+        for (const warning of sectioning.warnings) {
+          logger.warn(`[TaskNavigation] ${warning.message}`, { taskId, modelId: sectionModelId, ...warning.details });
+        }
+        if (sectioning.done > 0) {
+          logger.info('[TaskNavigation] Sectioned topics', { taskId, topics: sectioning.done, withSections: sectioning.withSections, calls: sectioning.calls });
+        }
+      }
     }
 
     const current = task.task;

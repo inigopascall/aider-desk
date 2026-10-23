@@ -7,6 +7,7 @@ import { MdKeyboardArrowDown, MdKeyboardArrowRight, MdOutlineRefresh } from 'rea
 import { VscLock } from 'react-icons/vsc';
 
 import { useTaskNavigationSettings } from './hooks';
+import { MessageRow, NavigableRow, buildTopicMapRows, isNavigableRow, topicRowKey } from './topic-map-rows';
 import { GENERATING_TASK_NAME, formatRelativeTime } from './utils';
 
 import { extractFirstLine, truncateTitle } from '@/components/message/outline';
@@ -23,14 +24,6 @@ type MessageLabel = {
   role: 'user' | 'assistant';
   text: string;
 };
-
-type TopicRow = { kind: 'topic'; key: string; topicIndex: number };
-type MessageRow = { kind: 'message'; key: string; topicIndex: number; messageId: string };
-type Row = TopicRow | MessageRow;
-
-const topicRowKey = (topicIndex: number): string => `topic:${topicIndex}`;
-
-const messageRowKey = (topicIndex: number, messageId: string): string => `message:${topicIndex}:${messageId}`;
 
 type Props = {
   task: TaskData;
@@ -91,37 +84,29 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage }: ContentProps) => 
     return labels;
   }, [messages]);
 
-  const rows = useMemo(() => {
-    const list: Row[] = [];
-    topics.forEach((topic, topicIndex) => {
-      list.push({ kind: 'topic', key: topicRowKey(topicIndex), topicIndex });
-      if (expanded.has(topicIndex)) {
-        for (const messageId of topic.messageIds) {
-          list.push({ kind: 'message', key: messageRowKey(topicIndex, messageId), topicIndex, messageId });
-        }
-      }
-    });
-    return list;
-  }, [topics, expanded]);
+  // Section rows are display-only: selection, the remembered view and keyboard navigation use the navigable rows
+  const rows = useMemo(() => buildTopicMapRows(topics, expanded), [topics, expanded]);
+  const navigableRows = useMemo(() => rows.filter(isNavigableRow), [rows]);
+  const navigableIndexes = useMemo(() => new Map(navigableRows.map((row, index) => [row.key, index])), [navigableRows]);
 
   const selectedIndex = useMemo(() => {
-    const exact = rows.findIndex((row) => row.key === view.selected);
+    const exact = navigableRows.findIndex((row) => row.key === view.selected);
     if (exact !== -1) {
       return exact;
     }
     if (view.selected?.startsWith('message:')) {
-      const topicRow = rows.findIndex((row) => row.key === topicRowKey(Number(view.selected?.split(':')[1])));
+      const topicRow = navigableRows.findIndex((row) => row.key === topicRowKey(Number(view.selected?.split(':')[1])));
       if (topicRow !== -1) {
         return topicRow;
       }
     }
-    for (let index = rows.length - 1; index >= 0; index--) {
-      if (rows[index].kind === 'topic') {
+    for (let index = navigableRows.length - 1; index >= 0; index--) {
+      if (navigableRows[index].kind === 'topic') {
         return index;
       }
     }
     return -1;
-  }, [rows, view.selected]);
+  }, [navigableRows, view.selected]);
 
   useEffect(() => {
     panelRef.current?.focus();
@@ -138,7 +123,7 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage }: ContentProps) => 
     [setTopicMapView, viewKey],
   );
 
-  const selectRow = useCallback((row: Row) => saveView(row.key, expanded), [saveView, expanded]);
+  const selectRow = useCallback((row: NavigableRow) => saveView(row.key, expanded), [saveView, expanded]);
 
   const setTopicExpanded = useCallback(
     (topicIndex: number, open: boolean) => {
@@ -186,24 +171,24 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage }: ContentProps) => 
     if (event.target instanceof HTMLButtonElement && (event.key === 'Enter' || event.key === ' ')) {
       return;
     }
-    const row = rows[selectedIndex];
+    const row = navigableRows[selectedIndex];
     switch (event.key) {
       case 'ArrowDown':
       case 'ArrowUp': {
         event.preventDefault();
-        if (rows.length === 0) {
+        if (navigableRows.length === 0) {
           break;
         }
         const step = event.key === 'ArrowDown' ? 1 : -1;
-        const next = selectedIndex === -1 ? 0 : (selectedIndex + step + rows.length) % rows.length;
-        selectRow(rows[next]);
+        const next = selectedIndex === -1 ? 0 : (selectedIndex + step + navigableRows.length) % navigableRows.length;
+        selectRow(navigableRows[next]);
         break;
       }
       case 'Home':
       case 'End':
         event.preventDefault();
-        if (rows.length > 0) {
-          selectRow(rows[event.key === 'Home' ? 0 : rows.length - 1]);
+        if (navigableRows.length > 0) {
+          selectRow(navigableRows[event.key === 'Home' ? 0 : navigableRows.length - 1]);
         }
         break;
       case 'Enter':
@@ -290,7 +275,16 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage }: ContentProps) => 
               </button>
             </div>
           ) : (
-            rows.map((row, index) => {
+            rows.map((row) => {
+              if (row.kind === 'section') {
+                return (
+                  <div key={row.key} className="pl-10 pr-3 pt-1.5 pb-0.5 border-l-2 border-l-transparent text-2xs font-medium text-text-primary">
+                    {row.summary}
+                  </div>
+                );
+              }
+
+              const index = navigableIndexes.get(row.key) ?? -1;
               const rowClassName = clsx(
                 'cursor-pointer border-l-2',
                 index === selectedIndex ? 'bg-bg-tertiary border-l-accent-primary' : 'border-l-transparent',
@@ -312,7 +306,7 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage }: ContentProps) => 
                       <MdKeyboardArrowRight className="mt-0.5 w-4 h-4 shrink-0 text-text-muted" />
                     )}
                     <span className="mt-0.5 w-6 shrink-0 text-right text-2xs text-text-muted">{`${row.topicIndex + 1}.`}</span>
-                    <span className="flex-1 min-w-0 text-xs text-text-secondary">{topic.summary}</span>
+                    <span className="flex-1 min-w-0 text-xs text-text-primary">{topic.summary}</span>
                     <span className="mt-0.5 shrink-0 text-2xs text-text-muted">
                       {topic.detached ? t('taskNavigation.topicMap.compacted') : t('taskNavigation.messageCount', { count: topic.messageIds.length })}
                     </span>
@@ -331,7 +325,7 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage }: ContentProps) => 
                   <span className="w-8 shrink-0 font-semibold text-text-muted">
                     {label ? (label.role === 'user' ? t('taskNavigation.you') : t('taskNavigation.assistant')) : ''}
                   </span>
-                  <span className="flex-1 min-w-0 truncate text-text-secondary">{label?.text || t('taskNavigation.topicMap.messageNotLoaded')}</span>
+                  <span className="flex-1 min-w-0 truncate text-text-muted">{label?.text || t('taskNavigation.topicMap.messageNotLoaded')}</span>
                 </div>
               );
             })
