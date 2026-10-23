@@ -71,6 +71,8 @@ const GlobalSearchContent = () => {
   const initialQuery = useTaskNavigationStore((state) => state.globalSearchInitialQuery);
   const closeGlobalSearch = useTaskNavigationStore((state) => state.closeGlobalSearch);
   const requestTaskActivation = useTaskNavigationStore((state) => state.requestTaskActivation);
+  const searchOrder = useTaskNavigationStore((state) => state.searchOrder);
+  const toggleSearchOrder = useTaskNavigationStore((state) => state.toggleSearchOrder);
   const projectTasksMap = useProjectStore((state) => state.projectTasksMap);
   const [query, setQuery] = useState(initialQuery);
   const [response, setResponse] = useState<GlobalSearchResponse | null>(null);
@@ -141,15 +143,19 @@ const GlobalSearchContent = () => {
   const searching = loading && !!trimmedQuery;
 
   const items = useMemo<Item[]>(() => {
+    const results = [...(activeResponse?.results ?? [])];
+    if (searchOrder === 'recent') {
+      results.sort((first, second) => (second.updatedAt ?? '').localeCompare(first.updatedAt ?? ''));
+    }
     const list: Item[] = [];
-    for (const result of activeResponse?.results ?? []) {
+    for (const result of results) {
       list.push({ kind: 'task', result });
       for (const hit of result.hits) {
         list.push({ kind: 'hit', result, hit });
       }
     }
     return list;
-  }, [activeResponse]);
+  }, [activeResponse, searchOrder]);
 
   useEffect(() => {
     listRef.current?.querySelector(`[data-index="${selectedIndex}"]`)?.scrollIntoView({ block: 'nearest' });
@@ -196,6 +202,11 @@ const GlobalSearchContent = () => {
         }
         break;
       }
+      case 'Tab':
+        event.preventDefault();
+        toggleSearchOrder();
+        setSelectedIndex(0);
+        break;
       case 'Escape':
         event.preventDefault();
         event.stopPropagation();
@@ -298,7 +309,7 @@ const GlobalSearchContent = () => {
                     className={clsx(rowClassName, 'px-3 pt-2 pb-1 flex items-center gap-2 min-w-0', index > 0 && 'border-t border-t-bg-tertiary-strong')}
                   >
                     {key && <span className="shrink-0 font-mono text-2xs text-text-muted">{key}</span>}
-                    <span className="flex-1 min-w-0 truncate text-xs font-medium text-text-primary">{name}</span>
+                    <span className="flex-1 min-w-0 truncate text-xs font-medium uppercase text-text-primary">{name}</span>
                     {result.matchedBy.includes('concept') && (
                       <span className="shrink-0 text-2xs text-accent-primary">{t('taskNavigation.search.matchedConcept')}</span>
                     )}
@@ -330,6 +341,16 @@ const GlobalSearchContent = () => {
         </div>
         <div className="px-3 py-1.5 border-t border-bg-tertiary-strong flex items-center gap-3 text-2xs text-text-muted">
           <span className="flex-1 truncate">{statusText}</span>
+          <button
+            type="button"
+            className="shrink-0 hover:text-text-primary"
+            onClick={() => {
+              toggleSearchOrder();
+              setSelectedIndex(0);
+            }}
+          >
+            {searchOrder === 'recent' ? t('taskNavigation.search.sortedByRecent') : t('taskNavigation.search.sortedByRelevance')}
+          </button>
           <span className="shrink-0">{t('taskNavigation.search.hint')}</span>
           <button type="button" className="shrink-0 flex items-center gap-1 hover:text-text-primary" onClick={handleRebuild}>
             <MdOutlineRefresh className="w-3.5 h-3.5" />

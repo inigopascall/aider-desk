@@ -7,15 +7,15 @@ import { useTaskNavigationStore } from '@/stores/taskNavigationStore';
 
 export const TopicMapToggleButton = () => {
   const { t } = useTranslation();
-  const topicPanelOpen = useTaskNavigationStore((state) => state.topicPanelOpen);
-  const toggleTopicPanel = useTaskNavigationStore((state) => state.toggleTopicPanel);
+  const topicMapOpen = useTaskNavigationStore((state) => state.topicMapOpen);
+  const toggleTopicMap = useTaskNavigationStore((state) => state.toggleTopicMap);
 
   return (
     <IconButton
       icon={<MdToc className="w-5 h-5" />}
-      onClick={toggleTopicPanel}
+      onClick={toggleTopicMap}
       tooltip={t('taskNavigation.topicMap.toggle')}
-      className={clsx('p-1 rounded-md hover:bg-bg-tertiary', topicPanelOpen && 'text-text-primary bg-bg-tertiary')}
+      className={clsx('p-1 rounded-md hover:bg-bg-tertiary', topicMapOpen && 'text-text-primary bg-bg-tertiary')}
       data-testid="topic-map-toggle"
     />
   );

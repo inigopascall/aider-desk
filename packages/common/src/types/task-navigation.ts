@@ -44,6 +44,8 @@ export interface TaskNavigationSettings {
   conceptSearchEnabled: boolean;
   /** Number of recent tasks the quick switcher shows when its filter is empty. */
   quickSwitcherCount: number;
+  /** Number of a task's most recent topics shown on each quick switcher row. */
+  quickSwitcherTopicCount: number;
   /** Task key prefix overrides, keyed by project base directory. */
   projectPrefixes: Record<string, string>;
 }
@@ -55,6 +57,7 @@ export const DEFAULT_TASK_NAVIGATION_SETTINGS: TaskNavigationSettings = {
   searchIndexEnabled: true,
   conceptSearchEnabled: true,
   quickSwitcherCount: 6,
+  quickSwitcherTopicCount: 1,
   projectPrefixes: {},
 };
 
@@ -71,6 +74,7 @@ export const getTaskNavigationSettings = (settings?: { taskNavigation?: Partial<
   const configured = settings?.taskNavigation ?? {};
   const defaults = DEFAULT_TASK_NAVIGATION_SETTINGS;
   const count = Number(configured.quickSwitcherCount ?? defaults.quickSwitcherCount);
+  const topicCount = Number(configured.quickSwitcherTopicCount ?? defaults.quickSwitcherTopicCount);
   return {
     autoSummarize: configured.autoSummarize ?? defaults.autoSummarize,
     summaryModel: configured.summaryModel || null,
@@ -78,6 +82,7 @@ export const getTaskNavigationSettings = (settings?: { taskNavigation?: Partial<
     searchIndexEnabled: configured.searchIndexEnabled ?? defaults.searchIndexEnabled,
     conceptSearchEnabled: configured.conceptSearchEnabled ?? defaults.conceptSearchEnabled,
     quickSwitcherCount: Number.isFinite(count) ? Math.min(20, Math.max(3, Math.round(count))) : defaults.quickSwitcherCount,
+    quickSwitcherTopicCount: Number.isFinite(topicCount) ? Math.min(4, Math.max(1, Math.round(topicCount))) : defaults.quickSwitcherTopicCount,
     projectPrefixes: { ...(configured.projectPrefixes ?? {}) },
   };
 };

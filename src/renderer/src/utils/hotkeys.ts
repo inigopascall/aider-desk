@@ -56,6 +56,7 @@ export const DEFAULT_HOTKEY_CONFIG: HotkeyConfig = {
     commandPalette: 'mod+shift+p',
     quickSwitcher: 'mod+j',
     globalSearch: 'mod+shift+f',
+    topicMap: 'mod+k',
   },
 };
 
@@ -146,6 +147,7 @@ export const getHotkeys = (config?: HotkeyConfig) => {
       COMMAND_PALETTE: dk.commandPalette || dkDef.commandPalette,
       QUICK_SWITCHER: dk.quickSwitcher || dkDef.quickSwitcher,
       GLOBAL_SEARCH: dk.globalSearch || dkDef.globalSearch,
+      TOPIC_MAP: dk.topicMap || dkDef.topicMap,
     },
   };
 };

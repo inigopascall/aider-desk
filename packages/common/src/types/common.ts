@@ -928,6 +928,7 @@ export interface HotkeyConfig {
     commandPalette: string;
     quickSwitcher: string;
     globalSearch: string;
+    topicMap: string;
   };
 }
 

@@ -75,5 +75,7 @@ describe('task keys', () => {
     expect(getTaskNavigationSettings(undefined)).toEqual(DEFAULT_TASK_NAVIGATION_SETTINGS);
     expect(getTaskNavigationSettings({ taskNavigation: { quickSwitcherCount: 50 } }).quickSwitcherCount).toBe(20);
     expect(getTaskNavigationSettings({ taskNavigation: { quickSwitcherCount: 1 } }).quickSwitcherCount).toBe(3);
+    expect(getTaskNavigationSettings({ taskNavigation: { quickSwitcherTopicCount: 9 } }).quickSwitcherTopicCount).toBe(4);
+    expect(getTaskNavigationSettings({ taskNavigation: { quickSwitcherTopicCount: 0 } }).quickSwitcherTopicCount).toBe(1);
   });
 });

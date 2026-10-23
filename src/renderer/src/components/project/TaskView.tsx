@@ -73,7 +73,7 @@ import { TaskInfoPanel } from '@/components/message/TaskInfoPanel';
 import { registerAction, unregisterAction } from '@/stores/actionsStore';
 import { getSessionKey, useTerminalVisible, toggleTerminalVisible, setTerminalVisible } from '@/stores/terminalStore';
 import { usePendingMessageScroll } from '@/components/task-navigation/hooks';
-import { TaskTopicPanel } from '@/components/task-navigation/TaskTopicPanel';
+import { TopicMapModal } from '@/components/task-navigation/TopicMapModal';
 
 type AddFileDialogOptions = {
   readOnly: boolean;
@@ -930,7 +930,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
             )}
             <ExtensionComponentWrapper placement="task-messages-top" />
             <div className="overflow-hidden flex-grow relative">
-              <TaskTopicPanel task={task} onScrollToMessage={handleScrollToMessage} />
+              {isActive && isProjectActive && <TopicMapModal task={task} onScrollToMessage={handleScrollToMessage} />}
               {loaded && isSwitchingTask && (messagesPending || displayedMessages.length > 0) && <LoadingOverlay message={t('common.loadingMessages')} />}
               {!isSwitchingTask && visibleMessages.length === 0 && !loading && !messagesPending && !inProgress ? (
                 <WelcomeMessage onModeChange={handleModeChange} mode={currentMode} projectDir={projectDir} taskId={task.id} />

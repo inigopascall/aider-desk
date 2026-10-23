@@ -51,7 +51,9 @@
       "error": "Search index error: {{error}}",
       "rebuild": "Rebuild index",
       "rebuildStarted": "Rebuilding the search index in the background",
-      "hint": "↑↓ navigate · Enter open · Esc close"
+      "sortedByRelevance": "Sorted by best match",
+      "sortedByRecent": "Sorted by most recent",
+      "hint": "↑↓ navigate · Enter open · Tab order · Esc close"
     },
     "topicMap": {
       "title": "Topic map",
@@ -65,7 +67,8 @@
       "updated": "Updated {{time}}",
       "titleLocked": "Title fixed: the task was renamed by hand",
       "unlockTitle": "Let the topic map name this task again",
-      "regenerateFailed": "Topic map generation failed: {{error}}"
+      "regenerateFailed": "Topic map generation failed: {{error}}",
+      "hint": "↑↓ navigate · Enter expand / jump to message · ← → collapse / expand · Esc close"
     },
     "settings": {
       "title": "Task Navigation",
@@ -79,6 +82,10 @@
       "conceptSearchEnabled": "Concept search",
       "conceptSearchEnabledTooltip": "Embed task titles, topics and prompts with a local model so that searches also find related wording.",
       "quickSwitcherCount": "Tasks in the quick switcher",
+      "quickSwitcherTopicCount": "Topics per task in the quick switcher",
+      "quickSwitcherTopicCountTooltip": "How many of each task's most recent topics a quick switcher row shows. Tab on a row shows them all.",
+      "decrease": "Fewer",
+      "increase": "More",
       "projectPrefixes": "Task key prefixes",
       "projectPrefixesTooltip": "Tasks are numbered per project and shown as PREFIX-NUMBER. Leave a field empty to use the prefix derived from the folder name.",
       "noOpenProjects": "No open projects"
@@ -788,6 +795,7 @@
       "commandPalette": "Command Palette",
       "quickSwitcher": "Quick Task Switcher",
       "globalSearch": "Search All Tasks",
+      "topicMap": "Topic Map",
       "enterHotkey": "Enter hotkey...",
       "resetToDefaults": "Reset to Defaults",
       "hotkeyFormat": "Hotkey Format:",

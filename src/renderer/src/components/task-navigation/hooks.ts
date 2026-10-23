@@ -5,6 +5,7 @@ import { useHotkeys } from 'react-hotkeys-hook';
 import { useSearchParams } from 'react-router-dom';
 
 import { useConfiguredHotkeys } from '@/hooks/useConfiguredHotkeys';
+import { useOverlayRegistration } from '@/hooks/useOverlayFocusRestore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useTaskNavigationStore } from '@/stores/taskNavigationStore';
 import { URL_PARAMS, encodeBaseDir } from '@/utils/routes';
@@ -18,11 +19,15 @@ export const useTaskNavigationSettings = (): TaskNavigationSettings => {
   return useMemo(() => getTaskNavigationSettings({ taskNavigation }), [taskNavigation]);
 };
 
-/** App: opens the quick task switcher and the global search. */
+/** App: opens the quick task switcher, the global search and the topic map. */
 export const useTaskNavigationHotkeys = () => {
   const { DIALOG_HOTKEYS } = useConfiguredHotkeys();
   const toggleQuickSwitcher = useTaskNavigationStore((state) => state.toggleQuickSwitcher);
   const toggleGlobalSearch = useTaskNavigationStore((state) => state.toggleGlobalSearch);
+  const toggleTopicMap = useTaskNavigationStore((state) => state.toggleTopicMap);
+  const topicMapOpen = useTaskNavigationStore((state) => state.topicMapOpen);
+
+  useOverlayRegistration('task-topic-map', topicMapOpen);
 
   useHotkeys(
     DIALOG_HOTKEYS.QUICK_SWITCHER,
@@ -42,6 +47,16 @@ export const useTaskNavigationHotkeys = () => {
     },
     HOTKEY_OPTIONS,
     [DIALOG_HOTKEYS.GLOBAL_SEARCH, toggleGlobalSearch],
+  );
+
+  useHotkeys(
+    DIALOG_HOTKEYS.TOPIC_MAP,
+    (event) => {
+      event.preventDefault();
+      toggleTopicMap();
+    },
+    HOTKEY_OPTIONS,
+    [DIALOG_HOTKEYS.TOPIC_MAP, toggleTopicMap],
   );
 };
 

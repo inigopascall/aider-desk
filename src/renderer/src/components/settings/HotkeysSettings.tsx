@@ -140,6 +140,7 @@ export const HotkeysSettings = ({ settings, setSettings }: Props) => {
             {renderHotkeyConfig('dialogHotkeys', 'commandPalette', t('settings.hotkeys.commandPalette'))}
             {renderHotkeyConfig('dialogHotkeys', 'quickSwitcher', t('settings.hotkeys.quickSwitcher'))}
             {renderHotkeyConfig('dialogHotkeys', 'globalSearch', t('settings.hotkeys.globalSearch'))}
+            {renderHotkeyConfig('dialogHotkeys', 'topicMap', t('settings.hotkeys.topicMap'))}
           </div>
         </Section>
       </div>

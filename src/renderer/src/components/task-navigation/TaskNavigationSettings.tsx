@@ -9,6 +9,7 @@ import {
 } from '@common/types';
 import { getProviderModelId } from '@common/agent';
 import { useTranslation } from 'react-i18next';
+import { MdAdd, MdRemove } from 'react-icons/md';
 
 import { getProjectName } from './utils';
 
@@ -168,6 +169,32 @@ export const TaskNavigationSettings = ({ settings, setSettings }: Props) => {
             onChange={(event) => handleCountChange(event.target.value)}
             onBlur={() => setCountText(String(navigation.quickSwitcherCount))}
           />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-text-primary">{t('taskNavigation.settings.quickSwitcherTopicCount')}</span>
+          <div className="flex items-center rounded border border-border-default">
+            <button
+              type="button"
+              aria-label={t('taskNavigation.settings.decrease')}
+              disabled={navigation.quickSwitcherTopicCount <= 1}
+              onClick={() => update({ quickSwitcherTopicCount: navigation.quickSwitcherTopicCount - 1 })}
+              className="px-1.5 py-1 text-text-muted hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <MdRemove className="w-3.5 h-3.5" />
+            </button>
+            <span className="w-6 text-center text-xs text-text-primary">{navigation.quickSwitcherTopicCount}</span>
+            <button
+              type="button"
+              aria-label={t('taskNavigation.settings.increase')}
+              disabled={navigation.quickSwitcherTopicCount >= 4}
+              onClick={() => update({ quickSwitcherTopicCount: navigation.quickSwitcherTopicCount + 1 })}
+              className="px-1.5 py-1 text-text-muted hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <MdAdd className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <InfoIcon tooltip={t('taskNavigation.settings.quickSwitcherTopicCountTooltip')} />
         </div>
 
         <div className="space-y-2">

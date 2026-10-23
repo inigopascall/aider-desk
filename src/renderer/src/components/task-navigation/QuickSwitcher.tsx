@@ -15,7 +15,6 @@ import { useTaskMessages } from '@/stores/taskStore';
 import { useTaskNavigationStore } from '@/stores/taskNavigationStore';
 
 const MAX_FILTERED_RESULTS = 30;
-const COLLAPSED_TOPIC_COUNT = 3;
 
 type Entry = {
   task: TaskData;
@@ -178,6 +177,7 @@ const QuickSwitcherContent = () => {
                 selected={index === selectedIndex}
                 expanded={expandedTaskId === entry.task.id}
                 locale={i18n.language}
+                topicCount={settings.quickSwitcherTopicCount}
                 onHover={setSelectedIndex}
                 onSelect={selectEntry}
               />
@@ -201,11 +201,12 @@ type RowProps = {
   selected: boolean;
   expanded: boolean;
   locale: string;
+  topicCount: number;
   onHover: (index: number) => void;
   onSelect: (entry: Entry) => void;
 };
 
-const QuickSwitcherRow = ({ entry, index, selected, expanded, locale, onHover, onSelect }: RowProps) => {
+const QuickSwitcherRow = ({ entry, index, selected, expanded, locale, topicCount, onHover, onSelect }: RowProps) => {
   const { t } = useTranslation();
   const { task, taskKey, projectName } = entry;
   const summary = getTaskSummary(task);
@@ -232,13 +233,13 @@ const QuickSwitcherRow = ({ entry, index, selected, expanded, locale, onHover, o
           <TaskStatusIcon taskId={task.id} state={task.state} />
         </div>
         {taskKey && <span className="shrink-0 font-mono text-2xs text-text-muted">{taskKey}</span>}
-        <span className="flex-1 min-w-0 truncate text-xs font-medium text-text-primary">{name}</span>
+        <span className="flex-1 min-w-0 truncate text-xs font-medium uppercase text-text-primary">{name}</span>
         {task.state && <TaskStateChip state={task.state} className="shrink-0" />}
         <span className="shrink-0 max-w-[140px] truncate text-2xs text-text-muted">{projectName}</span>
         <span className="shrink-0 w-16 text-right text-2xs text-text-muted">{formatRelativeTime(getTaskTimestamp(task), locale)}</span>
       </div>
       {summary && summary.topics.length > 0 && (
-        <TaskSummaryPreview summary={summary} maxTopics={expanded ? summary.topics.length : COLLAPSED_TOPIC_COUNT} className="mt-1.5 ml-6" />
+        <TaskSummaryPreview summary={summary} maxTopics={expanded ? summary.topics.length : topicCount} className="mt-1.5 ml-6" />
       )}
       {inProgress ? (
         <TaskActivityLine taskId={task.id} />

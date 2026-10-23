@@ -18,11 +18,26 @@ export interface MessageScrollRequest {
   nonce: number;
 }
 
+/** Where the topic map of a task was left: the selected row and the expanded topics. */
+export interface TopicMapViewState {
+  /** `topic:<topic index>` or `message:<topic index>:<message id>`; null selects the latest topic. */
+  selected: string | null;
+  /** Indexes of the expanded topics. */
+  expanded: number[];
+}
+
+/** Order of global search results: best match first, or most recently updated task first. */
+export type SearchOrder = 'relevance' | 'recent';
+
 type TaskNavigationStore = {
   quickSwitcherOpen: boolean;
   globalSearchOpen: boolean;
   globalSearchInitialQuery: string;
-  topicPanelOpen: boolean;
+  searchOrder: SearchOrder;
+  topicMapOpen: boolean;
+  /** View key of the task that hosts the topic map: the active task of the active project. */
+  topicMapHost: string | null;
+  topicMapViews: Record<string, TopicMapViewState>;
   pendingActivation: TaskActivationRequest | null;
   pendingScroll: MessageScrollRequest | null;
 
@@ -31,29 +46,56 @@ type TaskNavigationStore = {
   openGlobalSearch: (initialQuery?: string) => void;
   toggleGlobalSearch: () => void;
   closeGlobalSearch: () => void;
-  toggleTopicPanel: () => void;
-  setTopicPanelOpen: (open: boolean) => void;
+  toggleSearchOrder: () => void;
+  toggleTopicMap: () => void;
+  closeTopicMap: () => void;
+  setTopicMapHost: (viewKey: string) => void;
+  releaseTopicMapHost: (viewKey: string) => void;
+  setTopicMapView: (viewKey: string, view: TopicMapViewState) => void;
   requestTaskActivation: (baseDir: string, taskId: string, messageId?: string) => void;
   completeTaskActivation: (nonce: number) => void;
   completeMessageScroll: (nonce: number) => void;
 };
 
-const TOPIC_PANEL_STORAGE_KEY = 'task-navigation-topic-panel-open';
+const SEARCH_ORDER_STORAGE_KEY = 'task-navigation-search-order';
+const TOPIC_MAP_VIEWS_STORAGE_KEY = 'task-navigation-topic-map-views';
+const MAX_STORED_TOPIC_MAP_VIEWS = 100;
 
-const loadTopicPanelOpen = (): boolean => {
+const readStorage = (key: string): unknown => {
   try {
-    return localStorage.getItem(TOPIC_PANEL_STORAGE_KEY) === 'true';
+    const value = localStorage.getItem(key);
+    return value === null ? null : JSON.parse(value);
   } catch {
-    return false;
+    return null;
   }
 };
 
-const saveTopicPanelOpen = (open: boolean) => {
+const writeStorage = (key: string, value: unknown) => {
   try {
-    localStorage.setItem(TOPIC_PANEL_STORAGE_KEY, String(open));
+    localStorage.setItem(key, JSON.stringify(value));
   } catch {
     // Ignore storage errors.
   }
+};
+
+const loadSearchOrder = (): SearchOrder => (readStorage(SEARCH_ORDER_STORAGE_KEY) === 'recent' ? 'recent' : 'relevance');
+
+const loadTopicMapViews = (): Record<string, TopicMapViewState> => {
+  const stored = readStorage(TOPIC_MAP_VIEWS_STORAGE_KEY);
+  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) {
+    return {};
+  }
+  const views: Record<string, TopicMapViewState> = {};
+  for (const [key, value] of Object.entries(stored as Record<string, unknown>)) {
+    const view = value as Partial<TopicMapViewState> | null;
+    if (view && Array.isArray(view.expanded)) {
+      views[key] = {
+        selected: typeof view.selected === 'string' ? view.selected : null,
+        expanded: view.expanded.filter((index) => Number.isInteger(index)),
+      };
+    }
+  }
+  return views;
 };
 
 const closeCommandPalette = () => {
@@ -63,6 +105,8 @@ const closeCommandPalette = () => {
   }
 };
 
+export const getTopicMapViewKey = (baseDir: string, taskId: string): string => `${baseDir}::${taskId}`;
+
 let nextNonce = 1;
 
 export const useTaskNavigationStore = createWithEqualityFn<TaskNavigationStore>()(
@@ -70,7 +114,10 @@ export const useTaskNavigationStore = createWithEqualityFn<TaskNavigationStore>(
     quickSwitcherOpen: false,
     globalSearchOpen: false,
     globalSearchInitialQuery: '',
-    topicPanelOpen: loadTopicPanelOpen(),
+    searchOrder: loadSearchOrder(),
+    topicMapOpen: false,
+    topicMapHost: null,
+    topicMapViews: loadTopicMapViews(),
     pendingActivation: null,
     pendingScroll: null,
 
@@ -79,12 +126,12 @@ export const useTaskNavigationStore = createWithEqualityFn<TaskNavigationStore>(
       if (open) {
         closeCommandPalette();
       }
-      set({ quickSwitcherOpen: open, globalSearchOpen: false });
+      set({ quickSwitcherOpen: open, globalSearchOpen: false, topicMapOpen: false });
     },
     closeQuickSwitcher: () => set({ quickSwitcherOpen: false }),
     openGlobalSearch: (initialQuery = '') => {
       closeCommandPalette();
-      set({ globalSearchOpen: true, globalSearchInitialQuery: initialQuery, quickSwitcherOpen: false });
+      set({ globalSearchOpen: true, globalSearchInitialQuery: initialQuery, quickSwitcherOpen: false, topicMapOpen: false });
     },
     toggleGlobalSearch: () => {
       if (get().globalSearchOpen) {
@@ -94,14 +141,40 @@ export const useTaskNavigationStore = createWithEqualityFn<TaskNavigationStore>(
       }
     },
     closeGlobalSearch: () => set({ globalSearchOpen: false }),
-    toggleTopicPanel: () => {
-      const open = !get().topicPanelOpen;
-      saveTopicPanelOpen(open);
-      set({ topicPanelOpen: open });
+    toggleSearchOrder: () => {
+      const searchOrder: SearchOrder = get().searchOrder === 'recent' ? 'relevance' : 'recent';
+      writeStorage(SEARCH_ORDER_STORAGE_KEY, searchOrder);
+      set({ searchOrder });
     },
-    setTopicPanelOpen: (open) => {
-      saveTopicPanelOpen(open);
-      set({ topicPanelOpen: open });
+    toggleTopicMap: () => {
+      const { topicMapOpen, topicMapHost } = get();
+      if (topicMapOpen) {
+        set({ topicMapOpen: false });
+        return;
+      }
+      if (!topicMapHost) {
+        return;
+      }
+      closeCommandPalette();
+      set({ topicMapOpen: true, quickSwitcherOpen: false, globalSearchOpen: false });
+    },
+    closeTopicMap: () => set({ topicMapOpen: false }),
+    setTopicMapHost: (viewKey) => set({ topicMapHost: viewKey }),
+    releaseTopicMapHost: (viewKey) => {
+      if (get().topicMapHost === viewKey) {
+        set({ topicMapHost: null, topicMapOpen: false });
+      }
+    },
+    setTopicMapView: (viewKey, view) => {
+      const views = { ...get().topicMapViews };
+      delete views[viewKey];
+      views[viewKey] = view;
+      const keys = Object.keys(views);
+      for (const oldKey of keys.slice(0, Math.max(0, keys.length - MAX_STORED_TOPIC_MAP_VIEWS))) {
+        delete views[oldKey];
+      }
+      writeStorage(TOPIC_MAP_VIEWS_STORAGE_KEY, views);
+      set({ topicMapViews: views });
     },
     requestTaskActivation: (baseDir, taskId, messageId) => {
       const nonce = nextNonce++;
