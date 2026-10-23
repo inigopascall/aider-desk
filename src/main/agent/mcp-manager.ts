@@ -50,6 +50,10 @@ const MCP_INIT_TIMEOUT = 60_000;
 const MCP_QUARANTINE_BASE_MS = 30_000;
 const MCP_QUARANTINE_MAX_MS = 10 * 60_000;
 
+const hasAuthorizationHeader = (config: McpServerConfig): boolean => {
+  return Object.keys(config.headers ?? {}).some((header) => header.toLowerCase() === 'authorization');
+};
+
 export class McpAuthenticationRequiredError extends Error {
   constructor(serverName: string, language?: string) {
     super(translate(language, 'mcp.oauth.authenticationRequiredMessage', { serverName }));
@@ -143,7 +147,7 @@ export class McpManager {
 
       for (const serverName of profile.enabledServers) {
         const config = mcpServers[serverName];
-        if (!config?.url) {
+        if (!config?.url || hasAuthorizationHeader(config)) {
           continue;
         }
         const oauthStatus = await this.oauthManager.getStatus(config.url);
@@ -783,8 +787,9 @@ export class McpManager {
         logger.debug(`Connected to MCP server: ${serverName}`);
       } else if (config.url) {
         const headers = config.headers ? { ...config.headers } : undefined;
-        const oauthProvider = await this.oauthManager.getProvider(config.url);
-        const mcpSdkOAuthProvider = await this.oauthManager.getMcpSdkProvider(config.url);
+        const authorizationHeaderPresent = hasAuthorizationHeader(config);
+        const oauthProvider = authorizationHeaderPresent ? undefined : await this.oauthManager.getProvider(config.url);
+        const mcpSdkOAuthProvider = authorizationHeaderPresent ? undefined : await this.oauthManager.getMcpSdkProvider(config.url);
         const validatedFetch = this.oauthManager.createValidatedFetch(config.url);
         const transport = new StreamableHTTPClientTransport(new URL(config.url), {
           requestInit: { headers, redirect: 'error' },
@@ -954,7 +959,7 @@ export class McpManager {
   }
 
   async getOAuthStatus(config: McpServerConfig): Promise<McpOAuthStatusData> {
-    if (!config.url) {
+    if (!config.url || hasAuthorizationHeader(config)) {
       return { status: McpOAuthStatus.NotRequired };
     }
     return this.oauthManager.getStatus(config.url);
