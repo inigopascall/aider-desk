@@ -78,6 +78,7 @@ import { UpdateMemoryToolMessage } from './UpdateMemoryToolMessage';
 import { ActivateSkillToolMessage } from './ActivateSkillToolMessage';
 import { areMessagesEqual } from './utils';
 
+import { renderTopicCompactionMessage } from '@/components/task-navigation/TopicCompactionMessage';
 import { useProjectTaskWorktreePath } from '@/stores/projectStore';
 
 type Props = {
@@ -161,6 +162,10 @@ const MessageBlockComponent = ({
   }
 
   if (isResponseMessage(message)) {
+    const topicCompactionBlock = renderTopicCompactionMessage({ baseDir, taskId, message, allFiles, renderMarkdown, compact, showThinking, hideMessageBar });
+    if (topicCompactionBlock) {
+      return topicCompactionBlock;
+    }
     return (
       <ResponseMessageBlock
         baseDir={baseDir}

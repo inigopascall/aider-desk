@@ -90,6 +90,9 @@ import {
   WorkflowLogsStateData,
   GlobalSearchResponse,
   SearchIndexStatus,
+  TopicCompactionOptions,
+  TopicCompactionPreview,
+  TopicCompactionTarget,
 } from '@common/types';
 
 export type ExtensionDisplayAPI = Pick<
@@ -245,6 +248,10 @@ export interface ApplicationAPI {
   getSearchIndexStatus: () => Promise<SearchIndexStatus>;
   rebuildSearchIndex: () => Promise<SearchIndexStatus>;
   regenerateTaskSummary: (baseDir: string, taskId: string) => Promise<TaskData | null>;
+  previewTopicCompaction: (baseDir: string, taskId: string, target: TopicCompactionTarget) => Promise<TopicCompactionPreview>;
+  compactTopic: (baseDir: string, taskId: string, target: TopicCompactionTarget, options: TopicCompactionOptions) => Promise<TaskData>;
+  undoTopicCompaction: (baseDir: string, taskId: string, compactionId: string) => Promise<TaskData>;
+  restoreCompactionArchive: (baseDir: string, taskId: string, archiveId: string) => Promise<TaskData>;
   getRecentProjects: () => Promise<string[]>;
   addRecentProject: (baseDir: string) => Promise<void>;
   removeRecentProject: (baseDir: string) => Promise<void>;

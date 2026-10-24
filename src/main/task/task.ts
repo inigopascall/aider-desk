@@ -3421,6 +3421,17 @@ export class Task {
     await this.contextManager.loadMessages(messages);
   }
 
+  /**
+   * Replaces the conversation and sends it to the UI without changing the task state or metadata, then saves it.
+   * Used by task navigation to compact a topic, to put its original messages back and to restore an archive.
+   */
+  public async replaceContextMessages(messages: ContextMessage[]): Promise<void> {
+    this.contextManager.setContextMessages(messages);
+    await this.contextManager.loadMessages(messages, false);
+    await this.contextManager.flush();
+    await this.updateContextInfo();
+  }
+
   public async interruptResponse(interruptId?: string) {
     const extensionResult = await this.extensionManager.dispatchEvent('onInterrupted', { interruptId }, this.project, this);
     if (extensionResult.blocked) {

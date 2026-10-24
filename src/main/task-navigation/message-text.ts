@@ -1,4 +1,4 @@
-import { ContextMessage } from '@common/types';
+import { ContextMessage, isTopicCompactionMessageId, isTopicCompactionPromptMessageId } from '@common/types';
 import { extractServerNameToolName, extractTextContent } from '@common/utils';
 
 /** A user or assistant message reduced to the text that the task-navigation features work with. */
@@ -48,15 +48,24 @@ export const describeToolCall = (toolName: string, input: unknown): string => {
   return label;
 };
 
+export interface ConversationEntryOptions {
+  /** Include the recaps of topic compactions as assistant entries, as the search index does. Their markers are always left out. */
+  includeCompactionSummaries?: boolean;
+}
+
 /**
  * Reduces context messages to user and assistant entries with text. Tool results are dropped; tool calls from
- * assistant messages without text are attached to the preceding entry.
+ * assistant messages without text are attached to the preceding entry. The marker and recap messages of topic
+ * compactions are left out, unless includeCompactionSummaries keeps the recap.
  */
-export const toConversationEntries = (messages: ContextMessage[]): ConversationEntry[] => {
+export const toConversationEntries = (messages: ContextMessage[], options: ConversationEntryOptions = {}): ConversationEntry[] => {
   const entries: ConversationEntry[] = [];
 
   for (const message of messages) {
     if (message.role === 'tool' || !message.id) {
+      continue;
+    }
+    if (isTopicCompactionMessageId(message.id) && (isTopicCompactionPromptMessageId(message.id) || !options.includeCompactionSummaries)) {
       continue;
     }
 

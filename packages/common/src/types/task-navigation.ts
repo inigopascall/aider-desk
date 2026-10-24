@@ -10,6 +10,8 @@ export interface TaskTopicSection {
   summary: string;
   /** Id of the section's first message. The section runs up to the next section's start, or to the end of the topic. */
   startMessageId: string;
+  /** Set while the section is compacted into one recap; startMessageId keeps pointing at the original first message. */
+  compaction?: TopicCompactionInfo;
 }
 
 export interface TaskTopic {
@@ -23,6 +25,8 @@ export interface TaskTopic {
   sections?: TaskTopicSection[];
   /** True once sectioning was done or deliberately skipped; false while it is pending after a failed model call. */
   sectioned?: boolean;
+  /** Set while the whole topic is compacted into one recap; messageIds keep pointing at the original messages. */
+  compaction?: TopicCompactionInfo;
 }
 
 export interface TaskSummary {
@@ -78,6 +82,7 @@ export const TASK_NAVIGATION_METADATA_KEYS = {
   taskSummary: 'taskSummary',
   nameLocked: 'nameLocked',
   lastMessagePreview: 'lastMessagePreview',
+  compactionArchives: 'compactionArchives',
 } as const;
 
 type WithMetadata = { metadata?: Record<string, unknown> };
@@ -219,3 +224,151 @@ export interface GlobalSearchResponse {
   results: GlobalSearchTaskResult[];
   status: SearchIndexStatus;
 }
+
+// Topic compaction
+
+/** Prefix of the ids of the two messages that stand in for a compacted topic or section: the marker and the recap. */
+export const TOPIC_COMPACTION_ID_PREFIX = 'topic-compaction-';
+const TOPIC_COMPACTION_PROMPT_SUFFIX = '-prompt';
+/** Levels of detail of a compaction, from the shortest recap (1) to the most detailed (5). */
+export const TOPIC_COMPACTION_LEVELS = [1, 2, 3, 4, 5] as const;
+export const DEFAULT_TOPIC_COMPACTION_LEVEL = 3;
+
+export interface TopicCompactionTarget {
+  topicIndex: number;
+  sectionIndex?: number;
+  /** First message id of the target as the caller saw it; the call fails if it no longer matches. */
+  firstMessageId: string;
+}
+
+export interface TopicCompactionOptions {
+  level: number;
+  instructions?: string;
+}
+
+export type TopicCompactionBlockReason =
+  | 'running'
+  | 'current-topic'
+  | 'detached'
+  | 'not-contiguous'
+  | 'already-compacted'
+  | 'inside-compacted-topic'
+  | 'too-few-messages'
+  | 'tool-pairs'
+  | 'not-found'
+  | 'no-model';
+
+/** Every block reason. The message of an error thrown for a refusal starts with one of them followed by `: `. */
+export const TOPIC_COMPACTION_BLOCK_REASONS: readonly TopicCompactionBlockReason[] = [
+  'running',
+  'current-topic',
+  'detached',
+  'not-contiguous',
+  'already-compacted',
+  'inside-compacted-topic',
+  'too-few-messages',
+  'tool-pairs',
+  'not-found',
+  'no-model',
+];
+
+export interface TopicCompactionPreview {
+  compactable: boolean;
+  reason?: TopicCompactionBlockReason;
+  firstMessageId?: string;
+  /** Stored id of the first message after the stretch (an entry or a marker), or null when the stretch ends the conversation. */
+  endBeforeMessageId?: string | null;
+  messageCount: number;
+  sourceCharacters: number;
+  targetCharacters: Record<number, number>;
+}
+
+export interface TopicCompactionInfo {
+  /** Id of the compaction; its original messages are kept in `topic-compactions/<id>.json` in the task folder. */
+  id: string;
+  level: number;
+  compactedAt: string;
+  summaryMessageId: string;
+  promptMessageId: string;
+  /** Stored messages replaced by the recap. */
+  messageCount: number;
+  sourceCharacters: number;
+  summaryCharacters: number;
+  model?: string;
+  /** The recap is no longer in the conversation, for example after a built-in compaction; the original messages are kept. */
+  lost?: boolean;
+}
+
+export interface CompactionArchiveInfo {
+  id: string;
+  createdAt: string;
+  reason: 'built-in-compaction' | 'before-restore';
+}
+
+export const getCompactionSummaryMessageId = (compactionId: string): string => `${TOPIC_COMPACTION_ID_PREFIX}${compactionId}`;
+
+export const getCompactionPromptMessageId = (compactionId: string): string => `${TOPIC_COMPACTION_ID_PREFIX}${compactionId}${TOPIC_COMPACTION_PROMPT_SUFFIX}`;
+
+/** True for the id of a compaction's recap or of its marker. */
+export const isTopicCompactionMessageId = (id: string): boolean =>
+  typeof id === 'string' && id.startsWith(TOPIC_COMPACTION_ID_PREFIX) && id.length > TOPIC_COMPACTION_ID_PREFIX.length;
+
+export const isTopicCompactionPromptMessageId = (id: string): boolean =>
+  isTopicCompactionMessageId(id) &&
+  id.endsWith(TOPIC_COMPACTION_PROMPT_SUFFIX) &&
+  id.length > TOPIC_COMPACTION_ID_PREFIX.length + TOPIC_COMPACTION_PROMPT_SUFFIX.length;
+
+export const getTopicCompactionIdFromMessageId = (id: string): string | undefined => {
+  if (!isTopicCompactionMessageId(id)) {
+    return undefined;
+  }
+  const rest = id.slice(TOPIC_COMPACTION_ID_PREFIX.length);
+  return isTopicCompactionPromptMessageId(id) ? rest.slice(0, -TOPIC_COMPACTION_PROMPT_SUFFIX.length) : rest;
+};
+
+/** Recap length per level: a ratio of the source characters, clamped between a minimum and a maximum. */
+const COMPACTION_LENGTHS: Record<number, { ratio: number; min: number; max: number }> = {
+  1: { ratio: 0.03, min: 300, max: 800 },
+  2: { ratio: 0.08, min: 600, max: 2500 },
+  3: { ratio: 0.15, min: 1000, max: 6000 },
+  4: { ratio: 0.27, min: 1500, max: 14000 },
+  5: { ratio: 0.45, min: 2000, max: 40000 },
+};
+
+/** Rounds a level to an integer from 1 to 5; anything that is not a number gives the default level. */
+export const normalizeTopicCompactionLevel = (level: number): number => {
+  const rounded = Math.round(Number(level));
+  return Number.isFinite(rounded) ? Math.min(5, Math.max(1, rounded)) : DEFAULT_TOPIC_COMPACTION_LEVEL;
+};
+
+/**
+ * Target length of a recap in characters: the level's ratio of the source characters, clamped to the level's minimum and
+ * maximum, then capped at the larger of 200 and 60% of the source, rounded to the nearest 50.
+ */
+export const getCompactionTargetCharacters = (level: number, sourceCharacters: number): number => {
+  const lengths = COMPACTION_LENGTHS[normalizeTopicCompactionLevel(level)];
+  const source = Math.max(0, Number(sourceCharacters) || 0);
+  const clamped = Math.min(lengths.max, Math.max(lengths.min, lengths.ratio * source));
+  const capped = Math.min(clamped, Math.max(200, 0.6 * source));
+  return Math.round(capped / 50) * 50;
+};
+
+const BLOCK_REASON_PATTERN = new RegExp(`(?:^|[\\s:])(${TOPIC_COMPACTION_BLOCK_REASONS.join('|')}): `);
+
+/** Finds the block reason in an error message, also when a transport prefixed it (for example Electron's IPC). */
+export const getTopicCompactionBlockReason = (errorMessage: string): TopicCompactionBlockReason | undefined => {
+  const match = BLOCK_REASON_PATTERN.exec(errorMessage ?? '');
+  return match ? (match[1] as TopicCompactionBlockReason) : undefined;
+};
+
+export const getCompactionArchives = (task: WithMetadata): CompactionArchiveInfo[] => {
+  const value = task.metadata?.[TASK_NAVIGATION_METADATA_KEYS.compactionArchives];
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item) => item && typeof item === 'object' && typeof item.id === 'string') as CompactionArchiveInfo[];
+};
+
+/** True when a topic or a section of the task's topic map holds a compaction record, including a lost one. */
+export const taskHasTopicCompactions = (task: WithMetadata): boolean =>
+  (getTaskSummary(task)?.topics ?? []).some((topic) => !!topic.compaction || (topic.sections ?? []).some((section) => !!section.compaction));

@@ -1,9 +1,11 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { randomUUID } from 'crypto';
 import { DatabaseSync } from 'node:sqlite';
 
 import { generateText } from 'ai';
 import {
+  CompactionArchiveInfo,
   ContextMessage,
   DefaultTaskState,
   GlobalSearchMessageHit,
@@ -19,16 +21,21 @@ import {
   TaskNavigationSettings,
   TaskSummary,
   TaskTopic,
+  TopicCompactionOptions,
+  TopicCompactionPreview,
+  TopicCompactionTarget,
+  getCompactionArchives,
   getTaskLastMessagePreview,
   getTaskNavigationSettings,
   getTaskNumber,
   getTaskSummary,
   isTaskNameLocked,
+  normalizeTopicCompactionLevel,
 } from '@common/types';
 import { compareBaseDirs, extractProviderModel, normalizeBaseDir } from '@common/utils';
 
 import { TextEmbedder } from './embeddings';
-import { setTaskNavigationEventListener } from './hooks';
+import { setTaskNavigationContextReplaceListener, setTaskNavigationEventListener } from './hooks';
 import { setTaskNavigationManager } from './instance';
 import { ConversationEntry, collapseWhitespace, hashText, toConversationEntries, toIndexedContent, truncateText } from './message-text';
 import { ContextFingerprint, IndexMessageRow, IndexedTaskInfo, KeywordHit, SearchIndex, VectorWrite, buildFtsQuery } from './search-index';
@@ -45,6 +52,31 @@ import {
   sectionTopics,
   selectTopicsToSection,
 } from './summary-model';
+import {
+  CompactionReconcileResult,
+  TopicCompactionError,
+  applyTopicCompaction,
+  applyTopicCompactionUndo,
+  buildCompactionRequest,
+  buildTopicCompactionPreview,
+  cleanCompactionOutput,
+  collectCompactionIndexEntries,
+  findRemovedCompactionSummaries,
+  getBlockedPreview,
+  planTopicCompaction,
+  reconcileCompactions,
+  selectTopicsKeptOnRebuild,
+} from './topic-compaction';
+import {
+  deleteCompactionSidecar,
+  isCompactionArchiveId,
+  isSafeCompactionFileId,
+  listCompactionSidecars,
+  readCompactionArchive,
+  readCompactionSidecar,
+  writeCompactionArchive,
+  writeCompactionSidecar,
+} from './topic-compaction-store';
 
 import type { ModelManager } from '@/models';
 import type { Project, ProjectManager } from '@/project';
@@ -81,6 +113,9 @@ const CONCEPT_MATCH_LIMIT = 80;
 const CONCEPT_SNIPPET_LENGTH = 220;
 const DEFAULT_RESULT_LIMIT = 30;
 const COUNTS_CACHE_MS = 10_000;
+const COMPACTION_TIMEOUT_MS = 300_000;
+/** Built-in compaction clears the task metadata just after it replaces the conversation; the archive is recorded after that. */
+const ARCHIVE_METADATA_DELAY_MS = 1_500;
 
 type ChainName = 'summary' | 'numbering' | 'scan' | 'embedding';
 
@@ -96,10 +131,25 @@ interface SearchGroup {
   matchedBy: Set<'keyword' | 'concept'>;
 }
 
+export type TaskNavigationGenerate = (
+  modelId: string,
+  projectDir: string,
+  sessionId: string,
+  systemPrompt: string,
+  prompt: string,
+  timeoutMs: number,
+) => Promise<string>;
+
 export interface TaskNavigationManagerDependencies {
   store: Store;
   projectManager: ProjectManager;
   modelManager: ModelManager;
+  /** Search index to use instead of the one in the data directory. */
+  searchIndex?: SearchIndex;
+  /** Text generation to use instead of the configured providers. */
+  generate?: TaskNavigationGenerate;
+  /** Delay before the archive made before a built-in compaction is recorded in the task metadata. */
+  archiveMetadataDelayMs?: number;
 }
 
 const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -134,8 +184,25 @@ const toIndexedInfo = (task: TaskData): IndexedTaskInfo => {
 const getInfoSignature = (info: IndexedTaskInfo): string =>
   JSON.stringify([info.name, info.taskNumber ?? null, info.state ?? null, info.archived === true, info.topics ?? []]);
 
-const toIndexRows = (entries: ConversationEntry[]): IndexMessageRow[] =>
-  entries.map((entry) => ({ messageId: entry.id, role: entry.role, content: toIndexedContent(entry), timestamp: entry.timestamp }));
+const toIndexRow = (entry: ConversationEntry): IndexMessageRow => ({
+  messageId: entry.id,
+  role: entry.role,
+  content: toIndexedContent(entry),
+  timestamp: entry.timestamp,
+});
+
+/**
+ * Index rows of a task: its user and assistant entries with the recaps of topic compactions, and the original messages of
+ * the compactions in effect, read from their sidecars, each pointing at the outermost recap as its scroll target.
+ */
+export const loadTaskIndexRows = async (baseDir: string, taskId: string, messages: ContextMessage[]): Promise<IndexMessageRow[]> => {
+  const rows = toConversationEntries(messages, { includeCompactionSummaries: true }).map(toIndexRow);
+  const sidecars = await listCompactionSidecars(baseDir, taskId);
+  for (const { entry, scrollTarget } of collectCompactionIndexEntries(messages, sidecars)) {
+    rows.push({ ...toIndexRow(entry), scrollTarget });
+  }
+  return rows;
+};
 
 const buildPreview = (entries: ConversationEntry[]): TaskLastMessagePreview | undefined => {
   const last = entries[entries.length - 1];
@@ -179,13 +246,16 @@ const isSameFingerprint = (first?: ContextFingerprint | null, second?: ContextFi
  * loop waits for it.
  */
 export class TaskNavigationManager {
-  private readonly index = new SearchIndex(SEARCH_INDEX_FILE);
+  private readonly index: SearchIndex;
   private readonly embedder = new TextEmbedder();
   private readonly knownStates = new Map<string, string | undefined>();
   private readonly infoSignatures = new Map<string, string>();
   private readonly timers = new Map<string, NodeJS.Timeout>();
   private readonly highWaterMarks = new Map<string, number>();
   private readonly pendingSummaries = new Set<string>();
+  /** Tasks whose conversation this manager is replacing itself; the safeguard against built-in compaction ignores them. */
+  private readonly ownReplacements = new Set<string>();
+  private archiveJobs = 0;
   private readonly chains: Record<ChainName, Promise<unknown>> = {
     summary: Promise.resolve(),
     numbering: Promise.resolve(),
@@ -201,7 +271,9 @@ export class TaskNavigationManager {
   private disposed = false;
   private countsCache: { at: number; value: IndexCounts } | null = null;
 
-  constructor(private readonly dependencies: TaskNavigationManagerDependencies) {}
+  constructor(private readonly dependencies: TaskNavigationManagerDependencies) {
+    this.index = dependencies.searchIndex ?? new SearchIndex(SEARCH_INDEX_FILE);
+  }
 
   init(): void {
     try {
@@ -213,6 +285,7 @@ export class TaskNavigationManager {
 
     this.lastSettings = this.getSettings();
     setTaskNavigationEventListener(this.handleEvent);
+    setTaskNavigationContextReplaceListener(this.handleContextReplace);
 
     for (const project of this.dependencies.projectManager.getProjects()) {
       this.scheduleNumbering(project.baseDir);
@@ -223,6 +296,7 @@ export class TaskNavigationManager {
   dispose(): void {
     this.disposed = true;
     setTaskNavigationEventListener(null);
+    setTaskNavigationContextReplaceListener(null);
     setTaskNavigationManager(null);
     this.timers.forEach((timer) => clearTimeout(timer));
     this.timers.clear();
@@ -258,8 +332,10 @@ export class TaskNavigationManager {
           group.keywordRank = keywordRank++;
         }
         group.matchedBy.add('keyword');
-        if (group.hits.length < MAX_HITS_PER_TASK && !group.hits.some((existing) => existing.messageId === hit.messageId)) {
-          group.hits.push({ messageId: hit.messageId, role: hit.role, snippet: hit.snippet, timestamp: hit.timestamp, matchedBy: 'keyword' });
+        // An original message of a topic compaction is shown at the recap that stands in for it
+        const messageId = hit.scrollTarget ?? hit.messageId;
+        if (group.hits.length < MAX_HITS_PER_TASK && !group.hits.some((existing) => existing.messageId === messageId)) {
+          group.hits.push({ messageId, role: hit.role, snippet: hit.snippet, timestamp: hit.timestamp, matchedBy: 'keyword' });
         }
       }
     };
@@ -383,6 +459,291 @@ export class TaskNavigationManager {
   /** Rebuilds the topic map of a task from scratch. Resolves with the saved task data. */
   regenerateTaskSummary(baseDir: string, taskId: string): Promise<TaskData | null> {
     return this.queueSummary(baseDir, taskId, true);
+  }
+
+  // Topic compaction
+
+  /** Whether a topic or section can be compacted, its size and the recap length per level. A refusal is returned, never thrown. */
+  async previewTopicCompaction(baseDir: string, taskId: string, target: TopicCompactionTarget): Promise<TopicCompactionPreview> {
+    const task = this.findTask(baseDir, taskId);
+    if (!task) {
+      return getBlockedPreview('not-found');
+    }
+    if (task.task.state === DefaultTaskState.InProgress) {
+      return getBlockedPreview('running');
+    }
+    const summary = getTaskSummary(task.task);
+    if (!summary) {
+      return getBlockedPreview('not-found');
+    }
+    const preview = buildTopicCompactionPreview(await task.getContextMessages(), summary.topics, target);
+    if (preview.compactable && !(await this.resolveSummaryModel(task, this.getSettings()))) {
+      return getBlockedPreview('no-model');
+    }
+    return preview;
+  }
+
+  /**
+   * Compacts a finished topic, or a section of one, into a recap written by the topic map model. The original messages
+   * are kept in a sidecar file in the task folder. Resolves with the saved task data; on any failure nothing changes.
+   */
+  compactTopic(baseDir: string, taskId: string, target: TopicCompactionTarget, options: TopicCompactionOptions): Promise<TaskData> {
+    return this.enqueue('summary', () => this.runTopicCompaction(baseDir, taskId, target, options));
+  }
+
+  /** Puts the original messages of a compaction back in place of its recap. Resolves with the saved task data. */
+  undoTopicCompaction(baseDir: string, taskId: string, compactionId: string): Promise<TaskData> {
+    return this.enqueue('summary', () => this.runTopicCompactionUndo(baseDir, taskId, compactionId));
+  }
+
+  /** Puts back a conversation archived before a built-in compaction; the current conversation is archived first. */
+  restoreCompactionArchive(baseDir: string, taskId: string, archiveId: string): Promise<TaskData> {
+    return this.enqueue('summary', () => this.runArchiveRestore(baseDir, taskId, archiveId));
+  }
+
+  private requireIdleTask(baseDir: string, taskId: string): Task {
+    const task = this.findTask(baseDir, taskId);
+    if (!task) {
+      throw new TopicCompactionError('not-found', 'the task is not open');
+    }
+    this.assertNotRunning(task);
+    return task;
+  }
+
+  private assertNotRunning(task: Task): void {
+    if (task.task.state === DefaultTaskState.InProgress) {
+      throw new TopicCompactionError('running', 'the task is running');
+    }
+  }
+
+  private requireTaskSummary(task: Task): TaskSummary {
+    const summary = getTaskSummary(task.task);
+    if (!summary) {
+      throw new TopicCompactionError('not-found', 'the task has no topic map');
+    }
+    return summary;
+  }
+
+  /** Replaces the task's conversation; the safeguard against built-in compaction ignores the replacement. */
+  private async replaceConversation(task: Task, messages: ContextMessage[]): Promise<void> {
+    const key = taskKey(task.task.baseDir, task.task.id);
+    this.ownReplacements.add(key);
+    try {
+      await task.replaceContextMessages(messages);
+    } finally {
+      this.ownReplacements.delete(key);
+    }
+  }
+
+  private async saveTopics(task: Task, topics: TaskTopic[]): Promise<TaskData> {
+    const summary = this.requireTaskSummary(task);
+    return task.saveTask({ metadata: { ...(task.task.metadata ?? {}), [TASK_NAVIGATION_METADATA_KEYS.taskSummary]: { ...summary, topics } } }, false);
+  }
+
+  private async deleteSidecars(baseDir: string, taskId: string, compactionIds: string[]): Promise<void> {
+    for (const compactionId of compactionIds) {
+      try {
+        await deleteCompactionSidecar(baseDir, taskId, compactionId);
+      } catch (error) {
+        logger.warn('[TaskNavigation] Failed to delete a compaction sidecar', { taskId, compactionId, error: describeError(error) });
+      }
+    }
+  }
+
+  private async runTopicCompaction(baseDir: string, taskId: string, target: TopicCompactionTarget, options: TopicCompactionOptions): Promise<TaskData> {
+    const task = this.requireIdleTask(baseDir, taskId);
+    const summary = this.requireTaskSummary(task);
+    const plan = planTopicCompaction(await task.getContextMessages(), summary.topics, target);
+    const modelId = await this.resolveSummaryModel(task, this.getSettings());
+    if (!modelId) {
+      throw new TopicCompactionError('no-model', 'no model is available for topic maps');
+    }
+
+    const level = normalizeTopicCompactionLevel(options.level);
+    const instructions = options.instructions?.trim() || undefined;
+    const request = buildCompactionRequest(getDisplayName(task.task), summary.topics, plan, level, instructions);
+    const response = await this.generate(modelId, task.task.baseDir, taskId, request.systemPrompt, request.prompt, COMPACTION_TIMEOUT_MS);
+    const recap = cleanCompactionOutput(response);
+    if (!recap) {
+      throw new Error('The model returned an empty recap');
+    }
+
+    // The conversation may have changed while the recap was written: check again against what is stored now
+    this.assertNotRunning(task);
+    const messages = await task.getContextMessages();
+    const result = applyTopicCompaction({
+      messages,
+      topics: this.requireTaskSummary(task).topics,
+      target,
+      compactionId: randomUUID(),
+      recap,
+      level,
+      model: modelId,
+      instructions,
+      expectedMessageIds: plan.stretch.messageIds,
+    });
+
+    const taskBaseDir = task.task.baseDir;
+    await writeCompactionSidecar(taskBaseDir, taskId, result.sidecar);
+    let replaced = false;
+    try {
+      await this.replaceConversation(task, result.messages);
+      replaced = true;
+      const saved = await this.saveTopics(task, result.topics);
+      logger.info('[TaskNavigation] Compacted a topic', { taskId, compactionId: result.info.id, messages: result.info.messageCount, level, modelId });
+      await this.reindexTask(task);
+      return saved;
+    } catch (error) {
+      if (replaced) {
+        await this.replaceConversation(task, messages).catch((restoreError) =>
+          logger.error('[TaskNavigation] Failed to put the conversation back after a failed compaction', { taskId, error: describeError(restoreError) }),
+        );
+      }
+      await this.deleteSidecars(taskBaseDir, taskId, [result.sidecar.id]);
+      throw error;
+    }
+  }
+
+  private async runTopicCompactionUndo(baseDir: string, taskId: string, compactionId: string): Promise<TaskData> {
+    if (!isSafeCompactionFileId(compactionId)) {
+      throw new TopicCompactionError('not-found', 'the topic map has no such compaction');
+    }
+    const task = this.requireIdleTask(baseDir, taskId);
+    const summary = this.requireTaskSummary(task);
+    const taskBaseDir = task.task.baseDir;
+    const sidecar = await readCompactionSidecar(taskBaseDir, taskId, compactionId);
+    if (!sidecar) {
+      throw new TopicCompactionError('not-found', 'the original messages of this compaction are missing');
+    }
+
+    const result = applyTopicCompactionUndo(await task.getContextMessages(), summary.topics, compactionId, sidecar.originalMessages);
+    await this.replaceConversation(task, result.messages);
+    const saved = await this.saveTopics(task, result.topics);
+    await this.deleteSidecars(taskBaseDir, taskId, [compactionId]);
+    logger.info('[TaskNavigation] Undid a topic compaction', { taskId, compactionId });
+    await this.reindexTask(task);
+    return saved;
+  }
+
+  private async runArchiveRestore(baseDir: string, taskId: string, archiveId: string): Promise<TaskData> {
+    if (!isCompactionArchiveId(archiveId)) {
+      throw new TopicCompactionError('not-found', 'the archive does not exist');
+    }
+    const task = this.requireIdleTask(baseDir, taskId);
+    const taskBaseDir = task.task.baseDir;
+    const archive = await readCompactionArchive(taskBaseDir, taskId, archiveId);
+    if (!archive) {
+      throw new TopicCompactionError('not-found', 'the archive does not exist');
+    }
+
+    const info = await writeCompactionArchive(taskBaseDir, taskId, 'before-restore', await task.getContextMessages());
+    await this.replaceConversation(task, archive.messages);
+    const metadata: Record<string, unknown> = {
+      ...(task.task.metadata ?? {}),
+      [TASK_NAVIGATION_METADATA_KEYS.compactionArchives]: [...getCompactionArchives(task.task), info],
+    };
+    const summary = getTaskSummary(task.task);
+    let deleted: string[] = [];
+    if (summary) {
+      const reconciled = this.reconcileTopics(summary.topics, archive.messages);
+      metadata[TASK_NAVIGATION_METADATA_KEYS.taskSummary] = { ...summary, topics: reconciled.topics };
+      deleted = reconciled.deletedCompactionIds;
+    }
+    const saved = await task.saveTask({ metadata }, false);
+    await this.deleteSidecars(taskBaseDir, taskId, deleted);
+    logger.info('[TaskNavigation] Restored a conversation archive', { taskId, archiveId, archivedCurrentAs: info.id });
+    await this.reindexTask(task);
+    return saved;
+  }
+
+  /**
+   * Safeguard against built-in compaction: when a replacement of the conversation that this manager did not make removes
+   * the recap of a topic compaction, the previous conversation is archived in the task folder at once, and the archive is
+   * recorded in the task metadata once the replacement has settled.
+   */
+  private readonly handleContextReplace = (baseDir: string, taskId: string, previousMessages: unknown[], nextMessages: unknown[]): void => {
+    if (this.disposed || !baseDir || !taskId || this.ownReplacements.has(taskKey(baseDir, taskId))) {
+      return;
+    }
+    if (findRemovedCompactionSummaries(previousMessages, nextMessages).length === 0) {
+      return;
+    }
+
+    let messages: ContextMessage[];
+    try {
+      messages = JSON.parse(JSON.stringify(previousMessages)) as ContextMessage[];
+    } catch {
+      messages = [...previousMessages] as ContextMessage[];
+    }
+    const navigationMetadata = this.captureNavigationMetadata(baseDir, taskId);
+    const archived = writeCompactionArchive(baseDir, taskId, 'built-in-compaction', messages);
+    archived.catch((error) =>
+      logger.error('[TaskNavigation] Failed to archive the conversation before a built-in compaction', { taskId, error: describeError(error) }),
+    );
+    this.archiveJobs++;
+    this.schedule(
+      `compaction-archive:${taskKey(baseDir, taskId)}:${this.archiveJobs}`,
+      this.dependencies.archiveMetadataDelayMs ?? ARCHIVE_METADATA_DELAY_MS,
+      () => this.enqueue('summary', async () => this.recordArchive(baseDir, taskId, await archived, navigationMetadata)),
+    );
+  };
+
+  /** The task navigation metadata of a task. Built-in compaction clears the task metadata; recordArchive puts it back. */
+  private captureNavigationMetadata(baseDir: string, taskId: string): Record<string, unknown> {
+    const metadata = this.findTask(baseDir, taskId)?.task.metadata ?? {};
+    const keys: string[] = Object.values(TASK_NAVIGATION_METADATA_KEYS);
+    return JSON.parse(JSON.stringify(Object.fromEntries(keys.filter((key) => key in metadata).map((key) => [key, metadata[key]])))) as Record<string, unknown>;
+  }
+
+  /** Records an archive made before a built-in compaction, puts back the cleared task navigation metadata, and reconciles its compactions. */
+  private async recordArchive(baseDir: string, taskId: string, info: CompactionArchiveInfo, navigationMetadata: Record<string, unknown>): Promise<void> {
+    const task = this.findTask(baseDir, taskId);
+    if (!task) {
+      return;
+    }
+    // Keys that hold a value again are kept, except the task number: a number given since then is replaced by the captured one
+    const metadata: Record<string, unknown> = { ...(task.task.metadata ?? {}) };
+    for (const [key, value] of Object.entries(navigationMetadata)) {
+      if (metadata[key] === undefined || key === TASK_NAVIGATION_METADATA_KEYS.taskNumber) {
+        metadata[key] = value;
+      }
+    }
+    metadata[TASK_NAVIGATION_METADATA_KEYS.compactionArchives] = [...getCompactionArchives({ metadata }), info];
+    const summary = getTaskSummary({ metadata });
+    let deleted: string[] = [];
+    if (summary) {
+      const reconciled = this.reconcileTopics(summary.topics, await task.getContextMessages());
+      metadata[TASK_NAVIGATION_METADATA_KEYS.taskSummary] = { ...summary, topics: reconciled.topics };
+      deleted = reconciled.deletedCompactionIds;
+    }
+    await task.saveTask({ metadata }, false);
+    await this.deleteSidecars(task.task.baseDir, taskId, deleted);
+    logger.info('[TaskNavigation] Archived the conversation before a built-in compaction', { taskId, archiveId: info.id });
+  }
+
+  /** Brings compaction records and detached flags in line with the stored conversation. */
+  private reconcileTopics(topics: TaskTopic[], messages: ContextMessage[]): CompactionReconcileResult {
+    const storedIds = messages.map((message) => message.id);
+    const reconciled = reconcileCompactions(topics, storedIds);
+    return { ...reconciled, topics: markDetachedTopics(reconciled.topics, toConversationEntries(messages), storedIds) };
+  }
+
+  /** Re-indexes a task at once, after a compaction, an undo or a restore. */
+  private async reindexTask(task: Task): Promise<void> {
+    if (!this.getSettings().searchIndexEnabled || !this.index.isOpen()) {
+      return;
+    }
+    try {
+      const { baseDir, id } = task.task;
+      const info = toIndexedInfo(task.task);
+      const fingerprint = await statFingerprint(getContextPath(baseDir, id));
+      this.index.replaceTask(info, await loadTaskIndexRows(baseDir, id, await task.getContextMessages()), fingerprint);
+      this.infoSignatures.set(taskKey(baseDir, id), getInfoSignature(info));
+      this.countsCache = null;
+      this.queueEmbedding(baseDir, id);
+    } catch (error) {
+      logger.warn('[TaskNavigation] Failed to re-index a task', { taskId: task.task.id, error: describeError(error) });
+    }
   }
 
   // Events
@@ -595,11 +956,12 @@ export class TaskNavigationManager {
     }
 
     const settings = this.getSettings();
-    const entries = toConversationEntries(await task.getContextMessages());
+    const messages = await task.getContextMessages();
+    const entries = toConversationEntries(messages);
 
     if (settings.searchIndexEnabled && this.index.isOpen()) {
       const fingerprint = await statFingerprint(getContextPath(task.task.baseDir, taskId));
-      this.index.replaceTask(toIndexedInfo(task.task), toIndexRows(entries), fingerprint);
+      this.index.replaceTask(toIndexedInfo(task.task), await loadTaskIndexRows(task.task.baseDir, taskId, messages), fingerprint);
       this.infoSignatures.set(taskKey(task.task.baseDir, taskId), getInfoSignature(toIndexedInfo(task.task)));
       this.queueEmbedding(task.task.baseDir, taskId);
     }
@@ -648,7 +1010,17 @@ export class TaskNavigationManager {
     return profile ? `${profile.provider}/${profile.model}` : null;
   }
 
-  private async generate(modelId: string, projectDir: string, sessionId: string, systemPrompt: string, prompt: string): Promise<string> {
+  private async generate(
+    modelId: string,
+    projectDir: string,
+    sessionId: string,
+    systemPrompt: string,
+    prompt: string,
+    timeoutMs = SUMMARY_TIMEOUT_MS,
+  ): Promise<string> {
+    if (this.dependencies.generate) {
+      return this.dependencies.generate(modelId, projectDir, sessionId, systemPrompt, prompt, timeoutMs);
+    }
     const { modelManager, store } = this.dependencies;
     const [providerId, modelName] = extractProviderModel(modelId);
     const provider = modelManager.getProviders().find((candidate) => candidate.id === providerId);
@@ -661,7 +1033,7 @@ export class TaskNavigationManager {
       model,
       instructions: systemPrompt,
       messages: [{ role: 'user', content: prompt }],
-      abortSignal: AbortSignal.timeout(SUMMARY_TIMEOUT_MS),
+      abortSignal: AbortSignal.timeout(timeoutMs),
       providerOptions: modelManager.getProviderOptions(provider, modelName),
       ...modelManager.getProviderParameters(provider, modelName),
     });
@@ -680,9 +1052,13 @@ export class TaskNavigationManager {
     }
 
     const settings = this.getSettings();
-    const entries = toConversationEntries(await task.getContextMessages());
-    const existing = rebuild ? undefined : getTaskSummary(task.task);
-    let topics: TaskTopic[] = markDetachedTopics(existing?.topics ?? [], entries);
+    const messages = await task.getContextMessages();
+    const entries = toConversationEntries(messages);
+    const stored = getTaskSummary(task.task);
+    const existing = rebuild ? undefined : stored;
+    // A rebuild keeps the topics up to the last compacted one, so that their compactions can still be undone
+    const reconciled = this.reconcileTopics(rebuild ? selectTopicsKeptOnRebuild(stored?.topics ?? []) : (existing?.topics ?? []), messages);
+    let topics: TaskTopic[] = reconciled.topics;
     let title = existing?.title ?? '';
     let lastSummarizedMessageId = existing?.lastSummarizedMessageId;
     let model = existing?.model;
@@ -774,6 +1150,7 @@ export class TaskNavigationManager {
     }
 
     const saved = await task.saveTask(updates, false);
+    await this.deleteSidecars(saved.baseDir, saved.id, reconciled.deletedCompactionIds);
     this.queueEmbedding(saved.baseDir, saved.id);
     return saved;
   }
@@ -890,8 +1267,8 @@ export class TaskNavigationManager {
           const contextPath = getContextPath(baseDir, taskId);
           const fingerprint = await statFingerprint(contextPath);
           if (fingerprint && !isSameFingerprint(fingerprint, this.index.getFingerprint(baseDir, taskId))) {
-            const entries = toConversationEntries(readContextMessages(await fs.readFile(contextPath, 'utf8')));
-            this.index.replaceTask(info, toIndexRows(entries), fingerprint);
+            const messages = readContextMessages(await fs.readFile(contextPath, 'utf8'));
+            this.index.replaceTask(info, await loadTaskIndexRows(baseDir, taskId, messages), fingerprint);
             reindexed++;
             await delay(SCAN_YIELD_MS);
           } else {
@@ -1038,7 +1415,7 @@ export class TaskNavigationManager {
       .forEach((message) => {
         desired.push({
           slot: `user:${message.messageId}`,
-          messageId: message.messageId,
+          messageId: message.scrollTarget ?? message.messageId,
           kind: 'user',
           text: truncateText(collapseWhitespace(message.content), USER_VECTOR_TEXT_LENGTH),
         });

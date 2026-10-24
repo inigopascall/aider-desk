@@ -38,6 +38,7 @@ import {
   AiderConnectorStatus,
   GlobalSearchResponse,
   SearchIndexStatus,
+  TopicCompactionPreview,
 } from '@common/types';
 
 const EMPTY_SEARCH_INDEX_STATUS: SearchIndexStatus = {
@@ -184,6 +185,13 @@ export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedOb
     getSearchIndexStatus: vi.fn((): Promise<SearchIndexStatus> => Promise.resolve(EMPTY_SEARCH_INDEX_STATUS)),
     rebuildSearchIndex: vi.fn((): Promise<SearchIndexStatus> => Promise.resolve(EMPTY_SEARCH_INDEX_STATUS)),
     regenerateTaskSummary: vi.fn((): Promise<TaskData | null> => Promise.resolve(null)),
+    previewTopicCompaction: vi.fn(
+      (): Promise<TopicCompactionPreview> =>
+        Promise.resolve({ compactable: false, reason: 'not-found', messageCount: 0, sourceCharacters: 0, targetCharacters: {} }),
+    ),
+    compactTopic: vi.fn((): Promise<TaskData> => Promise.resolve({ id: 'mock-task-id' } as TaskData)),
+    undoTopicCompaction: vi.fn((): Promise<TaskData> => Promise.resolve({ id: 'mock-task-id' } as TaskData)),
+    restoreCompactionArchive: vi.fn((): Promise<TaskData> => Promise.resolve({ id: 'mock-task-id' } as TaskData)),
 
     // Recent projects operations
     getRecentProjects: vi.fn((): Promise<string[]> => Promise.resolve([])),

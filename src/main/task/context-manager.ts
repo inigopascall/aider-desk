@@ -28,6 +28,7 @@ import { atomicWriteJsonFile, cleanupStaleTempFiles } from '@/utils/atomic-write
 import { extractPromptContextFromToolResult } from '@/agent/utils';
 import { migrateContextV1toV2 } from '@/task/migrations/v1-to-v2';
 import { AIDER_DESK_TASKS_DIR } from '@/constants';
+import { notifyTaskNavigationContextReplace } from '@/task-navigation/hooks';
 
 const CURRENT_CONTEXT_VERSION = 2;
 
@@ -305,6 +306,7 @@ export class ContextManager {
   }
 
   setContextMessages(contextMessages: ContextMessage[], save = true) {
+    notifyTaskNavigationContextReplace(this.task.getProjectDir(), this.taskId, this.messages, contextMessages);
     logger.debug('Setting task context messages', {
       taskId: this.taskId,
       messages: contextMessages.length,

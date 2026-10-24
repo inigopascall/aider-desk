@@ -88,6 +88,9 @@ import {
   WorkflowLogsStateData,
   GlobalSearchResponse,
   SearchIndexStatus,
+  TopicCompactionOptions,
+  TopicCompactionPreview,
+  TopicCompactionTarget,
 } from '@common/types';
 import { ApplicationAPI, RendererProcessMemoryInfo } from '@common/api';
 import { type AxiosInstance, create } from 'axios';
@@ -912,6 +915,18 @@ export class BrowserApi implements ApplicationAPI {
   }
   regenerateTaskSummary(baseDir: string, taskId: string): Promise<TaskData | null> {
     return this.post('/task-navigation/regenerate-summary', { projectDir: baseDir, taskId });
+  }
+  previewTopicCompaction(baseDir: string, taskId: string, target: TopicCompactionTarget): Promise<TopicCompactionPreview> {
+    return this.post('/task-navigation/compaction/preview', { projectDir: baseDir, taskId, target });
+  }
+  compactTopic(baseDir: string, taskId: string, target: TopicCompactionTarget, options: TopicCompactionOptions): Promise<TaskData> {
+    return this.post('/task-navigation/compaction/compact', { projectDir: baseDir, taskId, target, options });
+  }
+  undoTopicCompaction(baseDir: string, taskId: string, compactionId: string): Promise<TaskData> {
+    return this.post('/task-navigation/compaction/undo', { projectDir: baseDir, taskId, compactionId });
+  }
+  restoreCompactionArchive(baseDir: string, taskId: string, archiveId: string): Promise<TaskData> {
+    return this.post('/task-navigation/compaction/restore-archive', { projectDir: baseDir, taskId, archiveId });
   }
 
   getRecentProjects(): Promise<string[]> {

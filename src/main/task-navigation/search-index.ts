@@ -27,6 +27,8 @@ export interface IndexMessageRow {
   role: SearchHitRole;
   content: string;
   timestamp?: number;
+  /** For an original message of a topic compaction: id of the recap that stands in for it in the conversation. */
+  scrollTarget?: string;
 }
 
 export interface ReplaceTaskResult {
@@ -43,6 +45,8 @@ export interface KeywordHit {
   role: SearchHitRole;
   snippet: string;
   timestamp?: number;
+  /** Id of the recap to scroll to, when the hit is an original message of a topic compaction. */
+  scrollTarget?: string;
   /** bm25 rank: lower is better. */
   rank: number;
 }
@@ -117,6 +121,7 @@ const SCHEMA_SQL = `
     content TEXT NOT NULL,
     content_hash TEXT NOT NULL DEFAULT '',
     timestamp INTEGER,
+    scroll_target TEXT,
     UNIQUE (base_dir, task_id, message_id)
   );
   CREATE VIRTUAL TABLE IF NOT EXISTS nav_messages_fts USING fts5(content, content='nav_messages', content_rowid='id', tokenize='porter unicode61 remove_diacritics 2');
@@ -146,7 +151,19 @@ const SCHEMA_SQL = `
   CREATE INDEX IF NOT EXISTS nav_vectors_task ON nav_vectors (base_dir, task_id);
 `;
 
-const INSERT_MESSAGE_SQL = 'INSERT INTO nav_messages (base_dir, task_id, message_id, role, content, content_hash, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)';
+const INSERT_MESSAGE_SQL =
+  'INSERT INTO nav_messages (base_dir, task_id, message_id, role, content, content_hash, timestamp, scroll_target) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
+
+/** Hash of an indexed row: its text and, when it has one, its scroll target, so that a change of either rewrites the row. */
+const hashRow = (row: IndexMessageRow): string => (row.scrollTarget ? `${hashText(row.content)}>${row.scrollTarget}` : hashText(row.content));
+
+/** Adds the columns that databases created by earlier versions lack. */
+const migrateSchema = (db: DatabaseSync): void => {
+  const columns = db.prepare('PRAGMA table_info(nav_messages)').all() as unknown as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === 'scroll_target')) {
+    db.exec('ALTER TABLE nav_messages ADD COLUMN scroll_target TEXT');
+  }
+};
 
 const toNullable = <T>(value: T | undefined): T | null => (value === undefined ? null : value);
 
@@ -221,6 +238,7 @@ export class SearchIndex {
     db.exec('PRAGMA journal_mode = WAL');
     db.exec('PRAGMA synchronous = NORMAL');
     db.exec(SCHEMA_SQL);
+    migrateSchema(db);
     this.db = db;
   }
 
@@ -285,7 +303,7 @@ export class SearchIndex {
     db.prepare('DELETE FROM nav_messages WHERE base_dir = ? AND task_id = ? AND message_id = ?').run(info.baseDir, info.taskId, SEARCH_TASK_ROW_MESSAGE_ID);
     const taskRowContent = [info.name, ...(info.topics ?? [])].filter(Boolean).join('\n');
     if (taskRowContent) {
-      db.prepare(INSERT_MESSAGE_SQL).run(info.baseDir, info.taskId, SEARCH_TASK_ROW_MESSAGE_ID, 'task', taskRowContent, hashText(taskRowContent), null);
+      db.prepare(INSERT_MESSAGE_SQL).run(info.baseDir, info.taskId, SEARCH_TASK_ROW_MESSAGE_ID, 'task', taskRowContent, hashText(taskRowContent), null, null);
     }
   }
 
@@ -309,7 +327,7 @@ export class SearchIndex {
       if (!row.content || row.messageId === SEARCH_TASK_ROW_MESSAGE_ID || desired.has(row.messageId)) {
         continue;
       }
-      desired.set(row.messageId, { ...row, hash: hashText(row.content) });
+      desired.set(row.messageId, { ...row, hash: hashRow(row) });
     }
 
     return this.transaction((db) => {
@@ -331,7 +349,7 @@ export class SearchIndex {
       const insert = db.prepare(INSERT_MESSAGE_SQL);
       for (const row of desired.values()) {
         if (existingHashes.get(row.messageId) !== row.hash) {
-          insert.run(info.baseDir, info.taskId, row.messageId, row.role, row.content, row.hash, toNullable(row.timestamp));
+          insert.run(info.baseDir, info.taskId, row.messageId, row.role, row.content, row.hash, toNullable(row.timestamp), toNullable(row.scrollTarget));
           inserted++;
         }
       }
@@ -372,10 +390,13 @@ export class SearchIndex {
     return row ? toTaskInfo(row) : undefined;
   }
 
-  getUserMessages(baseDir: string, taskId: string): Array<{ messageId: string; content: string }> {
-    return this.database
-      .prepare("SELECT message_id AS messageId, content FROM nav_messages WHERE base_dir = ? AND task_id = ? AND role = 'user' ORDER BY id")
-      .all(baseDir, taskId) as unknown as Array<{ messageId: string; content: string }>;
+  getUserMessages(baseDir: string, taskId: string): Array<{ messageId: string; content: string; scrollTarget?: string }> {
+    const rows = this.database
+      .prepare(
+        "SELECT message_id AS messageId, content, scroll_target AS scrollTarget FROM nav_messages WHERE base_dir = ? AND task_id = ? AND role = 'user' ORDER BY id",
+      )
+      .all(baseDir, taskId) as unknown as Array<{ messageId: string; content: string; scrollTarget: string | null }>;
+    return rows.map((row) => ({ messageId: row.messageId, content: row.content, scrollTarget: row.scrollTarget ?? undefined }));
   }
 
   counts(): { tasks: number; messages: number; vectors: number } {
@@ -393,15 +414,15 @@ export class SearchIndex {
   keywordSearch(ftsQuery: string, limit: number): KeywordHit[] {
     const rows = this.database
       .prepare(
-        `SELECT m.base_dir AS baseDir, m.task_id AS taskId, m.message_id AS messageId, m.role AS role, m.timestamp AS timestamp,
+        `SELECT m.base_dir AS baseDir, m.task_id AS taskId, m.message_id AS messageId, m.role AS role, m.timestamp AS timestamp, m.scroll_target AS scrollTarget,
                 snippet(nav_messages_fts, 0, char(2), char(3), '…', 18) AS snippet, bm25(nav_messages_fts) AS rank
          FROM nav_messages_fts JOIN nav_messages m ON m.id = nav_messages_fts.rowid
          WHERE nav_messages_fts MATCH ?
          ORDER BY rank
          LIMIT ?`,
       )
-      .all(ftsQuery, limit) as unknown as Array<Omit<KeywordHit, 'timestamp'> & { timestamp: number | null }>;
-    return rows.map((row) => ({ ...row, timestamp: row.timestamp ?? undefined }));
+      .all(ftsQuery, limit) as unknown as Array<Omit<KeywordHit, 'timestamp' | 'scrollTarget'> & { timestamp: number | null; scrollTarget: string | null }>;
+    return rows.map((row) => ({ ...row, timestamp: row.timestamp ?? undefined, scrollTarget: row.scrollTarget ?? undefined }));
   }
 
   getVectorHashes(baseDir: string, taskId: string): Map<string, string> {

@@ -68,7 +68,79 @@
       "titleLocked": "Title fixed: the task was renamed by hand",
       "unlockTitle": "Let the topic map name this task again",
       "regenerateFailed": "Topic map generation failed: {{error}}",
-      "hint": "↑↓ navigate · Enter expand / jump to message · ← → collapse / expand · Esc close"
+      "hint": "↑↓ navigate · Enter expand / jump · ← → collapse / expand · c compact · u undo · Esc close"
+    },
+    "compaction": {
+      "compact": "Compact…",
+      "undo": "Undo compaction",
+      "undoShort": "Undo",
+      "compactedTag": "compacted",
+      "badge_one": "Compacted · level {{level}} · {{count}} message",
+      "badge_other": "Compacted · level {{level}} · {{count}} messages",
+      "badgeUnknown": "Compacted",
+      "compacting": "Compacting…",
+      "undoTopicFirst": "Undo the topic's compaction first",
+      "taskRunning": "Not available while the task is running",
+      "recap": "AI recap",
+      "recapLost": "Recap removed by a built-in compaction",
+      "compactFailed": "Compaction failed: {{error}}",
+      "undoFailed": "Undo failed: {{error}}",
+      "restoreFailed": "Restore failed: {{error}}",
+      "panel": {
+        "loading": "Measuring the selection…",
+        "size_one": "{{count}} message, about {{words}} words",
+        "size_other": "{{count}} messages, about {{words}} words",
+        "words": "≈ {{words}} words",
+        "levels": {
+          "1": "Brief",
+          "2": "Short",
+          "3": "Balanced",
+          "4": "Detailed",
+          "5": "Extensive"
+        },
+        "levelDescriptions": {
+          "1": "One or two short paragraphs",
+          "2": "The main points and outcomes",
+          "3": "Decisions, changes and open points",
+          "4": "Most details, files and commands",
+          "5": "About 45% of the text"
+        },
+        "instructions": "Instructions (optional)",
+        "instructionsPlaceholder": "e.g. keep every file path and command",
+        "confirm": "Compact",
+        "cancel": "Cancel",
+        "close": "Close",
+        "hint": "← → or 1–5 level · Tab instructions · Enter compact · Esc back"
+      },
+      "archives": {
+        "open": "Restore archived conversation",
+        "title": "Archived conversations",
+        "reasons": {
+          "built-in-compaction": "before a built-in compaction",
+          "before-restore": "before restoring an archive"
+        },
+        "confirmTitle": "Restore archived conversation",
+        "confirmText": "The current conversation is archived first, so you can restore it later. Restore the conversation archived {{date}}?",
+        "confirm": "Restore",
+        "back": "Back"
+      },
+      "builtIn": {
+        "title": "This task has compacted topics",
+        "text": "{{command}} archives the full conversation first. Compacted topics can't be undone until that archive is restored. Continue?",
+        "confirm": "Continue"
+      },
+      "reasons": {
+        "running": "The task is running.",
+        "current-topic": "The current topic can't be compacted until a new topic starts.",
+        "detached": "This topic is no longer in the conversation.",
+        "not-contiguous": "This topic's messages are not in one unbroken run. Rebuild the topic map first.",
+        "already-compacted": "This part is already compacted.",
+        "inside-compacted-topic": "Undo the compaction of the whole topic first.",
+        "too-few-messages": "There is too little here to compact.",
+        "tool-pairs": "Compacting this part would separate a tool call from its result.",
+        "not-found": "The topic map has changed. Reopen the topic map and try again.",
+        "no-model": "No model is set for topic maps. Choose one in Settings → Tasks → Task Navigation."
+      }
     },
     "settings": {
       "title": "Task Navigation",

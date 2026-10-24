@@ -1,3 +1,8 @@
+import { promises as fs } from 'fs';
+import os from 'os';
+import path from 'path';
+import { DatabaseSync } from 'node:sqlite';
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SEARCH_SNIPPET_MATCH_START, SEARCH_TASK_ROW_MESSAGE_ID } from '@common/types';
 
@@ -90,5 +95,67 @@ describe('SearchIndex', () => {
     index.writeVectors('/p', 't1', [], new Set(['title']));
     expect(index.counts().vectors).toBe(1);
     expect(index.searchVectors(Float32Array.from([0, 1, 0]), 5, 0.5)).toEqual([]);
+  });
+});
+
+describe('SearchIndex scroll targets', () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'task-nav-index-'));
+  });
+
+  afterEach(async () => {
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  it('adds the scroll_target column to an existing database that lacks it, and keeps its rows', () => {
+    const file = path.join(dir, 'old.db');
+    const old = new DatabaseSync(file);
+    old.exec(
+      `CREATE TABLE nav_messages (id INTEGER PRIMARY KEY, base_dir TEXT NOT NULL, task_id TEXT NOT NULL, message_id TEXT NOT NULL, role TEXT NOT NULL,
+       content TEXT NOT NULL, content_hash TEXT NOT NULL DEFAULT '', timestamp INTEGER, UNIQUE (base_dir, task_id, message_id))`,
+    );
+    old
+      .prepare('INSERT INTO nav_messages (base_dir, task_id, message_id, role, content, content_hash) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('/old', 't1', 'm1', 'user', 'An old question', 'h');
+    old.close();
+
+    const migrated = new SearchIndex(file);
+    migrated.open();
+    try {
+      expect(migrated.getUserMessages('/old', 't1')).toEqual([{ messageId: 'm1', content: 'An old question' }]);
+      migrated.replaceTask(info, [{ messageId: 'u4', role: 'user', content: 'Configure the zebra cache', scrollTarget: 'topic-compaction-a' }]);
+      expect(migrated.getUserMessages('/p', 't1')).toEqual([{ messageId: 'u4', content: 'Configure the zebra cache', scrollTarget: 'topic-compaction-a' }]);
+    } finally {
+      migrated.close();
+    }
+
+    const reopened = new SearchIndex(file);
+    reopened.open();
+    try {
+      expect(reopened.keywordSearch(query('zebra'), 10)[0]).toMatchObject({ messageId: 'u4', scrollTarget: 'topic-compaction-a' });
+    } finally {
+      reopened.close();
+    }
+  });
+
+  it('returns the scroll target of a hit and rewrites a row whose scroll target alone changed', () => {
+    const index = new SearchIndex(':memory:');
+    index.open();
+    try {
+      const row: IndexMessageRow = { messageId: 'u4', role: 'user', content: 'Configure the zebra cache', scrollTarget: 'topic-compaction-a' };
+      index.replaceTask(info, [row]);
+      expect(index.keywordSearch(query('zebra'), 10)[0]).toMatchObject({ messageId: 'u4', scrollTarget: 'topic-compaction-a' });
+
+      expect(index.replaceTask(info, [row])).toEqual({ inserted: 0, removed: 0 });
+      expect(index.replaceTask(info, [{ ...row, scrollTarget: 'topic-compaction-b' }])).toEqual({ inserted: 1, removed: 1 });
+      expect(index.keywordSearch(query('zebra'), 10)[0].scrollTarget).toBe('topic-compaction-b');
+
+      expect(index.replaceTask(info, [{ messageId: 'u4', role: 'user', content: 'Configure the zebra cache' }])).toEqual({ inserted: 1, removed: 1 });
+      expect(index.keywordSearch(query('zebra'), 10)[0].scrollTarget).toBeUndefined();
+    } finally {
+      index.close();
+    }
   });
 });

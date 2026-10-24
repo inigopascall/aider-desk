@@ -41,6 +41,7 @@ import { showErrorNotification } from '@/utils/notifications';
 import { sanitizeMilkdownMarkdown } from '@/utils/markdown';
 import { useCommands } from '@/hooks/useCommands';
 import { useSkills } from '@/hooks/useSkills';
+import { useBuiltInCompactionGuard } from '@/components/task-navigation/BuiltInCompactionGuard';
 import { useApi } from '@/contexts/ApiContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -296,6 +297,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
     const [customCommands, extensionCommands] = useCommands(baseDir);
     const skills = useSkills(baseDir, taskId);
     const api = useApi();
+    const { guardBuiltInCompaction, builtInCompactionDialog } = useBuiltInCompactionGuard(baseDir, taskId);
     const { getProfiles } = useAgents();
 
     const subagentProfiles = useMemo(() => {
@@ -920,7 +922,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
             break;
           case '/compact':
             prepareForNextPrompt();
-            api.compactConversation(baseDir, taskId, mode, args);
+            guardBuiltInCompaction('/compact', () => api.compactConversation(baseDir, taskId, mode, args));
             break;
           case '/smart-compact':
             prepareForNextPrompt();
@@ -930,7 +932,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
             const parsedCount = args ? Number(args) : NaN;
             const preserveCount = Number.isInteger(parsedCount) && parsedCount > 0 ? parsedCount : undefined;
             prepareForNextPrompt();
-            void api.honeConversation(baseDir, taskId, preserveCount);
+            guardBuiltInCompaction('/hone', () => void api.honeConversation(baseDir, taskId, preserveCount));
             break;
           }
           case '/handoff': {
@@ -1000,6 +1002,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
         setTextWithDispatch,
         handoffConversation,
         createSubtask,
+        guardBuiltInCompaction,
       ],
     );
 
@@ -1648,6 +1651,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
 
     return (
       <div className="w-full relative">
+        {builtInCompactionDialog}
         {queuedPrompts && queuedPrompts.length > 0 && (
           <QueuedPromptsList
             queuedPrompts={queuedPrompts}
