@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { TaskTopic } from '@common/types';
+import { TaskTopic, TopicCompactionInfo } from '@common/types';
 
 import { ConversationEntry, collapseWhitespace, truncateText } from './message-text';
 
@@ -129,21 +129,34 @@ export const getUnsummarizedEntries = (entries: ConversationEntry[], topics: Tas
   return entries.filter((entry) => !referenced.has(entry.id));
 };
 
-/** Flags topics whose messages are all gone from the conversation (compaction, clearing, redo) as detached. */
-export const markDetachedTopics = (topics: TaskTopic[], entries: ConversationEntry[]): TaskTopic[] => {
-  const present = new Set(entries.map((entry) => entry.id));
+/**
+ * Flags topics whose messages are all gone from the conversation (compaction, clearing, redo) as detached. A topic stays
+ * present while one of its messages is present, or the recap of its own compaction or of one of its sections'
+ * compactions is. storedMessageIds are the ids of every stored message, recaps included.
+ */
+export const markDetachedTopics = (topics: TaskTopic[], entries: ConversationEntry[], storedMessageIds: Iterable<string> = []): TaskTopic[] => {
+  const present = new Set([...entries.map((entry) => entry.id), ...storedMessageIds]);
   return topics.map((topic) => {
-    const detached = topic.messageIds.length > 0 && !topic.messageIds.some((id) => present.has(id));
+    const recapIds = [topic.compaction, ...(topic.sections ?? []).map((section) => section.compaction)]
+      .filter((info): info is TopicCompactionInfo => info !== undefined)
+      .map((info) => info.summaryMessageId);
+    const detached = topic.messageIds.length > 0 && !topic.messageIds.some((id) => present.has(id)) && !recapIds.some((id) => present.has(id));
     const { detached: _previous, ...rest } = topic;
     return detached ? { ...rest, detached: true } : rest;
   });
 };
 
-/** Index of the current topic: the last topic that is not detached, or -1. Only the current topic receives new messages. */
+/** True when a topic, or one of its sections, is compacted. */
+export const hasCompactionRecord = (topic: TaskTopic): boolean => !!topic.compaction || !!topic.sections?.some((section) => section.compaction);
+
+/**
+ * Index of the current topic: the last topic that is not detached, or -1. Only the current topic receives new messages.
+ * A compacted topic is finished, so when the last topic that is not detached holds a compaction there is no current topic.
+ */
 export const findCurrentTopicIndex = (topics: TaskTopic[]): number => {
   for (let index = topics.length - 1; index >= 0; index--) {
     if (!topics[index].detached) {
-      return index;
+      return hasCompactionRecord(topics[index]) ? -1 : index;
     }
   }
   return -1;
@@ -312,14 +325,14 @@ export const applySummaryUpdate = (topics: TaskTopic[], chunk: PreparedEntry[], 
 
 /**
  * Topics to divide into sections after a topic map update: finished topics (not the last live topic, not detached, not
- * sectioned) that were the current topic before the update, were created during it, or are pending after a failed
+ * sectioned, not compacted) that were the current topic before the update, were created during it, or are pending after a failed
  * attempt (`sectioned: false`). A rebuild passes -1 and 0, so every finished topic qualifies.
  */
 export const selectTopicsToSection = (topics: TaskTopic[], previousCurrentIndex: number, previousCount: number): number[] => {
   const lastLiveIndex = findCurrentTopicIndex(topics);
   const indexes: number[] = [];
   topics.forEach((topic, index) => {
-    if (index === lastLiveIndex || topic.detached || topic.sectioned === true) {
+    if (index === lastLiveIndex || topic.detached || topic.sectioned === true || topic.compaction) {
       return;
     }
     if (topic.sectioned === false || index === previousCurrentIndex || index >= previousCount) {

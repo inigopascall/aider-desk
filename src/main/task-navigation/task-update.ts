@@ -5,6 +5,7 @@ const MANAGED_METADATA_KEYS: string[] = [
   TASK_NAVIGATION_METADATA_KEYS.taskNumber,
   TASK_NAVIGATION_METADATA_KEYS.taskSummary,
   TASK_NAVIGATION_METADATA_KEYS.lastMessagePreview,
+  TASK_NAVIGATION_METADATA_KEYS.compactionArchives,
 ];
 const GENERATING_NAME = '<<generating>>';
 
