@@ -2,6 +2,7 @@ import { KeyboardEvent, MouseEvent, useCallback, useEffect, useMemo, useRef, use
 import { DefaultTaskState, TaskData, getTaskKey, getTaskLastMessagePreview, getTaskSummary } from '@common/types';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
+import { MdSubdirectoryArrowRight } from 'react-icons/md';
 
 import { useTaskNavigationSettings } from './hooks';
 import { TaskSummaryPreview } from './TaskSummaryPreview';
@@ -19,6 +20,7 @@ const MAX_FILTERED_RESULTS = 30;
 type Entry = {
   task: TaskData;
   taskKey?: string;
+  parent?: { name: string; taskKey?: string };
   projectName: string;
   /** Lower-cased key and name. */
   nameText: string;
@@ -48,12 +50,14 @@ const QuickSwitcherContent = () => {
   const entries = useMemo(() => {
     const result: Entry[] = [];
     projectTasksMap.forEach((tasks) => {
+      const tasksById = new Map(tasks.map((task) => [task.id, task]));
       for (const task of tasks) {
         if (!task.createdAt) {
           continue;
         }
         const taskKey = getTaskKey(task, settings);
         const projectName = getProjectName(task.baseDir);
+        const parent = task.parentId && task.parentId !== task.id ? tasksById.get(task.parentId) : undefined;
         const summary = getTaskSummary(task);
         const name = task.name === GENERATING_TASK_NAME ? '' : task.name;
         const nameText = `${taskKey ?? ''} ${name}`.toLowerCase();
@@ -61,6 +65,7 @@ const QuickSwitcherContent = () => {
         result.push({
           task,
           taskKey,
+          parent: parent ? { name: parent.name, taskKey: getTaskKey(parent, settings) } : undefined,
           projectName,
           nameText,
           searchText: `${nameText} ${projectName} ${summary?.title ?? ''} ${topicsText}`.toLowerCase(),
@@ -208,11 +213,12 @@ type RowProps = {
 
 const QuickSwitcherRow = ({ entry, index, selected, expanded, locale, topicCount, onHover, onSelect }: RowProps) => {
   const { t } = useTranslation();
-  const { task, taskKey, projectName } = entry;
+  const { task, taskKey, parent, projectName } = entry;
   const summary = getTaskSummary(task);
   const preview = getTaskLastMessagePreview(task);
   const inProgress = task.state === DefaultTaskState.InProgress;
   const name = task.name === GENERATING_TASK_NAME ? t('taskNavigation.generatingName') : task.name || t('taskNavigation.untitled');
+  const parentName = parent ? (parent.name === GENERATING_TASK_NAME ? t('taskNavigation.generatingName') : parent.name || t('taskNavigation.untitled')) : null;
 
   return (
     <div
@@ -228,28 +234,43 @@ const QuickSwitcherRow = ({ entry, index, selected, expanded, locale, topicCount
         selected ? 'bg-bg-tertiary border-l-accent-primary' : 'border-l-transparent',
       )}
     >
-      <div className="flex items-center gap-2 min-w-0">
-        <div className="w-4 h-4 shrink-0 flex items-center justify-center">
-          <TaskStatusIcon taskId={task.id} state={task.state} />
-        </div>
-        {taskKey && <span className="shrink-0 font-mono text-2xs text-text-muted">{taskKey}</span>}
-        <span className="flex-1 min-w-0 truncate text-xs font-medium uppercase text-text-primary">{name}</span>
-        {task.state && <TaskStateChip state={task.state} className="shrink-0" />}
-        <span className="shrink-0 max-w-[140px] truncate text-2xs text-text-muted">{projectName}</span>
-        <span className="shrink-0 w-16 text-right text-2xs text-text-muted">{formatRelativeTime(getTaskTimestamp(task), locale)}</span>
-      </div>
-      {summary && summary.topics.length > 0 && (
-        <TaskSummaryPreview summary={summary} maxTopics={expanded ? summary.topics.length : topicCount} className="mt-1.5 ml-6" />
-      )}
-      {inProgress ? (
-        <TaskActivityLine taskId={task.id} />
-      ) : (
-        preview && (
-          <div className="mt-1 ml-6 line-clamp-2 text-2xs text-text-muted">
-            {`${preview.role === 'user' ? t('taskNavigation.you') : t('taskNavigation.assistant')}: ${preview.text}`}
+      <div className={clsx(parent && 'flex flex-col gap-1.5')}>
+        {parent && (
+          <div className="flex items-center gap-2 min-w-0 text-2xs text-text-muted">
+            {parent.taskKey && <span className="shrink-0 font-mono">{parent.taskKey}</span>}
+            <span className="truncate" title={parent.name}>
+              {parentName}
+            </span>
           </div>
-        )
-      )}
+        )}
+        <div className={clsx(parent && 'flex items-start gap-2 min-w-0')}>
+          {parent && <MdSubdirectoryArrowRight aria-hidden="true" className="w-4 h-4 shrink-0 text-text-muted" />}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-4 h-4 shrink-0 flex items-center justify-center">
+                <TaskStatusIcon taskId={task.id} state={task.state} />
+              </div>
+              {taskKey && <span className="shrink-0 font-mono text-2xs text-text-muted">{taskKey}</span>}
+              <span className="flex-1 min-w-0 truncate text-xs font-medium uppercase text-text-primary">{name}</span>
+              {task.state && <TaskStateChip state={task.state} className="shrink-0" />}
+              <span className="shrink-0 max-w-[140px] truncate text-2xs text-text-muted">{projectName}</span>
+              <span className="shrink-0 w-16 text-right text-2xs text-text-muted">{formatRelativeTime(getTaskTimestamp(task), locale)}</span>
+            </div>
+            {summary && summary.topics.length > 0 && (
+              <TaskSummaryPreview summary={summary} maxTopics={expanded ? summary.topics.length : topicCount} className="mt-1.5 ml-6" />
+            )}
+            {inProgress ? (
+              <TaskActivityLine taskId={task.id} />
+            ) : (
+              preview && (
+                <div className="mt-1 ml-6 line-clamp-2 text-2xs text-text-muted">
+                  {`${preview.role === 'user' ? t('taskNavigation.you') : t('taskNavigation.assistant')}: ${preview.text}`}
+                </div>
+              )
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
