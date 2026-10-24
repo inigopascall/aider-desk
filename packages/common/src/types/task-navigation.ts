@@ -368,3 +368,7 @@ export const getCompactionArchives = (task: WithMetadata): CompactionArchiveInfo
   }
   return value.filter((item) => item && typeof item === 'object' && typeof item.id === 'string') as CompactionArchiveInfo[];
 };
+
+/** True when a topic or a section of the task's topic map holds a compaction record, including a lost one. */
+export const taskHasTopicCompactions = (task: WithMetadata): boolean =>
+  (getTaskSummary(task)?.topics ?? []).some((topic) => !!topic.compaction || (topic.sections ?? []).some((section) => !!section.compaction));

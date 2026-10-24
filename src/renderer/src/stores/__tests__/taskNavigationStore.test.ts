@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getTopicMapViewKey, useTaskNavigationStore } from '../taskNavigationStore';
 
@@ -49,5 +49,50 @@ describe('taskNavigationStore', () => {
 
     expect(after).not.toBe(before);
     expect(JSON.parse(localStorage.getItem('task-navigation-search-order') ?? 'null')).toBe(after);
+  });
+
+  it('keeps pending compactions until the matching nonce ends them', () => {
+    useTaskNavigationStore.setState({ pendingCompactions: {} });
+    const store = useTaskNavigationStore.getState();
+
+    const first = store.startPendingCompaction('m1', 'm5');
+    const second = store.startPendingCompaction('m9', null);
+    expect(second).not.toBe(first);
+    expect(useTaskNavigationStore.getState().pendingCompactions).toEqual({
+      m1: { endBeforeMessageId: 'm5', nonce: first },
+      m9: { endBeforeMessageId: null, nonce: second },
+    });
+
+    store.endPendingCompaction('m1', second);
+    expect(useTaskNavigationStore.getState().pendingCompactions.m1).toBeDefined();
+
+    store.endPendingCompaction('m1', first);
+    expect(useTaskNavigationStore.getState().pendingCompactions).toEqual({ m9: { endBeforeMessageId: null, nonce: second } });
+    expect(localStorage.getItem('task-navigation-pending-compactions')).toBeNull();
+  });
+
+  it('remembers the compaction level, clamped to 1–5, in localStorage', () => {
+    const store = useTaskNavigationStore.getState();
+
+    store.setCompactionLevel(5);
+    expect(useTaskNavigationStore.getState().compactionLevel).toBe(5);
+    expect(JSON.parse(localStorage.getItem('task-navigation-compaction-level') ?? 'null')).toBe(5);
+
+    store.setCompactionLevel(9);
+    expect(useTaskNavigationStore.getState().compactionLevel).toBe(5);
+    store.setCompactionLevel(0);
+    expect(useTaskNavigationStore.getState().compactionLevel).toBe(1);
+  });
+
+  it('loads the remembered compaction level, and defaults to level 3', async () => {
+    localStorage.setItem('task-navigation-compaction-level', '4');
+    vi.resetModules();
+    const stored = await import('../taskNavigationStore');
+    expect(stored.useTaskNavigationStore.getState().compactionLevel).toBe(4);
+
+    localStorage.removeItem('task-navigation-compaction-level');
+    vi.resetModules();
+    const fresh = await import('../taskNavigationStore');
+    expect(fresh.useTaskNavigationStore.getState().compactionLevel).toBe(3);
   });
 });

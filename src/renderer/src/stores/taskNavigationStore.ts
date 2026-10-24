@@ -1,4 +1,4 @@
-import { SEARCH_TASK_ROW_MESSAGE_ID } from '@common/types';
+import { DEFAULT_TOPIC_COMPACTION_LEVEL, SEARCH_TASK_ROW_MESSAGE_ID, normalizeTopicCompactionLevel } from '@common/types';
 import { createWithEqualityFn } from 'zustand/traditional';
 import { shallow } from 'zustand/vanilla/shallow';
 
@@ -20,10 +20,17 @@ export interface MessageScrollRequest {
 
 /** Where the topic map of a task was left: the selected row and the expanded topics. */
 export interface TopicMapViewState {
-  /** `topic:<topic index>` or `message:<topic index>:<message id>`; null selects the latest topic. */
+  /** `topic:<topic index>`, `message:<topic index>:<message id>` or `recap:<topic index>[:<section index>]`; null selects the latest topic. */
   selected: string | null;
   /** Indexes of the expanded topics. */
   expanded: number[];
+}
+
+/** A topic compaction in flight: its stretch of messages is shown as one "Compacting…" placeholder. */
+export interface PendingCompaction {
+  /** Id of the first message after the stretch, or null when the stretch runs to the end of the conversation. */
+  endBeforeMessageId: string | null;
+  nonce: number;
 }
 
 /** Order of global search results: best match first, or most recently updated task first. */
@@ -40,6 +47,10 @@ type TaskNavigationStore = {
   topicMapViews: Record<string, TopicMapViewState>;
   pendingActivation: TaskActivationRequest | null;
   pendingScroll: MessageScrollRequest | null;
+  /** Topic compactions in flight, keyed by the first message id of their stretch. Not persisted. */
+  pendingCompactions: Record<string, PendingCompaction>;
+  /** Level of detail last used for a topic compaction. */
+  compactionLevel: number;
 
   toggleQuickSwitcher: () => void;
   closeQuickSwitcher: () => void;
@@ -55,11 +66,16 @@ type TaskNavigationStore = {
   requestTaskActivation: (baseDir: string, taskId: string, messageId?: string) => void;
   completeTaskActivation: (nonce: number) => void;
   completeMessageScroll: (nonce: number) => void;
+  /** Shows a stretch of messages as a placeholder until endPendingCompaction is called with the returned nonce. */
+  startPendingCompaction: (firstMessageId: string, endBeforeMessageId: string | null) => number;
+  endPendingCompaction: (firstMessageId: string, nonce: number) => void;
+  setCompactionLevel: (level: number) => void;
 };
 
 const SEARCH_ORDER_STORAGE_KEY = 'task-navigation-search-order';
 const TOPIC_MAP_VIEWS_STORAGE_KEY = 'task-navigation-topic-map-views';
 const MAX_STORED_TOPIC_MAP_VIEWS = 100;
+const COMPACTION_LEVEL_STORAGE_KEY = 'task-navigation-compaction-level';
 
 const readStorage = (key: string): unknown => {
   try {
@@ -79,6 +95,11 @@ const writeStorage = (key: string, value: unknown) => {
 };
 
 const loadSearchOrder = (): SearchOrder => (readStorage(SEARCH_ORDER_STORAGE_KEY) === 'recent' ? 'recent' : 'relevance');
+
+const loadCompactionLevel = (): number => {
+  const stored = readStorage(COMPACTION_LEVEL_STORAGE_KEY);
+  return typeof stored === 'number' ? normalizeTopicCompactionLevel(stored) : DEFAULT_TOPIC_COMPACTION_LEVEL;
+};
 
 const loadTopicMapViews = (): Record<string, TopicMapViewState> => {
   const stored = readStorage(TOPIC_MAP_VIEWS_STORAGE_KEY);
@@ -120,6 +141,8 @@ export const useTaskNavigationStore = createWithEqualityFn<TaskNavigationStore>(
     topicMapViews: loadTopicMapViews(),
     pendingActivation: null,
     pendingScroll: null,
+    pendingCompactions: {},
+    compactionLevel: loadCompactionLevel(),
 
     toggleQuickSwitcher: () => {
       const open = !get().quickSwitcherOpen;
@@ -193,6 +216,25 @@ export const useTaskNavigationStore = createWithEqualityFn<TaskNavigationStore>(
       if (get().pendingScroll?.nonce === nonce) {
         set({ pendingScroll: null });
       }
+    },
+    startPendingCompaction: (firstMessageId, endBeforeMessageId) => {
+      const nonce = nextNonce++;
+      set({ pendingCompactions: { ...get().pendingCompactions, [firstMessageId]: { endBeforeMessageId, nonce } } });
+      return nonce;
+    },
+    endPendingCompaction: (firstMessageId, nonce) => {
+      const { pendingCompactions } = get();
+      if (pendingCompactions[firstMessageId]?.nonce !== nonce) {
+        return;
+      }
+      const next = { ...pendingCompactions };
+      delete next[firstMessageId];
+      set({ pendingCompactions: next });
+    },
+    setCompactionLevel: (level) => {
+      const compactionLevel = normalizeTopicCompactionLevel(level);
+      writeStorage(COMPACTION_LEVEL_STORAGE_KEY, compactionLevel);
+      set({ compactionLevel });
     },
   }),
   shallow,

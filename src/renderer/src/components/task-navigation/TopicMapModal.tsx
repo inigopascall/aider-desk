@@ -1,15 +1,37 @@
-import { KeyboardEvent, MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { KeyboardEvent, MouseEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { TASK_NAVIGATION_METADATA_KEYS, TaskData, getTaskKey, getTaskSummary, isResponseMessage, isTaskNameLocked, isUserMessage } from '@common/types';
+import {
+  CompactionArchiveInfo,
+  DefaultTaskState,
+  TASK_NAVIGATION_METADATA_KEYS,
+  TaskData,
+  TopicCompactionInfo,
+  TopicCompactionTarget,
+  getCompactionArchives,
+  getTaskKey,
+  getTaskSummary,
+  isResponseMessage,
+  isTaskNameLocked,
+  isUserMessage,
+} from '@common/types';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { MdKeyboardArrowDown, MdKeyboardArrowRight, MdOutlineRefresh } from 'react-icons/md';
+import { MdCompress, MdKeyboardArrowDown, MdKeyboardArrowRight, MdOutlineArchive, MdOutlineRefresh, MdUndo } from 'react-icons/md';
 import { VscLock } from 'react-icons/vsc';
 
+import {
+  getCompactionErrorText,
+  getCompactionTargetForRow,
+  getTopicCompactionTarget,
+  getUndoCompactionIdForRow,
+  isCompactableFromClient,
+} from './compaction-utils';
 import { useTaskNavigationSettings } from './hooks';
-import { MessageRow, NavigableRow, buildTopicMapRows, isNavigableRow, topicRowKey } from './topic-map-rows';
+import { TopicCompactionPanel } from './TopicCompactionPanel';
+import { MessageRow, NavigableRow, RecapRow, buildTopicMapRows, isNavigableRow, topicRowKey } from './topic-map-rows';
 import { GENERATING_TASK_NAME, formatRelativeTime } from './utils';
 
+import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { extractFirstLine, truncateTitle } from '@/components/message/outline';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { useApi } from '@/contexts/ApiContext';
@@ -25,34 +47,84 @@ type MessageLabel = {
   text: string;
 };
 
+type CompactionTargetState = {
+  target: TopicCompactionTarget;
+  title: string;
+};
+
 type Props = {
   task: TaskData;
   onScrollToMessage: (messageId: string) => void;
 };
 
+const formatArchiveDate = (value: string): string => {
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? new Date(time).toLocaleString() : value;
+};
+
 /**
  * Topic map of a task as a modal, opened from the task bar or the topic map hotkey. Only the active task's view renders
- * it, so the task that hosts it is always the one on screen.
+ * it, so the task that hosts it is always the one on screen. It also hosts the confirmation of an archive restore, which
+ * is shown after the modal closes.
  */
 export const TopicMapModal = ({ task, onScrollToMessage }: Props) => {
+  const { t } = useTranslation();
+  const api = useApi();
   const viewKey = getTopicMapViewKey(task.baseDir, task.id);
   const isOpen = useTaskNavigationStore((state) => state.topicMapOpen);
   const setTopicMapHost = useTaskNavigationStore((state) => state.setTopicMapHost);
   const releaseTopicMapHost = useTaskNavigationStore((state) => state.releaseTopicMapHost);
+  const [restoreArchive, setRestoreArchive] = useState<CompactionArchiveInfo | null>(null);
 
   useEffect(() => {
     setTopicMapHost(viewKey);
     return () => releaseTopicMapHost(viewKey);
   }, [viewKey, setTopicMapHost, releaseTopicMapHost]);
 
-  return isOpen ? createPortal(<TopicMapContent task={task} viewKey={viewKey} onScrollToMessage={onScrollToMessage} />, document.body) : null;
+  const handleRestore = async () => {
+    const archive = restoreArchive;
+    if (!archive) {
+      return;
+    }
+    setRestoreArchive(null);
+    try {
+      await api.restoreCompactionArchive(task.baseDir, task.id, archive.id);
+    } catch (error) {
+      const text = getCompactionErrorText(error, 'taskNavigation.compaction.restoreFailed');
+      showErrorNotification(t(text.key, text.values));
+    }
+  };
+
+  return (
+    <>
+      {isOpen &&
+        createPortal(
+          <TopicMapContent task={task} viewKey={viewKey} onScrollToMessage={onScrollToMessage} onRequestRestore={setRestoreArchive} />,
+          document.body,
+        )}
+      {restoreArchive && (
+        <ConfirmDialog
+          title={t('taskNavigation.compaction.archives.confirmTitle')}
+          onConfirm={() => void handleRestore()}
+          onCancel={() => setRestoreArchive(null)}
+          confirmButtonText={t('taskNavigation.compaction.archives.confirm')}
+          closeOnEscape
+        >
+          <p className="text-sm text-text-primary">
+            {t('taskNavigation.compaction.archives.confirmText', { date: formatArchiveDate(restoreArchive.createdAt) })}
+          </p>
+        </ConfirmDialog>
+      )}
+    </>
+  );
 };
 
 type ContentProps = Props & {
   viewKey: string;
+  onRequestRestore: (archive: CompactionArchiveInfo) => void;
 };
 
-const TopicMapContent = ({ task, viewKey, onScrollToMessage }: ContentProps) => {
+const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }: ContentProps) => {
   const { t, i18n } = useTranslation();
   const api = useApi();
   const settings = useTaskNavigationSettings();
@@ -61,6 +133,9 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage }: ContentProps) => 
   const view = useTaskNavigationStore((state) => state.topicMapViews[viewKey]) ?? EMPTY_VIEW;
   const messages = useTaskMessages(task.id);
   const [regenerating, setRegenerating] = useState(false);
+  const [compactionTarget, setCompactionTarget] = useState<CompactionTargetState | null>(null);
+  const [archivesOpen, setArchivesOpen] = useState(false);
+  const [undoing, setUndoing] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -69,6 +144,8 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage }: ContentProps) => 
   const taskKey = getTaskKey(task, settings);
   const nameLocked = isTaskNameLocked(task);
   const taskName = task.name === GENERATING_TASK_NAME ? t('taskNavigation.generatingName') : task.name || t('taskNavigation.untitled');
+  const running = task.state === DefaultTaskState.InProgress;
+  const archives = useMemo(() => [...getCompactionArchives(task)].sort((first, second) => second.createdAt.localeCompare(first.createdAt)), [task]);
 
   const expanded = useMemo(() => new Set(view.expanded.filter((index) => index >= 0 && index < topics.length)), [view.expanded, topics.length]);
 
@@ -84,7 +161,7 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage }: ContentProps) => 
     return labels;
   }, [messages]);
 
-  // Section rows are display-only: selection, the remembered view and keyboard navigation use the navigable rows
+  // Section rows and lost recap rows are display-only: selection, the remembered view and keyboard navigation use the navigable rows
   const rows = useMemo(() => buildTopicMapRows(topics, expanded), [topics, expanded]);
   const navigableRows = useMemo(() => rows.filter(isNavigableRow), [rows]);
   const navigableIndexes = useMemo(() => new Map(navigableRows.map((row, index) => [row.key, index])), [navigableRows]);
@@ -94,7 +171,7 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage }: ContentProps) => 
     if (exact !== -1) {
       return exact;
     }
-    if (view.selected?.startsWith('message:')) {
+    if (view.selected?.startsWith('message:') || view.selected?.startsWith('recap:')) {
       const topicRow = navigableRows.findIndex((row) => row.key === topicRowKey(Number(view.selected?.split(':')[1])));
       if (topicRow !== -1) {
         return topicRow;
@@ -108,9 +185,12 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage }: ContentProps) => 
     return -1;
   }, [navigableRows, view.selected]);
 
+  // The list has the focus whenever no bottom panel is open
   useEffect(() => {
-    panelRef.current?.focus();
-  }, []);
+    if (!compactionTarget && !archivesOpen) {
+      panelRef.current?.focus();
+    }
+  }, [compactionTarget, archivesOpen]);
 
   useEffect(() => {
     listRef.current?.querySelector(`[data-index="${selectedIndex}"]`)?.scrollIntoView({ block: 'nearest' });
@@ -150,6 +230,58 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage }: ContentProps) => 
     [saveView, expanded, messageLabels, closeTopicMap, onScrollToMessage],
   );
 
+  const openRecap = useCallback(
+    (row: RecapRow) => {
+      saveView(row.key, expanded);
+      if (row.compaction.lost || !messageLabels.has(row.compaction.summaryMessageId)) {
+        return;
+      }
+      closeTopicMap();
+      onScrollToMessage(row.compaction.summaryMessageId);
+    },
+    [saveView, expanded, messageLabels, closeTopicMap, onScrollToMessage],
+  );
+
+  const getTargetTitle = (target: TopicCompactionTarget): string => {
+    const topic = topics[target.topicIndex];
+    const section = target.sectionIndex === undefined ? undefined : topic?.sections?.[target.sectionIndex];
+    return section?.summary ?? topic?.summary ?? '';
+  };
+
+  const openCompaction = (target: TopicCompactionTarget | undefined) => {
+    if (!target) {
+      return;
+    }
+    setArchivesOpen(false);
+    setCompactionTarget({ target, title: getTargetTitle(target) });
+  };
+
+  const closeBottomPanel = () => {
+    setCompactionTarget(null);
+    setArchivesOpen(false);
+  };
+
+  const undoCompaction = async (compactionId: string) => {
+    if (running) {
+      showErrorNotification(t('taskNavigation.compaction.reasons.running'));
+      return;
+    }
+    setUndoing(true);
+    try {
+      await api.undoTopicCompaction(task.baseDir, task.id, compactionId);
+    } catch (error) {
+      const text = getCompactionErrorText(error, 'taskNavigation.compaction.undoFailed');
+      showErrorNotification(t(text.key, text.values));
+    } finally {
+      setUndoing(false);
+    }
+  };
+
+  const requestRestore = (archive: CompactionArchiveInfo) => {
+    closeTopicMap();
+    onRequestRestore(archive);
+  };
+
   const handleRegenerate = useCallback(async () => {
     setRegenerating(true);
     try {
@@ -168,10 +300,14 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage }: ContentProps) => 
   }, [api, task.baseDir, task.id, task.metadata]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (compactionTarget || archivesOpen) {
+      return;
+    }
     if (event.target instanceof HTMLButtonElement && (event.key === 'Enter' || event.key === ' ')) {
       return;
     }
     const row = navigableRows[selectedIndex];
+    const hasModifier = event.ctrlKey || event.metaKey || event.altKey;
     switch (event.key) {
       case 'ArrowDown':
       case 'ArrowUp': {
@@ -197,6 +333,8 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage }: ContentProps) => 
           setTopicExpanded(row.topicIndex, !expanded.has(row.topicIndex));
         } else if (row?.kind === 'message') {
           openMessage(row);
+        } else if (row?.kind === 'recap') {
+          openRecap(row);
         }
         break;
       case 'ArrowRight':
@@ -206,11 +344,25 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage }: ContentProps) => 
         }
         break;
       case 'ArrowLeft':
-        if (row && (row.kind === 'message' || expanded.has(row.topicIndex))) {
+        if (row && (row.kind !== 'topic' || expanded.has(row.topicIndex))) {
           event.preventDefault();
           setTopicExpanded(row.topicIndex, false);
         }
         break;
+      case 'c':
+        if (row && !hasModifier) {
+          event.preventDefault();
+          openCompaction(getCompactionTargetForRow(topics, row));
+        }
+        break;
+      case 'u': {
+        const compactionId = row && !hasModifier ? getUndoCompactionIdForRow(topics, row) : undefined;
+        if (compactionId) {
+          event.preventDefault();
+          void undoCompaction(compactionId);
+        }
+        break;
+      }
       case 'Escape':
         event.preventDefault();
         event.stopPropagation();
@@ -221,7 +373,70 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage }: ContentProps) => 
     }
   };
 
-  const stopPropagation = (event: MouseEvent<HTMLDivElement>) => event.stopPropagation();
+  const stopPropagation = (event: MouseEvent<HTMLElement>) => event.stopPropagation();
+
+  const renderIconButton = (label: string, icon: ReactNode, onClick: () => void, busy = false) => (
+    <Tooltip content={running ? t('taskNavigation.compaction.taskRunning') : label}>
+      <span className="inline-flex shrink-0" onClick={stopPropagation}>
+        <button
+          type="button"
+          aria-label={label}
+          disabled={running || busy}
+          onClick={onClick}
+          className="p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-bg-tertiary disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+        >
+          {icon}
+        </button>
+      </span>
+    </Tooltip>
+  );
+
+  const renderCompactionControls = (topicIndex: number, sectionIndex: number | undefined, compaction: TopicCompactionInfo | undefined): ReactNode => {
+    if (compaction) {
+      return (
+        <>
+          <span className="shrink-0 text-2xs font-normal text-text-muted">{t('taskNavigation.compaction.compactedTag')}</span>
+          {renderIconButton(t('taskNavigation.compaction.undo'), <MdUndo className="w-3.5 h-3.5" />, () => void undoCompaction(compaction.id), undoing)}
+        </>
+      );
+    }
+    if (!isCompactableFromClient(topics, topicIndex, sectionIndex)) {
+      return null;
+    }
+    return renderIconButton(t('taskNavigation.compaction.compact'), <MdCompress className="w-3.5 h-3.5" />, () =>
+      openCompaction(getTopicCompactionTarget(topics, topicIndex, sectionIndex)),
+    );
+  };
+
+  const renderBottom = () => {
+    if (compactionTarget) {
+      return (
+        <TopicCompactionPanel
+          baseDir={task.baseDir}
+          taskId={task.id}
+          target={compactionTarget.target}
+          title={compactionTarget.title}
+          onCancel={closeBottomPanel}
+          onStarted={closeTopicMap}
+          onScrollToMessage={onScrollToMessage}
+        />
+      );
+    }
+    if (archivesOpen) {
+      return <ArchiveList archives={archives} disabled={running} onSelect={requestRestore} onClose={closeBottomPanel} />;
+    }
+    return (
+      <div className="px-3 py-1.5 border-t border-bg-tertiary-strong flex items-center gap-3 text-2xs text-text-muted">
+        <span className="flex-1 truncate">{t('taskNavigation.topicMap.hint')}</span>
+        {summary && (
+          <span className="shrink-0 max-w-[45%] truncate">
+            {t('taskNavigation.topicMap.updated', { time: formatRelativeTime(summary.generatedAt, i18n.language) })}
+            {summary.model ? ` · ${summary.model}` : ''}
+          </span>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-start justify-center z-[100] pt-[10vh]" onClick={closeTopicMap}>
@@ -240,6 +455,24 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage }: ContentProps) => 
               <button type="button" className="shrink-0 text-text-muted hover:text-text-primary" onClick={handleUnlockTitle}>
                 <VscLock className="w-3.5 h-3.5" />
               </button>
+            </Tooltip>
+          )}
+          {archives.length > 0 && (
+            <Tooltip content={running ? t('taskNavigation.compaction.taskRunning') : t('taskNavigation.compaction.archives.open')}>
+              <span className="inline-flex shrink-0">
+                <button
+                  type="button"
+                  aria-label={t('taskNavigation.compaction.archives.open')}
+                  disabled={running}
+                  onClick={() => {
+                    setCompactionTarget(null);
+                    setArchivesOpen(true);
+                  }}
+                  className="text-text-muted hover:text-text-primary disabled:opacity-50"
+                >
+                  <MdOutlineArchive className="w-4 h-4" />
+                </button>
+              </span>
             </Tooltip>
           )}
           <Tooltip content={t('taskNavigation.topicMap.regenerate')}>
@@ -277,9 +510,14 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage }: ContentProps) => 
           ) : (
             rows.map((row) => {
               if (row.kind === 'section') {
+                const section = topics[row.topicIndex]?.sections?.[row.sectionIndex];
                 return (
-                  <div key={row.key} className="pl-10 pr-3 pt-1.5 pb-0.5 border-l-2 border-l-transparent text-2xs font-medium text-text-primary">
-                    {row.summary}
+                  <div
+                    key={row.key}
+                    className="pl-10 pr-3 pt-1.5 pb-0.5 border-l-2 border-l-transparent flex items-center gap-2 text-2xs font-medium text-text-primary"
+                  >
+                    <span className="flex-1 min-w-0">{row.summary}</span>
+                    {renderCompactionControls(row.topicIndex, row.sectionIndex, section?.compaction)}
                   </div>
                 );
               }
@@ -310,6 +548,25 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage }: ContentProps) => 
                     <span className="mt-0.5 shrink-0 text-2xs text-text-muted">
                       {topic.detached ? t('taskNavigation.topicMap.compacted') : t('taskNavigation.messageCount', { count: topic.messageIds.length })}
                     </span>
+                    {renderCompactionControls(row.topicIndex, undefined, topic.compaction)}
+                  </div>
+                );
+              }
+
+              if (row.kind === 'recap') {
+                const lost = !!row.compaction.lost;
+                const label = lost ? undefined : messageLabels.get(row.compaction.summaryMessageId);
+                return (
+                  <div
+                    key={row.key}
+                    data-index={index}
+                    onClick={lost ? undefined : () => openRecap(row)}
+                    className={clsx(lost ? 'border-l-2 border-l-transparent' : rowClassName, 'pl-14 pr-3 py-1 flex items-start gap-2 text-2xs')}
+                  >
+                    <span className="shrink-0 font-semibold text-text-muted">{t('taskNavigation.compaction.recap')}</span>
+                    <span className={clsx('flex-1 min-w-0 truncate text-text-muted', lost && 'italic')}>
+                      {lost ? t('taskNavigation.compaction.recapLost') : label?.text || t('taskNavigation.topicMap.messageNotLoaded')}
+                    </span>
                   </div>
                 );
               }
@@ -332,15 +589,69 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage }: ContentProps) => 
           )}
         </div>
 
-        <div className="px-3 py-1.5 border-t border-bg-tertiary-strong flex items-center gap-3 text-2xs text-text-muted">
-          <span className="flex-1 truncate">{t('taskNavigation.topicMap.hint')}</span>
-          {summary && (
-            <span className="shrink-0 max-w-[45%] truncate">
-              {t('taskNavigation.topicMap.updated', { time: formatRelativeTime(summary.generatedAt, i18n.language) })}
-              {summary.model ? ` · ${summary.model}` : ''}
-            </span>
-          )}
-        </div>
+        {renderBottom()}
+      </div>
+    </div>
+  );
+};
+
+type ArchiveListProps = {
+  archives: CompactionArchiveInfo[];
+  disabled: boolean;
+  onSelect: (archive: CompactionArchiveInfo) => void;
+  onClose: () => void;
+};
+
+/** Archived conversations of the task, newest first, docked at the bottom of the topic map. */
+const ArchiveList = ({ archives, disabled, onSelect, onClose }: ArchiveListProps) => {
+  const { t } = useTranslation();
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    containerRef.current?.querySelector<HTMLButtonElement>('[data-archive-id]')?.focus();
+  }, []);
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+      return;
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const buttons = Array.from(containerRef.current?.querySelectorAll<HTMLButtonElement>('[data-archive-id]') ?? []);
+      if (buttons.length === 0) {
+        return;
+      }
+      const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+      const step = event.key === 'ArrowDown' ? 1 : -1;
+      buttons[(current + step + buttons.length) % buttons.length]?.focus();
+    }
+  };
+
+  return (
+    <div ref={containerRef} onKeyDown={handleKeyDown} className="px-3 py-2 border-t border-bg-tertiary-strong flex flex-col gap-1 text-2xs text-text-muted">
+      <div className="flex items-center gap-2">
+        <span className="flex-1 text-xs text-text-primary">{t('taskNavigation.compaction.archives.title')}</span>
+        <button type="button" onClick={onClose} className="hover:text-text-primary">
+          {t('taskNavigation.compaction.archives.back')}
+        </button>
+      </div>
+      <div className="max-h-40 overflow-y-auto flex flex-col">
+        {archives.map((archive) => (
+          <button
+            key={archive.id}
+            type="button"
+            data-archive-id={archive.id}
+            disabled={disabled}
+            onClick={() => onSelect(archive)}
+            className="px-2 py-1 rounded flex items-center gap-3 text-left hover:bg-bg-tertiary focus:bg-bg-tertiary focus:outline-none disabled:opacity-50"
+          >
+            <span className="text-text-primary">{formatArchiveDate(archive.createdAt)}</span>
+            <span>{t(`taskNavigation.compaction.archives.reasons.${archive.reason}`)}</span>
+          </button>
+        ))}
       </div>
     </div>
   );
