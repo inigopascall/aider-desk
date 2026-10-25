@@ -1,6 +1,6 @@
 import { AutonomyMode, InputHistoryData, ProjectStartMode, TaskCreatedData, TaskData, DefaultTaskState } from '@common/types';
 import { useTranslation } from 'react-i18next';
-import { startTransition, useCallback, useEffect, useLayoutEffect, useOptimistic, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useOptimistic, useRef, useState } from 'react';
 import { useLocalStorage } from '@reactuses/core';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { clsx } from 'clsx';
@@ -23,7 +23,6 @@ import { getTaskDir, getSortedVisibleTasks } from '@/utils/task-utils';
 import { cleanupProjectCache, cleanupTaskCache } from '@/stores/extensionUIStore';
 import { cleanupProcessingResponseMessage } from '@/hooks/useTaskResponseHandlers';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { useMarkdownEditorOverlayStore } from '@/stores/markdownEditorStore';
 import { useProjectSettings } from '@/contexts/ProjectSettingsContext';
 import { LoadingOverlay } from '@/components/common/LoadingOverlay';
 import { TaskViewRef } from '@/components/project/TaskView';
@@ -716,12 +715,6 @@ export const ProjectView = ({ projectDir, isProjectActive = false, initialTaskId
     },
     [setOptimisticTasks],
   );
-
-  // Force-close the expanded markdown editor overlay before switching to a
-  // different task, so the portal never lingers on the newly selected task.
-  useLayoutEffect(() => {
-    useMarkdownEditorOverlayStore.getState().requestClose();
-  }, [activeTaskId]);
 
   useEffect(() => {
     if (!isProjectActive) {

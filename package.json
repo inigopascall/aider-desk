@@ -95,8 +95,6 @@
     "@lancedb/lancedb": "0.22.3",
     "@legendapp/list": "3.6.0",
     "@lezer/highlight": "1.2.3",
-    "@milkdown/kit": "7.22.0",
-    "@milkdown/react": "7.22.0",
     "@openrouter/ai-sdk-provider": "3.1.0",
     "@opentelemetry/auto-instrumentations-node": "0.79.0",
     "@opentelemetry/exporter-trace-otlp-http": "0.219.0",

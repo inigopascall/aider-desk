@@ -734,7 +734,6 @@ export interface PromptBehavior {
   };
   useVimBindings: boolean;
   livePreview?: boolean; // undefined = on: markdown symbols are hidden except on the lines being edited
-  openEditorAtFullWidth?: boolean;
   submitOnEnter?: boolean; // true = Enter submits; false (default) = Ctrl+Enter submits. Ctrl+Shift+Enter always submits.
 }
 
@@ -918,7 +917,6 @@ export interface HotkeyConfig {
     closeTask: string;
     toggleMarkdownEditor: string;
     toggleMarkdownEditorMode: string;
-    toggleMarkdownEditorWidth: string;
     growPromptEditor: string;
     shrinkPromptEditor: string;
   };

@@ -104,7 +104,6 @@ export const HotkeysSettings = ({ settings, setSettings }: Props) => {
             {renderHotkeyConfig('taskHotkeys', 'closeTask', t('settings.hotkeys.closeTask'))}
             {renderHotkeyConfig('taskHotkeys', 'toggleMarkdownEditor', t('settings.hotkeys.toggleMarkdownEditor'))}
             {renderHotkeyConfig('taskHotkeys', 'toggleMarkdownEditorMode', t('settings.hotkeys.toggleMarkdownEditorMode'))}
-            {renderHotkeyConfig('taskHotkeys', 'toggleMarkdownEditorWidth', t('settings.hotkeys.toggleMarkdownEditorWidth'))}
             {renderHotkeyConfig('taskHotkeys', 'growPromptEditor', t('settings.hotkeys.growPromptEditor'))}
             {renderHotkeyConfig('taskHotkeys', 'shrinkPromptEditor', t('settings.hotkeys.shrinkPromptEditor'))}
             {renderHotkeyConfig('taskHotkeys', 'switchTask1', t('settings.hotkeys.switchTask', { number: 1 }))}

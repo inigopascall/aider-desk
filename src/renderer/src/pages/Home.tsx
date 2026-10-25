@@ -1,6 +1,6 @@
 import { ProjectData } from '@common/types';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Activity, Suspense, lazy, startTransition, useCallback, useEffect, useLayoutEffect, useOptimistic, useRef, useState, useTransition } from 'react';
+import { Activity, Suspense, lazy, startTransition, useCallback, useEffect, useOptimistic, useRef, useState, useTransition } from 'react';
 import { MdBarChart, MdSettings, MdUpload } from 'react-icons/md';
 import { PiNotebookFill } from 'react-icons/pi';
 import { useTranslation } from 'react-i18next';
@@ -25,7 +25,6 @@ import { ProjectSettingsProvider } from '@/contexts/ProjectSettingsContext';
 import { TelemetryInfoDialog } from '@/components/TelemetryInfoDialog';
 import { showInfoNotification } from '@/utils/notifications';
 import { useApi } from '@/contexts/ApiContext';
-import { useMarkdownEditorOverlayStore } from '@/stores/markdownEditorStore';
 import { URL_PARAMS, encodeBaseDir, decodeBaseDir, ROUTES } from '@/utils/routes';
 import { useBooleanState } from '@/hooks/useBooleanState';
 import { PaletteItemType, useCommandPaletteStore } from '@/stores/commandPaletteStore';
@@ -560,13 +559,6 @@ export const Home = () => {
     closeSettings();
     showLogs();
   }, [showLogs]);
-
-  // Force-close the expanded markdown editor overlay before any navigation
-  // (project switch, or opening Settings / Model Library / Usage Dashboard /
-  // Logs) so the portal never lingers on the destination view.
-  useLayoutEffect(() => {
-    useMarkdownEditorOverlayStore.getState().requestClose();
-  }, [activeProject, settingsPage, isUsageDashboardVisible, isModelLibraryVisible, isLogsVisible]);
 
   return (
     <div className="flex flex-col h-full p-[4px] bg-gradient-to-b from-bg-primary to-bg-primary-light">

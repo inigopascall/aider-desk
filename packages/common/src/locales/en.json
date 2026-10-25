@@ -884,7 +884,7 @@
       "closeTask": "Close Task",
       "toggleMarkdownEditor": "Cycle Prompt Editor Size",
       "toggleMarkdownEditorMode": "Toggle Live Preview",
-      "toggleMarkdownEditorWidth": "Toggle Editor Full Width",
+
       "growPromptEditor": "Grow Prompt Editor (hold)",
       "shrinkPromptEditor": "Shrink Prompt Editor (hold)",
       "browseFolder": "Browse Folder",
@@ -1156,7 +1156,11 @@
         "managedIn": "Managed in {{filename}} — edit via the expand button or any external editor.",
         "saved": "Saved {{filename}}",
         "loadError": "Could not load {{filename}}. If this profile is new, save it first.",
-        "unsavedConfirm": "Discard unsaved changes?"
+        "unsavedConfirm": "Discard unsaved changes?",
+        "discardTooltip": "Discard changes and close",
+        "discardTitle": "Discard changes to {{filename}}?",
+        "discardConfirm": "Discard",
+        "discardBody": "These changes have not been saved. Discarding will lose them permanently."
       }
     },
     "aider": {
@@ -1274,8 +1278,7 @@
       "useVimBindingsTooltip": "Enable Vim key bindings for navigating and editing text in the prompt field.",
       "livePreview": "Live preview",
       "livePreviewTooltip": "Render Markdown formatting in the prompt field and hide its symbols, except on the lines you are editing, which show raw Markdown.",
-      "openEditorAtFullWidth": "Open editor at full width",
-      "openEditorAtFullWidthTooltip": "When enabled, the expanded prompt editor automatically animates to full application width as soon as it opens.",
+
       "submitOnEnter": "Press Enter to send",
       "submitOnEnterTooltip": "When enabled, Enter sends the message and Ctrl+Enter inserts a new line. When disabled (default), Ctrl+Enter sends the message and Enter inserts a new line. Ctrl+Shift+Enter always sends the message and closes the expanded Markdown editor if open.",
       "modeAtSign": "@ mention mode"
@@ -1338,9 +1341,7 @@
     "promptField": {
       "agentModeOnly": "This command is only available in agent mode",
       "invalidCommand": "Invalid command",
-      "saveError": "Failed to save prompt: {{error}}",
-      "switchToRawEditor": "Switch to Raw Editor",
-      "switchToRenderedEditor": "Switch to Rendered Editor"
+      "saveError": "Failed to save prompt: {{error}}"
     },
     "memory": {
       "configuration": "Configuration",
@@ -2068,16 +2069,9 @@
     "taskInfo": "Show task information",
     "resizeEditor": "Drag to resize the prompt editor; double-click to reset",
     "restoreEditorSize": "Restore editor size",
-    "openRenderedEditor": "Open rendered Markdown editor",
+
     "expandEditor": "Expand editor",
     "pastedImage": "Pasted image {{index}}",
-    "switchToRawEditor": "Switch to raw text editor",
-    "switchToRenderedEditor": "Switch to rendered Markdown editor",
-    "editorTitle": "Editor: {{mode}}",
-    "editorModeRendered": "rendered",
-    "editorModeRaw": "raw",
-    "expandEditorWidth": "Expand editor to full width",
-    "collapseEditorWidth": "Collapse editor width",
     "closeEditor": "Close editor"
   },
   "agentProfiles": {

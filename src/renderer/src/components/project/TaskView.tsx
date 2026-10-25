@@ -76,7 +76,6 @@ import { registerAction, unregisterAction } from '@/stores/actionsStore';
 import { getSessionKey, useTerminalVisible, toggleTerminalVisible, setTerminalVisible } from '@/stores/terminalStore';
 import { usePendingMessageScroll } from '@/components/task-navigation/hooks';
 import { TopicMapModal } from '@/components/task-navigation/TopicMapModal';
-import { useMarkdownEditorOverlayStore } from '@/stores/markdownEditorStore';
 
 type AddFileDialogOptions = {
   readOnly: boolean;
@@ -260,7 +259,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
     );
 
     // Prompt area size. Desktop only: on mobile the prompt keeps its natural height
-    // and the expand control opens the full-screen Milkdown editor.
+    // and there is no expand control.
     const {
       mode: promptAreaMode,
       fraction: promptAreaFraction,
@@ -283,14 +282,12 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
 
     // Cycle the prompt editor between the user's size, full height and compact.
     const cyclePromptAreaSize = useCallback(() => {
-      const overlay = useMarkdownEditorOverlayStore.getState();
-      if (isMobile || (overlay.isOpen && overlay.ownerId === task.id)) {
-        promptFieldRef.current?.toggleExpanded();
+      if (isMobile) {
         return;
       }
       cyclePromptAreaMode();
       focusPromptSoon();
-    }, [isMobile, task.id, cyclePromptAreaMode, focusPromptSoon]);
+    }, [isMobile, cyclePromptAreaMode, focusPromptSoon]);
 
     const restorePromptAreaSize = useCallback(() => {
       setPromptAreaMode('user');
@@ -340,17 +337,11 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
       },
     );
 
-    // Inside this task's open expanded editor, switch between rendered Milkdown and raw text.
-    // Everywhere else, turn the prompt editor's live preview on or off.
+    // Turn the prompt editor's live preview on or off.
     useHotkeys(
       TASK_HOTKEYS.TOGGLE_MARKDOWN_EDITOR_MODE,
       (e) => {
         e.preventDefault();
-        const overlay = useMarkdownEditorOverlayStore.getState();
-        if (overlay.isOpen && overlay.ownerId === task.id) {
-          promptFieldRef.current?.toggleExpandedEditorMode();
-          return;
-        }
         const settings = useSettingsStore.getState().settings;
         if (!settings) {
           return;
@@ -362,22 +353,6 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
             livePreview: !(settings.promptBehavior.livePreview ?? true),
           },
         }).catch(() => undefined);
-      },
-      {
-        enabled: isActive,
-        scopes: 'task',
-        enableOnFormTags: true,
-        enableOnContentEditable: true,
-      },
-    );
-
-    // Toggle the expanded editor between constrained and full viewport width.
-    // Only acts when the expanded overlay is open.
-    useHotkeys(
-      TASK_HOTKEYS.TOGGLE_MARKDOWN_EDITOR_WIDTH,
-      (e) => {
-        e.preventDefault();
-        promptFieldRef.current?.toggleExpandedWidth();
       },
       {
         enabled: isActive,
@@ -1187,7 +1162,6 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                   onToggleTaskInfoPanel={handleToggleTaskInfoPanel}
                   handoffConversation={handleHandoff}
                   createSubtask={handleCreateSubtask}
-                  overlayContainerRef={centralColumnRef}
                   editorSized={promptAreaSized}
                   editorLarge={promptAreaLarge}
                   editorMaximized={promptAreaMaximized}
@@ -1206,7 +1180,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                   terminalVisible={terminalVisible}
                   showTaskInfoPanel={showTaskInfoPanel}
                   onToggleTaskInfoPanel={handleToggleTaskInfoPanel}
-                  onExpandEditor={cyclePromptAreaSize}
+                  onExpandEditor={isMobile ? undefined : cyclePromptAreaSize}
                   onAutonomyModeChanged={handleAutonomyModeChanged}
                   canUndoContextChange={canUndoContextChange && messages.length === 0}
                   onUndoContextChange={handleUndoContextChange}

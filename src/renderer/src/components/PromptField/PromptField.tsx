@@ -13,8 +13,7 @@ import {
 import { EditorView, keymap } from '@codemirror/view';
 import { AIDER_MODES, Mode, PromptBehavior, QueuedPromptData, QuestionData, SuggestionMode } from '@common/types';
 import CodeMirror, { Annotation, Prec, type Extension, type ReactCodeMirrorRef } from '@uiw/react-codemirror';
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, useLayoutEffect, type RefObject, type CSSProperties } from 'react';
-import { createPortal } from 'react-dom';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useDebounce } from '@reactuses/core';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useTranslation } from 'react-i18next';
@@ -22,24 +21,20 @@ import { BiSend } from 'react-icons/bi';
 import { CgSpinner } from 'react-icons/cg';
 import { MdSave, MdStop, MdMic, MdMicOff, MdOutlineScheduleSend } from 'react-icons/md';
 import { AiOutlineClose } from 'react-icons/ai';
-import { LuChevronsLeftRight, LuChevronsRightLeft, LuEye, LuMinimize2 } from 'react-icons/lu';
+import { LuMinimize2 } from 'react-icons/lu';
 import { clsx } from 'clsx';
 import { parseCommandArgs, parseSkillCommand, SKILL_COMMAND_PREFIX } from '@common/utils';
 import { getSubagentId } from '@common/agent';
 
 import { QueuedPromptsList } from './QueuedPromptsList';
 import { usePromptFieldText } from './usePromptFieldText';
-import { MilkdownEditor, type MilkdownEditorRef } from './MilkdownEditor';
 import { wordCompletions } from './wordCompletions';
 import { acceptPathSegment } from './acceptPathSegment';
-import { promptEditorTheme, promptMarkdownExtension } from './promptMarkdown';
-import { promptLivePreviewExtension } from './promptLivePreview';
+import { promptEditorTheme } from './promptMarkdown';
 
 import { useTaskQueuedPrompts } from '@/stores/taskStore';
-import { useMarkdownEditorOverlayStore } from '@/stores/markdownEditorStore';
 import { InputHistoryMenu } from '@/components/PromptField/InputHistoryMenu';
 import { showErrorNotification } from '@/utils/notifications';
-import { sanitizeMilkdownMarkdown } from '@/utils/markdown';
 import { useCommands } from '@/hooks/useCommands';
 import { useSkills } from '@/hooks/useSkills';
 import { useBuiltInCompactionGuard } from '@/components/task-navigation/BuiltInCompactionGuard';
@@ -50,6 +45,7 @@ import { useAudioRecorder } from '@/hooks/useAudioRecorder';
 import { AudioAnalyzer } from '@/components/PromptField/AudioAnalyzer';
 import { useResponsive } from '@/hooks/useResponsive';
 import { TaskActivityIndicator } from '@/components/common/TaskActivityIndicator';
+import { getMarkdownEditorExtensions } from '@/components/common/MarkdownEditor';
 import { useSettingsStore } from '@/stores/settingsStore';
 
 const External = Annotation.define<boolean>();
@@ -139,9 +135,6 @@ export interface PromptFieldRef {
   appendText: (text: string) => void;
   setImages: (images: string[]) => void;
   getValue: () => string;
-  toggleExpanded: () => void;
-  toggleExpandedEditorMode: () => void;
-  toggleExpandedWidth: () => void;
 }
 
 type Props = {
@@ -183,7 +176,6 @@ type Props = {
   onToggleTaskInfoPanel?: () => void;
   handoffConversation?: (focus?: string) => Promise<void>;
   createSubtask?: (args?: string) => void;
-  overlayContainerRef?: RefObject<HTMLDivElement | null>;
   /** The editor fills the height its parent gives it, instead of growing with its content. */
   editorSized?: boolean;
   /** The editor is tall enough for headings to be shown larger. */
@@ -237,7 +229,6 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       onToggleTaskInfoPanel,
       handoffConversation,
       createSubtask,
-      overlayContainerRef,
       editorSized = false,
       editorLarge = false,
       editorMaximized = false,
@@ -252,7 +243,6 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
     const [text, setText] = useState('');
     const [pastedImages, setPastedImages] = useState<string[]>([]);
     const debouncedText = useDebounce(text, 100);
-    const [isExpanded, setIsExpanded] = useState(false);
     const [expandedEditorFontSize, setExpandedEditorFontSize] = useState(() => {
       try {
         const storedFontSize = Number(localStorage.getItem(EXPANDED_EDITOR_FONT_SIZE_STORAGE_KEY));
@@ -263,25 +253,6 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
         return DEFAULT_EXPANDED_EDITOR_FONT_SIZE;
       }
     });
-    // Whether the expanded overlay renders Milkdown (true) or a raw textarea (false).
-    // Defaults to rendered mode; session-local, not persisted.
-    const [showRenderedEditor, setShowRenderedEditor] = useState(true);
-    // Whether the expanded editor overlay is stretched to full viewport width.
-    const [isFullWidth, setIsFullWidth] = useState(false);
-    // Whether the CSS transition for the width slide should be active.
-    // Disabled during initial measurement to avoid an open-time animation.
-    const [widthTransitionEnabled, setWidthTransitionEnabled] = useState(false);
-    // Cached inset measurements of the central column, used to position the fixed overlay.
-    type OverlayInsets = { top: number; bottom: number; left: number; right: number; width: number };
-    const [overlayInsets, setOverlayInsets] = useState<OverlayInsets | null>(null);
-    const milkdownRef = useRef<MilkdownEditorRef>(null);
-    // Ref to the raw textarea used while in raw-editor mode.
-    const rawTextareaRef = useRef<HTMLTextAreaElement>(null);
-    const expandedEditorScrollRef = useRef<HTMLDivElement>(null);
-    // Track whether the expanded overlay was previously open, for focus restoration.
-    const wasExpandedRef = useRef(false);
-    // When true, the next overlay open should auto-animate to full width once the transition is armed.
-    const autoExpandPendingRef = useRef(false);
     const { setText: setSavedText } = usePromptFieldText(baseDir, taskId, (text) => {
       const view = editorRef.current?.view;
       view?.dispatch({
@@ -341,62 +312,6 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       [setText, setSavedText],
     );
 
-    // Called by Milkdown on every debounced markdown update.
-    // Updates React state and IndexedDB only — does NOT touch CodeMirror
-    // on every keystroke to avoid feedback loops. CodeMirror is synced once
-    // when the overlay closes via closeExpanded.
-    const handleMilkdownChange = useCallback(
-      (markdown: string) => {
-        const clean = sanitizeMilkdownMarkdown(markdown);
-        setText(clean);
-        setSavedText(clean);
-      },
-      [setSavedText],
-    );
-
-    const openExpanded = useCallback(() => {
-      setIsFullWidth(false);
-      autoExpandPendingRef.current = promptBehavior.openEditorAtFullWidth ?? true;
-      setIsExpanded(true);
-    }, [promptBehavior.openEditorAtFullWidth]);
-
-    // Focus the compact CodeMirror prompt editor.
-    const focusCompactPrompt = useCallback(() => {
-      editorRef.current?.view?.focus();
-    }, []);
-
-    // Focus the raw textarea and place the selection at the end.
-    const focusRawTextarea = useCallback(() => {
-      const textarea = rawTextareaRef.current;
-      if (!textarea) return;
-      textarea.focus();
-      const len = textarea.value.length;
-      textarea.setSelectionRange(len, len);
-    }, []);
-
-    const scrollExpandedEditorToBottom = useCallback(() => {
-      const scrollContainer = expandedEditorScrollRef.current;
-      if (!scrollContainer) return;
-      scrollContainer.scrollTop = scrollContainer.scrollHeight;
-    }, []);
-
-    const handleExpandedEditorWheel = useCallback(
-      (event: React.WheelEvent<HTMLDivElement>) => {
-        if (!showRenderedEditor || (!event.ctrlKey && !event.metaKey)) {
-          return;
-        }
-
-      event.preventDefault();
-        setExpandedEditorFontSize((currentSize) =>
-          Math.min(
-            MAX_EXPANDED_EDITOR_FONT_SIZE,
-            Math.max(MIN_EXPANDED_EDITOR_FONT_SIZE, currentSize + (event.deltaY < 0 ? EXPANDED_EDITOR_FONT_SIZE_STEP : -EXPANDED_EDITOR_FONT_SIZE_STEP)),
-          ),
-        );
-      },
-      [showRenderedEditor],
-    );
-
     useEffect(() => {
       try {
         localStorage.setItem(EXPANDED_EDITOR_FONT_SIZE_STORAGE_KEY, String(expandedEditorFontSize));
@@ -424,202 +339,6 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       container.addEventListener('wheel', handleWheel, { passive: false });
       return () => container.removeEventListener('wheel', handleWheel);
     }, [editorMaximized]);
-
-    // Called when Milkdown has fully initialized its editor instance and view.
-    // Requests focus through the editor-ready lifecycle so we never target a
-    // stale or unmounted editor.
-    const handleMilkdownReady = useCallback(() => {
-      // Only focus if the expanded overlay is still open and rendered mode is
-      // still selected when the ready callback fires.
-      if (!isExpanded || !showRenderedEditor) return;
-      // Call focus directly - Milkdown's ready callback already runs after
-      // the editor is fully initialized, so no additional deferral is needed.
-      milkdownRef.current?.focus();
-      requestAnimationFrame(scrollExpandedEditorToBottom);
-    }, [isExpanded, showRenderedEditor, scrollExpandedEditorToBottom]);
-
-    // Read the authoritative markdown from Milkdown (covers the sub-200 ms
-    // debounce window), push it into CodeMirror, then close the overlay.
-    // In raw mode, the current text is already the authoritative value.
-    const closeExpanded = useCallback(() => {
-      if (showRenderedEditor) {
-        const md = milkdownRef.current?.getMarkdown();
-        setTextWithDispatch(md !== undefined ? sanitizeMilkdownMarkdown(md) : text);
-      } else {
-        // Raw mode: the shared `text` state already holds the current textarea value.
-        setTextWithDispatch(text);
-      }
-      setIsFullWidth(false);
-      setIsExpanded(false);
-    }, [showRenderedEditor, setTextWithDispatch, text]);
-
-    const submitExpanded = useCallback(() => {
-      scrollToBottom?.();
-      void stopRecording();
-      let submittedText = text;
-      if (showRenderedEditor) {
-        const md = milkdownRef.current?.getMarkdown();
-        submittedText = sanitizeMilkdownMarkdown(md !== undefined ? md : text);
-      }
-      setTextWithDispatch(submittedText);
-      const images = pastedImages.length > 0 ? pastedImages : undefined;
-      setIsFullWidth(false);
-      setIsExpanded(false);
-      if (submittedText.trim()) {
-        runPrompt(submittedText, images);
-        setPastedImages([]);
-        setPlaceholderIndex(Math.floor(Math.random() * PLACEHOLDER_COUNT));
-      }
-    }, [showRenderedEditor, text, setTextWithDispatch, runPrompt, pastedImages, scrollToBottom, stopRecording]);
-
-    // Toggle the expanded editor between constrained central-column width and
-    // full viewport width. Only has effect when the overlay is open.
-    const toggleEditorWidth = useCallback(() => setIsFullWidth((prev) => !prev), []);
-
-    // Switch from rendered Milkdown mode to raw textarea mode.
-    // Reads the current Milkdown value first (capturing any in-flight changes),
-    // sanitizes it, then swaps the editor component.
-    const switchToRawEditor = useCallback(() => {
-      const md = milkdownRef.current?.getMarkdown();
-      const clean = sanitizeMilkdownMarkdown(md !== undefined ? md : text);
-      setText(clean);
-      setSavedText(clean);
-      setExpandedEditorFontSize(DEFAULT_EXPANDED_EDITOR_FONT_SIZE);
-      setShowRenderedEditor(false);
-    }, [text, setSavedText]);
-
-    // Switch from raw textarea mode back to rendered Milkdown mode.
-    // The raw textarea's value is already in `text`; we persist it and remount
-    // Milkdown with a new key so its defaultValueCtx is seeded with the raw text.
-    const switchToRenderedEditor = useCallback(() => {
-      setSavedText(text);
-      setShowRenderedEditor(true);
-    }, [text, setSavedText]);
-
-    // Capture-phase document listener so Escape pre-empts both ProseMirror and
-    // the background CodeMirror Escape keymap while the overlay is open.
-    useEffect(() => {
-      if (!isExpanded) {
-        return;
-      }
-      const handleOverlayKeyDown = (e: KeyboardEvent) => {
-        if (e.key === 'Enter' && e.ctrlKey && e.shiftKey) {
-          e.preventDefault();
-          e.stopPropagation();
-          submitExpanded();
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
-          e.stopPropagation();
-          closeExpanded();
-        }
-      };
-      document.addEventListener('keydown', handleOverlayKeyDown, true);
-
-      return () => document.removeEventListener('keydown', handleOverlayKeyDown, true);
-    }, [isExpanded, closeExpanded, submitExpanded]);
-
-    // Focus the active editor when the overlay opens.
-    // In rendered mode, focus is handled by handleMilkdownReady which waits for
-    // Milkdown to fully initialize. In raw mode, focus the textarea once it mounts.
-    useEffect(() => {
-      if (!isExpanded) return;
-      if (!showRenderedEditor) {
-        focusRawTextarea();
-      }
-      requestAnimationFrame(scrollExpandedEditorToBottom);
-      // Note: rendered mode focus is handled by handleMilkdownReady
-    }, [isExpanded, showRenderedEditor, focusRawTextarea, scrollExpandedEditorToBottom]);
-
-    // Restore focus to CodeMirror when the expanded overlay closes.
-    // This effect watches the isExpanded state and focuses the compact prompt
-    // only on the transition from open to closed (not on initial mount).
-    useEffect(() => {
-      if (isExpanded) {
-        wasExpandedRef.current = true;
-        return;
-      }
-      // Only act when transitioning from open to closed.
-      if (!wasExpandedRef.current) return;
-      wasExpandedRef.current = false;
-      // Schedule focus restoration after the portal has unmounted.
-      const raf = requestAnimationFrame(() => {
-        if (isActive) focusCompactPrompt();
-      });
-      // Cancel if the component unmounts or the overlay reopens before it runs.
-      return () => cancelAnimationFrame(raf);
-    }, [isExpanded, isActive, focusCompactPrompt]);
-
-    // Measure the central column and position the fixed overlay over it.
-    // The transition is armed one frame after the initial paint so the open
-    // is instant, but subsequent width toggles slide smoothly.
-    useLayoutEffect(() => {
-      if (!isExpanded) {
-        setWidthTransitionEnabled(false);
-        return;
-      }
-      const el = overlayContainerRef?.current;
-      if (!el) return;
-      const measure = () => {
-        const r = el.getBoundingClientRect();
-        setOverlayInsets({
-          top: r.top,
-          bottom: window.innerHeight - r.bottom,
-          left: r.left,
-          right: window.innerWidth - r.right,
-          width: r.width,
-        });
-      };
-      measure();
-      const raf = requestAnimationFrame(() => setWidthTransitionEnabled(true));
-      const ro = new ResizeObserver(measure);
-      ro.observe(el);
-      window.addEventListener('resize', measure);
-      return () => {
-        cancelAnimationFrame(raf);
-        ro.disconnect();
-        window.removeEventListener('resize', measure);
-      };
-    }, [isExpanded, overlayContainerRef]);
-
-    // Once the width transition is armed after opening, if auto-full-width is pending,
-    // flip to full width so the panel visibly slides from constrained to full width.
-    useEffect(() => {
-      if (widthTransitionEnabled && autoExpandPendingRef.current) {
-        autoExpandPendingRef.current = false;
-        setIsFullWidth(true);
-      }
-    }, [widthTransitionEnabled]);
-
-    // Close the expanded overlay when the task/project becomes inactive.
-    // This prevents the portal from staying open and blocking hotkeys when
-    // the user switches to a different project or task.
-    useEffect(() => {
-      if (!isActive && isExpanded) {
-        closeExpanded();
-      }
-    }, [isActive, isExpanded, closeExpanded]);
-
-    // Keep a live ref to the latest closeExpanded so the global overlay store
-    // can always invoke the current close handler regardless of identity changes.
-    const closeExpandedRef = useRef(closeExpanded);
-    useEffect(() => {
-      closeExpandedRef.current = closeExpanded;
-    }, [closeExpanded]);
-
-    // Mirror the overlay's open state into the global coordination store so
-    // navigation owners can force-close it before the destination view paints.
-    useEffect(() => {
-      const store = useMarkdownEditorOverlayStore.getState();
-      if (isExpanded) {
-        store.open(taskId, () => closeExpandedRef.current());
-      } else {
-        store.close(taskId);
-      }
-    }, [isExpanded, taskId]);
-
-    // Unmount safety: clear the store entry if this field unmounts (e.g. on a
-    // task/project switch) so a stale owner can't block future closes.
-    useEffect(() => () => useMarkdownEditorOverlayStore.getState().close(taskId), [taskId]);
 
     useEffect(() => {
       if (text) {
@@ -834,33 +553,6 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
         setPastedImages(newImages);
       },
       getValue: () => text,
-      toggleExpanded: () => {
-        if (isExpanded) {
-          closeExpanded();
-        } else {
-          openExpanded();
-        }
-      },
-      toggleExpandedEditorMode: () => {
-        // Only act when the expanded overlay is open.
-        if (!isExpanded) return;
-        if (showRenderedEditor) {
-          // Rendered → raw: read the authoritative Milkdown value first,
-          // sanitize it, then switch to raw textarea mode.
-          // Focus will be handled by the showRenderedEditor effect.
-          switchToRawEditor();
-        } else {
-          // Raw → rendered: persist the raw text, remount Milkdown with the
-          // raw value as its defaultValue, and let handleMilkdownReady focus.
-          // Focus will be handled by handleMilkdownReady.
-          switchToRenderedEditor();
-        }
-      },
-      toggleExpandedWidth: () => {
-        // Only act when the expanded overlay is open.
-        if (!isExpanded) return;
-        setIsFullWidth((prev) => !prev);
-      },
     }));
 
     const prepareForNextPrompt = useCallback(() => {
@@ -1087,9 +779,6 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
     }, [isActive, disabled]);
 
     useEffect(() => {
-      if (isExpanded) {
-        return;
-      }
       const commandMatch = COMMANDS.find((cmd) => {
         // Skip auto-invoke for commands that need additional arguments
         if (cmd === '/subagent') {
@@ -1105,7 +794,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       if (commandMatch) {
         invokeCommand(commandMatch, text.split(' ').slice(1).join(' '));
       }
-    }, [text, invokeCommand, isExpanded]);
+    }, [text, invokeCommand]);
 
     useEffect(() => {
       setHistoryLimit(Math.min(HISTORY_MENU_CHUNK_SIZE, allHistoryItems.length));
@@ -1613,10 +1302,8 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
     const extensions = useMemo(
       () => [
         EDITOR_THEME_EXTENSION,
-        promptMarkdownExtension,
-        promptBehavior.livePreview === false ? [] : promptLivePreviewExtension,
+        ...getMarkdownEditorExtensions(promptBehavior.livePreview !== false),
         promptBehavior.useVimBindings && vimExtension ? vimExtension : keymap.of([]),
-        EditorView.lineWrapping,
         EditorView.domEventHandlers({
           paste: handlePaste,
         }),
@@ -1664,20 +1351,6 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
         handlePaste,
       ],
     );
-
-    // Position the fixed expanded-editor overlay over the central column using
-    // the measured insets. When full-width is active, the left/right insets are
-    // overridden to 0 so the panel stretches edge-to-edge; the transition makes
-    // the width slide smooth once measurement has completed.
-    const panelStyle: CSSProperties = overlayInsets
-      ? {
-          top: overlayInsets.top,
-          bottom: overlayInsets.bottom,
-          left: isFullWidth ? 0 : overlayInsets.left,
-          right: isFullWidth ? 0 : overlayInsets.right,
-          transition: widthTransitionEnabled ? 'left 300ms ease, right 300ms ease' : undefined,
-        }
-      : { top: 0, right: 0, bottom: 0, left: 0 };
 
     // In the sized and compact editors the buttons stack in one column at the right edge.
     const buttonsStacked = editorSized || editorCompact;
@@ -1813,17 +1486,6 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
                 </button>
               </Tooltip>
             )}
-            {editorMaximized && (
-              <Tooltip content={t('promptField.openRenderedEditor')}>
-                <button
-                  onClick={openExpanded}
-                  aria-label={t('promptField.openRenderedEditor')}
-                  className="text-text-muted-light hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200"
-                >
-                  <LuEye className="w-4 h-4" />
-                </button>
-              </Tooltip>
-            )}
             {editorMaximized && onRestoreEditorSize && (
               <Tooltip content={t('promptField.restoreEditorSize')}>
                 <button
@@ -1902,100 +1564,6 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
             onClose={() => setHistoryMenuVisible(false)}
           />
         )}
-        {isExpanded &&
-          createPortal(
-            <div className="fixed z-50 flex flex-col bg-bg-secondary shadow-2xl" style={panelStyle}>
-              <div className="flex items-center justify-between px-4 py-2 border-b border-border-dark-light flex-shrink-0">
-                <span className="text-sm text-text-primary">
-                  {t('promptField.editorTitle', {
-                    mode: showRenderedEditor ? t('promptField.editorModeRendered') : t('promptField.editorModeRaw'),
-                  })}
-                </span>
-                <div className="flex items-center gap-1">
-                  <Tooltip content={isFullWidth ? t('promptField.collapseEditorWidth') : t('promptField.expandEditorWidth')}>
-                    <button
-                      onClick={toggleEditorWidth}
-                      className="text-text-muted-light hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200"
-                      aria-label={isFullWidth ? t('promptField.collapseEditorWidth') : t('promptField.expandEditorWidth')}
-                    >
-                      {isFullWidth ? <LuChevronsRightLeft className="w-5 h-5" /> : <LuChevronsLeftRight className="w-5 h-5" />}
-                    </button>
-                  </Tooltip>
-                  {/* Toggle between rendered Milkdown and raw textarea mode */}
-                  <Tooltip content={showRenderedEditor ? t('promptField.switchToRawEditor') : t('promptField.switchToRenderedEditor')}>
-                    <button
-                      onClick={showRenderedEditor ? switchToRawEditor : switchToRenderedEditor}
-                      className="text-text-muted-light hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200"
-                      aria-label={showRenderedEditor ? t('promptField.switchToRawEditor') : t('promptField.switchToRenderedEditor')}
-                    >
-                      {showRenderedEditor ? (
-                        // Raw mode icon: represents plain text
-                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                          <polyline points="14 2 14 8 20 8" />
-                          <line x1="16" y1="13" x2="8" y2="13" />
-                          <line x1="16" y1="17" x2="8" y2="17" />
-                          <polyline points="10 9 9 9 8 9" />
-                        </svg>
-                      ) : (
-                        // Rendered mode icon: represents preview/rendered view
-                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                          <circle cx="12" cy="12" r="3" />
-                        </svg>
-                      )}
-                    </button>
-                  </Tooltip>
-                  <Tooltip content={t('promptField.closeEditor')}>
-                    <button
-                      onClick={closeExpanded}
-                      className="text-text-muted-light hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200"
-                    >
-                      <AiOutlineClose className="w-5 h-5" />
-                    </button>
-                  </Tooltip>
-                </div>
-              </div>
-              <div
-                ref={expandedEditorScrollRef}
-                onWheel={handleExpandedEditorWheel}
-                className="flex-grow overflow-y-auto scrollbar-thin scrollbar-track-bg-secondary scrollbar-thumb-bg-fourth"
-              >
-                <div
-                  className="w-full mx-auto flex flex-col px-6 py-6 pb-16 min-h-full milkdown-prompt-editor"
-                  style={
-                    {
-                      maxWidth: overlayInsets ? overlayInsets.width : undefined,
-                      '--prompt-editor-font-size': `${expandedEditorFontSize}px`,
-                    } as CSSProperties
-                  }
-                >
-                  {showRenderedEditor ? (
-                    // Remount Milkdown when switching back to rendered mode via a mode-dependent key
-                    // so its defaultValueCtx is seeded with the current raw text.
-                    <MilkdownEditor key={showRenderedEditor ? 'rendered' : 'raw'} ref={milkdownRef} initialValue={text} onChange={handleMilkdownChange} onReady={handleMilkdownReady} />
-                  ) : (
-                    <textarea
-                      ref={rawTextareaRef}
-                      value={text}
-                      onChange={(e) => {
-                        setText(e.target.value);
-                        setSavedText(e.target.value);
-                        setPendingCommand(null);
-                      }}
-                      onBlur={() => setSavedText(text)}
-                      placeholder={t('promptField.questionPlaceholder')}
-                      spellCheck={false}
-                      className="w-full flex-1 min-h-[200px] bg-transparent text-text-primary placeholder-text-muted-dark resize-none overflow-y-auto scrollbar-thin scrollbar-track-bg-secondary scrollbar-thumb-bg-fourth focus:outline-none"
-                      style={{ fontFamily: 'var(--font-family)', fontSize: '1rem' }}
-                      rows={1}
-                    />
-                  )}
-                </div>
-              </div>
-            </div>,
-            document.body,
-          )}
       </div>
     );
   },

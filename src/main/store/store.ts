@@ -83,7 +83,6 @@ export const DEFAULT_SETTINGS: SettingsData = {
     },
     useVimBindings: false,
     livePreview: true,
-    openEditorAtFullWidth: true,
     submitOnEnter: false, // default to Shift+Enter for submitting
   },
   server: {
