@@ -470,6 +470,23 @@ export const GeneralSettings = ({ settings, setSettings, onLanguageChange, onZoo
             </div>
             <div className="flex items-center space-x-2 ml-0.5">
               <Checkbox
+                label={t('settings.promptBehavior.livePreview')}
+                checked={settings.promptBehavior.livePreview ?? true}
+                onChange={(checked) =>
+                  setSettings({
+                    ...settings,
+                    promptBehavior: {
+                      ...settings.promptBehavior,
+                      livePreview: checked,
+                    },
+                  })
+                }
+                data-testid="live-preview-checkbox"
+              />
+              <InfoIcon tooltip={t('settings.promptBehavior.livePreviewTooltip')} />
+            </div>
+            <div className="flex items-center space-x-2 ml-0.5">
+              <Checkbox
                 label={t('settings.promptBehavior.openEditorAtFullWidth')}
                 checked={settings.promptBehavior.openEditorAtFullWidth ?? true}
                 onChange={(checked) =>

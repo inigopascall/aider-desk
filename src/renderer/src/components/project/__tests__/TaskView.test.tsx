@@ -32,6 +32,7 @@ vi.mock('@/contexts/ApiContext', () => ({
 
 vi.mock('@/stores/settingsStore', () => ({
   useSettingsStore: vi.fn(),
+  useSaveSettings: vi.fn(() => vi.fn()),
 }));
 
 vi.mock('@/contexts/ProjectSettingsContext', () => ({

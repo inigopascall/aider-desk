@@ -266,6 +266,52 @@ code {
   color: var(--color-text-muted-light);
 }
 
+/* Live preview widgets and line classes. They come from components/PromptField/promptLivePreview.ts. */
+.pf-prompt-editor .pf-md-bullet {
+  color: var(--color-text-muted-light);
+}
+.pf-prompt-editor .pf-md-task {
+  position: relative;
+  display: inline-block;
+  box-sizing: border-box;
+  width: 0.95em;
+  height: 0.95em;
+  margin: 0 0.1em;
+  vertical-align: -0.12em;
+  border: 1px solid var(--color-border-default);
+  border-radius: 0.2em;
+  background-color: var(--color-bg-primary);
+  cursor: pointer;
+}
+.pf-prompt-editor .pf-md-task-checked {
+  border-color: var(--color-info-light);
+  background-color: var(--color-info-light);
+}
+.pf-prompt-editor .pf-md-task-checked::after {
+  content: '';
+  position: absolute;
+  left: 0.28em;
+  top: 0.06em;
+  width: 0.24em;
+  height: 0.5em;
+  border: solid var(--color-bg-primary);
+  border-width: 0 0.12em 0.12em 0;
+  transform: rotate(45deg);
+}
+.pf-prompt-editor .pf-md-quote-line {
+  border-left: 3px solid var(--color-border-default);
+}
+.pf-prompt-editor .pf-md-hr {
+  display: inline-block;
+  width: 100%;
+  vertical-align: middle;
+  border-top: 1px solid var(--color-border-default);
+}
+.pf-prompt-editor .pf-md-fence-line {
+  color: var(--color-text-muted-light);
+  opacity: 0.6;
+}
+
 /* Larger headings once the prompt editor is tall. */
 .pf-prompt-editor-large .pf-md-h1 {
   font-size: 1.5em;

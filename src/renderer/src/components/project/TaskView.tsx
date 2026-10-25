@@ -43,7 +43,7 @@ import { isLargePromptArea, usePromptAreaResize } from './usePromptAreaResize';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { Messages, MessagesRef } from '@/components/message/Messages';
 import { VirtualizedMessages, VirtualizedMessagesRef } from '@/components/message/VirtualizedMessages';
-import { useSettingsStore } from '@/stores/settingsStore';
+import { useSaveSettings, useSettingsStore } from '@/stores/settingsStore';
 import { useProjectSettings } from '@/contexts/ProjectSettingsContext';
 import { useApi } from '@/contexts/ApiContext';
 import { AddFileDialog } from '@/components/project/AddFileDialog';
@@ -131,6 +131,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
     const defaultMode = useSettingsStore((state) => state.settings?.taskSettings?.defaultProjectMode);
     const promptBehavior = useSettingsStore((state) => state.settings?.promptBehavior);
     const settingsLoaded = useSettingsStore((state) => !!state.settings);
+    const saveSettings = useSaveSettings();
     const { TASK_HOTKEYS } = useConfiguredHotkeys();
     const { projectSettings } = useProjectSettings();
     const { isMobile } = useResponsive();
@@ -339,13 +340,28 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
       },
     );
 
-    // Toggle between rendered Milkdown and raw textarea mode within the expanded editor.
-    // Only acts when the expanded overlay is open.
+    // Inside this task's open expanded editor, switch between rendered Milkdown and raw text.
+    // Everywhere else, turn the prompt editor's live preview on or off.
     useHotkeys(
       TASK_HOTKEYS.TOGGLE_MARKDOWN_EDITOR_MODE,
       (e) => {
         e.preventDefault();
-        promptFieldRef.current?.toggleExpandedEditorMode();
+        const overlay = useMarkdownEditorOverlayStore.getState();
+        if (overlay.isOpen && overlay.ownerId === task.id) {
+          promptFieldRef.current?.toggleExpandedEditorMode();
+          return;
+        }
+        const settings = useSettingsStore.getState().settings;
+        if (!settings) {
+          return;
+        }
+        void saveSettings({
+          ...settings,
+          promptBehavior: {
+            ...settings.promptBehavior,
+            livePreview: !(settings.promptBehavior.livePreview ?? true),
+          },
+        }).catch(() => undefined);
       },
       {
         enabled: isActive,

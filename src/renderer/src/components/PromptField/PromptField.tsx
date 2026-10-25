@@ -33,6 +33,7 @@ import { MilkdownEditor, type MilkdownEditorRef } from './MilkdownEditor';
 import { wordCompletions } from './wordCompletions';
 import { acceptPathSegment } from './acceptPathSegment';
 import { promptEditorTheme, promptMarkdownExtension } from './promptMarkdown';
+import { promptLivePreviewExtension } from './promptLivePreview';
 
 import { useTaskQueuedPrompts } from '@/stores/taskStore';
 import { useMarkdownEditorOverlayStore } from '@/stores/markdownEditorStore';
@@ -1613,6 +1614,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       () => [
         EDITOR_THEME_EXTENSION,
         promptMarkdownExtension,
+        promptBehavior.livePreview === false ? [] : promptLivePreviewExtension,
         promptBehavior.useVimBindings && vimExtension ? vimExtension : keymap.of([]),
         EditorView.lineWrapping,
         EditorView.domEventHandlers({
@@ -1649,6 +1651,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       ],
       [
         promptBehavior.useVimBindings,
+        promptBehavior.livePreview,
         promptBehavior.suggestionMode,
         promptBehavior.suggestionDelay,
         vimExtension,
@@ -1675,6 +1678,9 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
           transition: widthTransitionEnabled ? 'left 300ms ease, right 300ms ease' : undefined,
         }
       : { top: 0, right: 0, bottom: 0, left: 0 };
+
+    // In the sized and compact editors the buttons stack in one column at the right edge.
+    const buttonsStacked = editorSized || editorCompact;
 
     return (
       <div className={clsx('w-full relative', editorSized && 'flex flex-col flex-grow min-h-0')}>
@@ -1777,7 +1783,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
             spellCheck={false}
             className={clsx(
               'pf-prompt-editor w-full px-2 py-1 border-2 border-border-default-dark rounded-md focus:outline-none focus:border-border-accent text-sm bg-bg-secondary text-text-primary placeholder-text-muted-dark resize-none overflow-y-auto transition-colors duration-200 scrollbar-thin scrollbar-track-bg-secondary-light scrollbar-thumb-bg-fourth hover:scrollbar-thumb-bg-fourth',
-              editorMaximized ? 'pr-28' : voiceAvailable ? (isRecording ? 'pr-24' : 'pr-20') : 'pr-16',
+              buttonsStacked ? (isRecording ? 'pr-16' : 'pr-9') : voiceAvailable ? (isRecording ? 'pr-24' : 'pr-20') : 'pr-16',
               editorSized ? 'pf-prompt-editor-sized absolute inset-0' : editorCompact ? 'pf-prompt-editor-sized h-[8.5rem]' : 'max-h-[40vh]',
               editorLarge && 'pf-prompt-editor-large',
               editorMaximized && 'pf-prompt-editor-maximized',
@@ -1788,7 +1794,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
             indentWithTab={false}
             extensions={extensions}
           />
-          <div className="absolute right-2 top-1.5 flex items-center gap-0.5 text-text-muted-light">
+          <div className={clsx('absolute right-2 top-1.5 flex items-center gap-0.5 text-text-muted-light', buttonsStacked && 'flex-col')}>
             {text.trim() && !isRecording && !processing && (!isEditingLastMessage || canSaveEditedPrompt) && (
               <Tooltip content={t('promptField.savePrompt')}>
                 <button
@@ -1831,7 +1837,10 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
             )}
           </div>
           <div
-            className={clsx('absolute right-3 flex items-center space-x-1 text-text-muted-light', editorSized ? 'bottom-1.5' : 'top-1/2 -translate-y-[12px]')}
+            className={clsx(
+              'absolute flex text-text-muted-light',
+              buttonsStacked ? 'right-2 bottom-1.5 flex-col-reverse items-end gap-0.5' : 'right-3 top-1/2 -translate-y-[12px] items-center space-x-1',
+            )}
           >
             {processing && disableCssStreamingAnimations && (
               <span className="w-4 h-4 flex items-center justify-center">

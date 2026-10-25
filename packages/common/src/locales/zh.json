@@ -615,6 +615,10 @@
     "saveAndGo": "保存并运行"
   },
   "settings": {
+    "promptBehavior": {
+      "livePreview": "实时预览",
+      "livePreviewTooltip": "在提示输入框中渲染 Markdown 格式并隐藏其符号，正在编辑的行除外，这些行显示原始 Markdown。"
+    },
     "title": "设置",
     "savedSuccessfully": "设置保存成功",
     "saveError": "设置保存失败",
