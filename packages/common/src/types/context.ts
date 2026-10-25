@@ -1,3 +1,5 @@
+import type { Mode } from './common';
+
 // JSON types
 export type JSONValue = null | string | number | boolean | JSONObject | JSONArray;
 export type JSONObject = { [key: string]: JSONValue };
@@ -239,4 +241,51 @@ export enum ContextMemoryMode {
   Off = 'off',
   FullContext = 'full-context',
   LastMessage = 'last-message',
+}
+
+export type ContextSectionId = 'rules' | 'mappings' | 'files';
+
+export type ContextDelivery = 'content' | 'path-only' | 'none';
+
+export type ContextNotSentReason =
+  | 'unselected'
+  | 'profile-excludes-mappings' // agent mode, profile.includeRepoMappings off
+  | 'aider-mode' // this file is not sent in Aider modes
+  | 'aider-rule-files-disabled'; // Aider mode, settings.aider.addRuleFiles off
+
+export type ContextPlacement = 'system-prompt' | 'messages-before-history' | 'messages-after-history' | 'aider-context';
+
+export interface ContextManifestEntry {
+  /** Selection key, exactly what setTaskFileSelection expects. */
+  path: string;
+  /** Forward slashes: project-relative, `~/…` under the home dir, otherwise absolute. */
+  displayPath: string;
+  readOnly: boolean;
+  source?: ContextFile['source'];
+  selected: boolean;
+  delivery: ContextDelivery;
+  /** Set exactly when delivery === 'none'. */
+  notSentReason?: ContextNotSentReason;
+}
+
+export interface ContextManifestSection {
+  id: ContextSectionId;
+  placement: ContextPlacement;
+  /** In the order the model receives them. */
+  entries: ContextManifestEntry[];
+}
+
+export interface TaskContextManifest {
+  baseDir: string;
+  taskId: string;
+  mode: Mode;
+  agentProfileId?: string;
+  /** Always rules, mappings, files: the order the model receives them. */
+  sections: ContextManifestSection[];
+}
+
+export interface ContextManifestUpdatedData {
+  baseDir: string;
+  taskId: string;
+  manifest: TaskContextManifest;
 }

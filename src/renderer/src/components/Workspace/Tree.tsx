@@ -18,8 +18,6 @@ type SharedRowProps = {
   updatedFiles: UpdatedFile[];
   fileTokensInfo?: Record<string, TokensCost> | null;
   os: OS | null;
-  disabledRuleFiles?: string[];
-  onToggleRuleFile?: (filePaths: string[], disabled: boolean) => void;
   onToggleContextFiles?: (filePaths: string[], disabled: boolean, shiftKey: boolean) => void;
   onFileDiffClick: (file: UpdatedFile) => void;
   onFilePreviewClick?: (filePath: string) => void;

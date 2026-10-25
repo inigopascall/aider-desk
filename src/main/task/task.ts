@@ -12,6 +12,7 @@ import {
   ConnectorMessage,
   ContextAssistantMessage,
   ContextFile,
+  ContextSectionId,
   ContextMessage,
   ContextToolMessage,
   ContextUserMessage,
@@ -36,6 +37,7 @@ import {
   ResponseCompletedData,
   SettingsData,
   SkillDefinition as Skill,
+  TaskContextManifest,
   TaskData,
   TaskStateData,
   TaskStateEmoji,
@@ -126,6 +128,7 @@ import { ContextManager } from '@/task/context-manager';
 import { WorkflowEventStore } from '@/task/workflow-event-store';
 import { Project } from '@/project';
 import { AiderManager } from '@/task/aider-manager';
+import { buildContextManifest, resolveSelectionPath } from '@/task/context-selection';
 import { SkillManager } from '@/skills/skill-manager';
 import { GitError, GitManager } from '@/git';
 import { MemoryManager } from '@/memory/memory-manager';
@@ -352,7 +355,7 @@ export class Task {
     }
 
     const content = await fs.readFile(this.taskDataPath, 'utf8');
-    const data = JSON.parse(content) as Partial<TaskData>;
+    const data = this.migrateLegacyFileSelection(JSON.parse(content) as Partial<TaskData>);
 
     logger.debug('Loaded task data', {
       baseDir: this.project.baseDir,
@@ -361,6 +364,22 @@ export class Task {
     });
 
     return data;
+  }
+
+  /**
+   * Tasks saved before rule/mapping selection moved to the task take the project's lists.
+   * In-memory migration; persisted on the next saveTask().
+   */
+  private migrateLegacyFileSelection(data: Partial<TaskData>): Partial<TaskData> {
+    if (data.disabledRuleFiles !== undefined && data.disabledRepositoryMappingFiles !== undefined) {
+      return data;
+    }
+    const projectSettings = this.project.getProjectSettings();
+    return {
+      ...data,
+      disabledRuleFiles: data.disabledRuleFiles ?? [...(projectSettings?.disabledRuleFiles ?? [])],
+      disabledRepositoryMappingFiles: data.disabledRepositoryMappingFiles ?? [...(projectSettings?.disabledRepositoryMappingFiles ?? [])],
+    };
   }
 
   private applyTaskData(data: Partial<TaskData>) {
@@ -1539,9 +1558,8 @@ export class Task {
       if (!contextMessages) {
         contextMessages = await this.getContextMessages();
       }
-      if (!contextFiles) {
-        contextFiles = await this.getContextFiles(false, true);
-      }
+      // Sub-agents receive only enabled context files; extensions see the same filtered list.
+      contextFiles = (contextFiles ?? (await this.getContextFiles())).filter((file) => !file.disabled);
 
       const extensionResult = await this.extensionManager.dispatchEvent(
         'onSubagentStarted',
@@ -2056,6 +2074,42 @@ export class Task {
     const allFiles = await this.getContextFiles(!AIDER_MODES.includes(mode), true);
 
     this.eventManager.sendContextFilesUpdated(this.project.baseDir, this.taskId, allFiles);
+    await this.sendContextManifestUpdated();
+  }
+
+  /** Lists every rule, mapping and context file with its selection and how it reaches the model. */
+  public async getContextManifest(): Promise<TaskContextManifest> {
+    await this.waitForTaskDataLoad();
+    const profile = await this.getTaskAgentProfile();
+    return buildContextManifest({
+      baseDir: this.project.baseDir,
+      taskId: this.taskId,
+      mode: this.getCurrentMode(),
+      profile,
+      addRuleFiles: Boolean(this.store.getSettings().aider?.addRuleFiles),
+      projectRulesDir: path.join(this.project.baseDir, AIDER_DESK_PROJECT_RULES_DIR),
+      ruleFiles: await this.getRuleFilesAsContextFiles(profile || undefined, true),
+      disabledRuleFiles: this.getDisabledRuleFiles(),
+      mappingFiles: await this.getRepositoryMappingFiles(true),
+      disabledMappingFiles: this.getDisabledRepositoryMappingFiles(),
+      contextFiles: await this.getContextFiles(false, true),
+    });
+  }
+
+  public async sendContextManifestUpdated(): Promise<void> {
+    if (this.isInternal()) {
+      return;
+    }
+    try {
+      const manifest = await this.getContextManifest();
+      this.eventManager.sendContextManifestUpdated(this.project.baseDir, this.taskId, manifest);
+    } catch (error) {
+      logger.warn('Failed to send context manifest', {
+        baseDir: this.project.baseDir,
+        taskId: this.taskId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   public async refreshContextFiles(): Promise<void> {
@@ -2498,6 +2552,12 @@ export class Task {
   }
 
   public async setContextFilesDisabled(filePaths: string[], disabled: boolean): Promise<void> {
+    this.applyContextFilesDisabled(filePaths, disabled);
+    await this.sendContextFilesUpdated();
+    await this.updateContextInfo(true, false);
+  }
+
+  private applyContextFilesDisabled(filePaths: string[], disabled: boolean): ContextFile[] {
     const changedFiles = this.contextManager.setContextFilesDisabled(filePaths, disabled);
     for (let index = 0; index < changedFiles.length; index++) {
       const file = changedFiles[index];
@@ -2507,8 +2567,71 @@ export class Task {
         this.sendAddFile(file, index !== changedFiles.length - 1);
       }
     }
+    return changedFiles;
+  }
+
+  /**
+   * Ticks (`selected: true`) or unticks paths in one section of this task's context selection.
+   * Rule and mapping selection is stored on the task; file selection is the context files' `disabled` flag.
+   */
+  public async setFileSelection(section: ContextSectionId, paths: string[], selected: boolean): Promise<void> {
+    if (section === 'files') {
+      await this.setContextFilesDisabled(paths, !selected);
+      return;
+    }
+
+    await this.waitForTaskDataLoad();
+    const uniquePaths = [...new Set(paths)];
+    const previous = section === 'rules' ? this.getDisabledRuleFiles() : this.getDisabledRepositoryMappingFiles();
+    const next = selected
+      ? previous.filter((filePath) => !uniquePaths.includes(filePath))
+      : [...previous, ...uniquePaths.filter((filePath) => !previous.includes(filePath))];
+
+    if (!isEqual(previous, next)) {
+      await this.saveTask(section === 'rules' ? { disabledRuleFiles: next } : { disabledRepositoryMappingFiles: next }, false);
+    }
+
+    if (section === 'rules') {
+      await this.syncRuleContextEntries(uniquePaths, selected);
+      this.syncAiderRuleFiles(previous, next);
+    }
+
     await this.sendContextFilesUpdated();
-    await this.updateContextInfo(true, false);
+    void this.updateAgentEstimatedTokens();
+  }
+
+  /** A context entry at the same absolute path as a rule file follows the rule's selection. */
+  private async syncRuleContextEntries(rulePaths: string[], selected: boolean): Promise<void> {
+    const projectDir = this.project.baseDir;
+    const targets = new Set(rulePaths.map((rulePath) => resolveSelectionPath(rulePath, projectDir)));
+    const matchingPaths = (await this.contextManager.getContextFilesEnsureLoaded(true))
+      .filter((file) => targets.has(resolveSelectionPath(file.path, projectDir)))
+      .map((file) => file.path);
+    if (matchingPaths.length > 0) {
+      this.applyContextFilesDisabled(matchingPaths, !selected);
+    }
+  }
+
+  private syncAiderRuleFiles(oldDisabledRuleFiles: string[], newDisabledRuleFiles: string[]): void {
+    if (!this.store.getSettings().aider?.addRuleFiles || !this.aiderManager.isStarted()) {
+      return;
+    }
+    const oldDisabled = new Set(oldDisabledRuleFiles);
+    const newDisabled = new Set(newDisabledRuleFiles);
+    const newlyDisabled = [...newDisabled].filter((filePath) => !oldDisabled.has(filePath) && filePath.startsWith(AIDER_DESK_PROJECT_RULES_DIR));
+    const newlyEnabled = [...oldDisabled].filter((filePath) => !newDisabled.has(filePath) && filePath.startsWith(AIDER_DESK_PROJECT_RULES_DIR));
+    const changes = [
+      ...newlyDisabled.map((filePath) => ({ type: 'drop' as const, filePath })),
+      ...newlyEnabled.map((filePath) => ({ type: 'add' as const, filePath })),
+    ];
+    changes.forEach((change, index) => {
+      const notLast = index !== changes.length - 1;
+      if (change.type === 'drop') {
+        this.sendDropFile(change.filePath, true, notLast);
+      } else {
+        this.sendAddFile({ path: path.join(this.project.baseDir, change.filePath), readOnly: true }, notLast);
+      }
+    });
   }
 
   public async askQuestion(questionData: QuestionData, awaitAnswer = true): Promise<[string, string | undefined]> {
@@ -2878,7 +3001,7 @@ export class Task {
     }
 
     const profile = await this.getTaskAgentProfile();
-    const ruleFiles = await this.getRuleFilesAsContextFiles(profile || undefined, true);
+    const ruleFiles = await this.getRuleFilesAsContextFiles(profile || undefined, includeDisabled);
     return [...contextFiles, ...ruleFiles];
   }
 
@@ -2889,7 +3012,7 @@ export class Task {
     // Get global rule files
     if (await fileExists(AIDER_DESK_GLOBAL_RULES_DIR)) {
       try {
-        const globalRuleFileNames = await fs.readdir(AIDER_DESK_GLOBAL_RULES_DIR);
+        const globalRuleFileNames = (await fs.readdir(AIDER_DESK_GLOBAL_RULES_DIR)).sort((a, b) => a.localeCompare(b));
         for (const fileName of globalRuleFileNames) {
           if (fileName.endsWith('.md')) {
             const absolutePath = path.join(AIDER_DESK_GLOBAL_RULES_DIR, fileName);
@@ -2921,7 +3044,7 @@ export class Task {
     // Get project rule files
     try {
       const projectRulesDir = path.join(this.project.baseDir, AIDER_DESK_PROJECT_RULES_DIR);
-      const projectRuleFileNames = await fs.readdir(projectRulesDir);
+      const projectRuleFileNames = (await fs.readdir(projectRulesDir)).sort((a, b) => a.localeCompare(b));
       for (const fileName of projectRuleFileNames) {
         if (fileName.endsWith('.md')) {
           const relativePath = path.join(AIDER_DESK_PROJECT_RULES_DIR, fileName);
@@ -2969,8 +3092,8 @@ export class Task {
     // Dispatch extension event to allow modification of rule files
     const extensionResult = await this.extensionManager.dispatchEvent('onRuleFilesRetrieved', { files: ruleFiles }, this.project, this);
 
-    // Filter out disabled rule files
-    const disabledRuleFiles = this.project.getProjectSettings().disabledRuleFiles ?? [];
+    // Filter out rule files unticked for this task
+    const disabledRuleFiles = this.getDisabledRuleFiles();
 
     return includeDisabled ? extensionResult.files : extensionResult.files.filter((f) => !disabledRuleFiles.includes(f.path));
   }
@@ -2980,8 +3103,16 @@ export class Task {
     if (includeDisabled) {
       return files;
     }
-    const disabledFiles = new Set(this.project.getProjectSettings().disabledRepositoryMappingFiles ?? []);
+    const disabledFiles = new Set(this.getDisabledRepositoryMappingFiles());
     return files.filter((file) => !disabledFiles.has(file.path));
+  }
+
+  public getDisabledRuleFiles(): string[] {
+    return this.task.disabledRuleFiles ?? [];
+  }
+
+  public getDisabledRepositoryMappingFiles(): string[] {
+    return this.task.disabledRepositoryMappingFiles ?? [];
   }
 
   public getRepoMap(): string {
@@ -4557,6 +4688,10 @@ export class Task {
       void this.updateAgentEstimatedTokens();
     }
 
+    if (oldSettings.aider?.addRuleFiles !== newSettings.aider?.addRuleFiles) {
+      void this.sendContextManifestUpdated();
+    }
+
     // Check for changes in Aider
     const aiderEnvVarsChanged = oldSettings.aider.environmentVariables !== newSettings.aider.environmentVariables;
     const aiderOptionsChanged = oldSettings.aider.options !== newSettings?.aider.options;
@@ -4589,34 +4724,10 @@ export class Task {
   async projectSettingsChanged(oldSettings: ProjectSettings, newSettings: ProjectSettings) {
     const modeChanged = oldSettings.currentMode !== newSettings.currentMode;
     const agentProfileIdChanged = oldSettings.agentProfileId !== newSettings.agentProfileId;
-    const disabledRulesChanged = JSON.stringify(oldSettings.disabledRuleFiles) !== JSON.stringify(newSettings.disabledRuleFiles);
-    const disabledMappingsChanged = JSON.stringify(oldSettings.disabledRepositoryMappingFiles) !== JSON.stringify(newSettings.disabledRepositoryMappingFiles);
     const disabledSkillsChanged = JSON.stringify(oldSettings.disabledSkills) !== JSON.stringify(newSettings.disabledSkills);
 
-    if (agentProfileIdChanged || modeChanged || disabledRulesChanged) {
+    if (agentProfileIdChanged || modeChanged) {
       void this.sendContextFilesUpdated();
-    }
-    if (disabledRulesChanged || disabledMappingsChanged) {
-      void this.updateAgentEstimatedTokens();
-    }
-
-    if (disabledRulesChanged && this.store.getSettings().aider.addRuleFiles && this.aiderManager.isStarted()) {
-      const oldDisabled = new Set(oldSettings.disabledRuleFiles || []);
-      const newDisabled = new Set(newSettings.disabledRuleFiles || []);
-      const newlyDisabled = [...newDisabled].filter((filePath) => !oldDisabled.has(filePath) && filePath.startsWith(AIDER_DESK_PROJECT_RULES_DIR));
-      const newlyEnabled = [...oldDisabled].filter((filePath) => !newDisabled.has(filePath) && filePath.startsWith(AIDER_DESK_PROJECT_RULES_DIR));
-      const changes = [
-        ...newlyDisabled.map((filePath) => ({ type: 'drop' as const, filePath })),
-        ...newlyEnabled.map((filePath) => ({ type: 'add' as const, filePath })),
-      ];
-      changes.forEach((change, index) => {
-        const notLast = index !== changes.length - 1;
-        if (change.type === 'drop') {
-          this.sendDropFile(change.filePath, true, notLast);
-        } else {
-          this.sendAddFile({ path: path.join(this.project.baseDir, change.filePath), readOnly: true }, notLast);
-        }
-      });
     }
     if (disabledSkillsChanged) {
       void this.sendSkillsUpdated();
@@ -4993,6 +5104,10 @@ ${error.stderr}`,
         updates,
       });
       return this.task;
+    }
+
+    if ((updates.currentMode !== undefined && updates.currentMode !== oldMode) || updates.agentProfileId !== undefined) {
+      void this.sendContextManifestUpdated();
     }
 
     this.task.updatedAt = new Date().toISOString();
@@ -6345,6 +6460,7 @@ ${error.stderr}`,
     const taskAgentProfile = await this.getTaskAgentProfile();
 
     if (taskAgentProfile?.id === newProfile.id) {
+      void this.sendContextManifestUpdated();
       if (oldProfile.includeContextFiles !== newProfile.includeContextFiles || oldProfile.includeRepoMappings !== newProfile.includeRepoMappings) {
         void this.updateContextInfo();
       }

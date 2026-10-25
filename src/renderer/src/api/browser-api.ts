@@ -6,6 +6,9 @@ import {
   CloudflareTunnelStatus,
   CommandOutputData,
   ContextFilesUpdatedData,
+  ContextManifestUpdatedData,
+  ContextSectionId,
+  TaskContextManifest,
   ContextInfoData,
   ContextMenuParams,
   CommandsData,
@@ -106,6 +109,7 @@ type EventDataMap = {
   log: LogData;
   'system-log': SystemLogData;
   'context-files-updated': ContextFilesUpdatedData;
+  'context-manifest-updated': ContextManifestUpdatedData;
   'context-info-updated': ContextInfoData;
   'commands-updated': CommandsData;
   'update-autocompletion': AutocompletionData;
@@ -204,6 +208,7 @@ export class BrowserApi implements ApplicationAPI {
       log: new Map(),
       'system-log': new Map(),
       'context-files-updated': new Map(),
+      'context-manifest-updated': new Map(),
       'context-info-updated': new Map(),
       'commands-updated': new Map(),
       'update-autocompletion': new Map(),
@@ -731,6 +736,12 @@ export class BrowserApi implements ApplicationAPI {
   setContextFilesDisabled(baseDir: string, taskId: string, filePaths: string[], disabled: boolean): Promise<void> {
     return this.post('/set-context-files-disabled', { projectDir: baseDir, taskId, paths: filePaths, disabled });
   }
+  setTaskFileSelection(baseDir: string, taskId: string, section: ContextSectionId, paths: string[], selected: boolean): Promise<void> {
+    return this.post('/set-task-file-selection', { projectDir: baseDir, taskId, section, paths, selected });
+  }
+  getTaskContextManifest(baseDir: string, taskId: string): Promise<TaskContextManifest> {
+    return this.post<{ projectDir: string; taskId: string }, TaskContextManifest>('/get-task-context-manifest', { projectDir: baseDir, taskId });
+  }
   runCommand(baseDir: string, taskId: string, command: string): void {
     this.post('/project/run-command', { projectDir: baseDir, taskId, command });
   }
@@ -1078,6 +1089,9 @@ export class BrowserApi implements ApplicationAPI {
   }
   addContextFilesUpdatedListener(baseDir: string, taskId: string, callback: (data: ContextFilesUpdatedData) => void): () => void {
     return this.addListener('context-files-updated', callback, baseDir, taskId);
+  }
+  addContextManifestUpdatedListener(baseDir: string, taskId: string, callback: (data: ContextManifestUpdatedData) => void): () => void {
+    return this.addListener('context-manifest-updated', callback, baseDir, taskId);
   }
   addContextInfoUpdatedListener(baseDir: string, taskId: string, callback: (data: ContextInfoData) => void): () => void {
     return this.addListener('context-info-updated', callback, baseDir, taskId);

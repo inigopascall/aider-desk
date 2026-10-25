@@ -10,13 +10,10 @@ import { clsx } from 'clsx';
 import { MdDone } from 'react-icons/md';
 import { AnimatePresence } from 'framer-motion';
 
-import { ContextFilesSection } from './ContextFilesSection';
+import { ContextFilesPane } from './ContextFilesPane';
 import { UpdatedFilesSection } from './UpdatedFilesSection';
 import { ProjectFilesSection } from './ProjectFilesSection';
-import { RulesSection } from './RulesSection';
 import { SkillsSection } from './SkillsSection';
-import { ThreadOutlineSection } from './ThreadOutlineSection';
-import { RepositoryMappingsSection } from './RepositoryMappingsSection';
 import { normalizePath } from './types';
 
 import type { SectionType, TreeItem } from './types';
@@ -28,7 +25,7 @@ import { useProjectSettings } from '@/contexts/ProjectSettingsContext';
 
 import './Workspace.css';
 
-const ALL_SECTIONS: SectionType[] = ['outline', 'mappings', 'rules', 'context', 'updated', 'project', 'skills'];
+const ALL_SECTIONS: SectionType[] = ['context', 'updated', 'project', 'skills'];
 
 type SortableSectionWrapperProps = {
   id: SectionType;
@@ -77,7 +74,6 @@ type Props = {
   mode: Mode;
   onToggleFilesSidebarCollapse?: () => void;
   taskName?: string;
-  onScrollToMessage?: (messageId: string) => void;
 };
 
 export const Workspace = ({
@@ -93,14 +89,15 @@ export const Workspace = ({
   mode,
   onToggleFilesSidebarCollapse,
   taskName,
-  onScrollToMessage,
 }: Props) => {
   const { t } = useTranslation();
   const os = useOS();
   const api = useApi();
   const { projectSettings, saveProjectSettings } = useProjectSettings();
 
-  const [activeSection, setActiveSection] = useLocalStorage<SectionType>(`workspace-active-section-${baseDir}`, 'context');
+  const [storedActiveSection, setActiveSection] = useLocalStorage<SectionType>(`workspace-active-section-${baseDir}`, 'context');
+  // A stored section that no longer exists falls back to Context Files.
+  const activeSection: SectionType = storedActiveSection && ALL_SECTIONS.includes(storedActiveSection) ? storedActiveSection : 'context';
   const [visitedSections, setVisitedSections] = useState<Set<SectionType>>(new Set(['context']));
   const [isDragging, setIsDragging] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -141,19 +138,6 @@ export const Workspace = ({
       map.set(normalizePath(file.path), file);
     });
     return map;
-  }, [contextFiles]);
-
-  const { rulesFiles, userContextFiles } = useMemo(() => {
-    const rules: ContextFile[] = [];
-    const user: ContextFile[] = [];
-    contextFiles.forEach((file) => {
-      if (file.source === 'global-rule' || file.source === 'project-rule' || file.source === 'agent-rule') {
-        rules.push(file);
-      } else {
-        user.push(file);
-      }
-    });
-    return { rulesFiles: rules, userContextFiles: user };
   }, [contextFiles]);
 
   const totalStats = useMemo(() => ({ additions: 0, deletions: 0 }), []);
@@ -264,20 +248,14 @@ export const Workspace = ({
   );
 
   const handleToggleContext = useCallback(() => setActiveSection('context'), [setActiveSection]);
-  const handleToggleMappings = useCallback(() => setActiveSection('mappings'), [setActiveSection]);
   const handleToggleUpdated = useCallback(() => setActiveSection('updated'), [setActiveSection]);
   const handleToggleProject = useCallback(() => setActiveSection('project'), [setActiveSection]);
-  const handleToggleRules = useCallback(() => setActiveSection('rules'), [setActiveSection]);
   const handleToggleSkills = useCallback(() => setActiveSection('skills'), [setActiveSection]);
-  const handleToggleOutline = useCallback(() => setActiveSection('outline'), [setActiveSection]);
 
   const handleToggleContextHidden = useCallback(() => handleToggleSectionHidden('context'), [handleToggleSectionHidden]);
-  const handleToggleMappingsHidden = useCallback(() => handleToggleSectionHidden('mappings'), [handleToggleSectionHidden]);
   const handleToggleUpdatedHidden = useCallback(() => handleToggleSectionHidden('updated'), [handleToggleSectionHidden]);
   const handleToggleProjectHidden = useCallback(() => handleToggleSectionHidden('project'), [handleToggleSectionHidden]);
-  const handleToggleRulesHidden = useCallback(() => handleToggleSectionHidden('rules'), [handleToggleSectionHidden]);
   const handleToggleSkillsHidden = useCallback(() => handleToggleSectionHidden('skills'), [handleToggleSectionHidden]);
-  const handleToggleOutlineHidden = useCallback(() => handleToggleSectionHidden('outline'), [handleToggleSectionHidden]);
 
   const handleEnterEditMode = useCallback(() => {
     setEditMode(true);
@@ -300,38 +278,20 @@ export const Workspace = ({
     switch (section) {
       case 'context':
         return (
-          <ContextFilesSection
+          <ContextFilesPane
             mode={mode}
             baseDir={baseDir}
             taskId={taskId}
-            userContextFiles={userContextFiles}
             isOpen={activeSection === 'context' && !editMode}
             totalStats={totalStats}
             fileTokensInfo={fileTokensInfo}
-            os={os}
-            contextFilesMap={contextFilesMap}
             showFileDialog={showFileDialog}
             onDropAllFiles={handleDropAllFiles}
+            refreshContextFiles={refreshContextFiles}
             onToggle={handleToggleContext}
-            onDropFile={dropFile}
             editMode={editMode}
             isHidden={sectionProps.isHidden('context')}
             onToggleHidden={handleToggleContextHidden}
-            showBorderTop={section !== orderedSections[0]}
-          />
-        );
-      case 'mappings':
-        return (
-          <RepositoryMappingsSection
-            baseDir={baseDir}
-            taskId={taskId}
-            isOpen={activeSection === 'mappings' && !editMode}
-            totalStats={totalStats}
-            visitedSections={visitedSections}
-            onToggle={handleToggleMappings}
-            editMode={editMode}
-            isHidden={sectionProps.isHidden('mappings')}
-            onToggleHidden={handleToggleMappingsHidden}
             showBorderTop={section !== orderedSections[0]}
           />
         );
@@ -376,23 +336,6 @@ export const Workspace = ({
             showBorderTop={section !== orderedSections[0]}
           />
         );
-      case 'rules':
-        return (
-          <RulesSection
-            rulesFiles={rulesFiles}
-            baseDir={baseDir}
-            taskId={taskId}
-            isOpen={activeSection === 'rules' && !editMode}
-            totalStats={totalStats}
-            visitedSections={visitedSections}
-            refreshContextFiles={refreshContextFiles}
-            onToggle={handleToggleRules}
-            editMode={editMode}
-            isHidden={sectionProps.isHidden('rules')}
-            onToggleHidden={handleToggleRulesHidden}
-            showBorderTop={section !== orderedSections[0]}
-          />
-        );
       case 'skills':
         return (
           <SkillsSection
@@ -405,22 +348,6 @@ export const Workspace = ({
             editMode={editMode}
             isHidden={sectionProps.isHidden('skills')}
             onToggleHidden={handleToggleSkillsHidden}
-            showBorderTop={section !== orderedSections[0]}
-          />
-        );
-      case 'outline':
-        return (
-          <ThreadOutlineSection
-            baseDir={baseDir}
-            taskId={taskId}
-            isOpen={activeSection === 'outline' && !editMode}
-            totalStats={totalStats}
-            visitedSections={visitedSections}
-            onToggle={handleToggleOutline}
-            onScrollToMessage={onScrollToMessage}
-            editMode={editMode}
-            isHidden={sectionProps.isHidden('outline')}
-            onToggleHidden={handleToggleOutlineHidden}
             showBorderTop={section !== orderedSections[0]}
           />
         );

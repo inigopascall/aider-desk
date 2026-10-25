@@ -20,8 +20,6 @@ type Props = {
   searchField?: ReactNode;
   emptyContent?: ReactNode;
   isLoading?: boolean;
-  disabledRuleFiles?: string[];
-  onToggleRuleFile?: (filePaths: string[], disabled: boolean) => void;
   onToggleContextFiles?: (filePaths: string[], disabled: boolean, shiftKey: boolean) => void;
   onFileDiffClick: (file: UpdatedFile) => void;
   onFilePreviewClick?: (filePath: string) => void;
@@ -64,8 +62,6 @@ export const SectionContent = ({ ...props }: Props) => {
             updatedFiles={props.updatedFiles}
             fileTokensInfo={props.fileTokensInfo}
             os={props.os}
-            disabledRuleFiles={props.disabledRuleFiles}
-            onToggleRuleFile={props.onToggleRuleFile}
             onToggleContextFiles={props.onToggleContextFiles}
             onFileDiffClick={props.onFileDiffClick}
             onFilePreviewClick={props.onFilePreviewClick}

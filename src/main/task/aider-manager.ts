@@ -141,7 +141,7 @@ export class AiderManager {
     if (settings.aider.addRuleFiles && (await fileExists(rulesDir))) {
       try {
         const ruleFiles = await fs.readdir(rulesDir);
-        const disabledRuleFiles = projectSettings.disabledRuleFiles ?? [];
+        const disabledRuleFiles = this.task.getDisabledRuleFiles();
         for (const fileName of ruleFiles) {
           if (!fileName.endsWith('.md')) {
             continue;

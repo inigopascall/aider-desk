@@ -12,6 +12,9 @@ import {
   CloudflareTunnelStatus,
   CommandOutputData,
   ContextFilesUpdatedData,
+  ContextManifestUpdatedData,
+  ContextSectionId,
+  TaskContextManifest,
   ContextMenuParams,
   CreateTaskParams,
   CommandsData,
@@ -174,6 +177,8 @@ export interface ApplicationAPI {
   cancelCloneProject: () => Promise<void>;
   dropFile: (baseDir: string, taskId: string, path: string) => void;
   setContextFilesDisabled: (baseDir: string, taskId: string, filePaths: string[], disabled: boolean) => Promise<void>;
+  setTaskFileSelection: (baseDir: string, taskId: string, section: ContextSectionId, paths: string[], selected: boolean) => Promise<void>;
+  getTaskContextManifest: (baseDir: string, taskId: string) => Promise<TaskContextManifest>;
   runCommand: (baseDir: string, taskId: string, command: string) => void;
   pasteImage: (baseDir: string, taskId: string, imageBuffer?: ArrayBuffer) => void;
   scrapeWeb: (baseDir: string, taskId: string, url: string, filePath?: string) => Promise<void>;
@@ -293,6 +298,7 @@ export interface ApplicationAPI {
   addResponseCompletedListener: (baseDir: string, taskId: string, callback: (data: ResponseCompletedData) => void) => () => void;
   addLogListener: (baseDir: string, taskId: string, callback: (data: LogData) => void) => () => void;
   addContextFilesUpdatedListener: (baseDir: string, taskId: string, callback: (data: ContextFilesUpdatedData) => void) => () => void;
+  addContextManifestUpdatedListener: (baseDir: string, taskId: string, callback: (data: ContextManifestUpdatedData) => void) => () => void;
   addUpdatedFilesUpdatedListener: (baseDir: string, taskDir: string, callback: (data: UpdatedFilesUpdatedData) => void) => () => void;
   addSkillsUpdatedListener: (baseDir: string, taskId: string, callback: (data: SkillsUpdatedData) => void) => () => void;
   addRepositoryMappingsUpdatedListener: (baseDir: string, callback: (data: RepositoryMappingsUpdatedData) => void) => () => void;

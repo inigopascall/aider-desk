@@ -1,5 +1,17 @@
 import { useShallow } from 'zustand/react/shallow';
-import { ContextFile, ModelsData, QueuedPromptData, QuestionData, TodoItem, TokensInfoData, Message, WorkflowLogData, isLogMessage, isLoadingMessage } from '@common/types';
+import {
+  ContextFile,
+  ModelsData,
+  QueuedPromptData,
+  QuestionData,
+  TaskContextManifest,
+  TodoItem,
+  TokensInfoData,
+  Message,
+  WorkflowLogData,
+  isLogMessage,
+  isLoadingMessage,
+} from '@common/types';
 import { createWithEqualityFn } from 'zustand/traditional';
 import { shallow } from 'zustand/vanilla/shallow';
 import { devtools } from 'zustand/middleware';
@@ -12,6 +24,7 @@ export interface TaskState {
   question: QuestionData | null;
   todoItems: TodoItem[];
   contextFiles: ContextFile[];
+  contextManifest: TaskContextManifest | null;
   aiderModelsData: ModelsData | null;
   lastActiveAt: Date | null;
   queuedPrompts: QueuedPromptData[];
@@ -25,6 +38,7 @@ export const EMPTY_TASK_STATE: TaskState = {
   question: null,
   todoItems: [],
   contextFiles: [],
+  contextManifest: null,
   aiderModelsData: null,
   lastActiveAt: null,
   queuedPrompts: [],
@@ -319,7 +333,7 @@ export const touchTaskActivity = (taskId: string) => {
 export const useOptimizedTaskState = (taskId: string) =>
   useTaskStore(
     useShallow((state) => {
-      const { tokensInfo: _, todoItems: _ti, queuedPrompts: _qp, lastActiveAt: _la, ...optimizedTaskState } = state.taskStateMap.get(taskId) || EMPTY_TASK_STATE;
+      const { tokensInfo: _, todoItems: _ti, queuedPrompts: _qp, lastActiveAt: _la, contextManifest: _cm, ...optimizedTaskState } = state.taskStateMap.get(taskId) || EMPTY_TASK_STATE;
       return optimizedTaskState;
     }),
   );
@@ -327,6 +341,8 @@ export const useOptimizedTaskState = (taskId: string) =>
 export const useTaskTokensInfo = (taskId: string) => useTaskStore((state) => state.taskStateMap.get(taskId)?.tokensInfo ?? null);
 
 export const useTaskFileTokensInfo = (taskId: string) => useTaskStore((state) => state.taskStateMap.get(taskId)?.tokensInfo?.files ?? null);
+
+export const useTaskContextManifest = (taskId: string) => useTaskStore((state) => state.taskStateMap.get(taskId)?.contextManifest ?? null);
 
 export const useTaskQuestion = (taskId: string) => useTaskStore((state) => state.taskStateMap.get(taskId)?.question ?? null);
 

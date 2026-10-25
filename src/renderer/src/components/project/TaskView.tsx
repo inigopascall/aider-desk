@@ -1154,7 +1154,6 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                     refreshAllFiles={handleRefreshAllFiles}
                     refreshContextFiles={handleRefreshContextFiles}
                     onToggleFilesSidebarCollapse={handleToggleFilesSidebarCollapse}
-                    onScrollToMessage={handleScrollToMessage}
                   />
                 </div>
               </ResizableBox>
@@ -1192,7 +1191,6 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
             updateTask={updateTask}
             refreshAllFiles={(useGit) => refreshAllFiles(task.id, useGit)}
             refreshContextFiles={handleRefreshContextFiles}
-            onScrollToMessage={handleScrollToMessage}
           />
         )}
       </div>

@@ -626,7 +626,9 @@ export const ProjectSettingsSchema = z.object({
   weakModelLocked: z.boolean().optional(),
   autonomyModeLocked: z.boolean().optional(),
   updatedFilesGroupMode: z.enum(['grouped', 'flat']).default('flat'),
+  /** @deprecated Rule selection is per task (`TaskData.disabledRuleFiles`); read only to migrate tasks saved without it. */
   disabledRuleFiles: z.array(z.string()).default([]),
+  /** @deprecated Mapping selection is per task (`TaskData.disabledRepositoryMappingFiles`); read only to migrate tasks saved without it. */
   disabledRepositoryMappingFiles: z.array(z.string()).default([]),
   disabledSkills: z.array(z.string()).default([]),
   contextSidebarSectionsOrder: z.array(z.string()).default([]),
@@ -1323,6 +1325,10 @@ export const TaskDataSchema = z.object({
   lastAgentProviderMetadata: z.unknown().optional(),
   lastAgentProviderMetadataModel: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  /** Rule-file selection keys unticked for this task. */
+  disabledRuleFiles: z.array(z.string()).optional(),
+  /** Repository-mapping paths unticked for this task. */
+  disabledRepositoryMappingFiles: z.array(z.string()).optional(),
 });
 
 export type TaskData = z.infer<typeof TaskDataSchema>;

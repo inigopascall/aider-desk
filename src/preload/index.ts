@@ -4,6 +4,7 @@ import {
   CommandOutputData,
   CommandsData,
   ContextFilesUpdatedData,
+  ContextManifestUpdatedData,
   ContextInfoData,
   ContextMenuParams,
   CreateTaskParams,
@@ -133,6 +134,8 @@ const api: ApplicationAPI = {
   dropFile: (baseDir, taskId, path) => ipcRenderer.send('drop-file', baseDir, taskId, path),
   setContextFilesDisabled: (baseDir, taskId, filePaths, disabled) =>
     ipcRenderer.invoke('set-context-files-disabled', baseDir, taskId, filePaths, disabled),
+  setTaskFileSelection: (baseDir, taskId, section, paths, selected) => ipcRenderer.invoke('set-task-file-selection', baseDir, taskId, section, paths, selected),
+  getTaskContextManifest: (baseDir, taskId) => ipcRenderer.invoke('get-task-context-manifest', baseDir, taskId),
   runCommand: (baseDir, taskId, command) => ipcRenderer.send('run-command', baseDir, taskId, command),
   pasteImage: (baseDir, taskId) => ipcRenderer.send('paste-image', baseDir, taskId),
   scrapeWeb: (baseDir, taskId, url, filePath) => ipcRenderer.invoke('scrape-web', baseDir, taskId, url, filePath),
@@ -315,6 +318,19 @@ const api: ApplicationAPI = {
     ipcRenderer.on('context-files-updated', listener);
     return () => {
       ipcRenderer.removeListener('context-files-updated', listener);
+    };
+  },
+
+  addContextManifestUpdatedListener: (baseDir, taskId, callback) => {
+    const listener = (_: Electron.IpcRendererEvent, data: ContextManifestUpdatedData) => {
+      if (!compareBaseDirs(data.baseDir, baseDir) || data.taskId !== taskId) {
+        return;
+      }
+      callback(data);
+    };
+    ipcRenderer.on('context-manifest-updated', listener);
+    return () => {
+      ipcRenderer.removeListener('context-manifest-updated', listener);
     };
   },
 

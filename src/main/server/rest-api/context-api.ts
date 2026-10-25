@@ -54,6 +54,19 @@ const SetContextFilesDisabledSchema = z.object({
   disabled: z.boolean(),
 });
 
+const SetTaskFileSelectionSchema = z.object({
+  projectDir: z.string().min(1, 'Project directory is required'),
+  taskId: z.string().min(1, 'Task ID is required'),
+  section: z.enum(['rules', 'mappings', 'files']),
+  paths: z.array(z.string().min(1, 'File path is required')).min(1, 'At least one file path is required'),
+  selected: z.boolean(),
+});
+
+const GetTaskContextManifestSchema = z.object({
+  projectDir: z.string().min(1, 'Project directory is required'),
+  taskId: z.string().min(1, 'Task ID is required'),
+});
+
 export class ContextApi extends BaseApi {
   constructor(
     private readonly projectManager: ProjectManager,
@@ -105,6 +118,36 @@ export class ContextApi extends BaseApi {
         const { projectDir, taskId, paths, disabled } = parsed;
         await this.eventsHandler.setContextFilesDisabled(projectDir, taskId, paths, disabled);
         res.status(200).json({ message: 'Context files updated' });
+      }),
+    );
+
+    // Tick or untick files in one section of a task's context selection
+    router.post(
+      '/set-task-file-selection',
+      this.handleRequest(async (req, res) => {
+        const parsed = this.validateRequest(SetTaskFileSelectionSchema, req.body, res);
+        if (!parsed) {
+          return;
+        }
+
+        const { projectDir, taskId, section, paths, selected } = parsed;
+        await this.eventsHandler.setTaskFileSelection(projectDir, taskId, section, paths, selected);
+        res.status(200).json({ message: 'Task file selection updated' });
+      }),
+    );
+
+    // Get the task's context manifest
+    router.post(
+      '/get-task-context-manifest',
+      this.handleRequest(async (req, res) => {
+        const parsed = this.validateRequest(GetTaskContextManifestSchema, req.body, res);
+        if (!parsed) {
+          return;
+        }
+
+        const { projectDir, taskId } = parsed;
+        const manifest = await this.eventsHandler.getTaskContextManifest(projectDir, taskId);
+        res.status(200).json(manifest);
       }),
     );
 

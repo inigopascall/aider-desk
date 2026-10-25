@@ -55,8 +55,6 @@ type Props = {
   updatedFiles: UpdatedFile[];
   fileTokensInfo?: Record<string, TokensCost> | null;
   os: OS | null;
-  disabledRuleFiles?: string[];
-  onToggleRuleFile?: (filePaths: string[], disabled: boolean) => void;
   onToggleContextFiles?: (filePaths: string[], disabled: boolean, shiftKey: boolean) => void;
   onFileDiffClick: (file: UpdatedFile) => void;
   onFilePreviewClick?: (filePath: string) => void;
@@ -78,8 +76,6 @@ export const TreeItemRenderer = ({
   contextFilesMap,
   updatedFiles,
   fileTokensInfo,
-  disabledRuleFiles,
-  onToggleRuleFile,
   onToggleContextFiles,
   onFileDiffClick,
   onFilePreviewClick,
@@ -95,36 +91,29 @@ export const TreeItemRenderer = ({
   const isRuleFile = source === 'global-rule' || source === 'project-rule' || source === 'agent-rule';
   const filePath = item.file?.path;
   const isContextFile = filePath ? contextFilesMap.has(normalizePath(filePath)) : false;
-  const showRuleCheckbox = type === 'rules' && isRuleFile && !item.isFolder && onToggleRuleFile;
-  const isRuleDisabled = isRuleFile && filePath ? (disabledRuleFiles ?? []).includes(filePath) : false;
-  const showFolderCheckbox = type === 'rules' && item.isFolder && onToggleRuleFile;
   const showContextCheckbox = type === 'context' && !item.isFolder && !!onToggleContextFiles;
   const showContextFolderCheckbox = type === 'context' && item.isFolder && !!onToggleContextFiles;
-  const useAlignedControlSlots = type === 'context' || type === 'rules';
+  const useAlignedControlSlots = type === 'context';
 
   const descendantFiles = useMemo(() => getDescendantFiles(treeData, item.index), [treeData, item.index]);
-  const folderRuleFiles = descendantFiles.filter((file) => file.source === 'global-rule' || file.source === 'project-rule' || file.source === 'agent-rule').map((file) => file.path);
   const folderContextFiles = descendantFiles.filter((file) => contextFilesMap.has(normalizePath(file.path)));
 
   const folderCheckState = useMemo((): TriState => {
-    const files = showFolderCheckbox ? folderRuleFiles.map((path) => ({ path, disabled: (disabledRuleFiles ?? []).includes(path) })) : folderContextFiles;
-    if (files.length === 0) return 'unchecked';
-    const enabledCount = files.filter((file) => !file.disabled).length;
-    return enabledCount === 0 ? 'unchecked' : enabledCount === files.length ? 'checked' : 'indeterminate';
-  }, [showFolderCheckbox, folderRuleFiles, folderContextFiles, disabledRuleFiles]);
+    if (folderContextFiles.length === 0) return 'unchecked';
+    const enabledCount = folderContextFiles.filter((file) => !file.disabled).length;
+    return enabledCount === 0 ? 'unchecked' : enabledCount === folderContextFiles.length ? 'checked' : 'indeterminate';
+  }, [folderContextFiles]);
 
   const handleFileCheckboxToggle = useCallback((shiftKey = false) => {
-    if (filePath && onToggleRuleFile) onToggleRuleFile([filePath], !isRuleDisabled);
-    else if (filePath && onToggleContextFiles) {
+    if (filePath && onToggleContextFiles) {
       const file = contextFilesMap.get(normalizePath(filePath)) ?? item.file;
       onToggleContextFiles([filePath], !file?.disabled, shiftKey);
     }
-  }, [filePath, onToggleRuleFile, onToggleContextFiles, isRuleDisabled, contextFilesMap, item.file]);
+  }, [filePath, onToggleContextFiles, contextFilesMap, item.file]);
 
   const handleFolderCheckboxToggle = useCallback(() => {
-    if (showFolderCheckbox && folderRuleFiles.length > 0) onToggleRuleFile?.(folderRuleFiles, folderCheckState === 'checked');
-    else if (showContextFolderCheckbox && folderContextFiles.length > 0) onToggleContextFiles?.(folderContextFiles.map((file) => file.path), folderCheckState === 'checked', false);
-  }, [showFolderCheckbox, folderRuleFiles, folderCheckState, onToggleRuleFile, showContextFolderCheckbox, folderContextFiles, onToggleContextFiles]);
+    if (showContextFolderCheckbox && folderContextFiles.length > 0) onToggleContextFiles?.(folderContextFiles.map((file) => file.path), folderCheckState === 'checked', false);
+  }, [folderCheckState, showContextFolderCheckbox, folderContextFiles, onToggleContextFiles]);
 
   const updatedFile = type === 'updated' ? updatedFiles.find((f) => normalizePath(f.path) === normalizePath(item.file?.path || '')) : undefined;
 
@@ -297,9 +286,7 @@ export const TreeItemRenderer = ({
 
   const checkboxControls = (
     <>
-      {showFolderCheckbox && folderRuleFiles.length > 0 && <TriStateCheckbox state={folderCheckState} onChange={handleFolderCheckboxToggle} />}
       {showContextFolderCheckbox && folderContextFiles.length > 0 && <TriStateCheckbox state={folderCheckState} onChange={handleFolderCheckboxToggle} />}
-      {showRuleCheckbox && <TriStateCheckbox state={isRuleDisabled ? 'unchecked' : 'checked'} onChange={handleFileCheckboxToggle} />}
       {showContextCheckbox && <TriStateCheckbox state={item.file?.disabled ? 'unchecked' : 'checked'} onChange={handleFileCheckboxToggle} />}
     </>
   );

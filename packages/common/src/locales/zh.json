@@ -1165,9 +1165,6 @@
     "confirmDelete": "确认删除",
     "remove": "移除消息",
     "deleteUpToHere": "删除到此为止",
-    "outline": {
-      "title": "对话"
-    },
     "ephemeralGroupTooltip": "此线程/群组是临时性的——不会随任务保存，重新加载后将消失"
   },
   "errors": {
@@ -1264,7 +1261,6 @@
   },
   "contextFiles": {
     "workspaceTitle": "工作区",
-    "repositoryMappings": "仓库映射",
     "repositoryMappingFile": "仓库映射文件",
     "regenerateMappings": "重新生成映射",
     "regeneratingMappings": "正在重新生成映射...",
@@ -1274,6 +1270,19 @@
     "removeMappingFile": "删除映射文件",
     "repositoryMappingsRemoveFailed": "删除仓库映射文件失败：{{error}}",
     "title": "上下文文件",
+    "sectionRules": "规则",
+    "sectionMappings": "仓库映射",
+    "sectionFiles": "文件",
+    "placementSystemPrompt": "系统提示 · 主代理",
+    "placementBeforeHistory": "对话之前",
+    "placementAfterHistory": "对话之后",
+    "placementAiderContext": "Aider 上下文",
+    "notSentProfileExcludesMappings": "未发送：此代理配置已关闭仓库映射",
+    "notSentAiderMode": "Aider 模式下不发送",
+    "notSentAiderRuleFilesDisabled": "未发送：设置中已关闭 Aider 规则文件",
+    "listedPathOnly": "仅列出路径：此配置不包含文件内容",
+    "rulesTooltip": "规则会加入主代理的系统提示。拥有自己系统提示的子代理不会收到规则。",
+    "rulesEmpty": "没有规则文件。",
     "updatedFiles": "已更新文件",
     "uncommittedChanges": "未提交的更改",
     "updated": "已更新",
@@ -1295,7 +1304,6 @@
     "projectRule": "项目规则文件",
     "agentRule": "代理规则文件",
     "projectFiles": "项目文件",
-    "rules": "规则文件",
     "skills": "技能",
     "noSkills": "无可用技能",
     "editSections": "重新排序和隐藏分区",
@@ -1312,10 +1320,6 @@
     "extensionSkill": "扩展技能",
     "manualSkillOnly": "仅限手动调用 (disable-model-invocation)",
     "agentSkillOnly": "仅限代理调用 (user-invocable: false)",
-    "disableRuleFile": "禁用规则文件",
-    "enableRuleFile": "启用规则文件",
-    "disableAllRuleFiles": "禁用文件夹中的所有规则文件",
-    "enableAllRuleFiles": "启用文件夹中的所有规则文件",
     "diffViewer": {
       "file": "文件"
     },
@@ -1423,7 +1427,6 @@
     "aiderToolsTooltip": "代理可以使用Aider执行添加/删除上下文文件操作和运行提示。",
     "includeContextFiles": "包含上下文文件",
     "includeFilesTooltip": "将上下文文件内容添加到代理的聊天中。这将增加令牌使用量。",
-
     "servers": "MCP服务器",
     "selectServer": "从列表中选择一个 MCP 服务器以查看其工具",
     "reloadServer": "重新加载服务器",

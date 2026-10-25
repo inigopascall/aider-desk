@@ -1234,11 +1234,6 @@
     "remove": "메시지 제거",
     "deleteUpToHere": "여기까지 삭제",
     "outline": {
-      "title": "대화",
-      "filterAll": "전체",
-      "filterBookmarks": "북마크",
-      "empty": "이 대화에 아직 메시지가 없습니다.",
-      "emptyBookmarks": "북마크된 메시지가 없습니다.",
       "untitled": "제목 없음"
     },
     "ephemeralGroupTooltip": "이 스레드/그룹은 임시 항목입니다 — 작업과 함께 저장되지 않으며 다시 로드하면 사라집니다"
@@ -1337,7 +1332,6 @@
   },
   "contextFiles": {
     "workspaceTitle": "워크스페이스",
-    "repositoryMappings": "저장소 매핑",
     "repositoryMappingFile": "저장소 매핑 파일",
     "regenerateMappings": "매핑 다시 생성",
     "regeneratingMappings": "매핑을 다시 생성하는 중...",
@@ -1347,6 +1341,19 @@
     "removeMappingFile": "매핑 파일 제거",
     "repositoryMappingsRemoveFailed": "저장소 매핑 파일을 제거하지 못했습니다: {{error}}",
     "title": "컨텍스트 파일",
+    "sectionRules": "규칙",
+    "sectionMappings": "저장소 매핑",
+    "sectionFiles": "파일",
+    "placementSystemPrompt": "시스템 프롬프트 · 메인 에이전트",
+    "placementBeforeHistory": "대화 앞",
+    "placementAfterHistory": "대화 뒤",
+    "placementAiderContext": "Aider 컨텍스트",
+    "notSentProfileExcludesMappings": "전송 안 됨: 이 에이전트 프로필은 저장소 매핑이 꺼져 있습니다",
+    "notSentAiderMode": "Aider 모드에서는 전송되지 않음",
+    "notSentAiderRuleFilesDisabled": "전송 안 됨: 설정에서 Aider 규칙 파일이 꺼져 있습니다",
+    "listedPathOnly": "경로만 표시: 이 프로필은 파일 내용을 포함하지 않습니다",
+    "rulesTooltip": "규칙은 메인 에이전트의 시스템 프롬프트에 포함됩니다. 자체 시스템 프롬프트를 가진 하위 에이전트는 규칙을 받지 않습니다.",
+    "rulesEmpty": "규칙 파일이 없습니다.",
     "updatedFiles": "업데이트된 파일",
     "uncommittedChanges": "커밋되지 않은 변경 사항",
     "updated": "업데이트됨",
@@ -1368,7 +1375,6 @@
     "projectRule": "프로젝트 규칙 파일",
     "agentRule": "에이전트 규칙 파일",
     "projectFiles": "프로젝트 파일",
-    "rules": "규칙 파일",
     "skills": "스킬",
     "noSkills": "사용 가능한 스킬 없음",
     "editSections": "섹션 재정렬 및 숨기기",
@@ -1385,10 +1391,6 @@
     "extensionSkill": "확장 스킬",
     "manualSkillOnly": "수동 호출 전용 (disable-model-invocation)",
     "agentSkillOnly": "에이전트 전용 (user-invocable: false)",
-    "disableRuleFile": "규칙 파일 비활성화",
-    "enableRuleFile": "규칙 파일 활성화",
-    "disableAllRuleFiles": "폴더의 모든 규칙 파일 비활성화",
-    "enableAllRuleFiles": "폴더의 모든 규칙 파일 활성화",
     "diffViewer": {
       "file": "파일"
     },

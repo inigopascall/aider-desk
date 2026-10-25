@@ -6,6 +6,7 @@ import {
   AutonomyMode,
   BranchInfo,
   CloudflareTunnelStatus,
+  ContextSectionId,
   CommandsData,
   CreateTaskParams,
   EditFormat,
@@ -33,6 +34,7 @@ import {
   SettingsData,
   SystemLogLevel,
   SystemLogsResponse,
+  TaskContextManifest,
   TaskData,
   TaskStateData,
   TodoItem,
@@ -394,6 +396,7 @@ export class EventsHandler {
     const result = await runRepositoryMappingsGenerator(baseDir);
     const files = await listRepositoryMappingFiles(baseDir);
     this.eventManager.sendRepositoryMappingsUpdated(baseDir, files);
+    this.sendContextManifestsForProject(baseDir);
 
     if (!result.success) {
       this.projectManager.getProject(baseDir).getTask(taskId)?.addLogMessage('error', result.error || 'Failed to regenerate repository mappings.', true);
@@ -406,7 +409,14 @@ export class EventsHandler {
     await deleteRepositoryMappingFile(baseDir, filePath);
     const files = await listRepositoryMappingFiles(baseDir);
     this.eventManager.sendRepositoryMappingsUpdated(baseDir, files);
+    this.sendContextManifestsForProject(baseDir);
     return files;
+  }
+
+  private sendContextManifestsForProject(baseDir: string): void {
+    this.projectManager.getProject(baseDir).forEachTask((task) => {
+      void task.sendContextManifestUpdated();
+    });
   }
 
   async addFile(baseDir: string, taskId: string, filePath: string, readOnly = false): Promise<boolean> {
@@ -427,6 +437,22 @@ export class EventsHandler {
       throw new Error(`Task ${taskId} not found in project ${baseDir}`);
     }
     await task.setContextFilesDisabled(filePaths, disabled);
+  }
+
+  async setTaskFileSelection(baseDir: string, taskId: string, section: ContextSectionId, paths: string[], selected: boolean): Promise<void> {
+    const task = this.projectManager.getProject(baseDir).getTask(taskId);
+    if (!task) {
+      throw new Error(`Task ${taskId} not found in project ${baseDir}`);
+    }
+    await task.setFileSelection(section, paths, selected);
+  }
+
+  async getTaskContextManifest(baseDir: string, taskId: string): Promise<TaskContextManifest> {
+    const task = this.projectManager.getProject(baseDir).getTask(taskId);
+    if (!task) {
+      throw new Error(`Task ${taskId} not found in project ${baseDir}`);
+    }
+    return task.getContextManifest();
   }
 
   dropFile(baseDir: string, taskId: string, filePath: string): void {
@@ -627,7 +653,13 @@ export class EventsHandler {
       ...projectSettings.modelEditFormats,
       ...updatedFormats,
     };
-    const updatedSettings = this.store.saveProjectSettings(baseDir, projectSettings);
+    let updatedSettings: ProjectSettings;
+    try {
+      updatedSettings = this.store.saveProjectSettings(baseDir, projectSettings);
+    } catch (error) {
+      logger.error('Failed to save edit formats', { baseDir, error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
     this.eventManager.sendProjectSettingsUpdated(baseDir, updatedSettings);
     this.projectManager
       .getProject(baseDir)

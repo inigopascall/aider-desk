@@ -287,22 +287,26 @@ const getTelemetryEnvironmentVariablesForAider = (settings: SettingsData, baseDi
   };
 };
 
-export const getDefaultProjectSettings = (
+/** Project settings a newly opened project inherits from the active project. */
+const INHERITED_PROJECT_SETTINGS_KEYS = [
+  'mainModel',
+  'weakModel',
+  'architectModel',
+  'reasoningEffort',
+  'thinkingTokens',
+  'currentMode',
+  'agentProfileId',
+  'modelEditFormats',
+] as const satisfies readonly (keyof ProjectSettings)[];
+
+/** Fresh default settings for a project, independent of any other open project. */
+export const getFreshProjectSettings = (
   store: Store,
   providerModels: Model[],
   baseDir: string,
   defaultAgentProfileId = DEFAULT_AGENT_PROFILE.id,
   providers?: ProviderProfile[],
 ): ProjectSettings => {
-  const openProjects = store.getOpenProjects();
-  const activeProject = openProjects.find((p) => p.active);
-
-  if (activeProject) {
-    return {
-      ...activeProject.settings,
-    };
-  }
-
   return {
     mainModel: determineMainModel(store.getSettings(), providers ?? store.getProviders(), providerModels, baseDir),
     weakModel: determineWeakModel(baseDir),
@@ -317,4 +321,28 @@ export const getDefaultProjectSettings = (
     contextSidebarSectionsOrder: [],
     contextSidebarSectionsHidden: [],
   };
+};
+
+/** Settings for a newly opened project: fresh defaults plus the active project's model and mode choices. */
+export const getDefaultProjectSettings = (
+  store: Store,
+  providerModels: Model[],
+  baseDir: string,
+  defaultAgentProfileId = DEFAULT_AGENT_PROFILE.id,
+  providers?: ProviderProfile[],
+): ProjectSettings => {
+  const freshSettings = getFreshProjectSettings(store, providerModels, baseDir, defaultAgentProfileId, providers);
+  const activeProject = store.getOpenProjects().find((p) => p.active);
+  if (!activeProject) {
+    return freshSettings;
+  }
+
+  const inherited: Partial<ProjectSettings> = {};
+  for (const key of INHERITED_PROJECT_SETTINGS_KEYS) {
+    if (activeProject.settings[key] !== undefined) {
+      Object.assign(inherited, { [key]: activeProject.settings[key] });
+    }
+  }
+
+  return { ...freshSettings, ...inherited };
 };

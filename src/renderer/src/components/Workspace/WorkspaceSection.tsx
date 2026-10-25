@@ -26,13 +26,11 @@ type Props = {
   emptyContent?: ReactNode;
   isLoading?: boolean;
   showBorderTop?: boolean;
-  disabledRuleFiles?: string[];
   totalRuleCount?: number;
   editMode?: boolean;
   isHidden?: boolean;
   onToggle: () => void;
   onToggleHidden?: () => void;
-  onToggleRuleFile?: (filePaths: string[], disabled: boolean) => void;
   onToggleContextFiles?: (filePaths: string[], disabled: boolean, shiftKey: boolean) => void;
   onFileDiffClick: (file: UpdatedFile) => void;
   onFilePreviewClick?: (filePath: string) => void;
@@ -59,13 +57,11 @@ export const WorkspaceSection = ({
   emptyContent,
   isLoading,
   showBorderTop = false,
-  disabledRuleFiles,
   totalRuleCount,
   editMode,
   isHidden,
   onToggle,
   onToggleHidden,
-  onToggleRuleFile,
   onToggleContextFiles,
   onFileDiffClick,
   onFilePreviewClick,
@@ -106,8 +102,6 @@ export const WorkspaceSection = ({
           searchField={searchField}
           emptyContent={emptyContent}
           isLoading={isLoading}
-          disabledRuleFiles={disabledRuleFiles}
-          onToggleRuleFile={onToggleRuleFile}
           onToggleContextFiles={onToggleContextFiles}
           onFileDiffClick={onFileDiffClick}
           onFilePreviewClick={onFilePreviewClick}

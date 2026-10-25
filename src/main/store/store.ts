@@ -30,7 +30,7 @@ import { migrateV10ToV11 } from './migrations/v10-to-v11';
 import { migrateV11ToV12 } from './migrations/v11-to-v12';
 import { migrateV12ToV13 } from './migrations/v12-to-v13';
 
-import { getDefaultProjectSettings } from '@/utils';
+import { getFreshProjectSettings } from '@/utils';
 import logger from '@/logger';
 import { migrateProvidersV13toV14 } from '@/store/migrations/v13-to-v14';
 import { migrateSettingsV14toV15 } from '@/store/migrations/v14-to-v15';
@@ -387,16 +387,26 @@ export class Store {
   updateOpenProjectsOrder(baseDirs: string[]): ProjectData[] {
     const currentProjects = this.getOpenProjects();
     const orderedProjects: ProjectData[] = [];
+    const orderedBaseDirs = new Set<string>();
     const currentProjectsMap = new Map(currentProjects.map((project) => [normalizeBaseDir(project.baseDir), project]));
 
     for (const baseDir of baseDirs) {
-      const project = currentProjectsMap.get(normalizeBaseDir(baseDir));
-      if (project) {
-        orderedProjects.push(project);
-      } else {
-        // This case should ideally not happen if baseDirs comes from the existing open projects.
-        // If it can happen, we might need to decide how to handle it (e.g., log a warning).
+      const normalizedBaseDir = normalizeBaseDir(baseDir);
+      const project = currentProjectsMap.get(normalizedBaseDir);
+      if (!project) {
         logger.warn(`Project with baseDir ${baseDir} not found in current open projects during reorder.`);
+        continue;
+      }
+      if (!orderedBaseDirs.has(normalizedBaseDir)) {
+        orderedProjects.push(project);
+        orderedBaseDirs.add(normalizedBaseDir);
+      }
+    }
+
+    // Open projects missing from the request keep their existing relative order, after the requested ones.
+    for (const project of currentProjects) {
+      if (!orderedBaseDirs.has(normalizeBaseDir(project.baseDir))) {
+        orderedProjects.push(project);
       }
     }
 
@@ -431,7 +441,7 @@ export class Store {
   getProjectSettings(baseDir: string): ProjectSettings {
     const projects = this.getOpenProjects();
     const project = projects.find((p) => compareBaseDirs(p.baseDir, baseDir));
-    return project?.settings || getDefaultProjectSettings(this, [], baseDir);
+    return project?.settings || getFreshProjectSettings(this, [], baseDir);
   }
 
   saveProjectSettings(baseDir: string, settings: ProjectSettings): ProjectSettings {
@@ -450,12 +460,7 @@ export class Store {
       });
       return settings;
     } else {
-      logger.warn(`No project found for baseDir: ${baseDir}`, {
-        baseDir,
-        settings,
-      });
-
-      return settings;
+      throw new Error(`No open project found for baseDir: ${baseDir}`);
     }
   }
 

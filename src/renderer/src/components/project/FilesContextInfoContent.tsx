@@ -20,7 +20,6 @@ type Props = {
   refreshAllFiles: (useGit?: boolean) => Promise<void>;
   refreshContextFiles: () => Promise<void>;
   onToggleFilesSidebarCollapse?: () => void;
-  onScrollToMessage?: (messageId: string) => void;
 };
 
 export const FilesContextInfoContent = ({
@@ -39,7 +38,6 @@ export const FilesContextInfoContent = ({
   refreshAllFiles,
   refreshContextFiles,
   onToggleFilesSidebarCollapse,
-  onScrollToMessage,
 }: Props) => {
   const tokensInfo = useTaskTokensInfo(taskId);
   const fileTokensInfo = useTaskFileTokensInfo(taskId);
@@ -60,7 +58,6 @@ export const FilesContextInfoContent = ({
           mode={mode}
           onToggleFilesSidebarCollapse={onToggleFilesSidebarCollapse}
           taskName={task.name}
-          onScrollToMessage={onScrollToMessage}
         />
       </div>
       <CostInfo

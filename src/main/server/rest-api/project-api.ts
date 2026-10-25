@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { CreateTaskParams, ProjectSettingsSchema, TaskDataSchema, ModeDefinition, QueuedPromptData } from '@common/types';
+import { CreateTaskParams, TaskDataSchema, ModeDefinition, QueuedPromptData } from '@common/types';
 
 import { BaseApi } from './base-api';
+import { PatchProjectSettingsSchema, pickKeysPresentInBody } from './patch-utils';
 
 import { EventsHandler } from '@/events-handler';
 
@@ -22,12 +23,6 @@ const GetProjectSettingsSchema = z.object({
 const GetCustomModesSchema = z.object({
   projectDir: z.string().optional(),
 });
-
-const PatchProjectSettingsSchema = ProjectSettingsSchema.partial().and(
-  z.object({
-    projectDir: z.string().min(1, 'Project directory is required'),
-  }),
-);
 
 const InterruptSchema = z.object({
   projectDir: z.string().min(1, 'Project directory is required'),
@@ -1791,7 +1786,7 @@ export class ProjectApi extends BaseApi {
         }
 
         const { projectDir, ...settings } = parsed;
-        const updatedSettings = await this.eventsHandler.patchProjectSettings(projectDir, settings);
+        const updatedSettings = await this.eventsHandler.patchProjectSettings(projectDir, pickKeysPresentInBody(settings, req.body));
         res.status(200).json(updatedSettings);
       }),
     );

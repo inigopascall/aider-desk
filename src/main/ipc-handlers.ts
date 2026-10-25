@@ -15,6 +15,7 @@ import {
   TodoItem,
   AgentProfile,
   ChangeRequestItem,
+  ContextSectionId,
 } from '@common/types';
 import { ipcMain, clipboard, ClipboardItem } from 'electron';
 
@@ -83,6 +84,14 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
 
   ipcMain.handle('set-context-files-disabled', async (_, baseDir: string, taskId: string, filePaths: string[], disabled: boolean) => {
     await eventsHandler.setContextFilesDisabled(baseDir, taskId, filePaths, disabled);
+  });
+
+  ipcMain.handle('set-task-file-selection', async (_, baseDir: string, taskId: string, section: ContextSectionId, paths: string[], selected: boolean) => {
+    await eventsHandler.setTaskFileSelection(baseDir, taskId, section, paths, selected);
+  });
+
+  ipcMain.handle('get-task-context-manifest', async (_, baseDir: string, taskId: string) => {
+    return await eventsHandler.getTaskContextManifest(baseDir, taskId);
   });
 
   ipcMain.handle('start-project', (_, baseDir: string) => {

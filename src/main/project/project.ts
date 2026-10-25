@@ -143,6 +143,9 @@ export class Project {
         model: parentTask?.task.model,
         weakModelLocked: sourceTask.task.weakModelLocked,
         workingMode: defaultWorkingMode,
+        // Sub-tasks (and handoffs) copy the parent's rule/mapping selection; top-level tasks start with everything ticked.
+        disabledRuleFiles: [...(parentTask?.task.disabledRuleFiles ?? [])],
+        disabledRepositoryMappingFiles: [...(parentTask?.task.disabledRepositoryMappingFiles ?? [])],
         ...(parentTask
           ? {
               workingMode: parentTask.task.workingMode,
@@ -158,6 +161,8 @@ export class Project {
         weakModel: determineWeakModel(this.baseDir),
         currentMode: defaultProjectMode,
         workingMode: defaultWorkingMode,
+        disabledRuleFiles: [],
+        disabledRepositoryMappingFiles: [],
         ...normalizedParams,
       };
     }

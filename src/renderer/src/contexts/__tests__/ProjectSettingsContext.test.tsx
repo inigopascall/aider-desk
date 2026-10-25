@@ -13,10 +13,10 @@ const Consumer = ({ onSaveError }: { onSaveError?: (error: unknown) => void }) =
   return (
     <>
       <span data-testid="loaded">{projectSettings === null ? 'false' : 'true'}</span>
-      <span data-testid="rules">{projectSettings ? projectSettings.disabledRuleFiles.join(',') : 'none'}</span>
+      <span data-testid="rules">{projectSettings ? (projectSettings.contextSidebarSectionsHidden ?? []).join(',') : 'none'}</span>
       <button
         onClick={() => {
-          void saveProjectSettings({ disabledRuleFiles: ['a'] }).catch(onSaveError ?? (() => undefined));
+          void saveProjectSettings({ contextSidebarSectionsHidden: ['a'] }).catch(onSaveError ?? (() => undefined));
         }}
       >
         save
@@ -27,8 +27,8 @@ const Consumer = ({ onSaveError }: { onSaveError?: (error: unknown) => void }) =
 
 describe('ProjectSettingsProvider', () => {
   it('keeps optimistic value while patch is pending and reconciles on success', async () => {
-    const initialSettings = { disabledRuleFiles: [] } as unknown as ProjectSettings;
-    const savedSettings = { disabledRuleFiles: ['a'] } as unknown as ProjectSettings;
+    const initialSettings = { contextSidebarSectionsHidden: [] } as unknown as ProjectSettings;
+    const savedSettings = { contextSidebarSectionsHidden: ['a'] } as unknown as ProjectSettings;
     let resolvePatch: (settings: ProjectSettings) => void = () => undefined;
     const patchPromise = new Promise<ProjectSettings>((resolve) => {
       resolvePatch = resolve;
@@ -60,7 +60,7 @@ describe('ProjectSettingsProvider', () => {
     // the optimistic value back to the base value.
     const listener = vi.mocked(mockApi.addProjectSettingsUpdatedListener).mock.calls[0][1];
     act(() => {
-      listener({ baseDir: '/project', settings: { ...initialSettings, disabledRuleFiles: [] } });
+      listener({ baseDir: '/project', settings: { ...initialSettings, contextSidebarSectionsHidden: [] } });
     });
     expect(screen.getByTestId('rules')).toHaveTextContent('a');
 
@@ -74,7 +74,7 @@ describe('ProjectSettingsProvider', () => {
   });
 
   it('reverts to the base value when the save is rejected', async () => {
-    const initialSettings = { disabledRuleFiles: [] } as unknown as ProjectSettings;
+    const initialSettings = { contextSidebarSectionsHidden: [] } as unknown as ProjectSettings;
     let rejectPatch: (error: Error) => void = () => undefined;
     const patchPromise = new Promise<ProjectSettings>((_, reject) => {
       rejectPatch = reject;

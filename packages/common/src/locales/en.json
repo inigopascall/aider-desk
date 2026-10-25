@@ -1415,11 +1415,6 @@
     "bookmark": "Bookmark",
     "removeBookmark": "Remove bookmark",
     "outline": {
-      "title": "Conversation",
-      "filterAll": "All",
-      "filterBookmarks": "Bookmarks",
-      "empty": "No messages in this thread yet.",
-      "emptyBookmarks": "No bookmarks yet. Use the bookmark action on any message.",
       "untitled": "(no text)"
     },
     "ephemeralGroupTooltip": "This thread/group is ephemeral — it won't be saved with the task and will disappear after reload"
@@ -1518,7 +1513,6 @@
   },
   "contextFiles": {
     "workspaceTitle": "Workspace",
-    "repositoryMappings": "Repository Mappings",
     "repositoryMappingFile": "Repository mapping file",
     "regenerateMappings": "Regenerate mappings",
     "regeneratingMappings": "Regenerating mappings...",
@@ -1528,6 +1522,19 @@
     "removeMappingFile": "Remove mapping file",
     "repositoryMappingsRemoveFailed": "Failed to remove repository mapping file: {{error}}",
     "title": "Context Files",
+    "sectionRules": "Rules",
+    "sectionMappings": "Repository mappings",
+    "sectionFiles": "Files",
+    "placementSystemPrompt": "system prompt · main agent",
+    "placementBeforeHistory": "before the conversation",
+    "placementAfterHistory": "after the conversation",
+    "placementAiderContext": "Aider context",
+    "notSentProfileExcludesMappings": "Not sent: this agent profile has repository mappings off",
+    "notSentAiderMode": "Not sent in Aider modes",
+    "notSentAiderRuleFilesDisabled": "Not sent: Aider rule files are turned off in Settings",
+    "listedPathOnly": "Listed by path only: this profile doesn't include file contents",
+    "rulesTooltip": "Rules go into the main agent's system prompt. Sub-agents with their own system prompt don't receive them.",
+    "rulesEmpty": "No rule files.",
     "updatedFiles": "Updated Files",
     "uncommittedChanges": "Uncommitted Changes",
     "updated": "Updated",
@@ -1551,7 +1558,6 @@
     "projectRule": "Project rule file",
     "agentRule": "Agent rule file",
     "projectFiles": "Project Files",
-    "rules": "Rule Files",
     "skills": "Skills",
     "noSkills": "No skills available",
     "editSections": "Reorder & hide sections",
@@ -1568,10 +1574,6 @@
     "extensionSkill": "Extension skill",
     "manualSkillOnly": "Manual invocation only (disable-model-invocation)",
     "agentSkillOnly": "Agent-only skill (user-invocable: false)",
-    "disableRuleFile": "Disable rule file",
-    "enableRuleFile": "Enable rule file",
-    "disableAllRuleFiles": "Disable all rule files in folder",
-    "enableAllRuleFiles": "Enable all rule files in folder",
     "diffViewer": {
       "file": "File"
     },

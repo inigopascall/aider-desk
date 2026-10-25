@@ -27,7 +27,6 @@ type Props = {
   updateTask: (taskId: string, updates: Partial<TaskData>) => void;
   refreshAllFiles: (useGit?: boolean) => Promise<void>;
   refreshContextFiles: () => Promise<void>;
-  onScrollToMessage?: (messageId: string) => void;
 };
 
 export const MobileSidebar = ({
@@ -47,7 +46,6 @@ export const MobileSidebar = ({
   updateTask,
   refreshAllFiles,
   refreshContextFiles,
-  onScrollToMessage,
 }: Props) => {
   return (
     <motion.div
@@ -78,7 +76,6 @@ export const MobileSidebar = ({
           updateTask={updateTask}
           refreshAllFiles={refreshAllFiles}
           refreshContextFiles={refreshContextFiles}
-          onScrollToMessage={onScrollToMessage}
         />
       </div>
     </motion.div>

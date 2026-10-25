@@ -87,6 +87,7 @@ import type { LanguageModelV4 } from '@ai-sdk/provider';
 import { MemoryManager } from '@/memory/memory-manager';
 import { PromptsManager } from '@/prompts';
 import { AIDER_DESK_PROJECT_RULES_DIR } from '@/constants';
+import { getRuleFileAbsolutePaths, resolveSelectionPath } from '@/task/context-selection';
 import { Task } from '@/task';
 import { Store } from '@/store';
 import logger from '@/logger';
@@ -579,7 +580,7 @@ export class Agent {
     skillsToActivate?: string[],
   ): Promise<ContextMessage[]> {
     let contextMessages = initialContextMessages ?? (await task.getContextMessages());
-    let contextFiles = initialContextFiles ?? (await task.getContextFiles());
+    let contextFiles = (initialContextFiles ?? (await task.getContextFiles())).filter((file) => !file.disabled);
 
     if (!systemPrompt) {
       systemPrompt = await this.promptsManager.getSystemPrompt(this.store.getSettings(), task, profile);
@@ -1654,10 +1655,14 @@ export class Agent {
     const messages: ModelMessage[] = [];
 
     const repositoryMappingFiles = profile.includeRepoMappings ? await task.getRepositoryMappingFiles() : [];
+    // A path that is also a rule file is governed by the rule selection and never sent as a context file.
+    const ruleFilePaths =
+      contextFiles.length > 0 ? getRuleFileAbsolutePaths(await task.getRuleFilesAsContextFiles(profile, true), task.getProjectDir()) : new Set<string>();
+    const channelContextFiles = contextFiles.filter((file) => !file.disabled && !ruleFilePaths.has(resolveSelectionPath(file.path, task.getProjectDir())));
 
     if (profile.includeContextFiles) {
       // Mappings first, then ordinary context files, all with inlined content.
-      const contextFilesMessages = await this.getContextFilesAsToolCallMessages(task, profile, [...repositoryMappingFiles, ...contextFiles]);
+      const contextFilesMessages = await this.getContextFilesAsToolCallMessages(task, profile, [...repositoryMappingFiles, ...channelContextFiles]);
       messages.push(...(contextMessages as ModelMessage[]));
       messages.push(...contextFilesMessages);
     } else {
@@ -1667,7 +1672,7 @@ export class Agent {
         const mappingMessages = await this.getContextFilesAsToolCallMessages(task, profile, repositoryMappingFiles);
         messages.push(...mappingMessages);
       }
-      const workingFilesMessages = await this.getWorkingFilesMessages(task, contextFiles);
+      const workingFilesMessages = await this.getWorkingFilesMessages(task, channelContextFiles);
       messages.push(...workingFilesMessages);
       messages.push(...(contextMessages as ModelMessage[]));
     }

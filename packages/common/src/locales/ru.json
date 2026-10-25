@@ -1233,9 +1233,6 @@
     "confirmDelete": "Подтвердить удаление",
     "remove": "Удалить сообщение",
     "deleteUpToHere": "Удалить до этого места",
-    "outline": {
-      "title": "Разговор"
-    },
     "ephemeralGroupTooltip": "Эта ветка/группа временная — она не сохраняется вместе с задачей и исчезнет после перезагрузки"
   },
   "errors": {
@@ -1332,7 +1329,6 @@
   },
   "contextFiles": {
     "workspaceTitle": "Рабочая область",
-    "repositoryMappings": "Сопоставления репозитория",
     "repositoryMappingFile": "Файл сопоставления репозитория",
     "regenerateMappings": "Пересоздать сопоставления",
     "regeneratingMappings": "Пересоздание сопоставлений...",
@@ -1342,6 +1338,19 @@
     "removeMappingFile": "Удалить файл сопоставления",
     "repositoryMappingsRemoveFailed": "Не удалось удалить файл сопоставления репозитория: {{error}}",
     "title": "Файлы контекста",
+    "sectionRules": "Правила",
+    "sectionMappings": "Сопоставления репозитория",
+    "sectionFiles": "Файлы",
+    "placementSystemPrompt": "системный запрос · основной агент",
+    "placementBeforeHistory": "перед диалогом",
+    "placementAfterHistory": "после диалога",
+    "placementAiderContext": "контекст Aider",
+    "notSentProfileExcludesMappings": "Не отправляется: в этом профиле агента сопоставления репозитория отключены",
+    "notSentAiderMode": "Не отправляется в режимах Aider",
+    "notSentAiderRuleFilesDisabled": "Не отправляется: файлы правил Aider отключены в настройках",
+    "listedPathOnly": "Только путь: этот профиль не включает содержимое файлов",
+    "rulesTooltip": "Правила добавляются в системный запрос основного агента. Субагенты со своим системным запросом их не получают.",
+    "rulesEmpty": "Нет файлов правил.",
     "updatedFiles": "Обновлённые файлы",
     "uncommittedChanges": "Незакоммиченные изменения",
     "updated": "Обновлён",
@@ -1363,7 +1372,6 @@
     "projectRule": "Проектный файл правил",
     "agentRule": "Файл правил агента",
     "projectFiles": "Файлы проекта",
-    "rules": "Файлы правил",
     "skills": "Навыки",
     "noSkills": "Навыки недоступны",
     "editSections": "Переупорядочить и скрыть разделы",
@@ -1380,10 +1388,6 @@
     "extensionSkill": "Навык расширения",
     "manualSkillOnly": "Только ручной вызов (disable-model-invocation)",
     "agentSkillOnly": "Только для агента (user-invocable: false)",
-    "disableRuleFile": "Отключить файл правил",
-    "enableRuleFile": "Включить файл правил",
-    "disableAllRuleFiles": "Отключить все файлы правил в папке",
-    "enableAllRuleFiles": "Включить все файлы правил в папке",
     "diffViewer": {
       "file": "Файл"
     },

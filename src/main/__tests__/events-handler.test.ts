@@ -20,6 +20,8 @@ describe('EventsHandler', () => {
     const store = {
       getOpenProjects: vi.fn(() => [activeProject]),
       setOpenProjects: vi.fn(),
+      getSettings: vi.fn(() => ({ aider: { options: '' }, taskSettings: {} })),
+      getProviders: vi.fn(() => []),
     } as unknown as Store;
     const modelManager = {
       getProviderModels: vi.fn().mockResolvedValue({ models: [] }),

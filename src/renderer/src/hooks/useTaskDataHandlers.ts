@@ -3,6 +3,7 @@ import { useCallback, useEffect } from 'react';
 import type {
   AutocompletionData,
   ContextFilesUpdatedData,
+  ContextManifestUpdatedData,
   ContextInfoData,
   ModelsData,
   QuestionData,
@@ -86,6 +87,34 @@ export const useTaskDataHandlers = (baseDir: string, taskId: string) => {
     },
     [taskId],
   );
+
+  // The context manifest is fetched once per task and then kept current by the backend's coalesced updates.
+  useEffect(() => {
+    let disposed = false;
+    let updateReceived = false;
+    const removeContextManifest = api.addContextManifestUpdatedListener(baseDir, taskId, ({ manifest }: ContextManifestUpdatedData) => {
+      updateReceived = true;
+      updateTaskState(taskId, { contextManifest: manifest });
+    });
+
+    api
+      .getTaskContextManifest(baseDir, taskId)
+      .then((manifest) => {
+        // An update that arrived while the request was in flight is newer than this response.
+        if (!disposed && !updateReceived) {
+          updateTaskState(taskId, { contextManifest: manifest });
+        }
+      })
+      .catch((error: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error('Failed to load the context manifest:', error);
+      });
+
+    return () => {
+      disposed = true;
+      removeContextManifest();
+    };
+  }, [api, baseDir, taskId]);
 
   useEffect(() => {
     const removeAutocompletion = api.addUpdateAutocompletionListener(baseDir, taskId, handleUpdateAutocompletion);

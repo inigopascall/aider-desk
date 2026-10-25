@@ -46,6 +46,8 @@ import {
   ModalOverlayUrlData,
   InputPromptData,
   ContextInfoData,
+  ContextManifestUpdatedData,
+  TaskContextManifest,
   WorkflowLogData,
 } from '@common/types';
 
@@ -194,6 +196,10 @@ const COALESCE_STRATEGIES: Record<string, CoalesceStrategy> = {
     key: (d) => taskKey(d),
     merge: latest,
   },
+  'context-manifest-updated': {
+    key: (d) => taskKey(d),
+    merge: latest,
+  },
   'updated-files-updated': {
     key: (d) => taskKey(d),
     merge: latest,
@@ -261,6 +267,16 @@ export class EventManager {
     };
     this.sendToWindows('context-files-updated', data);
     this.broadcastToEventConnectors('context-files-updated', data);
+  }
+
+  sendContextManifestUpdated(baseDir: string, taskId: string, manifest: TaskContextManifest): void {
+    const data: ContextManifestUpdatedData = {
+      baseDir,
+      taskId,
+      manifest,
+    };
+    this.sendToWindows('context-manifest-updated', data);
+    this.broadcastToEventConnectors('context-manifest-updated', data);
   }
 
   sendUpdatedFilesUpdated(baseDir: string, taskId: string, taskDir: string, files: UpdatedFile[]): void {
