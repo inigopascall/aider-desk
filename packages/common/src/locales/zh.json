@@ -1064,7 +1064,8 @@
       "viewModeCompact": "紧凑",
       "fullMessageRendering": "使用完整消息渲染（旧版）",
       "fullMessageRenderingTooltip": "在 DOM 中渲染所有消息而不使用虚拟化。在对话历史较多时可能影响性能。",
-      "messageMap": "显示消息地图"
+      "messageMap": "显示消息地图",
+      "contextUsageBar": "显示上下文用量条"
     },
     "memory": {
       "configuration": "配置",
@@ -1488,7 +1489,20 @@
     "contextCompactingThresholdOff": "关闭",
     "contextCompactingThresholdTooltip": "当令牌使用量超过此阈值时，对话将自动压缩以节省空间。",
     "contextWindowNotSet": "未设置此模型的上下文窗口，因此自动压缩将无法工作。您可以在模型库中手动设置上下文窗口值。",
-    "thresholdTokens": "阈值令牌数"
+    "thresholdTokens": "阈值令牌数",
+    "contextUsage": {
+      "systemPrompt": "系统提示",
+      "rules": "规则",
+      "tools": "工具定义",
+      "repoMappings": "仓库映射",
+      "readOnlyFiles": "只读文件",
+      "editableFiles": "可编辑文件",
+      "conversation": "对话",
+      "itemTokens": "约 {{tokens}} 个令牌（估算）",
+      "segmentTokens": "分段合计：{{tokens}}",
+      "scaledNote": "分段大小为估算值，已按报告的总量缩放。",
+      "noBreakdown": "暂无明细"
+    }
   },
   "commandOutput": {
     "command": "命令"
@@ -2049,8 +2063,8 @@
     "exportAsImage": "导出为图片",
     "taskIdCopied": "任务 ID {{taskId}} 已复制到剪贴板",
     "duplicateTask": "复制任务",
-    "search": "搜索任务",
-    "searchPlaceholder": "搜索任务...",
+    "quickSwitcher": "快速切换",
+    "globalSearch": "搜索所有任务",
     "today": "今天",
     "yesterday": "昨天",
     "noDate": "无日期",

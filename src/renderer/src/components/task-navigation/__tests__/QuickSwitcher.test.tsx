@@ -140,7 +140,7 @@ describe('QuickSwitcher parent context', () => {
     expect(rowView.getByText(/child-only-preview/)).toBeInTheDocument();
     expect(rowView.queryByText('parent-only-topic')).toBeNull();
     expect(rowView.queryByText(/parent-only-preview/)).toBeNull();
-    expect(row.querySelector('svg[aria-hidden="true"]')).toBeInTheDocument();
+    expect(row.querySelector('span[aria-hidden="true"]')).toBeInTheDocument();
 
     const text = row.textContent ?? '';
     expect(text.indexOf('ALP-001')).toBeLessThan(text.indexOf('Archived Parent'));
@@ -221,7 +221,7 @@ describe('QuickSwitcher parent context', () => {
 
     for (const fixture of fixtures) {
       const row = rowFor(fixture.name);
-      expect(row.querySelector('svg[aria-hidden="true"]')).toBeNull();
+      expect(row.querySelector('span[aria-hidden="true"]')).toBeNull();
       expect(row.textContent).not.toContain('Subdirectory');
     }
 

@@ -1132,7 +1132,8 @@
       "viewModeCompact": "간략히",
       "fullMessageRendering": "전체 메시지 렌더링 사용 (레거시)",
       "fullMessageRenderingTooltip": "가상화 없이 모든 메시지를 DOM에 렌더링합니다. 대화 기록이 많으면 성능에 영향을 줄 수 있습니다.",
-      "messageMap": "메시지 맵 표시"
+      "messageMap": "메시지 맵 표시",
+      "contextUsageBar": "컨텍스트 사용량 막대 표시"
     },
     "memory": {
       "configuration": "구성",
@@ -1538,7 +1539,20 @@
     "contextCompactingThresholdOff": "끄기",
     "contextCompactingThresholdTooltip": "토큰 사용량이 이 임계값을 초과하면 공간을 절약하기 위해 대화가 자동으로 압축됩니다.",
     "contextWindowNotSet": "이 모델에 대해 컨텍스트 창이 설정되지 않아 자동 압축이 작동하지 않습니다. 모델 라이브러리에서 컨텍스트 창 값을 수동으로 설정할 수 있습니다.",
-    "thresholdTokens": "임계값 토큰"
+    "thresholdTokens": "임계값 토큰",
+    "contextUsage": {
+      "systemPrompt": "시스템 프롬프트",
+      "rules": "규칙",
+      "tools": "도구 정의",
+      "repoMappings": "저장소 맵",
+      "readOnlyFiles": "읽기 전용 파일",
+      "editableFiles": "편집 가능한 파일",
+      "conversation": "대화",
+      "itemTokens": "약 {{tokens}} 토큰 (추정)",
+      "segmentTokens": "구간 합계: {{tokens}}",
+      "scaledNote": "구간 크기는 추정치이며 보고된 총량에 맞게 조정됩니다.",
+      "noBreakdown": "아직 세부 정보가 없습니다"
+    }
   },
   "commandOutput": {
     "command": "명령"
@@ -2043,8 +2057,8 @@
     "exportAsImage": "이미지로 내보내기",
     "taskIdCopied": "작업 ID {{taskId}}이(가) 클립보드에 복사되었습니다",
     "duplicateTask": "작업 복제",
-    "search": "작업 검색",
-    "searchPlaceholder": "작업 검색...",
+    "quickSwitcher": "빠른 작업 전환",
+    "globalSearch": "모든 작업 검색",
     "today": "오늘",
     "yesterday": "어제",
     "noDate": "날짜 없음",

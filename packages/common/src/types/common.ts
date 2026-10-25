@@ -1013,6 +1013,7 @@ export interface SettingsData {
   diffViewMode?: DiffViewMode;
   messageViewMode?: MessageViewMode;
   showMessageMap?: boolean;
+  showContextUsageBar?: boolean;
   aider: {
     options: string;
     environmentVariables: string;
@@ -1133,6 +1134,34 @@ export interface TokensInfoData {
   repoMap: TokensCost;
   systemMessages: TokensCost;
   agent?: TokensCost;
+  /** Agent mode only: estimated breakdown of the agent context by what consumes it. */
+  contextBreakdown?: ContextUsageBreakdown;
+}
+
+/** Categories of the agent context, in the order the context usage bar draws them. */
+export const CONTEXT_USAGE_CATEGORY_IDS = ['systemPrompt', 'rules', 'tools', 'repoMappings', 'readOnlyFiles', 'editableFiles', 'conversation'] as const;
+
+export type ContextUsageCategoryId = (typeof CONTEXT_USAGE_CATEGORY_IDS)[number];
+
+export interface ContextUsageItem {
+  /** Stable identifier: a file path, a message id or a tool group name. */
+  id: string;
+  label: string;
+  /** Optional qualifier, e.g. the rule file source or the message role. */
+  detail?: string;
+  tokens: number;
+}
+
+export interface ContextUsageCategory {
+  id: ContextUsageCategoryId;
+  tokens: number;
+  items: ContextUsageItem[];
+}
+
+export interface ContextUsageBreakdown {
+  categories: ContextUsageCategory[];
+  /** Sum of the category estimates (gpt-4o tokenizer), not the provider-reported figure. */
+  totalTokens: number;
 }
 
 export interface InputHistoryData {

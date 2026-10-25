@@ -10,6 +10,17 @@ type Props = {
   className?: string;
 };
 
+type TaskDescriptionProps = {
+  description: string;
+  /** Text size and spacing classes. */
+  className?: string;
+};
+
+/** The task's description, set apart above its topics in a warning colour. */
+export const TaskDescription = ({ description, className }: TaskDescriptionProps) => (
+  <p className={clsx('border-l-2 border-warning pl-2 font-medium leading-snug text-warning-light', className)}>{description}</p>
+);
+
 export const TaskSummaryPreview = ({ summary, title, maxTopics, className }: Props) => {
   const { t } = useTranslation();
   const topics = summary.topics;
@@ -18,6 +29,7 @@ export const TaskSummaryPreview = ({ summary, title, maxTopics, className }: Pro
   return (
     <div className={clsx('flex flex-col gap-1 min-w-0', className)}>
       {title && <div className="text-xs font-semibold text-text-primary">{title}</div>}
+      {summary.description && <TaskDescription description={summary.description} className="mb-0.5 text-2xs" />}
       {start > 0 && <div className="text-2xs italic text-text-muted">{t('taskNavigation.earlierTopics', { count: start })}</div>}
       <ol className="flex flex-col gap-0.5">
         {topics.slice(start).map((topic, offset) => {

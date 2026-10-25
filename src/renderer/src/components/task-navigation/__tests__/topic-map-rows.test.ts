@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { TaskTopic, TopicCompactionInfo } from '@common/types';
 
-import { buildTopicMapRows, isNavigableRow } from '../topic-map-rows';
+import { buildTopicMapRows, getToggledExpandedTopics, getTopicConnectorParts, isNavigableRow } from '../topic-map-rows';
 
 const topics: TaskTopic[] = [
   {
@@ -109,5 +109,49 @@ describe('buildTopicMapRows with compactions', () => {
 
     expect(rows.map((row) => row.key)).toEqual(['topic:0', 'recap:0', 'topic:1', 'recap:1']);
     expect(rows.filter(isNavigableRow).map((row) => row.key)).toEqual(['topic:0', 'recap:0', 'topic:1']);
+  });
+});
+
+describe('getTopicConnectorParts', () => {
+  it('starts at an expanded topic with sections, passes its messages, branches to each section title and ends at the last', () => {
+    expect(Object.fromEntries(getTopicConnectorParts(buildTopicMapRows(topics, new Set([0, 1]))))).toEqual({
+      'topic:0': 'start',
+      'section:0:0': 'branch',
+      'message:0:a1': 'pass',
+      'message:0:a2': 'pass',
+      'section:0:1': 'end',
+    });
+  });
+
+  it('draws nothing for collapsed topics, topics without sections and compacted topics', () => {
+    expect(getTopicConnectorParts(buildTopicMapRows(topics, new Set())).size).toBe(0);
+    expect(getTopicConnectorParts(buildTopicMapRows([{ summary: 'Plain', messageIds: ['x1', 'x2'] }], new Set([0]))).size).toBe(0);
+    const compacted: TaskTopic[] = [
+      { summary: 'Compacted', messageIds: ['c1'], compaction: record('t1'), sections: [{ summary: 'Inner', startMessageId: 'c1' }] },
+    ];
+    expect(getTopicConnectorParts(buildTopicMapRows(compacted, new Set([0]))).size).toBe(0);
+  });
+
+  it('ends at the title of a compacted last section, leaving its recap row out', () => {
+    const sectioned: TaskTopic[] = [
+      {
+        summary: 'Sectioned topic',
+        messageIds: ['a1', 'a2', 'a3', 'a4'],
+        sections: [
+          { summary: 'Planning the change', startMessageId: 'a1' },
+          { summary: 'Building and testing it', startMessageId: 'a3', compaction: record('s1') },
+        ],
+      },
+    ];
+    const parts = getTopicConnectorParts(buildTopicMapRows(sectioned, new Set([0])));
+    expect(parts.get('section:0:1')).toBe('end');
+    expect(parts.has('recap:0:1')).toBe(false);
+  });
+});
+
+describe('getToggledExpandedTopics', () => {
+  it('collapses everything when any topic is expanded, and otherwise expands every topic', () => {
+    expect([...getToggledExpandedTopics(new Set([2]), 4)]).toEqual([]);
+    expect([...getToggledExpandedTopics(new Set(), 3)]).toEqual([0, 1, 2]);
   });
 });

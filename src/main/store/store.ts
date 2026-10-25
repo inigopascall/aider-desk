@@ -56,6 +56,7 @@ export const DEFAULT_SETTINGS: SettingsData = {
   aiderDeskAutoUpdate: true,
   messageViewMode: MessageViewMode.Compact,
   showMessageMap: true,
+  showContextUsageBar: true,
   diffViewMode: DiffViewMode.SideBySide,
   aider: {
     options: '',

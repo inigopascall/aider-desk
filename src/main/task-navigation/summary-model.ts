@@ -22,14 +22,17 @@ const UNPARSEABLE_SECTION_ANSWER = 'The answer was not a JSON object of the form
 
 export const SUMMARY_SYSTEM_PROMPT = `You maintain a compact topic map of a conversation between a developer and an AI coding assistant. The map lets the developer find where something was discussed and see at a glance what the conversation has become.
 
-You receive the current topic map (possibly empty) and the messages added since it was last updated. Each new message has a reference such as m3. The prompt names the current topic: the latest topic, the only one that can still grow.
+You receive the current topic map (possibly empty), the current title and description, and the messages added since the map was last updated. Each new message has a reference such as m3. The prompt names the current topic: the latest topic, the only one that can still grow.
 
 Respond with a single JSON object and nothing else:
 {
   "title": "...",
+  "description": "...",
   "topics": [{ "key": "T4", "summary": "..." }],
   "assignments": [{ "ref": "m3", "topic": "T4" }]
 }
+
+Write the title, the description and every topic summary in plain, everyday language that someone who is not a programmer could follow. Say what is being done and why, not how it is built: prefer "made the search find older tasks" to "added an FTS5 prefix index". Use a technical term, file name or code identifier only when nothing plainer would do.
 
 Rules:
 - "assignments" contains every new message reference exactly once.
@@ -38,7 +41,8 @@ Rules:
 - "topics" lists only new topics, and the current topic when its summary should change. Leave the current topic out to keep its summary; earlier topics keep theirs.
 - A topic summary is one plain line of ten to twenty words, never more than twenty. Describe what was discussed or decided, not who said it.
 - Group related consecutive messages: a typical topic spans two to ten messages. Do not create a topic per message.
-- "title" names what the conversation is about now, weighted towards its most recent topics: four to ten words, no quotes, no trailing period.`;
+- "title" names what the conversation is about now, weighted towards its most recent topics: four to ten words, no quotes, no trailing period.
+- "description" describes the whole task in thirty to forty words: what it is for, what has been done so far, and where it stands now. Always return it, rewritten to take in the new messages; when nothing important changed, return the current description unchanged.`;
 
 export const SECTION_SYSTEM_PROMPT = `You divide one finished topic of a conversation between a developer and an AI coding assistant into sections, so that a long topic can be scanned. A section is a run of consecutive messages under a one-line title.
 
@@ -54,10 +58,12 @@ Rules:
 - A section runs from its start message up to the next section's start, or to the end of the topic. List the sections in order; the first section starts at m1.
 - When you return sections, return at least two.
 - A topic of ${MAX_SECTION_MESSAGES + 1} or more messages must be split so that no section holds more than ${MAX_SECTION_MESSAGES} messages.
-- A section title is one plain line of five to twelve words that summarises all of the section's messages. Describe what was done or decided, not who said it.`;
+- A section title is one plain line of five to twelve words that summarises all of the section's messages. Describe what was done or decided, not who said it.
+- Write section titles in plain, everyday language that someone who is not a programmer could follow: say what was done and why, not how it was built. Use a technical term, file name or code identifier only when nothing plainer would do.`;
 
 export const SummaryUpdateSchema = z.object({
   title: z.coerce.string().default(''),
+  description: z.string().optional().catch(undefined),
   topics: z.array(z.object({ key: z.coerce.string(), summary: z.coerce.string() })).default([]),
   assignments: z.array(z.object({ ref: z.coerce.string(), topic: z.coerce.string() })).default([]),
 });
@@ -118,6 +124,10 @@ const stripWrapping = (text: string): string => {
 export const cleanTitle = (title: string): string => truncateText(stripWrapping(title).replace(/[.。]+$/, ''), MAX_TITLE_LENGTH);
 
 export const cleanTopicSummary = (summary: string): string => truncateText(stripWrapping(summary), MAX_TOPIC_SUMMARY_LENGTH);
+
+export const MAX_DESCRIPTION_LENGTH = 400;
+
+export const cleanDescription = (description: string | undefined): string => truncateText(stripWrapping(description ?? ''), MAX_DESCRIPTION_LENGTH);
 
 const cleanSectionSummary = (summary: string): string => truncateText(stripWrapping(summary).replace(/[.。]+$/, ''), MAX_SECTION_SUMMARY_LENGTH);
 
@@ -198,10 +208,11 @@ export const chunkEntries = (entries: ConversationEntry[], maxCharacters = MAX_P
   return chunks;
 };
 
-export const buildSummaryPrompt = (taskName: string, currentTitle: string, topics: TaskTopic[], chunk: PreparedEntry[]): string => {
+export const buildSummaryPrompt = (taskName: string, currentTitle: string, topics: TaskTopic[], chunk: PreparedEntry[], currentDescription = ''): string => {
   const lines: string[] = [];
   lines.push(`Task name: ${taskName || '(none)'}`);
   lines.push(`Current title: ${currentTitle || '(none)'}`);
+  lines.push(`Current description: ${currentDescription || '(none)'}`);
   lines.push('');
   lines.push('Current topic map:');
 

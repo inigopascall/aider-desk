@@ -11,6 +11,7 @@ import {
   buildSectionPrompt,
   buildSummaryPrompt,
   chunkEntries,
+  cleanDescription,
   cleanTitle,
   cleanTopicSummary,
   findCurrentTopicIndex,
@@ -51,6 +52,23 @@ describe('parseSummaryResponse', () => {
     expect(parseSummaryResponse(undefined)).toBeNull();
     expect(parseSummaryResponse('no json here')).toBeNull();
     expect(parseSummaryResponse('{not valid json}')).toBeNull();
+  });
+});
+
+describe('task descriptions', () => {
+  it('parses a description, and leaves it out when it is missing or not text', () => {
+    expect(parseSummaryResponse('{"title":"T","description":"Making the search easier to use."}')?.description).toBe('Making the search easier to use.');
+    expect(parseSummaryResponse('{"title":"T"}')?.description).toBeUndefined();
+    expect(parseSummaryResponse('{"title":"T","description":42}')).toMatchObject({ title: 'T', description: undefined });
+  });
+
+  it('cleans the description and puts the current one in the prompt', () => {
+    expect(cleanDescription('  "Making the search easier to use."  ')).toBe('Making the search easier to use.');
+    expect(cleanDescription(undefined)).toBe('');
+    expect(buildSummaryPrompt('Task', 'Title', [], chunkEntries([e1])[0], 'Making the search easier to use.')).toContain(
+      'Current description: Making the search easier to use.',
+    );
+    expect(buildSummaryPrompt('Task', 'Title', [], chunkEntries([e1])[0])).toContain('Current description: (none)');
   });
 });
 

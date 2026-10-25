@@ -4498,7 +4498,8 @@ export class Task {
   }
 
   private debouncedEstimateTokens = debounce(async (agentProfile: AgentProfile) => {
-    const tokens = await this.agent.estimateTokens(this, agentProfile);
+    const includeBreakdown = this.store.getSettings().showContextUsageBar ?? true;
+    const { tokens, breakdown } = await this.agent.estimateTokensWithBreakdown(this, agentProfile, includeBreakdown);
 
     this.updateTokensInfo({
       agent: {
@@ -4506,6 +4507,7 @@ export class Task {
         tokens,
         tokensEstimated: true,
       },
+      contextBreakdown: breakdown,
     });
   }, 500);
 
@@ -4549,6 +4551,10 @@ export class Task {
 
     if (!this.initialized) {
       return;
+    }
+
+    if ((oldSettings.showContextUsageBar ?? true) !== (newSettings.showContextUsageBar ?? true)) {
+      void this.updateAgentEstimatedTokens();
     }
 
     // Check for changes in Aider

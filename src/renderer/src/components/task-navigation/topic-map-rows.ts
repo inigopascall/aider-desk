@@ -64,3 +64,39 @@ export const buildTopicMapRows = (topics: TaskTopic[], expanded: ReadonlySet<num
   });
   return rows;
 };
+
+/** A row's piece of the connector from an expanded topic to its section titles. */
+export type TopicConnectorPart = 'start' | 'pass' | 'branch' | 'end';
+
+/**
+ * Pieces of the connectors in the topic map: the trunk starts at an expanded topic's row, passes the rows between, branches
+ * to each section title and ends at the last one. A topic without section rows, such as a compacted topic or one without
+ * sections, has no connector.
+ */
+export const getTopicConnectorParts = (rows: TopicMapRow[]): Map<string, TopicConnectorPart> => {
+  const parts = new Map<string, TopicConnectorPart>();
+  rows.forEach((row, start) => {
+    if (row.kind !== 'topic') {
+      return;
+    }
+    let last = -1;
+    for (let index = start + 1; index < rows.length && rows[index].kind !== 'topic'; index++) {
+      if (rows[index].kind === 'section') {
+        last = index;
+      }
+    }
+    if (last === -1) {
+      return;
+    }
+    parts.set(row.key, 'start');
+    for (let index = start + 1; index <= last; index++) {
+      const child = rows[index];
+      parts.set(child.key, child.kind !== 'section' ? 'pass' : index === last ? 'end' : 'branch');
+    }
+  });
+  return parts;
+};
+
+/** The expanded topics after "expand / collapse all": none when any topic is expanded, otherwise every topic. */
+export const getToggledExpandedTopics = (expanded: ReadonlySet<number>, topicCount: number): Set<number> =>
+  expanded.size > 0 ? new Set() : new Set(Array.from({ length: topicCount }, (_, index) => index));

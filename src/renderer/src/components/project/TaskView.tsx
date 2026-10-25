@@ -55,6 +55,7 @@ import { TodoWindow } from '@/components/project/TodoWindow';
 import { TerminalView, TerminalViewRef } from '@/components/terminal/TerminalView';
 import { MobileSidebar } from '@/components/project/MobileSidebar';
 import { FilesContextInfoContent } from '@/components/project/FilesContextInfoContent';
+import { ContextUsageBar } from '@/components/project/ContextUsageBar';
 import { WelcomeMessage } from '@/components/project/WelcomeMessage';
 import 'react-resizable/css/styles.css';
 import { useResponsive } from '@/hooks/useResponsive';
@@ -915,6 +916,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
             onRestartAiderConnector={handleRestartAiderConnector}
             disabled={!!selectedWorkflowId}
           />
+          <ContextUsageBar task={task} mode={currentMode} maxInputTokens={maxInputTokens} contextFiles={contextFiles} />
           <div className="flex-grow overflow-y-hidden relative flex flex-col">
             {renderSearchInput()}
             {!loading && todoListVisible && (

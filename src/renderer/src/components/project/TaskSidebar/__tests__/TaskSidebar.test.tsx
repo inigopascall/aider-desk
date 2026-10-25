@@ -9,6 +9,7 @@ import { render } from '@/__tests__/render';
 import { useTask } from '@/contexts/TasksContext';
 import { useOptimizedTaskState, EMPTY_TASK_STATE } from '@/stores/taskStore';
 import { createMockTaskContext } from '@/__tests__/mocks/contexts';
+import { useTaskNavigationStore } from '@/stores/taskNavigationStore';
 
 // Mock @tanstack/react-virtual
 vi.mock('@tanstack/react-virtual', () => ({
@@ -152,23 +153,18 @@ describe('TaskSidebar', () => {
     expect(onTaskSelect).toHaveBeenCalledWith('task-2');
   });
 
-  it('filters tasks based on search query', async () => {
+  it('opens the quick switcher and global search from the header buttons', () => {
+    useTaskNavigationStore.setState({ quickSwitcherOpen: false, globalSearchOpen: false });
     render(<TaskSidebar loading={false} tasks={mockTasks} activeTaskId="task-1" onTaskSelect={vi.fn()} isCollapsed={false} onToggleCollapse={vi.fn()} />);
 
     fireEvent.click(screen.getByTestId('search-toggle-button'));
+    expect(useTaskNavigationStore.getState().quickSwitcherOpen).toBe(true);
 
-    await waitFor(() => {
-      expect(screen.getByPlaceholderText('taskSidebar.searchPlaceholder')).toBeInTheDocument();
-    });
+    fireEvent.click(screen.getByTestId('global-search-button'));
+    expect(useTaskNavigationStore.getState().globalSearchOpen).toBe(true);
+    expect(useTaskNavigationStore.getState().quickSwitcherOpen).toBe(false);
 
-    fireEvent.change(screen.getByPlaceholderText('taskSidebar.searchPlaceholder'), {
-      target: { value: 'Task 1' },
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText('Task 1')).toBeInTheDocument();
-      expect(screen.queryByText('Task 2')).not.toBeInTheDocument();
-    });
+    useTaskNavigationStore.setState({ quickSwitcherOpen: false, globalSearchOpen: false });
   });
 
   it('sorts tasks by updatedAt descending', () => {

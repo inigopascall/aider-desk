@@ -4,7 +4,7 @@ import path from 'path';
 import Handlebars from 'handlebars';
 import { FSWatcher, watch } from 'chokidar';
 import debounce from 'lodash/debounce';
-import { AgentProfile, AutonomyMode, DEFAULT_AUTONOMY_MODE, ConflictResolutionFileContext, SettingsData, ToolApprovalState } from '@common/types';
+import { AgentProfile, AutonomyMode, DEFAULT_AUTONOMY_MODE, ConflictResolutionFileContext, ContextFile, SettingsData, ToolApprovalState } from '@common/types';
 import {
   AIDER_TOOL_ADD_CONTEXT_FILES,
   AIDER_TOOL_DROP_CONTEXT_FILES,
@@ -446,12 +446,13 @@ export class PromptsManager {
     }
   };
 
-  private getRulesContent = async (task: Task, agentProfile?: AgentProfile) => {
+  /** The rule files embedded in the system prompt, each with the exact block that is inserted for it. */
+  public getRuleFileBlocks = async (task: Task, agentProfile?: AgentProfile): Promise<Array<{ file: ContextFile; block: string }>> => {
     const ruleFiles = await task.getRuleFilesAsContextFiles(agentProfile);
 
     logger.debug('Rule files for prompt content:', { ruleFiles });
 
-    const ruleFilesContent = await Promise.all(
+    const ruleFileBlocks = await Promise.all(
       ruleFiles.map(async (file) => {
         try {
           let absolutePath: string;
@@ -466,7 +467,7 @@ export class PromptsManager {
 
           const content = await fs.readFile(absolutePath, 'utf8');
           const fileName = path.basename(file.path);
-          return `      <File name="${fileName}"><![CDATA[\n${content}\n]]></File>`;
+          return { file, block: `      <File name="${fileName}"><![CDATA[\n${content}\n]]></File>` };
         } catch (err) {
           logger.warn(`Failed to read rule file ${file.path}: ${err}`);
           return null;
@@ -474,7 +475,12 @@ export class PromptsManager {
       }),
     );
 
-    return ruleFilesContent.filter(Boolean).join('\n');
+    return ruleFileBlocks.filter((ruleFileBlock): ruleFileBlock is { file: ContextFile; block: string } => ruleFileBlock !== null);
+  };
+
+  private getRulesContent = async (task: Task, agentProfile?: AgentProfile) => {
+    const ruleFileBlocks = await this.getRuleFileBlocks(task, agentProfile);
+    return ruleFileBlocks.map(({ block }) => block).join('\n');
   };
 
   public getInitProjectSystemPrompt = async (task: Task) => {

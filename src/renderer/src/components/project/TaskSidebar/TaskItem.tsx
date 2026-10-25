@@ -307,7 +307,7 @@ export const TaskItem = memo(
             'group relative flex items-center justify-between py-1 pl-2 px-1 cursor-pointer transition-colors border select-none',
             isDragged && 'opacity-40',
             activeTaskId === task.id && !isMultiselectMode
-              ? 'bg-bg-secondary border-border-dark-light'
+              ? 'bg-info-light-muted border-transparent shadow-[inset_3px_0_0_0_var(--color-info-light)]'
               : selectedTasks.has(task.id) && isMultiselectMode
                 ? 'bg-bg-secondary border-border-dark-light'
                 : 'hover:bg-bg-secondary border-transparent',
@@ -396,7 +396,6 @@ export const TaskItem = memo(
               </div>
             </div>
           </div>
-
 
           {!isMultiselectMode && (
             <div className="flex items-center">

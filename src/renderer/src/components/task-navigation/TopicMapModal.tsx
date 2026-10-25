@@ -16,7 +16,9 @@ import {
 } from '@common/types';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { MdCompress, MdKeyboardArrowDown, MdKeyboardArrowRight, MdOutlineArchive, MdOutlineRefresh, MdUndo } from 'react-icons/md';
+import { MdCompress, MdOutlineArchive, MdOutlineRefresh, MdUndo, MdUnfoldLess, MdUnfoldMore } from 'react-icons/md';
+import { FaRegUser } from 'react-icons/fa';
+import { RiRobot2Line } from 'react-icons/ri';
 import { VscLock } from 'react-icons/vsc';
 
 import {
@@ -28,7 +30,18 @@ import {
 } from './compaction-utils';
 import { useTaskNavigationSettings } from './hooks';
 import { TopicCompactionPanel } from './TopicCompactionPanel';
-import { MessageRow, NavigableRow, RecapRow, buildTopicMapRows, isNavigableRow, topicRowKey } from './topic-map-rows';
+import { TaskDescription } from './TaskSummaryPreview';
+import { TopicCaret, TopicConnector } from './TopicConnector';
+import {
+  MessageRow,
+  NavigableRow,
+  RecapRow,
+  buildTopicMapRows,
+  getToggledExpandedTopics,
+  getTopicConnectorParts,
+  isNavigableRow,
+  topicRowKey,
+} from './topic-map-rows';
 import { GENERATING_TASK_NAME, formatRelativeTime } from './utils';
 
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
@@ -130,7 +143,8 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
   const settings = useTaskNavigationSettings();
   const closeTopicMap = useTaskNavigationStore((state) => state.closeTopicMap);
   const setTopicMapView = useTaskNavigationStore((state) => state.setTopicMapView);
-  const view = useTaskNavigationStore((state) => state.topicMapViews[viewKey]) ?? EMPTY_VIEW;
+  const storedView = useTaskNavigationStore((state) => state.topicMapViews[viewKey]);
+  const view = storedView ?? EMPTY_VIEW;
   const messages = useTaskMessages(task.id);
   const [regenerating, setRegenerating] = useState(false);
   const [compactionTarget, setCompactionTarget] = useState<CompactionTargetState | null>(null);
@@ -147,7 +161,14 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
   const running = task.state === DefaultTaskState.InProgress;
   const archives = useMemo(() => [...getCompactionArchives(task)].sort((first, second) => second.createdAt.localeCompare(first.createdAt)), [task]);
 
-  const expanded = useMemo(() => new Set(view.expanded.filter((index) => index >= 0 && index < topics.length)), [view.expanded, topics.length]);
+  // Every topic is expanded until the user changes the view of this task
+  const expanded = useMemo(
+    () =>
+      storedView
+        ? new Set(storedView.expanded.filter((index) => index >= 0 && index < topics.length))
+        : new Set(Array.from({ length: topics.length }, (_, index) => index)),
+    [storedView, topics.length],
+  );
 
   const messageLabels = useMemo(() => {
     const labels = new Map<string, MessageLabel>();
@@ -165,6 +186,7 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
   const rows = useMemo(() => buildTopicMapRows(topics, expanded), [topics, expanded]);
   const navigableRows = useMemo(() => rows.filter(isNavigableRow), [rows]);
   const navigableIndexes = useMemo(() => new Map(navigableRows.map((row, index) => [row.key, index])), [navigableRows]);
+  const connectorParts = useMemo(() => getTopicConnectorParts(rows), [rows]);
 
   const selectedIndex = useMemo(() => {
     const exact = navigableRows.findIndex((row) => row.key === view.selected);
@@ -217,6 +239,13 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
     },
     [expanded, saveView],
   );
+
+  // Collapses every topic when any is expanded, otherwise expands them all; on collapse, a selected message or recap hands the selection to its topic
+  const toggleAllTopics = useCallback(() => {
+    const row = navigableRows[selectedIndex];
+    const next = getToggledExpandedTopics(expanded, topics.length);
+    saveView(next.size === 0 && row ? topicRowKey(row.topicIndex) : (view.selected ?? null), next);
+  }, [navigableRows, selectedIndex, expanded, topics.length, saveView, view.selected]);
 
   const openMessage = useCallback(
     (row: MessageRow) => {
@@ -329,7 +358,9 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
         break;
       case 'Enter':
         event.preventDefault();
-        if (row?.kind === 'topic') {
+        if (event.shiftKey) {
+          toggleAllTopics();
+        } else if (row?.kind === 'topic') {
           setTopicExpanded(row.topicIndex, !expanded.has(row.topicIndex));
         } else if (row?.kind === 'message') {
           openMessage(row);
@@ -445,7 +476,7 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
         tabIndex={-1}
         onKeyDown={handleKeyDown}
         onClick={stopPropagation}
-        className="bg-bg-secondary-light-strongest shadow-2xl rounded-md border border-bg-tertiary-strong w-[760px] max-w-[94vw] max-h-[76vh] flex flex-col overflow-hidden focus:outline-none"
+        className="bg-bg-secondary-light-strongest shadow-2xl rounded-md border border-bg-tertiary-strong w-[1008px] max-w-[94vw] max-h-[76vh] flex flex-col overflow-hidden focus:outline-none"
       >
         <div className="px-3 py-2 border-b border-bg-tertiary-strong flex items-center gap-2 min-w-0">
           {taskKey && <span className="shrink-0 font-mono text-2xs text-text-muted">{taskKey}</span>}
@@ -475,6 +506,18 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
               </span>
             </Tooltip>
           )}
+          {topics.length > 0 && (
+            <Tooltip content={expanded.size > 0 ? t('taskNavigation.topicMap.collapseAll') : t('taskNavigation.topicMap.expandAll')}>
+              <button
+                type="button"
+                aria-label={expanded.size > 0 ? t('taskNavigation.topicMap.collapseAll') : t('taskNavigation.topicMap.expandAll')}
+                onClick={toggleAllTopics}
+                className="shrink-0 text-text-muted hover:text-text-primary"
+              >
+                {expanded.size > 0 ? <MdUnfoldLess className="w-4 h-4" /> : <MdUnfoldMore className="w-4 h-4" />}
+              </button>
+            </Tooltip>
+          )}
           <Tooltip content={t('taskNavigation.topicMap.regenerate')}>
             <button
               type="button"
@@ -494,7 +537,16 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
           </div>
         )}
 
-        <div ref={listRef} className="flex-1 overflow-y-auto py-1">
+        {summary?.description && (
+          <div className="px-3 py-2 border-b border-bg-tertiary-strong">
+            <TaskDescription description={summary.description} className="text-xs" />
+          </div>
+        )}
+
+        <div
+          ref={listRef}
+          className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-bg-tertiary scrollbar-track-bg-primary-light scrollbar-rounded py-1"
+        >
           {topics.length === 0 ? (
             <div className="px-3 py-6 flex flex-col items-center gap-3 text-xs text-text-muted">
               <span>{t('taskNavigation.topicMap.empty')}</span>
@@ -509,13 +561,15 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
             </div>
           ) : (
             rows.map((row) => {
+              const connectorPart = connectorParts.get(row.key);
               if (row.kind === 'section') {
                 const section = topics[row.topicIndex]?.sections?.[row.sectionIndex];
                 return (
                   <div
                     key={row.key}
-                    className="pl-10 pr-3 pt-1.5 pb-0.5 border-l-2 border-l-transparent flex items-center gap-2 text-2xs font-medium text-text-primary"
+                    className="relative pl-[68px] pr-3 pt-1.5 pb-0.5 border-l-2 border-l-transparent flex items-start gap-2 text-2xs font-medium text-text-primary"
                   >
+                    {connectorPart && <TopicConnector part={connectorPart} />}
                     <span className="flex-1 min-w-0">{row.summary}</span>
                     {renderCompactionControls(row.topicIndex, row.sectionIndex, section?.compaction)}
                   </div>
@@ -536,13 +590,10 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
                     key={row.key}
                     data-index={index}
                     onClick={() => setTopicExpanded(row.topicIndex, !isExpanded)}
-                    className={clsx(rowClassName, 'px-3 py-1.5 flex items-start gap-1.5', topic.detached && 'opacity-60')}
+                    className={clsx(rowClassName, 'relative px-3 py-1.5 flex items-start gap-1.5', topic.detached && 'opacity-60')}
                   >
-                    {isExpanded ? (
-                      <MdKeyboardArrowDown className="mt-0.5 w-4 h-4 shrink-0 text-text-muted" />
-                    ) : (
-                      <MdKeyboardArrowRight className="mt-0.5 w-4 h-4 shrink-0 text-text-muted" />
-                    )}
+                    {connectorPart && <TopicConnector part={connectorPart} />}
+                    <TopicCaret expanded={isExpanded} />
                     <span className="mt-0.5 w-6 shrink-0 text-right text-2xs text-text-muted">{`${row.topicIndex + 1}.`}</span>
                     <span className="flex-1 min-w-0 text-xs text-text-primary">{topic.summary}</span>
                     <span className="mt-0.5 shrink-0 text-2xs text-text-muted">
@@ -561,8 +612,9 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
                     key={row.key}
                     data-index={index}
                     onClick={lost ? undefined : () => openRecap(row)}
-                    className={clsx(lost ? 'border-l-2 border-l-transparent' : rowClassName, 'pl-14 pr-3 py-1 flex items-start gap-2 text-2xs')}
+                    className={clsx(lost ? 'border-l-2 border-l-transparent' : rowClassName, 'relative pl-[68px] pr-3 py-1 flex items-start gap-2 text-2xs')}
                   >
+                    {connectorPart && <TopicConnector part={connectorPart} />}
                     <span className="shrink-0 font-semibold text-text-muted">{t('taskNavigation.compaction.recap')}</span>
                     <span className={clsx('flex-1 min-w-0 truncate text-text-muted', lost && 'italic')}>
                       {lost ? t('taskNavigation.compaction.recapLost') : label?.text || t('taskNavigation.topicMap.messageNotLoaded')}
@@ -577,10 +629,14 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
                   key={row.key}
                   data-index={index}
                   onClick={() => openMessage(row)}
-                  className={clsx(rowClassName, 'pl-14 pr-3 py-1 flex items-start gap-2 text-2xs', !label && 'text-text-muted')}
+                  className={clsx(rowClassName, 'relative pl-[68px] pr-3 py-1 flex items-center gap-2 text-2xs', !label && 'text-text-muted')}
                 >
-                  <span className="w-8 shrink-0 font-semibold text-text-muted">
-                    {label ? (label.role === 'user' ? t('taskNavigation.you') : t('taskNavigation.assistant')) : ''}
+                  {connectorPart && <TopicConnector part={connectorPart} />}
+                  <span
+                    className="w-3 shrink-0 flex items-center justify-center text-text-muted"
+                    title={label ? (label.role === 'user' ? t('taskNavigation.you') : t('taskNavigation.assistant')) : undefined}
+                  >
+                    {label && (label.role === 'user' ? <FaRegUser className="w-3 h-3" /> : <RiRobot2Line className="w-3 h-3" />)}
                   </span>
                   <span className="flex-1 min-w-0 truncate text-text-muted">{label?.text || t('taskNavigation.topicMap.messageNotLoaded')}</span>
                 </div>

@@ -144,6 +144,13 @@ export const GeneralSettings = ({ settings, setSettings, onLanguageChange, onZoo
     });
   };
 
+  const handleShowContextUsageBarChange = (checked: boolean) => {
+    setSettings({
+      ...settings,
+      showContextUsageBar: checked,
+    });
+  };
+
   const handleSuggestionModeChange = (mode: SuggestionMode) => {
     setSettings({
       ...settings,
@@ -312,6 +319,11 @@ export const GeneralSettings = ({ settings, setSettings, onLanguageChange, onZoo
                 <InfoIcon tooltip={t('settings.messages.disableCssAnimationsTooltip')} />
               </div>
               <Checkbox label={t('settings.messages.messageMap')} checked={settings.showMessageMap ?? true} onChange={handleShowMessageMapChange} />
+              <Checkbox
+                label={t('settings.messages.contextUsageBar')}
+                checked={settings.showContextUsageBar ?? true}
+                onChange={handleShowContextUsageBarChange}
+              />
             </div>
           </div>
           <div className="space-y-2">

@@ -67,8 +67,10 @@
       "updated": "Updated {{time}}",
       "titleLocked": "Title fixed: the task was renamed by hand",
       "unlockTitle": "Let the topic map name this task again",
+      "expandAll": "Expand all topics (Shift+Enter)",
+      "collapseAll": "Collapse all topics (Shift+Enter)",
       "regenerateFailed": "Topic map generation failed: {{error}}",
-      "hint": "↑↓ navigate · Enter expand / jump · ← → collapse / expand · c compact · u undo · Esc close"
+      "hint": "↑↓ navigate · Enter expand / jump · Shift+Enter expand / collapse all · ← → collapse / expand · c compact · u undo · Esc close"
     },
     "compaction": {
       "compact": "Compact…",
@@ -1302,7 +1304,8 @@
       "fullMessageRenderingTooltip": "Renders all messages in the DOM without virtualization. May impact performance with large conversation histories.",
       "disableCssStreamingAnimations": "Disable CSS animations",
       "disableCssAnimationsTooltip": "Disables all CSS animations and transitions throughout the interface. Uses React-timer blinking red dots where task activity must remain visible.",
-      "messageMap": "Show message map"
+      "messageMap": "Show message map",
+      "contextUsageBar": "Show context usage bar"
     },
     "promptField": {
       "agentModeOnly": "This command is only available in agent mode",
@@ -1722,7 +1725,20 @@
     "contextCompactingThresholdOff": "Off",
     "contextCompactingThresholdTooltip": "When token usage exceeds this threshold, the conversation will be automatically compacted to save space.",
     "contextWindowNotSet": "Context window is not set for this model, so auto-compaction won't work. You can set the context window value manually in the Model Library.",
-    "thresholdTokens": "Threshold tokens"
+    "thresholdTokens": "Threshold tokens",
+    "contextUsage": {
+      "systemPrompt": "System prompt",
+      "rules": "Rules",
+      "tools": "Tool definitions",
+      "repoMappings": "Repository map",
+      "readOnlyFiles": "Read-only files",
+      "editableFiles": "Editable files",
+      "conversation": "Conversation",
+      "itemTokens": "~{{tokens}} tokens (estimate)",
+      "segmentTokens": "Segment total: {{tokens}}",
+      "scaledNote": "Segment sizes are estimates, scaled to the reported total.",
+      "noBreakdown": "Breakdown not available yet"
+    }
   },
   "commandOutput": {
     "command": "Command"
@@ -2236,8 +2252,8 @@
     "exportAsImage": "Export as image",
     "taskIdCopied": "Task ID {{taskId}} copied to clipboard",
     "duplicateTask": "Duplicate task",
-    "search": "Search tasks",
-    "searchPlaceholder": "Search tasks...",
+    "quickSwitcher": "Quick switcher",
+    "globalSearch": "Search all tasks",
     "today": "Today",
     "yesterday": "Yesterday",
     "noDate": "No date",

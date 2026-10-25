@@ -21,9 +21,9 @@ import { RiMenuUnfold4Line, RiMenuFold2Line } from 'react-icons/ri';
 import { MdOutlineSearch } from 'react-icons/md';
 import { clsx } from 'clsx';
 import { AnimatePresence, motion } from 'framer-motion';
-import { FiFilter } from 'react-icons/fi';
+import { FiFilter, FiGlobe } from 'react-icons/fi';
 import { HiXMark } from 'react-icons/hi2';
-import { useDebounce, useLocalStorage } from '@reactuses/core';
+import { useLocalStorage } from '@reactuses/core';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 import { TaskSidebarMultiSelectMenu } from './TaskSidebarMultiSelectMenu';
@@ -32,7 +32,6 @@ import { TaskItem } from './TaskItem';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
 import { flattenTasksForVirtualization } from '@/utils/task-utils';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { Input } from '@/components/common/Input';
 import { useClickOutside } from '@/hooks/useClickOutside';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -40,6 +39,7 @@ import { Checkbox } from '@/components/common/Checkbox';
 import { Toggle } from '@/components/common/Toggle';
 import { getTaskStateLabel, getStateTextClass } from '@/components/common/TaskStateChip';
 import { useTaskSidebarStore } from '@/stores/taskSidebarStore';
+import { useTaskNavigationStore } from '@/stores/taskNavigationStore';
 
 export const COLLAPSED_WIDTH = 44;
 export const EXPANDED_WIDTH = 256;
@@ -106,15 +106,15 @@ const TaskSidebarComponent = (
   const setShowArchived = useTaskSidebarStore((state) => state.setShowArchived);
   const [sortByDateModified, setSortByDateModified] = useState<boolean>(false);
   const [isFilterVisible, setIsFilterVisible] = useState<boolean>(false);
-  const [isSearchVisible, setIsSearchVisible] = useState<boolean>(false);
-  const [searchQuery, setSearchQuery] = useState<string>('');
   const [expandedIds, setExpandedIds] = useLocalStorage<string[]>('aider-desk-expanded-tasks', []);
   const allowSubSubTasks = useSettingsStore((state) => state.settings?.taskSettings?.allowSubSubTasks ?? false);
   const maxTaskLevel = allowSubSubTasks ? 2 : 1;
+  const quickSwitcherOpen = useTaskNavigationStore((state) => state.quickSwitcherOpen);
+  const toggleQuickSwitcher = useTaskNavigationStore((state) => state.toggleQuickSwitcher);
+  const globalSearchOpen = useTaskNavigationStore((state) => state.globalSearchOpen);
+  const toggleGlobalSearch = useTaskNavigationStore((state) => state.toggleGlobalSearch);
 
-  const searchInputRef = useRef<HTMLInputElement>(null);
   const listContainerRef = useRef<HTMLDivElement>(null);
-  const debouncedSearchQuery = useDebounce(searchQuery, 50);
   const [optimisticActiveTaskId, setOptimisticActiveTaskId] = useOptimistic(activeTaskId);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const resizeStartRef = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -283,8 +283,8 @@ const TaskSidebarComponent = (
   }, [tasks, expandedIdsSet]);
 
   const virtualItems = useMemo(
-    () => flattenTasksForVirtualization(tasks, expandedIdsSet, selectedStates, showArchived, debouncedSearchQuery, sortByDateModified ? 'updatedAt' : 'createdAt'),
-    [tasks, expandedIdsSet, selectedStates, showArchived, debouncedSearchQuery, sortByDateModified],
+    () => flattenTasksForVirtualization(tasks, expandedIdsSet, selectedStates, showArchived, '', sortByDateModified ? 'updatedAt' : 'createdAt'),
+    [tasks, expandedIdsSet, selectedStates, showArchived, sortByDateModified],
   );
 
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -431,22 +431,6 @@ const TaskSidebarComponent = (
         onClose();
       }
     }
-  };
-
-  const handleSearchToggle = () => {
-    setIsSearchVisible(!isSearchVisible);
-    if (isSearchVisible) {
-      setSearchQuery('');
-    } else {
-      requestAnimationFrame(() => {
-        searchInputRef.current?.focus();
-      });
-    }
-  };
-
-  const handleSearchClose = () => {
-    setIsSearchVisible(false);
-    setSearchQuery('');
   };
 
   const handleToggleShowArchived = useCallback(
@@ -864,10 +848,19 @@ const TaskSidebarComponent = (
                           <FiFilter className="w-4 h-4 text-text-primary" />
                         </button>
                       </Tooltip>
-                      <Tooltip content={t('taskSidebar.search')}>
+                      <Tooltip content={t('taskSidebar.globalSearch')}>
                         <button
-                          className={clsx('p-1 rounded-md transition-colors', isSearchVisible ? 'bg-bg-fourth' : 'hover:bg-bg-tertiary')}
-                          onClick={handleSearchToggle}
+                          className={clsx('p-1.5 rounded-md transition-colors', globalSearchOpen ? 'bg-bg-fourth' : 'hover:bg-bg-tertiary')}
+                          onClick={toggleGlobalSearch}
+                          data-testid="global-search-button"
+                        >
+                          <FiGlobe className="w-4 h-4 text-text-primary" />
+                        </button>
+                      </Tooltip>
+                      <Tooltip content={t('taskSidebar.quickSwitcher')}>
+                        <button
+                          className={clsx('p-1 rounded-md transition-colors', quickSwitcherOpen ? 'bg-bg-fourth' : 'hover:bg-bg-tertiary')}
+                          onClick={toggleQuickSwitcher}
                           data-testid="search-toggle-button"
                         >
                           <MdOutlineSearch className="w-5 h-5 text-text-primary" />
@@ -917,27 +910,6 @@ const TaskSidebarComponent = (
             <div className="flex items-center gap-2">
               <Toggle color="tertiary" size="sm" checked={sortByDateModified} onChange={setSortByDateModified} />
               <span className="text-2xs">{t('taskSidebar.sortByDateModified')}</span>
-            </div>
-          </div>
-        </Activity>
-
-        <Activity mode={!isCollapsed && isSearchVisible ? 'visible' : 'hidden'}>
-          <div className="px-2 pb-2">
-            <div className="relative">
-              <Input
-                ref={searchInputRef}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={t('taskSidebar.searchPlaceholder')}
-                size="sm"
-                className="pr-8"
-              />
-              <button
-                className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 rounded-md hover:bg-bg-tertiary transition-colors"
-                onClick={handleSearchClose}
-              >
-                <HiXMark className="w-4 h-4 text-text-muted hover:text-text-primary" />
-              </button>
             </div>
           </div>
         </Activity>

@@ -9,6 +9,8 @@ import {
   ContextFile,
   ContextMessage,
   ContextToolMessage,
+  ContextUsageBreakdown,
+  ContextUsageItem,
   ContextUserMessage,
   DefaultTaskState,
   Mode,
@@ -69,6 +71,13 @@ import {
 import { extractReasoningMiddleware } from './middlewares/extract-reasoning-middleware';
 import { CompactionLevel, generateCompactedSummary, getReloadableMessages, getSubagentOldResultIds, smartCompactMessages } from './compaction';
 import { sanitizeMessagesForModel } from './message-sanitizer';
+import {
+  buildContextUsageBreakdown,
+  countTextTokens,
+  estimateContextMessageItem,
+  groupToolTokensByServer,
+  type ToolDefinitionForEstimate,
+} from './context-usage';
 
 import type { ToolsetToolEntry } from '@common/extensions';
 import type { TextPart } from '@ai-sdk/provider-utils';
@@ -1815,15 +1824,30 @@ export class Agent {
   }
 
   async estimateTokens(task: Task, profile: AgentProfile): Promise<number> {
+    const { tokens } = await this.estimateTokensWithBreakdown(task, profile, false);
+    return tokens;
+  }
+
+  /**
+   * Estimates the tokens the next request would send. With includeBreakdown, also estimates how they divide
+   * between the system prompt, rules, tool definitions, repository mappings, context files and conversation.
+   */
+  async estimateTokensWithBreakdown(
+    task: Task,
+    profile: AgentProfile,
+    includeBreakdown: boolean,
+  ): Promise<{ tokens: number; breakdown?: ContextUsageBreakdown }> {
     try {
       const providers = this.modelManager.getProviders();
       const provider = providers.find((p) => p.id === profile.provider);
       if (!provider) {
         logger.warn(`Estimation failed: Provider ${profile.provider} not found`);
-        return 0;
+        return { tokens: 0 };
       }
 
-      const messages = await this.prepareMessages(task, profile, await task.getContextMessages(), await task.getContextFiles(), buildProviderModelId(provider.id, profile.model));
+      const contextMessages = await task.getContextMessages();
+      const contextFiles = await task.getContextFiles();
+      const messages = await this.prepareMessages(task, profile, contextMessages, contextFiles, buildProviderModelId(provider.id, profile.model));
       const toolSet = await this.getAvailableTools(task, 'agent', profile, provider, profile.model);
       const systemPrompt = await this.promptsManager.getSystemPrompt(this.store.getSettings(), task, profile);
 
@@ -1842,7 +1866,7 @@ export class Agent {
       );
 
       // Format tools for the prompt
-      const toolDefinitions = Object.entries(toolSet).map(([name, tool]) => ({
+      const toolDefinitions: ToolDefinitionForEstimate[] = Object.entries(toolSet).map(([name, tool]) => ({
         name,
         description: tool.description,
         inputSchema: tool.inputSchema ? tool.inputSchema : '', // Get Zod schema description
@@ -1861,11 +1885,71 @@ export class Agent {
         content: msg.content,
       }));
 
-      return estimateMessageTokens(chatMessages);
+      const tokens = estimateMessageTokens(chatMessages);
+      if (!includeBreakdown) {
+        return { tokens };
+      }
+
+      try {
+        const breakdown = await this.estimateContextUsageBreakdown(task, profile, systemPrompt, toolDefinitions, contextMessages, contextFiles);
+        return { tokens, breakdown };
+      } catch (error) {
+        logger.error(`Error estimating context usage breakdown: ${error}`);
+        return { tokens };
+      }
     } catch (error) {
       logger.error(`Error counting tokens: ${error}`);
-      return 0;
+      return { tokens: 0 };
     }
+  }
+
+  private async estimateContextUsageBreakdown(
+    task: Task,
+    profile: AgentProfile,
+    systemPrompt: string,
+    toolDefinitions: ToolDefinitionForEstimate[],
+    contextMessages: ContextMessage[],
+    contextFiles: ContextFile[],
+  ): Promise<ContextUsageBreakdown> {
+    const ruleFileBlocks = await this.promptsManager.getRuleFileBlocks(task, profile);
+    const rules: ContextUsageItem[] = ruleFileBlocks.map(({ file, block }) => ({
+      id: file.path,
+      label: path.basename(file.path),
+      detail: file.source,
+      tokens: countTextTokens(block),
+    }));
+
+    const repositoryMappingFiles = profile.includeRepoMappings ? await task.getRepositoryMappingFiles() : [];
+
+    return buildContextUsageBreakdown({
+      systemPromptTokens: countTextTokens(systemPrompt),
+      rules,
+      tools: groupToolTokensByServer(toolDefinitions),
+      repoMappings: await this.estimateContextFileItems(task, profile, repositoryMappingFiles, true),
+      readOnlyFiles: await this.estimateContextFileItems(
+        task,
+        profile,
+        contextFiles.filter((file) => file.readOnly),
+        profile.includeContextFiles,
+      ),
+      editableFiles: await this.estimateContextFileItems(
+        task,
+        profile,
+        contextFiles.filter((file) => !file.readOnly),
+        profile.includeContextFiles,
+      ),
+      conversation: contextMessages.map(estimateContextMessageItem),
+    });
+  }
+
+  /** Estimates each file on its own, built the way prepareMessages builds it: with its content, or as a working-files list entry. */
+  private async estimateContextFileItems(task: Task, profile: AgentProfile, files: ContextFile[], withContent: boolean): Promise<ContextUsageItem[]> {
+    const items: ContextUsageItem[] = [];
+    for (const file of files) {
+      const fileMessages = withContent ? await this.getContextFilesAsToolCallMessages(task, profile, [file]) : await this.getWorkingFilesMessages(task, [file]);
+      items.push({ id: file.path, label: file.path, tokens: estimateMessageTokens(fileMessages) });
+    }
+    return items;
   }
 
   interrupt() {

@@ -13,7 +13,9 @@ import {
 import { compareBaseDirs } from '@common/utils';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { MdOutlineRefresh, MdSearch } from 'react-icons/md';
+import { MdOutlineRefresh, MdSearch, MdToc } from 'react-icons/md';
+import { FaRegUser } from 'react-icons/fa';
+import { RiRobot2Line } from 'react-icons/ri';
 
 import { useTaskNavigationSettings } from './hooks';
 import { formatRelativeTime, getProjectName } from './utils';
@@ -48,7 +50,7 @@ const renderSnippet = (snippet: string): ReactNode[] => {
     const end = rest.indexOf(SEARCH_SNIPPET_MATCH_END, start + 1);
     const match = end === -1 ? rest.slice(start + 1) : rest.slice(start + 1, end);
     parts.push(
-      <mark key={key++} className="bg-transparent font-semibold text-text-primary underline decoration-accent-primary">
+      <mark key={key++} className="bg-transparent font-normal text-text-primary underline decoration-accent-primary">
         {match}
       </mark>,
     );
@@ -245,11 +247,16 @@ const GlobalSearchContent = () => {
     return { key, name };
   };
 
+  const isTaskRowHit = (hit: GlobalSearchMessageHit) => hit.messageId === SEARCH_TASK_ROW_MESSAGE_ID || hit.role === 'task';
+
   const getRoleLabel = (hit: GlobalSearchMessageHit) => {
-    if (hit.messageId === SEARCH_TASK_ROW_MESSAGE_ID || hit.role === 'task') {
+    if (isTaskRowHit(hit)) {
       return t('taskNavigation.search.taskRow');
     }
-    return hit.role === 'user' ? t('taskNavigation.you') : t('taskNavigation.assistant');
+    if (hit.role === 'user') {
+      return t('taskNavigation.you');
+    }
+    return t('taskNavigation.assistant');
   };
 
   const stopPropagation = (event: MouseEvent<HTMLDivElement>) => event.stopPropagation();
@@ -267,7 +274,7 @@ const GlobalSearchContent = () => {
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-start justify-center z-[100] pt-[10vh]" onClick={closeGlobalSearch}>
       <div
-        className="bg-bg-secondary-light-strongest shadow-2xl rounded-md border border-bg-tertiary-strong w-[820px] max-w-[94vw] max-h-[76vh] flex flex-col overflow-hidden"
+        className="bg-bg-secondary-light-strongest shadow-2xl rounded-md border border-bg-tertiary-strong w-[1008px] max-w-[94vw] max-h-[76vh] flex flex-col overflow-hidden"
         onClick={stopPropagation}
       >
         <div className="px-3 py-2 border-b border-bg-tertiary-strong flex items-center gap-2">
@@ -284,7 +291,10 @@ const GlobalSearchContent = () => {
           />
           {searching && <span className="shrink-0 text-2xs text-text-muted">{t('taskNavigation.search.searching')}</span>}
         </div>
-        <div ref={listRef} className="flex-1 overflow-y-auto">
+        <div
+          ref={listRef}
+          className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-bg-tertiary scrollbar-track-bg-primary-light scrollbar-rounded"
+        >
           {items.length === 0 ? (
             <div className="px-3 py-6 text-center text-xs text-text-muted">{renderEmptyState()}</div>
           ) : (
@@ -330,8 +340,16 @@ const GlobalSearchContent = () => {
                   onClick={() => selectItem(item)}
                   className={clsx(rowClassName, 'pl-9 pr-3 py-1 flex items-start gap-2 text-2xs')}
                 >
-                  <span className="shrink-0 w-20 truncate font-semibold text-text-muted">{getRoleLabel(hit)}</span>
-                  <span className="flex-1 min-w-0 line-clamp-2 text-text-secondary">{renderSnippet(hit.snippet)}</span>
+                  <span className="mt-0.5 w-3 shrink-0 flex items-center justify-center text-text-muted" title={getRoleLabel(hit)}>
+                    {isTaskRowHit(hit) ? (
+                      <MdToc className="w-3 h-3" />
+                    ) : hit.role === 'user' ? (
+                      <FaRegUser className="w-3 h-3" />
+                    ) : (
+                      <RiRobot2Line className="w-3 h-3" />
+                    )}
+                  </span>
+                  <span className="flex-1 min-w-0 line-clamp-2 text-text-muted">{renderSnippet(hit.snippet)}</span>
                   {hit.matchedBy === 'concept' && <span className="shrink-0 text-accent-primary">{t('taskNavigation.search.matchedConcept')}</span>}
                   <span className="shrink-0 w-16 text-right text-text-muted">{formatRelativeTime(hit.timestamp, i18n.language)}</span>
                 </div>

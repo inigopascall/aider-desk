@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { MdToc } from 'react-icons/md';
+import { FiMap } from 'react-icons/fi';
 import { clsx } from 'clsx';
 
 import { IconButton } from '@/components/common/IconButton';
@@ -12,7 +12,7 @@ export const TopicMapToggleButton = () => {
 
   return (
     <IconButton
-      icon={<MdToc className="w-5 h-5" />}
+      icon={<FiMap className="w-4 h-4" />}
       onClick={toggleTopicMap}
       tooltip={t('taskNavigation.topicMap.toggle')}
       className={clsx('p-1 rounded-md hover:bg-bg-tertiary', topicMapOpen && 'text-text-primary bg-bg-tertiary')}

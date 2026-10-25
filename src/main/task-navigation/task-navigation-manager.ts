@@ -44,6 +44,7 @@ import {
   applySummaryUpdate,
   buildSummaryPrompt,
   chunkEntries,
+  cleanDescription,
   cleanTitle,
   findCurrentTopicIndex,
   getUnsummarizedEntries,
@@ -1060,6 +1061,7 @@ export class TaskNavigationManager {
     const reconciled = this.reconcileTopics(rebuild ? selectTopicsKeptOnRebuild(stored?.topics ?? []) : (existing?.topics ?? []), messages);
     let topics: TaskTopic[] = reconciled.topics;
     let title = existing?.title ?? '';
+    let description = existing?.description ?? '';
     let lastSummarizedMessageId = existing?.lastSummarizedMessageId;
     let model = existing?.model;
     let generated = false;
@@ -1075,7 +1077,7 @@ export class TaskNavigationManager {
       } else {
         try {
           for (const chunk of chunkEntries(pending, SUMMARY_CHUNK_CHARACTERS)) {
-            const prompt = buildSummaryPrompt(getDisplayName(task.task), title, topics, chunk);
+            const prompt = buildSummaryPrompt(getDisplayName(task.task), title, topics, chunk, description);
             const response = await this.generate(modelId, task.task.baseDir, taskId, SUMMARY_SYSTEM_PROMPT, prompt);
             const update = parseSummaryResponse(response);
             if (!update) {
@@ -1085,6 +1087,7 @@ export class TaskNavigationManager {
             }
             topics = applySummaryUpdate(topics, chunk, update);
             title = cleanTitle(update.title) || title;
+            description = cleanDescription(update.description) || description;
             lastSummarizedMessageId = chunk[chunk.length - 1].entry.id;
             model = modelId;
             generated = true;
@@ -1126,6 +1129,7 @@ export class TaskNavigationManager {
     if (topics.length > 0) {
       const summary: TaskSummary = {
         title,
+        ...(description ? { description } : {}),
         topics,
         lastSummarizedMessageId,
         generatedAt: generated || !existing ? new Date().toISOString() : existing.generatedAt,

@@ -32,6 +32,8 @@ export interface TaskTopic {
 export interface TaskSummary {
   /** Title reflecting the most recent focus of the conversation, four to ten words. */
   title: string;
+  /** Plain-language description of the whole task, about thirty to forty words. */
+  description?: string;
   /** Topics in chronological order. */
   topics: TaskTopic[];
   /** Id of the last context message covered by the summary. */
