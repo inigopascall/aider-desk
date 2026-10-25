@@ -162,6 +162,102 @@ code {
   background-color: var(--color-bg-selection);
 }
 
+/* Prompt editor: markdown highlighting. The classes come from components/PromptField/promptMarkdown.ts. */
+.pf-prompt-editor .pf-md-heading {
+  color: var(--color-info-light);
+  font-weight: 600;
+}
+.pf-prompt-editor .pf-md-strong {
+  font-weight: 700;
+}
+.pf-prompt-editor .pf-md-emphasis {
+  font-style: italic;
+}
+.pf-prompt-editor .pf-md-strikethrough {
+  color: var(--color-text-muted-light);
+  text-decoration: line-through;
+}
+.pf-prompt-editor .pf-md-code {
+  color: var(--color-success-light);
+  background-color: var(--color-bg-code-block);
+  border-radius: 0.25rem;
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+}
+.pf-prompt-editor .pf-md-link {
+  color: var(--color-info-lighter);
+  text-decoration: underline;
+  text-decoration-color: var(--color-border-default);
+  text-underline-offset: 2px;
+}
+.pf-prompt-editor .pf-md-quote {
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+.pf-prompt-editor .pf-md-meta {
+  color: var(--color-text-muted-light);
+}
+.pf-prompt-editor .pf-md-comment {
+  color: var(--color-text-muted-light);
+  font-style: italic;
+}
+
+/* Fenced code blocks: a whole-line background, with tokens coloured in the block's own language. */
+.pf-prompt-editor .pf-md-codeblock-line {
+  background-color: var(--color-bg-code-block);
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+}
+.pf-prompt-editor .pf-md-codeblock-line .pf-md-code {
+  color: inherit;
+  background-color: transparent;
+  border-radius: 0;
+}
+.pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-keyword {
+  color: var(--color-error-light);
+}
+.pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-string {
+  color: var(--color-success-light);
+}
+.pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-literal {
+  color: var(--color-warning-light);
+}
+.pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-function {
+  color: var(--color-info-lighter);
+}
+.pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-type {
+  color: var(--color-warning-light);
+}
+.pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-property {
+  color: var(--color-info-lightest);
+}
+.pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-tag {
+  color: var(--color-success-light);
+}
+
+/* Markup characters (#, **, backticks, link brackets, list bullets) are faded. This rule must stay after the ones above. */
+.pf-prompt-editor .pf-md-mark {
+  color: var(--color-text-muted-light);
+}
+
+/* Larger headings once the prompt editor is tall. */
+.pf-prompt-editor-large .pf-md-h1 {
+  font-size: 1.5em;
+}
+.pf-prompt-editor-large .pf-md-h2 {
+  font-size: 1.3em;
+}
+.pf-prompt-editor-large .pf-md-h3 {
+  font-size: 1.15em;
+}
+
+/* A prompt editor with a set height fills it; a maximised one uses the adjustable font size. */
+.pf-prompt-editor-sized .cm-editor {
+  min-height: 100%;
+}
+.pf-prompt-editor-maximized .cm-content {
+  font-size: var(--prompt-editor-font-size, 1rem);
+  line-height: 1.6;
+}
+
 /* Milkdown fullscreen prompt editor */
 .milkdown-prompt-editor .milkdown {
   height: 100%;

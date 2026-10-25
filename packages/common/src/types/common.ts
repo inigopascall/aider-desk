@@ -727,7 +727,7 @@ export interface PromptBehavior {
   };
   useVimBindings: boolean;
   openEditorAtFullWidth?: boolean;
-  submitOnEnter?: boolean; // true = Enter submits; false (default) = Shift+Enter submits
+  submitOnEnter?: boolean; // true = Enter submits; false (default) = Ctrl+Enter submits. Ctrl+Shift+Enter always submits.
 }
 
 export enum InvocationMode {

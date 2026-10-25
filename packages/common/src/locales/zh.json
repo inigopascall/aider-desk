@@ -1787,6 +1787,9 @@
     "agentModeOnly": "仅在代理模式下可用",
     "handoffError": "交接失败：{{error}}",
     "taskInfo": "任务信息",
+    "resizeEditor": "拖动以调整提示编辑器大小，双击重置",
+    "restoreEditorSize": "恢复编辑器大小",
+    "openRenderedEditor": "打开渲染的 Markdown 编辑器",
     "expandEditor": "展开编辑器",
     "pastedImage": "粘贴的图片 {{index}}"
   },

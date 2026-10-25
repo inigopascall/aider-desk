@@ -1839,6 +1839,9 @@
     "agentModeOnly": "에이전트 모드에서만 사용 가능",
     "handoffError": "핸드오프 실패: {{error}}",
     "taskInfo": "작업 정보 표시",
+    "resizeEditor": "드래그하여 프롬프트 편집기 크기 조절, 더블클릭하여 초기화",
+    "restoreEditorSize": "편집기 크기 복원",
+    "openRenderedEditor": "렌더링된 마크다운 편집기 열기",
     "expandEditor": "편집기 펼치기",
     "pastedImage": "붙여넣은 이미지 {{index}}"
   },

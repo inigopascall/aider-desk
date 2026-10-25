@@ -12,7 +12,6 @@ import {
 } from '@codemirror/autocomplete';
 import { EditorView, keymap } from '@codemirror/view';
 import { AIDER_MODES, Mode, PromptBehavior, QueuedPromptData, QuestionData, SuggestionMode } from '@common/types';
-import { githubDarkInit } from '@uiw/codemirror-theme-github';
 import CodeMirror, { Annotation, Prec, type Extension, type ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, useLayoutEffect, type RefObject, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
@@ -33,6 +32,7 @@ import { usePromptFieldText } from './usePromptFieldText';
 import { MilkdownEditor, type MilkdownEditorRef } from './MilkdownEditor';
 import { wordCompletions } from './wordCompletions';
 import { acceptPathSegment } from './acceptPathSegment';
+import { promptEditorTheme, promptMarkdownExtension } from './promptMarkdown';
 
 import { useTaskQueuedPrompts } from '@/stores/taskStore';
 import { useMarkdownEditorOverlayStore } from '@/stores/markdownEditorStore';
@@ -105,15 +105,6 @@ const isPathLike = (input: string): boolean => {
   const firstWord = input.split(' ')[0];
   return (firstWord.match(/\//g) || []).length >= 2;
 };
-
-const THEME = githubDarkInit({
-  settings: {
-    fontFamily: 'var(--font-family)',
-    background: 'transparent',
-    selection: 'var(--color-bg-selection)',
-    caret: 'var(--color-text-muted)',
-  },
-});
 
 const BASIC_SETUP = {
   highlightSelectionMatches: false,
@@ -192,6 +183,12 @@ type Props = {
   handoffConversation?: (focus?: string) => Promise<void>;
   createSubtask?: (args?: string) => void;
   overlayContainerRef?: RefObject<HTMLDivElement | null>;
+  /** The editor fills the height its parent gives it, instead of growing with its content. */
+  editorSized?: boolean;
+  /** The editor is tall enough for headings to be shown larger. */
+  editorLarge?: boolean;
+  /** The editor fills the task view; Ctrl/Cmd + wheel changes its font size. */
+  editorMaximized?: boolean;
 };
 
 export const PromptField = forwardRef<PromptFieldRef, Props>(
@@ -236,6 +233,9 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       handoffConversation,
       createSubtask,
       overlayContainerRef,
+      editorSized = false,
+      editorLarge = false,
+      editorMaximized = false,
     }: Props,
     ref,
   ) => {
@@ -397,6 +397,26 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
         // Ignore unavailable or restricted localStorage.
       }
     }, [expandedEditorFontSize]);
+
+    // Ctrl/Cmd + wheel changes the font size of the maximised prompt editor. This is a native
+    // listener because React's wheel listeners are passive and cannot call preventDefault().
+    const editorContainerRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+      const container = editorContainerRef.current;
+      if (!container || !editorMaximized) {
+        return;
+      }
+      const handleWheel = (event: WheelEvent) => {
+        if (!event.ctrlKey && !event.metaKey) {
+          return;
+        }
+        event.preventDefault();
+        const step = event.deltaY < 0 ? EXPANDED_EDITOR_FONT_SIZE_STEP : -EXPANDED_EDITOR_FONT_SIZE_STEP;
+        setExpandedEditorFontSize((currentSize) => Math.min(MAX_EXPANDED_EDITOR_FONT_SIZE, Math.max(MIN_EXPANDED_EDITOR_FONT_SIZE, currentSize + step)));
+      };
+      container.addEventListener('wheel', handleWheel, { passive: false });
+      return () => container.removeEventListener('wheel', handleWheel);
+    }, [editorMaximized]);
 
     // Called when Milkdown has fully initialized its editor instance and view.
     // Requests focus through the editor-ready lifecycle so we never target a
@@ -1586,6 +1606,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
     const extensions = useMemo(
       () => [
         EDITOR_THEME_EXTENSION,
+        promptMarkdownExtension,
         promptBehavior.useVimBindings && vimExtension ? vimExtension : keymap.of([]),
         EditorView.lineWrapping,
         EditorView.domEventHandlers({
@@ -1650,7 +1671,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       : { top: 0, right: 0, bottom: 0, left: 0 };
 
     return (
-      <div className="w-full relative">
+      <div className={clsx('w-full relative', editorSized && 'flex flex-col flex-grow min-h-0')}>
         {builtInCompactionDialog}
         {queuedPrompts && queuedPrompts.length > 0 && (
           <QueuedPromptsList
@@ -1734,7 +1755,11 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
             ))}
           </div>
         )}
-        <div className="relative flex-shrink-0">
+        <div
+          ref={editorContainerRef}
+          className={clsx('relative', editorSized ? 'flex-grow min-h-0' : 'flex-shrink-0')}
+          style={editorMaximized ? ({ '--prompt-editor-font-size': `${expandedEditorFontSize}px` } as CSSProperties) : undefined}
+        >
           <CodeMirror
             ref={useCallback((instance: ReactCodeMirrorRef) => {
               editorRef.current = instance;
@@ -1745,11 +1770,14 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
             editable={!disabled}
             spellCheck={false}
             className={clsx(
-              'w-full px-2 py-1 border-2 border-border-default-dark rounded-md focus:outline-none focus:border-border-accent text-sm bg-bg-secondary text-text-primary placeholder-text-muted-dark resize-none overflow-y-auto transition-colors duration-200 max-h-[40vh] scrollbar-thin scrollbar-track-bg-secondary-light scrollbar-thumb-bg-fourth hover:scrollbar-thumb-bg-fourth',
+              'pf-prompt-editor w-full px-2 py-1 border-2 border-border-default-dark rounded-md focus:outline-none focus:border-border-accent text-sm bg-bg-secondary text-text-primary placeholder-text-muted-dark resize-none overflow-y-auto transition-colors duration-200 scrollbar-thin scrollbar-track-bg-secondary-light scrollbar-thumb-bg-fourth hover:scrollbar-thumb-bg-fourth',
               voiceAvailable ? (isRecording ? 'pr-24' : 'pr-20') : 'pr-16',
-              !text && '!h-[40px]',
+              editorSized ? 'pf-prompt-editor-sized absolute inset-0' : 'max-h-[40vh]',
+              editorLarge && 'pf-prompt-editor-large',
+              editorMaximized && 'pf-prompt-editor-maximized',
+              !text && !editorSized && '!h-[40px]',
             )}
-            theme={THEME}
+            theme={promptEditorTheme}
             basicSetup={BASIC_SETUP}
             indentWithTab={false}
             extensions={extensions}
@@ -1774,7 +1802,9 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
               </Tooltip>
             )}
           </div>
-          <div className="absolute right-3 top-1/2 -translate-y-[12px] flex items-center space-x-1 text-text-muted-light">
+          <div
+            className={clsx('absolute right-3 flex items-center space-x-1 text-text-muted-light', editorSized ? 'bottom-1.5' : 'top-1/2 -translate-y-[12px]')}
+          >
             {processing && disableCssStreamingAnimations && (
               <span className="w-4 h-4 flex items-center justify-center">
                 <TaskActivityIndicator active />
