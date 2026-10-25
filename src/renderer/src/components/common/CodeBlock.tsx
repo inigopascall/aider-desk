@@ -11,6 +11,8 @@ import { CopyMessageButton } from '../message/CopyMessageButton';
 
 import { MermaidDiagram } from './MermaidDiagram';
 import { IconButton } from './IconButton';
+import { DiffErrorBoundary } from './DiffViewer/DiffErrorBoundary';
+import { DiffFallback } from './DiffViewer/DiffFallback';
 
 import { DiffViewer, UDiffViewer, CompactDiffViewer } from '@/components/common/DiffViewer';
 import { useApi } from '@/contexts/ApiContext';
@@ -137,7 +139,7 @@ export const CodeBlock = ({ baseDir, taskId, language, children, file, isComplet
       }
       return <DiffViewer oldValue={diffOldValue} newValue={diffNewValue} language={language} isComplete={isComplete} viewMode={diffViewMode} />;
     } else if (language === 'mermaid' && codeForSyntaxHighlight) {
-      return <MermaidDiagram code={codeForSyntaxHighlight} />;
+      return <MermaidDiagram code={codeForSyntaxHighlight} isComplete={isComplete} />;
     } else if (codeForSyntaxHighlight && language) {
       return (
         <pre
@@ -154,6 +156,18 @@ export const CodeBlock = ({ baseDir, taskId, language, children, file, isComplet
       );
     }
   }, [displayAsUdiff, children, displayAsDiff, codeForSyntaxHighlight, language, diffViewMode, diffOldValue, diffNewValue, isComplete, file, highlightedCode]);
+
+  const safeContent =
+    displayAsDiff || displayAsUdiff ? (
+      <DiffErrorBoundary
+        resetKeys={[children, diffOldValue, diffNewValue, diffViewMode, language, file]}
+        fallback={<DiffFallback udiff={displayAsUdiff ? children : undefined} oldValue={diffOldValue} newValue={diffNewValue} />}
+      >
+        {content}
+      </DiffErrorBoundary>
+    ) : (
+      content
+    );
 
   const handleRevertChanges = () => {
     if (file && displayAsDiff) {
@@ -209,7 +223,7 @@ export const CodeBlock = ({ baseDir, taskId, language, children, file, isComplet
               className={`transition-all duration-200 ${isExpanded ? 'max-h-[5000px] opacity-100 overflow-auto scrollbar-thin scrollbar-track-bg-primary-light scrollbar-thumb-bg-secondary-light' : 'max-h-0 opacity-0 overflow-hidden'}`}
             >
               <hr className="border-border-dark-light-strong my-2" />
-              {content}
+              {safeContent}
             </div>
           </>
         ) : (
@@ -218,7 +232,7 @@ export const CodeBlock = ({ baseDir, taskId, language, children, file, isComplet
               {!hideCopyButton && <CopyMessageButton content={stringToCopy} />}
               {!isComplete && <AiOutlineLoading3Quarters className="animate-spin text-text-muted" size={14} />}
             </div>
-            {content}
+            {safeContent}
           </div>
         )}
       </div>

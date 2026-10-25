@@ -104,6 +104,14 @@ const PROFILE = {
   includeRepoMappings: true,
   ruleFiles: [],
   toolApprovals: {},
+  subagent: {
+    enabled: true,
+    contextMemory: 'off',
+    systemPrompt: '',
+    invocationMode: 'on-demand',
+    color: '#65a30d',
+    description: '',
+  },
 } as unknown as AgentProfile;
 
 const write = async (filePath: string, content = '# content\n') => {

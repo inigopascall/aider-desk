@@ -35,6 +35,7 @@ import { useConfiguredHotkeys } from '@/hooks/useConfiguredHotkeys';
 import { useOverlayFocusRestore } from '@/hooks/useOverlayFocusRestore';
 import { useResponsive } from '@/hooks/useResponsive';
 import { useBooleanState } from '@/hooks/useBooleanState';
+import { useCustomModes } from '@/hooks/useCustomModes';
 import { showNotification } from '@/utils/browser-notifications';
 import { showErrorNotification, showInfoNotification, showWarningNotification } from '@/utils/notifications';
 import { ExtensionsProvider } from '@/contexts/ExtensionsContext';
@@ -64,7 +65,7 @@ export const ProjectView = ({ projectDir, isProjectActive = false, initialTaskId
   const { refreshProfiles } = useAgents();
   const { TASK_HOTKEYS, PROJECT_HOTKEYS } = useConfiguredHotkeys();
   const { isMobile } = useResponsive();
-  const replaceItems = useCommandPaletteStore((state) => state.replaceItems);
+  const setItemsProvider = useCommandPaletteStore((state) => state.setItemsProvider);
   const clearItems = useCommandPaletteStore((state) => state.clearItems);
 
   const tasks = useProjectTasks(projectDir);
@@ -93,6 +94,7 @@ export const ProjectView = ({ projectDir, isProjectActive = false, initialTaskId
   const openEditor = useFileEditorStore((state) => state.openEditor);
   const closeEditor = useFileEditorStore((state) => state.closeEditor);
   const agentProfile = useActiveAgentProfile(activeTask, projectDir) || undefined;
+  const customModes = useCustomModes(projectDir);
 
   const focusActiveTaskPrompt = useCallback(() => {
     taskViewRef.current?.focusPromptField();
@@ -568,53 +570,62 @@ export const ProjectView = ({ projectDir, isProjectActive = false, initialTaskId
       return;
     }
 
-    const tasks = [...optimisticTasks]
-      .sort((first, second) => (second.updatedAt || second.createdAt || '').localeCompare(first.updatedAt || first.createdAt || ''))
-      .map((task) => ({
-        id: `task.switch.${projectDir}.${task.id}`,
-        label: task.name,
-        state: task.state,
-        archived: task.archived,
-        type: PaletteItemType.Task,
-        action: () => handleTaskSelect(task.id),
+    setItemsProvider(`project:${projectDir}`, () => {
+      const tasks = [...optimisticTasks]
+        .sort((first, second) => (second.updatedAt || second.createdAt || '').localeCompare(first.updatedAt || first.createdAt || ''))
+        .map((task) => ({
+          id: `task.switch.${projectDir}.${task.id}`,
+          label: task.name,
+          state: task.state,
+          archived: task.archived,
+          type: PaletteItemType.Task,
+          action: () => handleTaskSelect(task.id),
+        }));
+      const files = activeTaskFiles.map((filePath) => ({
+        id: `file.open.${projectDir}.${filePath}`,
+        label: filePath.split('/').pop() || filePath,
+        description: filePath,
+        type: PaletteItemType.File,
+        action: () => {
+          if (activeTaskId) {
+            openFile(projectDir, filePath, activeTaskId);
+          }
+        },
       }));
-    const files = activeTaskFiles.map((filePath) => ({
-      id: `file.open.${projectDir}.${filePath}`,
-      label: filePath.split('/').pop() || filePath,
-      description: filePath,
-      type: PaletteItemType.File,
-      action: () => {
-        if (activeTaskId) {
-          openFile(projectDir, filePath, activeTaskId);
-        }
-      },
-    }));
-    const activeTaskParentId = activeTask?.parentId;
-    const siblingAction: PaletteItem[] = activeTaskParentId
-      ? [
-          {
-            id: 'task.newSibling',
-            label: t('uiActions.createNewSiblingTask'),
-            type: PaletteItemType.Action,
-            action: () => void createNewTask(activeTaskParentId),
-          },
-        ]
-      : [];
-    const pinAction: PaletteItem[] =
-      activeTaskId && activeTask?.createdAt
+      const activeTaskParentId = activeTask?.parentId;
+      const siblingAction: PaletteItem[] = activeTaskParentId
         ? [
             {
-              id: 'task.togglePin',
-              label: activeTask.pinned ? t('taskSidebar.unpinTask') : t('taskSidebar.pinTask'),
+              id: 'task.newSibling',
+              label: t('uiActions.createNewSiblingTask'),
               type: PaletteItemType.Action,
-              action: () => invokeAction('task.togglePin'),
+              action: () => void createNewTask(activeTaskParentId),
             },
           ]
         : [];
-    replaceItems(`project:${projectDir}`, [...tasks, ...files, ...siblingAction, ...pinAction]);
+      const pinAction: PaletteItem[] =
+        activeTaskId && activeTask?.createdAt
+          ? [
+              {
+                id: 'task.togglePin',
+                label: activeTask.pinned ? t('taskSidebar.unpinTask') : t('taskSidebar.pinTask'),
+                type: PaletteItemType.Action,
+                action: () => invokeAction('task.togglePin'),
+              },
+            ]
+          : [];
+      const customModeActions: PaletteItem[] = customModes.map((mode) => ({
+        id: `task.mode.${mode.name}`,
+        label: t('uiActions.switchToMode', { mode: t(mode.label) }),
+        description: mode.description ? t(mode.description) : undefined,
+        type: PaletteItemType.Action,
+        action: () => invokeAction(`task.mode.${mode.name}`),
+      }));
+      return [...tasks, ...files, ...siblingAction, ...pinAction, ...customModeActions];
+    });
   }, [
     isProjectActive,
-    replaceItems,
+    setItemsProvider,
     clearItems,
     activeTaskFiles,
     activeTaskId,
@@ -625,6 +636,7 @@ export const ProjectView = ({ projectDir, isProjectActive = false, initialTaskId
     createNewTask,
     t,
     projectDir,
+    customModes,
   ]);
 
   useEffect(() => {
@@ -732,6 +744,41 @@ export const ProjectView = ({ projectDir, isProjectActive = false, initialTaskId
       'editor.open': () => openEditor(projectDir),
       'task.modelSelector': () => taskViewRef.current?.openMainModelSelector(),
       'task.agentProfileSelector': () => taskViewRef.current?.openAgentProfileSelector(),
+      'task.mode.agent': () => {
+        if (activeTaskId) {
+          void handleUpdateTask(activeTaskId, { currentMode: 'agent' });
+        }
+      },
+      'task.mode.code': () => {
+        if (activeTaskId) {
+          void handleUpdateTask(activeTaskId, { currentMode: 'code' });
+        }
+      },
+      'task.mode.ask': () => {
+        if (activeTaskId) {
+          void handleUpdateTask(activeTaskId, { currentMode: 'ask' });
+        }
+      },
+      'task.mode.architect': () => {
+        if (activeTaskId) {
+          void handleUpdateTask(activeTaskId, { currentMode: 'architect' });
+        }
+      },
+      'task.mode.context': () => {
+        if (activeTaskId) {
+          void handleUpdateTask(activeTaskId, { currentMode: 'context' });
+        }
+      },
+      ...Object.fromEntries(
+        customModes.map((mode) => [
+          `task.mode.${mode.name}`,
+          () => {
+            if (activeTaskId) {
+              void handleUpdateTask(activeTaskId, { currentMode: mode.name });
+            }
+          },
+        ]),
+      ),
       'task.autonomy.manual': () => {
         if (activeTaskId) {
           void handleUpdateTask(activeTaskId, { autonomyMode: AutonomyMode.Manual });
@@ -849,6 +896,7 @@ export const ProjectView = ({ projectDir, isProjectActive = false, initialTaskId
     api,
     handleUpdateOptimisticTaskState,
     optimisticTasks,
+    customModes,
   ]);
 
   if (!projectSettings || !settingsLoaded) {

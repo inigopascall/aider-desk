@@ -17,35 +17,21 @@ const commandPaletteStoreMock = vi.hoisted(() => {
     action: () => void;
   };
 
-  const items = new Map<string, MockPaletteItem>();
-  const itemIdsByScope = new Map<string, Set<string>>();
-
-  const replaceItems = vi.fn((scope: string, nextItems: MockPaletteItem[]) => {
-    const nextItemIds = new Set(nextItems.map((item) => item.id));
-    const previousItemIds = itemIdsByScope.get(scope) ?? new Set<string>();
-
-    previousItemIds.forEach((itemId) => {
-      if (!nextItemIds.has(itemId)) {
-        items.delete(itemId);
-      }
-    });
-    nextItems.forEach((item) => items.set(item.id, item));
-    itemIdsByScope.set(scope, nextItemIds);
+  const providersByScope = new Map<string, () => MockPaletteItem[]>();
+  const setItemsProvider = vi.fn((scope: string, provider: () => MockPaletteItem[]) => {
+    providersByScope.set(scope, provider);
   });
-
   const clearItems = vi.fn((scope: string) => {
-    itemIdsByScope.get(scope)?.forEach((itemId) => items.delete(itemId));
-    itemIdsByScope.delete(scope);
+    providersByScope.delete(scope);
   });
-
+  const collectItems = () => new Map(Array.from(providersByScope.values()).flatMap((provider) => provider().map((item) => [item.id, item] as const)));
   const reset = () => {
-    items.clear();
-    itemIdsByScope.clear();
-    replaceItems.mockClear();
+    providersByScope.clear();
+    setItemsProvider.mockClear();
     clearItems.mockClear();
   };
 
-  return { items, itemIdsByScope, replaceItems, clearItems, reset };
+  return { collectItems, providersByScope, setItemsProvider, clearItems, reset };
 });
 
 // Mock react-i18next
@@ -92,7 +78,7 @@ vi.mock('@/contexts/AgentsContext', () => ({
 vi.mock('@/stores/commandPaletteStore', () => ({
   useCommandPaletteStore: vi.fn((selector) =>
     selector({
-      replaceItems: commandPaletteStoreMock.replaceItems,
+      setItemsProvider: commandPaletteStoreMock.setItemsProvider,
       clearItems: commandPaletteStoreMock.clearItems,
     }),
   ),
@@ -180,6 +166,7 @@ describe('ProjectView', () => {
     vi.clearAllMocks();
     commandPaletteStoreMock.reset();
     mockApi.getTasks.mockResolvedValue([{ id: 'task-1', name: 'Task 1' }] as TaskData[]);
+    mockApi.getCustomModes.mockResolvedValue([]);
     vi.mocked(useApi).mockReturnValue(mockApi);
     vi.mocked(useSettingsStore).mockImplementation(((selector: (state: unknown) => unknown) =>
       selector({
@@ -296,10 +283,10 @@ describe('ProjectView', () => {
 
     render(<ProjectView projectDir={projectDir} isProjectActive={true} />);
 
-    await waitFor(() => expect(commandPaletteStoreMock.items.get(`task.switch.${projectDir}.task-2`)).toBeDefined());
+    await waitFor(() => expect(commandPaletteStoreMock.collectItems().get(`task.switch.${projectDir}.task-2`)).toBeDefined());
 
-    expect(commandPaletteStoreMock.items.get(`task.switch.${projectDir}.task-1`)).toMatchObject({ archived: false });
-    expect(commandPaletteStoreMock.items.get(`task.switch.${projectDir}.task-2`)).toMatchObject({ archived: true });
+    expect(commandPaletteStoreMock.collectItems().get(`task.switch.${projectDir}.task-1`)).toMatchObject({ archived: false });
+    expect(commandPaletteStoreMock.collectItems().get(`task.switch.${projectDir}.task-2`)).toMatchObject({ archived: true });
   });
 
   it('keeps a command palette file preview bound to its originating task after switching tasks', async () => {
@@ -311,9 +298,9 @@ describe('ProjectView', () => {
     render(<ProjectView projectDir={projectDir} isProjectActive={true} />);
 
     await waitFor(() => expect(screen.getByTestId('task-view')).toHaveTextContent('Task 1'));
-    await waitFor(() => expect(commandPaletteStoreMock.items.get(`file.open.${projectDir}.src/file.ts`)).toBeDefined());
+    await waitFor(() => expect(commandPaletteStoreMock.collectItems().get(`file.open.${projectDir}.src/file.ts`)).toBeDefined());
 
-    act(() => commandPaletteStoreMock.items.get(`file.open.${projectDir}.src/file.ts`)?.action());
+    act(() => commandPaletteStoreMock.collectItems().get(`file.open.${projectDir}.src/file.ts`)?.action());
 
     expect(await screen.findByTestId('file-editor-modal')).toHaveAttribute('data-task-id', 'task-1');
 
@@ -413,7 +400,7 @@ describe('ProjectView', () => {
   it('registers a sibling task palette action only when the active task is a subtask', async () => {
     await setupSubtaskProject('Child Task');
 
-    const siblingItem = commandPaletteStoreMock.items.get('task.newSibling');
+    const siblingItem = commandPaletteStoreMock.collectItems().get('task.newSibling');
     expect(siblingItem).toBeDefined();
 
     act(() => siblingItem!.action());
@@ -431,7 +418,7 @@ describe('ProjectView', () => {
 
     await waitFor(() => expect(screen.getByTestId('task-view')).toHaveTextContent('Parent Task'));
 
-    expect(commandPaletteStoreMock.items.get('task.newSibling')).toBeUndefined();
+    expect(commandPaletteStoreMock.collectItems().get('task.newSibling')).toBeUndefined();
   });
 
   it('renames the active task through the sidebar from the palette action', async () => {
@@ -450,10 +437,33 @@ describe('ProjectView', () => {
     await waitFor(() => expect(mockApi.updateTask).toHaveBeenCalledWith(projectDir, 'child-1', { state: 'DONE' }));
   });
 
+  it('switches the active task mode through built-in palette actions', async () => {
+    await setupSubtaskProject('Child Task');
+
+    act(() => invokeAction('task.mode.code'));
+
+    await waitFor(() => expect(mockApi.updateTask).toHaveBeenCalledWith(projectDir, 'child-1', { currentMode: 'code' }));
+  });
+
+  it('registers and invokes custom mode palette actions', async () => {
+    mockApi.getCustomModes.mockResolvedValue([{ name: 'plan', label: 'Plan', description: 'Plan first' }]);
+    await setupSubtaskProject('Child Task');
+
+    const planModeItem = await waitFor(() => {
+      const item = commandPaletteStoreMock.collectItems().get('task.mode.plan');
+      expect(item).toBeDefined();
+      return item!;
+    });
+
+    act(() => planModeItem.action());
+
+    await waitFor(() => expect(mockApi.updateTask).toHaveBeenCalledWith(projectDir, 'child-1', { currentMode: 'plan' }));
+  });
+
   it('registers a pin palette action with state-aware label', async () => {
     await setupSubtaskProject('Child Task');
 
-    const pinItem = commandPaletteStoreMock.items.get('task.togglePin');
+    const pinItem = commandPaletteStoreMock.collectItems().get('task.togglePin');
     expect(pinItem).toMatchObject({ label: 'taskSidebar.pinTask' });
 
     act(() => pinItem!.action());

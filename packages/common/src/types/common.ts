@@ -518,6 +518,7 @@ export interface RegenerateRepositoryMappingsResult {
 
 export interface UpdatedFile {
   path: string;
+  previousPath?: string;
   additions: number;
   deletions: number;
   diff?: string;
@@ -698,6 +699,12 @@ export interface ModelsData {
   error?: string;
 }
 
+export enum ToolRecoveryMode {
+  Forget = 'forget',
+  Safe = 'safe',
+  Notify = 'notify',
+}
+
 export enum ToolApprovalState {
   Always = 'always',
   Never = 'never',
@@ -782,6 +789,7 @@ export interface AgentProfile {
   reasoning?: Reasoning; // portable reasoning level for this agent; undefined = provider default
   enabledServers: string[];
   toolApprovals: Record<string, ToolApprovalState>;
+  toolRecoveryModes?: Record<string, ToolRecoveryMode>;
   toolSettings: Record<string, ToolSettings>;
   includeContextFiles: boolean;
   /** Include generated read-only repository mapping files before normal context files. */
@@ -1003,6 +1011,7 @@ export interface SettingsData {
   onboardingFinished?: boolean;
   language: string;
   startupMode?: ProjectStartMode;
+  resumeAgentAfterRestart?: boolean;
   zoomLevel?: number;
   notificationsEnabled?: boolean;
   theme?: Theme;
@@ -1196,6 +1205,7 @@ export interface FileEdit {
 }
 
 export interface GenericTool {
+  recoveryMode?: ToolRecoveryMode;
   groupName: string;
   name: string;
   description: string;
@@ -1286,6 +1296,7 @@ export interface SwitchToLocalOptions {
 }
 
 export interface SwitchToWorktreeOptions {
+  baseBranch?: string;
   carryOverUncommittedChanges?: boolean;
   dropSourceChanges?: boolean;
 }
@@ -1510,7 +1521,7 @@ export interface InstalledExtension {
 export interface ExtensionToolInfo {
   extensionId: string;
   extensionName: string;
-  tools: { name: string; description: string }[];
+  tools: { name: string; description: string; recoveryMode?: ToolRecoveryMode }[];
 }
 
 export interface AvailableExtension {

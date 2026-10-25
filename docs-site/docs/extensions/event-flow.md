@@ -46,10 +46,15 @@ sequenceDiagram
 
             Note over AiderDesk: Preparing messages for LLM
 
+            AiderDesk->>Extension: onTransformMessages
+            Extension-->>AiderDesk: Transformed messages
             AiderDesk->>Extension: onOptimizeMessages
             Note right of Extension: Can modify optimizedMessages<br/>Cannot block
 
             Extension-->>AiderDesk: Modified messages
+            Note over AiderDesk: Provider compatibility and cache annotation
+            AiderDesk->>Extension: onApplyCacheControl
+            Extension-->>AiderDesk: Cache-annotated messages
 
             Note over AiderDesk,LLM: LLM Processing Loop
 
@@ -133,7 +138,19 @@ sequenceDiagram
   - Modify system prompts
   - Change agent configuration
 
-**onOptimizeMessages** - After messages are optimized for the LLM
+**Message preparation hooks** run in this order for each agent model call:
+
+1. Reminders (`onImportantReminders`).
+2. Default context transformations, then `onTransformMessages`.
+3. Default optional optimizations, then `onOptimizeMessages`.
+4. Provider compatibility conversion (including image tool results).
+5. Default cache annotation, then `onApplyCacheControl`.
+
+**onTransformMessages** receives `originalMessages` (context with reminders) and `transformedMessages` (default model-facing content). Defaults strip Aider UI payloads and reduce subagent histories to the final output. Return `transformedMessages` to customize this representation, such as including more subagent messages. Transformations are not reapplied after extension hooks; extensions are responsible for their overrides.
+
+**onOptimizeMessages** - After optional optimizations
+
+`originalMessages` is now the transformation stage's output, **not raw stored context**. Return it as `optimizedMessages` to bypass default optimizations without undoing default context transformations. Extensions needing raw context should use `onTransformMessages` or the task context API.
 
 - **Can modify**: `optimizedMessages`
 - **Can block**: ❌ No
@@ -141,6 +158,8 @@ sequenceDiagram
   - Control token usage
   - Remove sensitive data from history
   - Add additional context
+
+**onApplyCacheControl** receives `originalMessages` (after provider compatibility), `messages` (after default cache annotation), and the optional `cacheControl` policy. Return `messages` to move or add cache markers. Return `originalMessages` as `messages` to disable default annotation. This hook runs even when there is no default cache policy or the message list is empty. It is the final message preparation hook.
 
 ### Phase 2b: LLM Processing Loop
 
@@ -152,11 +171,11 @@ These events fire during each iteration of the LLM processing:
 - **Can block**: ❌ No
 - **Use for**: Real-time response modification
 
-**onToolApproval** - When a tool requires approval
+**onToolApproval** - When a tool execution decision is checked, including provider-native approvals (not only Manual prompts)
 
 - **Can modify**: `allowed`, `blocked`
-- **Can block**: ✅ Yes (via `allowed`)
-- **Use for**: Auto-approve safe tools
+- **Can block**: ✅ Yes (via `blocked`); `allowed` grants approval
+- **Use for**: Auto-approve safe tools or veto execution before default autonomy/pre-approval. Provider-native disabled-tool and denied-pattern checks reject first; see [provider tool approvals](api-reference.md#providertoolapprovalhandler).
 
 **onToolCalled** - Before tool execution
 
@@ -170,7 +189,7 @@ These events fire during each iteration of the LLM processing:
 - **Can block**: ❌ No
 - **Use for**: Format tool outputs, add metadata
 
-**onAgentStepFinished** - After each LLM step
+**onAgentStepFinished** - After each LLM step; for streaming providers, after the consumer reaches `finish-step` and preceding chunks have been handled
 
 - **Can modify**: `finishReason`, `responseMessages`
 - **Can block**: ❌ No

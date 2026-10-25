@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 
+import { createToolRecoveryNotice, isToolRecoveryNotice, ToolRecoveryCode, DEFAULT_TOOL_RECOVERY_MODES } from '@common/tool-recovery';
 import { v4 as uuidv4 } from 'uuid';
 import {
   AgentProfile,
@@ -18,6 +19,7 @@ import {
   PromptContext,
   ProviderProfile,
   ToolApprovalState,
+  ToolRecoveryMode,
   UsageReportData,
 } from '@common/types';
 import {
@@ -25,6 +27,7 @@ import {
   type FilePart,
   type FinishReason,
   generateText,
+  asSchema,
   InvalidToolInputError,
   type ModelMessage,
   NoSuchToolError,
@@ -34,6 +37,7 @@ import {
   streamText,
   type TelemetryOptions,
   type ToolExecutionOptions,
+  type LanguageModelCallEndEvent,
   type ToolSet,
   type TypedToolResult,
   wrapLanguageModel,
@@ -50,6 +54,7 @@ import {
   TASKS_TOOL_SEARCH_PARENT_TASK,
   TOOL_GROUP_NAME_SEPARATOR,
 } from '@common/tools';
+import { EXTENSION_ORIGIN } from '@common/extensions';
 
 import { createPowerToolset } from './tools/power';
 import { createTodoToolset } from './tools/todo';
@@ -59,7 +64,9 @@ import { createHelpersToolset } from './tools/helpers';
 import { createMemoryToolset } from './tools/memory';
 import { createSkillsToolset } from './tools/skills';
 import { McpManager } from './mcp-manager';
+import { AssistantMessageState, StepResultQueue } from './assistant-message-state';
 import { ApprovalManager } from './tools/approval-manager';
+import { convertImageToolResults } from './message-preparation/provider-compatibility';
 import {
   estimateMessageTokens,
   extractPromptContextFromToolResult,
@@ -79,7 +86,7 @@ import {
   type ToolDefinitionForEstimate,
 } from './context-usage';
 
-import type { ToolsetToolEntry } from '@common/extensions';
+import type { ExtensionToolOrigin, ToolsetToolEntry } from '@common/extensions';
 import type { TextPart } from '@ai-sdk/provider-utils';
 import type { z } from 'zod';
 import type { LanguageModelV4 } from '@ai-sdk/provider';
@@ -91,7 +98,7 @@ import { getRuleFileAbsolutePaths, resolveSelectionPath } from '@/task/context-s
 import { Task } from '@/task';
 import { Store } from '@/store';
 import logger from '@/logger';
-import { optimizeMessages } from '@/agent/optimizer';
+import { prepareMessagesForModel } from '@/agent/message-preparation';
 import { ModelManager } from '@/models/model-manager';
 import { TelemetryManager } from '@/telemetry/telemetry-manager';
 import { ResponseMessage } from '@/messages';
@@ -103,6 +110,7 @@ import { ExtensionManager } from '@/extensions/extension-manager';
 const MAX_RETRIES = 3;
 
 export class Agent {
+  private readonly wrappedTools = new WeakSet<object>();
   private abortControllers: Map<string, AbortController> = new Map();
 
   constructor(
@@ -408,13 +416,12 @@ export class Agent {
     resultMessages?: ContextMessage[],
     abortSignal?: AbortSignal,
     promptContext?: PromptContext,
+    approvalManager = new ApprovalManager(task, profile),
   ): Promise<ToolSet> {
     logger.debug('getAvailableTools', {
       enabledServers: profile.enabledServers,
       promptContext,
     });
-
-    const approvalManager = new ApprovalManager(task, profile);
 
     const toolSet: ToolSet = {};
 
@@ -435,7 +442,7 @@ export class Agent {
     }
 
     if (profile.usePowerTools) {
-      const powerTools = createPowerToolset(task, profile, promptContext, abortSignal);
+      const powerTools = createPowerToolset(task, profile, promptContext, abortSignal, approvalManager);
       Object.assign(toolSet, powerTools);
     }
 
@@ -486,6 +493,11 @@ export class Agent {
     const providerTools = await this.modelManager.getProviderTools(provider, model);
     Object.assign(toolSet, providerTools);
 
+    Object.assign(toolSet, this.wrapToolsWithHooks(task, profile, toolSet, abortSignal, promptContext));
+    if (promptContext) {
+      task.durabilityManager?.registerTools(promptContext.id, toolSet);
+    }
+
     // Add extension tools
     if (this.extensionManager.isInitialized() && profile.useExtensionTools !== false) {
       const extensionTools = this.extensionManager.createExtensionToolset(task, mode, profile, toolSet, approvalManager, abortSignal);
@@ -507,61 +519,197 @@ export class Agent {
       task,
     );
     const finalToolSet = (toolsetCreatedEvent.tools ?? toolSet) as unknown as ToolSet;
+    for (const [name, definition] of Object.entries(finalToolSet)) {
+      const original = toolSet[name] as ToolsetToolEntry | undefined;
+      const metadata = definition as ToolsetToolEntry;
+      if (original?.recoveryModeKey && definition !== toolSet[name]) {
+        finalToolSet[name] = {
+          ...definition,
+          ...{
+            recoveryMode: metadata.recoveryMode ?? original.recoveryMode,
+            recoveryModeKey: metadata.recoveryModeKey ?? original.recoveryModeKey,
+            replayOwner: metadata.replayOwner ?? original.replayOwner,
+          },
+        };
+      }
+    }
 
-    return this.wrapToolsWithHooks(task, profile, finalToolSet, abortSignal, promptContext);
+    const wrapped = this.wrapToolsWithHooks(task, profile, finalToolSet, abortSignal, promptContext);
+    if (promptContext) {
+      task.durabilityManager?.registerTools(promptContext.id, wrapped);
+    }
+    return wrapped;
   }
 
   private wrapToolsWithHooks(task: Task, profile: AgentProfile, toolSet: ToolSet, abortSignal?: AbortSignal, promptContext?: PromptContext): ToolSet {
     const wrappedToolSet: ToolSet = {};
 
     for (const [toolName, toolDef] of Object.entries(toolSet)) {
+      if (!toolDef.execute || this.wrappedTools.has(toolDef)) {
+        wrappedToolSet[toolName] = toolDef;
+        continue;
+      }
       wrappedToolSet[toolName] = {
         ...toolDef,
+        ...(toolDef.toModelOutput
+          ? {
+              toModelOutput: async (value: Parameters<NonNullable<ToolSet[string]['toModelOutput']>>[0]) => {
+                if (isToolRecoveryNotice(value.output)) {
+                  return { type: 'json' as const, value: value.output };
+                }
+                const manager = task.durabilityManager;
+                const call = promptContext?.id ? manager?.get(promptContext.id)?.step?.calls.find((item) => item.id === value.toolCallId) : undefined;
+                const metadata = toolDef as ToolsetToolEntry;
+                if (
+                  call?.name === toolName &&
+                  call.modelOutput &&
+                  manager?.matchesOwner(promptContext!.id, call.id, metadata.replayOwner ?? metadata.recoveryModeKey ?? toolName)
+                ) {
+                  return call.modelOutput as Awaited<ReturnType<NonNullable<ToolSet[string]['toModelOutput']>>>;
+                }
+                return await toolDef.toModelOutput!(value);
+              },
+            }
+          : {}),
         execute: async (input: Record<string, unknown> | undefined, options: ToolExecutionOptions<unknown>) => {
           let effectiveInput = input as Record<string, unknown> | undefined;
           const [serverName, messageToolName] = extractServerNameToolName(toolName);
 
-          task.addToolMessage(options.toolCallId, serverName, messageToolName, effectiveInput, undefined, undefined, promptContext);
+          // Tools invoked internally by an extension (marked via EXTENSION_ORIGIN) must not be
+          // propagated to the UI and must not take part in durability, per the documented Tool
+          // contract. Delegate straight to the underlying tool. Prepared to honour
+          // `surfaceInUi`/`durable` once that extension opt-in is implemented.
+          const extensionOrigin = (options as { [EXTENSION_ORIGIN]?: ExtensionToolOrigin })[EXTENSION_ORIGIN];
+          if (extensionOrigin && !extensionOrigin.durable && !extensionOrigin.surfaceInUi) {
+            if (!options.abortSignal && abortSignal) {
+              options.abortSignal = abortSignal;
+            }
+            return toolDef.execute!(effectiveInput, options);
+          }
 
+          const durability = task.durabilityManager;
+          const executionId = promptContext?.id;
+          const durable = executionId ? durability?.get(executionId) : undefined;
+          const metadata = toolDef as ToolsetToolEntry & { replayOwner?: string };
+          const owner = metadata.replayOwner ?? metadata.recoveryModeKey ?? toolName;
+          if (durable) {
+            options = { ...options, toolCallId: durability.resolveToolCallId(executionId!, options.toolCallId) };
+          }
+          const checkpoint = durable?.step?.calls.find((call) => call.id === options.toolCallId);
+          if (durable && !durability.matchesOwner(executionId!, options.toolCallId, owner)) {
+            return createToolRecoveryNotice(ToolRecoveryCode.OwnerChanged);
+          }
+          if (
+            checkpoint &&
+            !durability.isReplay(executionId!, options.toolCallId) &&
+            !durability.matchesInvocation(executionId!, options.toolCallId, toolName, input, owner)
+          ) {
+            return createToolRecoveryNotice(ToolRecoveryCode.IdentityConflict);
+          }
+          if (durable && durability.isToolExecuted(executionId!, options.toolCallId)) {
+            const notice = createToolRecoveryNotice(ToolRecoveryCode.FinalizationInterrupted);
+            durability.completeTool(executionId!, options.toolCallId, notice);
+            return notice;
+          }
+          const isReplay = !!checkpoint && durability.isReplay(executionId!, options.toolCallId);
+          if (checkpoint && durability.isToolCompleted(executionId!, options.toolCallId)) {
+            return checkpoint.output;
+          }
+
+          if (profile.toolApprovals?.[metadata.recoveryModeKey ?? toolName] === ToolApprovalState.Never) {
+            const result = createToolRecoveryNotice(ToolRecoveryCode.Unavailable);
+            if (durable && !durability.isCancelled(executionId!)) {
+              durability.beginTool(
+                executionId!,
+                { id: options.toolCallId, name: toolName, owner, requestInput: input, input: effectiveInput, attempt: 0 },
+                ToolRecoveryMode.Notify,
+              );
+              durability.completeTool(executionId!, options.toolCallId, result);
+            }
+            return result;
+          }
+          const recoveryMode = durable
+            ? durability.resolveMode(profile, toolName, metadata.recoveryMode ?? DEFAULT_TOOL_RECOVERY_MODES[toolName], metadata.recoveryModeKey)
+            : undefined;
           const toolCalledExtensionResult = await this.extensionManager.dispatchEvent(
             'onToolCalled',
-            { toolCallId: options.toolCallId, toolName, agentProfile: profile, input: effectiveInput, abortSignal: options.abortSignal || abortSignal },
+            {
+              toolCallId: options.toolCallId,
+              toolName,
+              agentProfile: profile,
+              input: effectiveInput,
+              abortSignal: options.abortSignal || abortSignal,
+              recoveryMode,
+              isReplay,
+              replayAttempt: isReplay ? checkpoint!.attempt + 1 : 0,
+            },
             task.project,
             task,
           );
-          if (toolCalledExtensionResult.output) {
-            return toolCalledExtensionResult.output;
+          const rewrittenInput = (toolCalledExtensionResult.input ?? effectiveInput) as Record<string, unknown> | undefined;
+          if (isReplay && !durability.matchesEffectiveInput(executionId!, options.toolCallId, rewrittenInput)) {
+            const notice = createToolRecoveryNotice(ToolRecoveryCode.ArgumentsChanged);
+            durability.completeTool(executionId!, options.toolCallId, notice);
+            return notice;
           }
-
-          // Use modified input from extension if provided
-          effectiveInput = (toolCalledExtensionResult.input ?? effectiveInput) as Record<string, unknown> | undefined;
-
+          effectiveInput = rewrittenInput;
           if (!options.abortSignal && abortSignal) {
             options.abortSignal = abortSignal;
           }
-
-          const result = await toolDef.execute!(effectiveInput, options);
-
-          if (options.abortSignal?.aborted) {
-            return result;
+          if (options.abortSignal?.aborted || (executionId && durability?.isCancelled(executionId))) {
+            throw new Error('Tool execution cancelled');
           }
-
-          const toolFinishedExtensionResult = await this.extensionManager.dispatchEvent(
-            'onToolFinished',
-            { toolCallId: options.toolCallId, toolName, agentProfile: profile, input: effectiveInput, output: result },
-            task.project,
-            task,
-          );
-
-          if (toolFinishedExtensionResult.output) {
-            return toolFinishedExtensionResult.output;
-          } else {
+          if (durable) {
+            durability.beginTool(
+              executionId!,
+              { id: options.toolCallId, name: toolName, owner, requestInput: input, input: effectiveInput, attempt: 0 },
+              (isReplay ? checkpoint!.recoveryMode : toolCalledExtensionResult.recoveryMode) ?? recoveryMode!,
+            );
+          }
+          task.addToolMessage(options.toolCallId, serverName, messageToolName, effectiveInput, undefined, undefined, promptContext);
+          try {
+            const execute = async () =>
+              toolCalledExtensionResult.output !== undefined ? toolCalledExtensionResult.output : await toolDef.execute!(effectiveInput, options);
+            let result = durable ? await durability.withToolCall(executionId!, options.toolCallId, execute, options.abortSignal) : await execute();
+            if (durable) {
+              durability.recordToolExecuted(executionId!, options.toolCallId);
+            }
+            {
+              const finished = await this.extensionManager.dispatchEvent(
+                'onToolFinished',
+                { toolCallId: options.toolCallId, toolName, agentProfile: profile, input: effectiveInput, output: result },
+                task.project,
+                task,
+              );
+              if (finished.output !== undefined) {
+                result = finished.output;
+              }
+            }
+            if (durable) {
+              const modelOutput = toolDef.toModelOutput
+                ? await toolDef.toModelOutput({ toolCallId: options.toolCallId, input: effectiveInput, output: result })
+                : undefined;
+              durability.completeTool(executionId!, options.toolCallId, result, modelOutput as ContextToolMessage['content'][number]['output']);
+            }
             return result;
+          } catch (error) {
+            if (durable && durability.isToolExecuted(executionId!, options.toolCallId)) {
+              const notice = createToolRecoveryNotice(ToolRecoveryCode.FinalizationInterrupted);
+              durability.completeTool(executionId!, options.toolCallId, notice);
+              return notice;
+            }
+            if (durable && !options.abortSignal?.aborted) {
+              durability.completeTool(executionId!, options.toolCallId, { error: error instanceof Error ? error.message : String(error) });
+            }
+            throw error;
           }
         },
       };
     }
 
+    for (const definition of Object.values(wrappedToolSet)) {
+      this.wrappedTools.add(definition);
+    }
     return wrappedToolSet;
   }
 
@@ -663,9 +811,28 @@ export class Agent {
       }
     }
 
+    const durability = task.durabilityManager;
+    const executionId = promptContext?.id;
+    const isDurable = !!executionId && !!durability && (includeInContext || profile.isSubagent) && mode !== 'compact-conversation';
+    const recoveredExecution = isDurable ? durability.get(executionId!) : undefined;
+    if (recoveredExecution && durability.isSettled(executionId!)) {
+      return recoveredExecution.history;
+    }
+    if (recoveredExecution) {
+      prompt = null;
+      if (!includeInContext || recoveredExecution.conversationReplaced) {
+        contextMessages = recoveredExecution.contextMessages;
+        if (includeInContext) {
+          await task.restoreDurableConversation([...contextMessages, ...recoveredExecution.history]);
+        }
+        contextFiles = recoveredExecution.contextFiles;
+        systemPrompt = recoveredExecution.systemPrompt;
+      }
+    }
+
     const userRequestMessage: ContextUserMessage | null = prompt
       ? {
-          id: promptContext?.id || uuidv4(),
+          id: (includeInContext ? promptContext?.userMessageId : undefined) ?? promptContext?.id ?? uuidv4(),
           role: 'user',
           content:
             images && images.length > 0
@@ -704,7 +871,11 @@ export class Agent {
       });
     }
 
-    let resultMessages: ContextMessage[] = userRequestMessage ? [userRequestMessage] : [];
+    let resultMessages: ContextMessage[] = recoveredExecution
+      ? recoveredExecution.history.filter((message) => !contextMessages.some((existing) => existing.id === message.id))
+      : userRequestMessage
+        ? [userRequestMessage]
+        : [];
 
     if (userRequestMessage && includeInContext) {
       await task.addContextMessage(userRequestMessage);
@@ -788,9 +959,33 @@ export class Agent {
 
     if (effectiveAbortSignal?.aborted) {
       logger.debug('Prompt aborted by user (before Agent run)');
+      if (isDurable && !durability.isSuspended(executionId!)) {
+        if (includeInContext) {
+          await durability.flushCancelled(task.persistDurableMessages.bind(task));
+        } else {
+          await durability.cancelChild(executionId!);
+        }
+      }
       return resultMessages;
     }
 
+    if (isDurable) {
+      durability.begin({
+        promptContext: promptContext!,
+        profile,
+        mode,
+        contextMessages,
+        contextFiles,
+        systemPrompt,
+        parentPromptContextId: promptContext!.parentPromptContextId,
+        parentToolCallId: promptContext!.parentToolCallId,
+      });
+      if (!recoveredExecution && resultMessages.length > 0) {
+        await durability.finishStep(executionId!, resultMessages, includeInContext ? task.persistDurableMessages.bind(task) : undefined);
+      }
+    }
+
+    const approvalManager = new ApprovalManager(task, profile);
     const toolSet = await this.getAvailableTools(
       task,
       mode,
@@ -801,6 +996,7 @@ export class Agent {
       resultMessages,
       effectiveAbortSignal,
       promptContext,
+      approvalManager,
     );
 
     logger.info(`Running prompt with ${Object.keys(toolSet).length} tools.`);
@@ -810,8 +1006,49 @@ export class Agent {
 
     let currentResponseId: string = uuidv4();
     const streamingMessageIds: Set<string> = new Set();
+    const finalizeCancellation = async () => {
+      if (!isDurable || durability.isSuspended(executionId!)) {
+        return;
+      }
+      durability.markCancelled(executionId!);
+      const retained = await durability.recoverStep(executionId!, async () => undefined, true);
+      await durability.finishStep(executionId!, retained, includeInContext ? task.persistDurableMessages.bind(task) : undefined);
+      resultMessages.push(...retained);
+      task.publishDurableMessages(retained);
+      if (!durability.get(executionId!)?.parentPromptContextId) {
+        durability.clear(executionId!);
+      }
+    };
 
     try {
+      if (isDurable && recoveredExecution?.step) {
+        const recovered = await durability.recoverStep(executionId!, async (call) => {
+          const definition = durability.getTool(executionId!, call.name);
+          const metadata = definition as ToolsetToolEntry | undefined;
+          if (definition && !durability.matchesOwner(executionId!, call.id, metadata?.replayOwner ?? metadata?.recoveryModeKey ?? call.name)) {
+            return createToolRecoveryNotice(ToolRecoveryCode.OwnerChanged);
+          }
+          if (!definition?.execute || profile.toolApprovals?.[metadata?.recoveryModeKey ?? call.name] === ToolApprovalState.Never) {
+            return createToolRecoveryNotice(ToolRecoveryCode.Unavailable);
+          }
+          try {
+            const validation = await asSchema(definition.inputSchema).validate?.(call.input ?? {});
+            if (validation && !validation.success) {
+              return createToolRecoveryNotice(ToolRecoveryCode.ArgumentsChanged);
+            }
+          } catch {
+            return createToolRecoveryNotice(ToolRecoveryCode.ArgumentsChanged);
+          }
+          return definition.execute(call.input, { toolCallId: call.id, abortSignal: effectiveAbortSignal, messages, context: undefined as never });
+        });
+        await durability.finishStep(executionId!, recovered, includeInContext ? task.persistDurableMessages.bind(task) : undefined);
+        task.publishDurableMessages(recovered);
+        const alreadyPersisted = new Set(contextMessages.map((message) => message.id));
+        const missing = includeInContext ? recovered.filter((message) => !alreadyPersisted.has(message.id)) : recovered;
+        messages.push(...(missing as ModelMessage[]));
+        resultMessages.push(...recovered);
+      }
+
       logger.debug('Creating LLM model', {
         providerId: provider.id,
         providerName: provider.provider.name,
@@ -838,6 +1075,7 @@ export class Agent {
         systemPrompt,
         resumableProviderMetadata,
         task.task.id,
+        approvalManager.createProviderToolApprovalHandler(toolSet),
       );
       logger.debug('LLM model created successfully', {
         model: typeof model !== 'string' ? model.modelId : model,
@@ -948,33 +1186,15 @@ export class Agent {
       });
 
       const getBaseModelCallParams = async () => {
-        const getOptimizedMessages = async () => {
-          const originalMessages = messages as ContextMessage[];
-          const outboundMessages = sanitizeMessagesForModel(messages, targetModelId);
-          const optimized = await optimizeMessages(
-            outboundMessages,
-            cacheControl,
-            task,
-            profile,
-            projectProfiles,
-            initialUserRequestMessageIndex,
-            this.extensionManager,
-          );
-
-          const extensionResult = await this.extensionManager.dispatchEvent(
-            'onOptimizeMessages',
-            {
-              originalMessages,
-              optimizedMessages: optimized as ContextMessage[],
-            },
-            task.project,
-            task,
-          );
-
-          return (extensionResult.optimizedMessages as ModelMessage[]) ?? optimized;
-        };
-
-        const optimizedMessages = await getOptimizedMessages();
+        const optimizedMessages = await prepareMessagesForModel(
+          sanitizeMessagesForModel(messages, targetModelId),
+          cacheControl,
+          task,
+          profile,
+          projectProfiles,
+          initialUserRequestMessageIndex,
+          this.extensionManager,
+        );
 
         return {
           providerOptions,
@@ -993,6 +1213,23 @@ export class Agent {
           telemetry: this.getTelemetrySettings(),
           ...modelCallSettings,
           ...providerParameters,
+          onLanguageModelCallEnd: (event: LanguageModelCallEndEvent<ToolSet>) => {
+            if (!isDurable) {
+              return;
+            }
+            durability.captureModelResponse(
+              executionId!,
+              event.content,
+              (name) => {
+                const definition = toolSet[name] as ToolsetToolEntry | undefined;
+                return durability.resolveMode(profile, name, definition?.recoveryMode ?? DEFAULT_TOOL_RECOVERY_MODES[name], definition?.recoveryModeKey);
+              },
+              (name) => {
+                const definition = durability.getTool(executionId!, name) as ToolsetToolEntry | undefined;
+                return definition?.replayOwner ?? definition?.recoveryModeKey ?? name;
+              },
+            );
+          },
           abortSignal: effectiveAbortSignal,
         };
       };
@@ -1015,11 +1252,14 @@ export class Agent {
           break;
         }
 
+        if (isDurable) {
+          durability.beginStep(executionId!, currentResponseId);
+        }
         let iterationError: unknown | null = null;
         let finishReason: null | FinishReason = null;
         let currentStepMessages: ContextMessage[] = [];
         let filteredStepMessages: ContextMessage[] = [];
-        let responseMessageIndex: number = 0;
+        const assistantMessage = new AssistantMessageState();
 
         const onStepEnd = async (stepResult: StepResult<typeof toolSet>) => {
           finishReason = stepResult.finishReason;
@@ -1062,7 +1302,7 @@ export class Agent {
             }
 
             currentResponseId = uuidv4();
-            responseMessageIndex = 0;
+            assistantMessage.reset();
             streamingMessageIds.clear();
 
             if (currentStepMessages.length > 0) {
@@ -1106,7 +1346,7 @@ export class Agent {
           profile,
           provider,
           modelName,
-          userRequestMessage || findLastUserMessage(contextMessages)!,
+          userRequestMessage ?? findLastUserMessage([...contextMessages, ...resultMessages]) ?? undefined,
           contextMessages,
           contextFiles,
           messages,
@@ -1133,6 +1373,7 @@ export class Agent {
         } else {
           logger.debug('Streaming enabled, using streamText');
           const toolCallStreamingDisabled = this.modelManager.isToolCallStreamingDisabled(provider, modelName);
+          const streamedSteps = new StepResultQueue<StepResult<typeof toolSet>>();
           const result = streamText({
             ...(await getBaseModelCallParams()),
             experimental_transform: smoothStream({
@@ -1157,25 +1398,30 @@ export class Agent {
                 task.addLogMessage('error', JSON.stringify(error), false, promptContext);
               }
             },
-            onStepEnd,
+            onStepEnd: (step) => streamedSteps.push(step),
             experimental_repairToolCall: repairToolCall,
           });
 
-          let currentMessageHasReasoning = false;
           try {
             for await (const chunk of result.stream) {
               if (chunk.type !== 'text-delta' && chunk.type !== 'reasoning-delta' && chunk.type !== 'tool-input-delta') {
-                logger.debug('Chunk:', { chunk, responseMessageIndex });
+                logger.debug('Chunk:', { chunk, responseMessageIndex: assistantMessage.index });
               }
 
-              const responseMessageId = responseMessageIndex > 0 ? `${currentResponseId}-${responseMessageIndex}` : currentResponseId;
-              if (chunk.type === 'text-start') {
+              if (['tool-error', 'tool-approval-request', 'tool-approval-response', 'source', 'file', 'reasoning-file', 'custom'].includes(chunk.type)) {
+                assistantMessage.tool();
+              }
+              const responseMessageId = assistantMessage.messageId(currentResponseId);
+              if (chunk.type === 'finish-step') {
+                await onStepEnd(await streamedSteps.next());
+              } else if (chunk.type === 'text-start' || chunk.type === 'text-end') {
                 // no-op
-              } else if (chunk.type === 'text-end') {
-                responseMessageIndex++;
-                currentMessageHasReasoning = false;
               } else if (chunk.type === 'text-delta') {
+                if (isDurable) {
+                  durability.appendText(executionId!, 'text', chunk.text);
+                }
                 if (chunk.text.trim()) {
+                  assistantMessage.text();
                   streamingMessageIds.add(responseMessageId);
                   await task.processResponseMessage({
                     id: responseMessageId,
@@ -1187,7 +1433,7 @@ export class Agent {
                 }
               } else if (chunk.type === 'reasoning-start') {
                 streamingMessageIds.add(responseMessageId);
-                if (currentMessageHasReasoning) {
+                if (assistantMessage.hasReasoning) {
                   await task.processResponseMessage({
                     id: responseMessageId,
                     action: 'response',
@@ -1198,8 +1444,11 @@ export class Agent {
                   });
                 }
               } else if (chunk.type === 'reasoning-delta') {
+                if (isDurable) {
+                  durability.appendText(executionId!, 'reasoning', chunk.text);
+                }
                 streamingMessageIds.add(responseMessageId);
-                currentMessageHasReasoning = true;
+                assistantMessage.reasoning(chunk.text);
                 await task.processResponseMessage({
                   id: responseMessageId,
                   action: 'response',
@@ -1227,9 +1476,11 @@ export class Agent {
                 }
                 task.finishToolInput(chunk.id);
               } else if (chunk.type === 'tool-call') {
+                assistantMessage.tool();
                 task.addLogMessage('loading', 'Executing tool...', false, promptContext);
                 streamingMessageIds.add(chunk.toolCallId);
               } else if (chunk.type === 'tool-result') {
+                assistantMessage.tool();
                 const [serverName, toolName] = extractServerNameToolName(chunk.toolName);
                 const toolPromptContext = extractPromptContextFromToolResult(chunk.output) ?? promptContext;
                 streamingMessageIds.add(chunk.toolCallId);
@@ -1242,6 +1493,9 @@ export class Agent {
               throw streamError;
             }
 
+            if (isDurable && durability.get(executionId!)?.step?.calls.length) {
+              throw streamError;
+            }
             if (isNetworkError(streamError) && retryCount < MAX_RETRIES) {
               logger.warn(`Network error during streaming, retrying (${retryCount + 1}/${MAX_RETRIES})...`, { error: streamError });
               iterationError = streamError;
@@ -1257,6 +1511,9 @@ export class Agent {
           }
         }
 
+        if (iterationError && isDurable && durability.get(executionId!)?.step?.calls.length) {
+          throw iterationError;
+        }
         if (iterationError) {
           logger.error('Error during iteration:', iterationError);
           if (isNetworkError(iterationError) && retryCount < MAX_RETRIES) {
@@ -1286,11 +1543,18 @@ export class Agent {
         messages.push(...(currentStepMessages as ModelMessage[]));
         resultMessages.push(...filteredStepMessages);
 
+        // The step's messages were already added to the task context in onStepEnd; finishStep
+        // records them in the durable journal and closes the step (persistDurableMessages skips ids already present).
+        if (isDurable && !effectiveAbortSignal?.aborted) {
+          await durability.finishStep(executionId!, filteredStepMessages, includeInContext ? task.persistDurableMessages.bind(task) : undefined);
+        }
+
         if (effectiveAbortSignal?.aborted) {
           logger.info('Prompt aborted by user (inside loop)');
           if (streamingMessageIds.size > 0) {
             this.removeUnfinishedStreamingMessages(task, streamingMessageIds);
           }
+          await finalizeCancellation();
           break;
         }
 
@@ -1362,6 +1626,9 @@ export class Agent {
         task,
       );
       resultMessages = extensionResult.resultMessages;
+      if (isDurable && !durability.isSuspended(executionId!) && !durability.get(executionId!)?.step) {
+        durability.complete(executionId!);
+      }
     } catch (error) {
       if (effectiveAbortSignal?.aborted) {
         logger.info('Prompt aborted by user');
@@ -1369,6 +1636,7 @@ export class Agent {
           this.removeUnfinishedStreamingMessages(task, streamingMessageIds);
         }
 
+        await finalizeCancellation();
         const extensionResult = await this.extensionManager.dispatchEvent(
           'onAgentFinished',
           {
@@ -1730,7 +1998,7 @@ export class Agent {
       const result = await generateText({
         model,
         instructions: systemPrompt,
-        messages: await optimizeMessages(outboundGenMessages, cacheControl),
+        messages: await prepareMessagesForModel(outboundGenMessages, cacheControl),
         abortSignal: effectiveAbortSignal,
         providerOptions,
         ...providerParameters,
@@ -1805,7 +2073,7 @@ export class Agent {
         model,
         output: Output.object({ schema }),
         instructions: systemPrompt,
-        messages: await optimizeMessages(outboundObjMessages, cacheControl),
+        messages: await prepareMessagesForModel(outboundObjMessages, cacheControl),
         abortSignal: effectiveAbortSignal,
         providerOptions,
         ...providerParameters,
@@ -1861,7 +2129,7 @@ export class Agent {
       const lastUserIndex = messages.map((m) => m.role).lastIndexOf('user');
       const userRequestMessageIndex = lastUserIndex >= 0 ? lastUserIndex : 0;
 
-      const optimizedMessages = await optimizeMessages(
+      const optimizedMessages = await prepareMessagesForModel(
         messages,
         cacheControl,
         task,
@@ -1995,8 +2263,11 @@ export class Agent {
       text: text?.substring(0, 100), // Log truncated text
       toolCalls: toolCalls?.map((tc) => tc.toolName),
       toolResults: toolResults?.map((tr) => tr.toolName),
-      usage,
-      providerMetadata,
+      usage: {
+        inputTokens: usage?.inputTokens,
+        outputTokens: usage?.outputTokens,
+        totalTokens: usage?.totalTokens,
+      },
       promptContext,
       contentLength: content.length,
     });
@@ -2005,10 +2276,14 @@ export class Agent {
     const usageReport: UsageReportData = this.modelManager.getUsageReport(task, provider, model, usage, providerMetadata);
 
     if (providerMetadata) {
-      await task.updateTask({
-        lastAgentProviderMetadata: providerMetadata,
-        lastAgentProviderMetadataModel: buildProviderModelId(provider.id, model),
-      });
+      // per-step metadata must not bump updatedAt, otherwise running tasks keep re-sorting in the task list
+      await task.updateTask(
+        {
+          lastAgentProviderMetadata: providerMetadata,
+          lastAgentProviderMetadataModel: buildProviderModelId(provider.id, model),
+        },
+        false,
+      );
     }
 
     const hasAssistantMessage = content.some((part) => (part.type === 'text' || part.type === 'reasoning') && part.text?.trim());
@@ -2132,7 +2407,7 @@ export class Agent {
     profile: AgentProfile,
     provider: ProviderProfile,
     model: string,
-    userRequestMessage: ContextUserMessage,
+    userRequestMessage: ContextUserMessage | undefined,
     contextMessages: ContextMessage[],
     contextFiles: ContextFile[],
     messages: ModelMessage[],
@@ -2146,6 +2421,9 @@ export class Agent {
       tokens: profile.autoCompactThresholdTokens ?? taskSettings.contextCompactingThreshold.tokens,
     };
     const taskTokensOverride = task.task.contextCompactingThresholdTokens;
+    if (taskTokensOverride === 0) {
+      return true;
+    }
     let contextCompactionType = profile.autoCompactionType ?? taskSettings.contextCompactionType ?? ContextCompactionType.Compact;
     if (profile.isSubagent && contextCompactionType === ContextCompactionType.Handoff) {
       // subagent cannot use Handoff, so we fallback to Smart compaction
@@ -2186,7 +2464,8 @@ export class Agent {
     // messages so the threshold reflects the real next-prompt size.
     const lastReportIndex = resultMessages.indexOf(lastUsageReportMessage);
     if (lastReportIndex >= 0 && lastReportIndex < resultMessages.length - 1) {
-      const trailingTokens = estimateMessageTokens(resultMessages.slice(lastReportIndex + 1));
+      const trailingMessages = convertImageToolResults(resultMessages.slice(lastReportIndex + 1) as ModelMessage[]);
+      const trailingTokens = estimateMessageTokens(trailingMessages);
       totalTokens += trailingTokens;
       logger.debug('Added trailing (post-usage-report) tokens to context total', { trailingTokens, totalTokens });
     }
@@ -2230,6 +2509,10 @@ export class Agent {
     const compactionTargetModelId = buildProviderModelId(provider.id, model);
 
     if (totalTokens > effectiveThreshold) {
+      if (!userRequestMessage) {
+        logger.warn('Skipping context compaction: no user request is available', { taskId: task.taskId });
+        return true;
+      }
       logger.info(
         `Token usage ${totalTokens} exceeds effective threshold of ${effectiveThreshold} (${thresholdDescription}). Compacting conversation with type: ${contextCompactionType}.`,
       );
@@ -2296,7 +2579,9 @@ export class Agent {
         messages.length = 0;
         resultMessages.length = 0;
 
-        messages.push(...(await this.prepareMessages(task, profile, await task.getContextMessages(), contextFiles, compactionTargetModelId)));
+        contextMessages.length = 0;
+        contextMessages.push(...(await task.getContextMessages()));
+        messages.push(...(await this.prepareMessages(task, profile, contextMessages, contextFiles, compactionTargetModelId)));
         const continuationText = `Based on your compacted summary of our previous conversation, please continue our work with my request:\n\n${extractTextContent(userRequestMessage.content)}`;
         const originalImageParts = Array.isArray(userRequestMessage.content) ? userRequestMessage.content.filter((part) => part.type === 'file') : [];
 
@@ -2308,7 +2593,12 @@ export class Agent {
         });
         messages.push(...(resultMessages as ModelMessage[]));
       } else if (contextCompactionType === ContextCompactionType.Smart) {
-        const compactedMessages = await task.smartCompactConversation([...contextMessages, ...resultMessages], 'Previous conversation has been compacted.');
+        const compactedMessages = await task.smartCompactConversation(
+          [...contextMessages, ...resultMessages],
+          'Previous conversation has been compacted.',
+          undefined,
+          promptContext?.id,
+        );
 
         contextMessages.length = 0;
         messages.length = 0;
@@ -2328,6 +2618,9 @@ export class Agent {
         );
 
         return false;
+      }
+      if (promptContext?.id) {
+        task.durabilityManager?.replaceConversation(promptContext.id, contextMessages, resultMessages);
       }
     }
 

@@ -11,9 +11,9 @@ import { BiArchiveIn } from 'react-icons/bi';
 
 import { TaskStatusIcon } from './TaskStatusIcon';
 import { TaskMenuButton } from './TaskMenuButton';
+import { TaskDeleteConfirm } from './TaskDeleteConfirm';
 
 import { InlineEditPanel } from '@/components/common/InlineEditPanel';
-import { Button } from '@/components/common/Button';
 import { LoadingText } from '@/components/common/LoadingText';
 import { TaskStateChip } from '@/components/common/TaskStateChip';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
@@ -22,7 +22,7 @@ import { TaskNamePreview } from '@/components/task-navigation/TaskNamePreview';
 
 type Props = {
   task: TaskData;
-  tasks: TaskData[];
+  getAllSubtasksCount: (taskId: string) => number;
   readonly?: boolean;
   level: number;
   maxTaskLevel: number;
@@ -63,15 +63,6 @@ type Props = {
   setDragOverTaskId: (taskId: string | null) => void;
 };
 
-/** Number of tasks anywhere below the given task in the hierarchy. */
-const countDescendants = (tasks: TaskData[], taskId: string, seen: Set<string> = new Set()): number =>
-  tasks
-    .filter((t) => t.parentId === taskId && !seen.has(t.id))
-    .reduce((total, child) => {
-      seen.add(child.id);
-      return total + 1 + countDescendants(tasks, child.id, seen);
-    }, 0);
-
 const arePropsEqual = (prevProps: Props, nextProps: Props): boolean => {
   const { task: prevTask } = prevProps;
   const { task: nextTask } = nextProps;
@@ -88,11 +79,6 @@ const arePropsEqual = (prevProps: Props, nextProps: Props): boolean => {
     prevTask.createdAt !== nextTask.createdAt ||
     prevTask.metadata !== nextTask.metadata
   ) {
-    return false;
-  }
-
-  // Compare tasks array reference (used for subtasks computation)
-  if (prevProps.tasks !== nextProps.tasks) {
     return false;
   }
 
@@ -145,6 +131,7 @@ const arePropsEqual = (prevProps: Props, nextProps: Props): boolean => {
     prevProps.onDuplicateTask !== nextProps.onDuplicateTask ||
     prevProps.handleConfirmDelete !== nextProps.handleConfirmDelete ||
     prevProps.handleCancelDelete !== nextProps.handleCancelDelete ||
+    prevProps.getAllSubtasksCount !== nextProps.getAllSubtasksCount ||
     prevProps.onToggleExpand !== nextProps.onToggleExpand ||
     prevProps.onDragStart !== nextProps.onDragStart ||
     prevProps.onDragEnd !== nextProps.onDragEnd ||
@@ -168,7 +155,7 @@ const arePropsEqual = (prevProps: Props, nextProps: Props): boolean => {
 export const TaskItem = memo(
   ({
     task,
-    tasks,
+    getAllSubtasksCount,
     readonly = false,
     level,
     maxTaskLevel,
@@ -211,7 +198,6 @@ export const TaskItem = memo(
     const { t } = useTranslation();
     const [editTaskName, setEditTaskName] = useState(task.name);
     const isGeneratingName = task.name === '<<generating>>';
-    const subtaskCount = deleteConfirmTaskId === task.id ? countDescendants(tasks, task.id) : 0;
     const isEditing = editingTaskId === task.id;
     const isSubtask = level > 0;
     const taskName = task.name || t('taskSidebar.untitled');
@@ -450,19 +436,7 @@ export const TaskItem = memo(
         )}
 
         {deleteConfirmTaskId === task.id && (
-          <div className="m-2 p-2 bg-bg-primary border border-border-default rounded-md">
-            <div className="text-2xs text-text-primary mb-2">
-              {subtaskCount > 0 ? t('taskSidebar.deleteConfirmWithSubtasks', { count: subtaskCount }) : t('taskSidebar.deleteConfirm')}
-            </div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="text" size="xs" color="tertiary" onClick={handleCancelDelete}>
-                {t('common.cancel')}
-              </Button>
-              <Button variant="contained" color="danger" size="xs" onClick={() => void handleConfirmDelete(task.id)}>
-                {t('common.confirm')}
-              </Button>
-            </div>
-          </div>
+          <TaskDeleteConfirm taskId={task.id} getAllSubtasksCount={getAllSubtasksCount} onConfirm={handleConfirmDelete} onCancel={handleCancelDelete} />
         )}
       </div>
     );

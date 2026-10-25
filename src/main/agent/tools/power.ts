@@ -62,9 +62,13 @@ const withFileLock = <T>(filePath: string, operation: () => Promise<T>): Promise
   return newLock;
 };
 
-export const createPowerToolset = (task: Task, profile: AgentProfile, promptContext?: PromptContext, abortSignal?: AbortSignal): ToolSet => {
-  const approvalManager = new ApprovalManager(task, profile);
-
+export const createPowerToolset = (
+  task: Task,
+  profile: AgentProfile,
+  promptContext?: PromptContext,
+  abortSignal?: AbortSignal,
+  approvalManager = new ApprovalManager(task, profile),
+): ToolSet => {
   const fileEditTool = tool({
     description: POWER_TOOL_DESCRIPTIONS[TOOL_FILE_EDIT],
     inputSchema: z.object({
@@ -836,10 +840,18 @@ Do not use escape characters \\ in the string like \\n or \\" and others. Do not
           isResolved = true;
           cleanup();
 
-          const truncatedStdout = await finishOutput(stdoutAccumulator);
-          const truncatedStderr = stderrOverride ?? (await finishOutput(stderrAccumulator));
+          try {
+            const truncatedStdout = await finishOutput(stdoutAccumulator);
+            const truncatedStderr = stderrOverride ?? (await finishOutput(stderrAccumulator));
 
-          resolve({ stdout: truncatedStdout, stderr: truncatedStderr, exitCode });
+            resolve({ stdout: truncatedStdout, stderr: truncatedStderr, exitCode });
+          } catch (error) {
+            resolve({
+              stdout: '',
+              stderr: `Error processing command output: ${error instanceof Error ? error.message : String(error)}`,
+              exitCode: 1,
+            });
+          }
         };
 
         const sendStreamingUpdate = () => {

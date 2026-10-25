@@ -77,6 +77,7 @@ export interface TextPart {
 }
 
 export interface ImagePart {
+  providerOptions?: ProviderOptions;
   type: 'image';
   image: DataContent | URL;
   mediaType?: string;
@@ -112,6 +113,7 @@ export interface ReasoningPart {
  * safe to replay only when the target model is the same model that produced it.
  */
 export interface ToolCallPart {
+  providerExecuted?: boolean;
   type: 'tool-call';
   toolCallId: string;
   toolName: string;
@@ -132,9 +134,22 @@ export interface ToolResultPart {
   providerOptions?: ProviderOptions;
 }
 
+export interface ReasoningFilePart {
+  type: 'reasoning-file';
+  data: DataContent | URL;
+  mediaType: string;
+  providerOptions?: ProviderOptions;
+}
+
+export interface CustomPart {
+  type: 'custom';
+  kind: string;
+  providerOptions?: ProviderOptions;
+}
+
 // Content types
 export type UserContent = string | Array<TextPart | ImagePart | FilePart>;
-export type AssistantContent = string | Array<TextPart | FilePart | ReasoningPart | ToolCallPart | ToolResultPart>;
+export type AssistantContent = string | Array<TextPart | FilePart | ReasoningPart | ReasoningFilePart | CustomPart | ToolCallPart | ToolResultPart>;
 export type ToolContent = Array<ToolResultPart>;
 
 export interface LocalizedString {
@@ -171,6 +186,10 @@ export interface WorkflowMessageMeta {
 }
 
 export interface PromptContext {
+  userMessageId?: string;
+  parentPromptContextId?: string;
+  parentToolCallId?: string;
+  parentChildIndex?: number;
   id: string;
   group?: Group;
   workflow?: WorkflowMessageMeta;

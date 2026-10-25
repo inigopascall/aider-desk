@@ -16,6 +16,7 @@ import {
   AgentProfile,
   ChangeRequestItem,
   ContextSectionId,
+  SwitchToWorktreeOptions,
 } from '@common/types';
 import { ipcMain, clipboard, ClipboardItem } from 'electron';
 
@@ -126,6 +127,10 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
     return eventsHandler.getOpenProjects();
   });
 
+  ipcMain.handle('check-project', async (_, baseDir: string) => {
+    return eventsHandler.checkProject(baseDir);
+  });
+
   ipcMain.handle('add-open-project', async (_, baseDir: string) => {
     return eventsHandler.addOpenProject(baseDir);
   });
@@ -198,12 +203,12 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
     return await eventsHandler.deleteRepositoryMapping(baseDir, filePath);
   });
 
-  ipcMain.handle('get-updated-file-diff', async (_, baseDir: string, taskId: string, filePath: string, commitHash?: string) => {
-    return await eventsHandler.getUpdatedFileDiff(baseDir, taskId, filePath, commitHash);
+  ipcMain.handle('get-updated-file-diff', async (_, baseDir: string, taskId: string, filePath: string, commitHash?: string, previousPath?: string) => {
+    return await eventsHandler.getUpdatedFileDiff(baseDir, taskId, filePath, commitHash, previousPath);
   });
 
-  ipcMain.handle('get-updated-file-contents', async (_, baseDir: string, taskId: string, filePath: string, commitHash?: string) => {
-    return await eventsHandler.getUpdatedFileContents(baseDir, taskId, filePath, commitHash);
+  ipcMain.handle('get-updated-file-contents', async (_, baseDir: string, taskId: string, filePath: string, commitHash?: string, previousPath?: string) => {
+    return await eventsHandler.getUpdatedFileContents(baseDir, taskId, filePath, commitHash, previousPath);
   });
 
   ipcMain.handle('refresh-context-files', async (_, baseDir: string, taskId: string) => {
@@ -609,12 +614,9 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
     },
   );
 
-  ipcMain.handle(
-    'switch-to-worktree-working-mode',
-    async (_, baseDir: string, taskId: string, options?: { carryOverUncommittedChanges?: boolean; dropSourceChanges?: boolean }) => {
-      await eventsHandler.switchToWorktreeWorkingMode(baseDir, taskId, options);
-    },
-  );
+  ipcMain.handle('switch-to-worktree-working-mode', async (_, baseDir: string, taskId: string, options?: SwitchToWorktreeOptions) => {
+    await eventsHandler.switchToWorktreeWorkingMode(baseDir, taskId, options);
+  });
 
   ipcMain.handle('get-local-uncommitted-files', async (_, baseDir: string, taskId: string) => {
     return await eventsHandler.getLocalUncommittedFiles(baseDir, taskId);
@@ -632,8 +634,8 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
     await eventsHandler.addFileToGit(baseDir, taskId, filePath);
   });
 
-  ipcMain.handle('restore-file', async (_, baseDir: string, taskId: string, filePath: string) => {
-    await eventsHandler.restoreFile(baseDir, taskId, filePath);
+  ipcMain.handle('restore-file', async (_, baseDir: string, taskId: string, filePath: string, previousPath?: string) => {
+    await eventsHandler.restoreFile(baseDir, taskId, filePath, previousPath);
   });
 
   ipcMain.handle('read-file', async (_, baseDir: string, taskId: string, filePath: string) => {
@@ -705,8 +707,8 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
     return await eventsHandler.gitPull(baseDir, taskId, rebase);
   });
 
-  ipcMain.handle('git-push', async (_, baseDir: string, taskId: string, force?: boolean, setUpstream?: boolean) => {
-    return await eventsHandler.gitPush(baseDir, taskId, force, setUpstream);
+  ipcMain.handle('git-push', async (_, baseDir: string, taskId: string, force?: boolean, setUpstream?: boolean, pushToBase?: boolean) => {
+    return await eventsHandler.gitPush(baseDir, taskId, force, setUpstream, pushToBase);
   });
 
   ipcMain.handle('resolve-git-error-with-agent', async (_, baseDir: string, taskId: string) => {

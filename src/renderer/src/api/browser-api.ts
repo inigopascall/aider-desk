@@ -35,6 +35,7 @@ import {
   OpenDialogResult,
   OS,
   ProjectData,
+  ProjectCheckResult,
   ProjectSettings,
   ProjectStartedData,
   ProviderModelsData,
@@ -573,6 +574,9 @@ export class BrowserApi implements ApplicationAPI {
   getOpenProjects(): Promise<ProjectData[]> {
     return this.get('/projects');
   }
+  checkProject(baseDir: string): Promise<ProjectCheckResult> {
+    return this.post('/project/check', { projectDir: baseDir });
+  }
   addOpenProject(baseDir: string): Promise<ProjectData[]> {
     return this.post('/project/add-open', { projectDir: baseDir });
   }
@@ -661,24 +665,35 @@ export class BrowserApi implements ApplicationAPI {
   deleteRepositoryMapping(baseDir: string, filePath: string): Promise<ContextFile[]> {
     return this.post('/project/repository-mappings/delete', { projectDir: baseDir, filePath });
   }
-  getUpdatedFileDiff(baseDir: string, taskId: string, filePath: string, commitHash?: string): Promise<string> {
-    return this.post<{ projectDir: string; taskId: string; filePath: string; commitHash?: string }, { diff: string }>('/get-updated-file-diff', {
-      projectDir: baseDir,
-      taskId,
-      filePath,
-      commitHash,
-    }).then((res) => res.diff);
-  }
-  getUpdatedFileContents(baseDir: string, taskId: string, filePath: string, commitHash?: string): Promise<{ oldContent: string; newContent: string }> {
-    return this.post<{ projectDir: string; taskId: string; filePath: string; commitHash?: string }, { oldContent: string; newContent: string }>(
-      '/get-updated-file-contents',
+  getUpdatedFileDiff(baseDir: string, taskId: string, filePath: string, commitHash?: string, previousPath?: string): Promise<string> {
+    return this.post<{ projectDir: string; taskId: string; filePath: string; commitHash?: string; previousPath?: string }, { diff: string }>(
+      '/get-updated-file-diff',
       {
         projectDir: baseDir,
         taskId,
         filePath,
         commitHash,
+        previousPath,
       },
-    );
+    ).then((res) => res.diff);
+  }
+  getUpdatedFileContents(
+    baseDir: string,
+    taskId: string,
+    filePath: string,
+    commitHash?: string,
+    previousPath?: string,
+  ): Promise<{ oldContent: string; newContent: string }> {
+    return this.post<
+      { projectDir: string; taskId: string; filePath: string; commitHash?: string; previousPath?: string },
+      { oldContent: string; newContent: string }
+    >('/get-updated-file-contents', {
+      projectDir: baseDir,
+      taskId,
+      filePath,
+      commitHash,
+      previousPath,
+    });
   }
   async generateCommitMessage(baseDir: string, taskId: string, filePaths?: string[]): Promise<string> {
     const res = await this.post<{ projectDir: string; taskId: string; filePaths?: string[] }, { message: string }>(
@@ -1389,6 +1404,7 @@ export class BrowserApi implements ApplicationAPI {
     return this.post('/project/switch-to-worktree-working-mode', {
       projectDir: baseDir,
       taskId,
+      baseBranch: options?.baseBranch,
       carryOverUncommittedChanges: options?.carryOverUncommittedChanges,
       dropSourceChanges: options?.dropSourceChanges,
     });
@@ -1423,11 +1439,12 @@ export class BrowserApi implements ApplicationAPI {
     });
   }
 
-  restoreFile(baseDir: string, taskId: string, filePath: string): Promise<void> {
+  restoreFile(baseDir: string, taskId: string, filePath: string, previousPath?: string): Promise<void> {
     return this.post('/project/worktree/restore-file', {
       projectDir: baseDir,
       taskId,
       filePath,
+      previousPath,
     });
   }
 
@@ -1546,11 +1563,13 @@ export class BrowserApi implements ApplicationAPI {
     });
   }
 
-  gitPush(baseDir: string, taskId: string, force?: boolean): Promise<{ output: string }> {
+  gitPush(baseDir: string, taskId: string, force?: boolean, setUpstream?: boolean, pushToBase?: boolean): Promise<{ output: string }> {
     return this.post('/project/git/push', {
       projectDir: baseDir,
       taskId,
       force,
+      setUpstream,
+      pushToBase,
     });
   }
 

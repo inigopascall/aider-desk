@@ -23,6 +23,7 @@ export type RunSubagentTaskParams = {
   run?: WorkflowRunInfo;
   contextMessages?: ContextMessage[];
   currentMessages?: ContextMessage[];
+  parentToolCallId?: string;
   onStarted?: (promptContext: PromptContext) => void | Promise<void>;
 };
 
@@ -233,10 +234,26 @@ export const runSubagentTask = async ({
   contextMessages = [],
   currentMessages = [],
   onStarted,
+  parentToolCallId,
 }: RunSubagentTaskParams): Promise<RunSubagentTaskResult> => {
   const subagentId = getSubagentId(targetSubagent);
   const subagentProfile = buildRestrictedSubagentProfile(targetSubagent);
-  const promptContext = createSubagentPromptContext(targetSubagent, description, run);
+  const existingChild = parentToolCallId ? task.durabilityManager?.findChild(parentToolCallId) : undefined;
+  if (existingChild?.outcome) {
+    return existingChild.outcome as unknown as RunSubagentTaskResult;
+  }
+  const promptContext = existingChild?.promptContext ?? createSubagentPromptContext(targetSubagent, description, run);
+  if (parentToolCallId) {
+    const parent = task.durabilityManager?.findParent(parentToolCallId);
+    promptContext.parentPromptContextId = parent?.promptContext.id;
+    promptContext.parentToolCallId = parentToolCallId;
+  }
+  if (existingChild && task.durabilityManager.isCancelled(promptContext.id)) {
+    const messages = await task.durabilityManager.cancelChild(promptContext.id);
+    const outcome: RunSubagentTaskResult = { status: 'cancelled', messages, promptContext };
+    task.durabilityManager.setOutcome(promptContext.id, outcome);
+    return outcome;
+  }
   const interruptId = promptContext.group!.interruptId!;
   const subagentAbortController = new AbortController();
 
@@ -247,6 +264,19 @@ export const runSubagentTask = async ({
       abortSignal.addEventListener('abort', () => subagentAbortController.abort());
     }
   }
+
+  const finishOutcome = async (outcome: RunSubagentTaskResult): Promise<RunSubagentTaskResult> => {
+    if (task.durabilityManager?.isSuspended(promptContext.id)) {
+      return outcome;
+    }
+    if (outcome.status === 'cancelled' && task.durabilityManager) {
+      const retained = await task.durabilityManager.cancelChild(promptContext.id);
+      const ids = new Set(outcome.messages.map((message) => message.id));
+      outcome.messages = [...retained.filter((message) => !ids.has(message.id)), ...outcome.messages];
+    }
+    task.durabilityManager?.setOutcome(promptContext.id, outcome);
+    return outcome;
+  };
 
   try {
     await onStarted?.(promptContext);
@@ -292,11 +322,11 @@ Make sure to reuse the previous conversation if possible.`
         promptContext,
       });
 
-      return {
+      return await finishOutcome({
         status: 'cancelled',
         messages: subagentResultMessages,
         promptContext,
-      };
+      });
     }
 
     promptContext.group = {
@@ -305,11 +335,7 @@ Make sure to reuse the previous conversation if possible.`
       finished: true,
     };
 
-    return {
-      status: 'success',
-      messages: subagentResultMessages,
-      promptContext,
-    };
+    return await finishOutcome({ status: 'success', messages: subagentResultMessages, promptContext });
   } catch (error) {
     if (subagentAbortController.signal.aborted) {
       logger.info('Subagent run cancelled by user (in catch)', { subagentId, interruptId });
@@ -320,7 +346,7 @@ Make sure to reuse the previous conversation if possible.`
         finished: true,
       };
 
-      return {
+      return await finishOutcome({
         status: 'cancelled',
         messages: [
           {
@@ -331,7 +357,7 @@ Make sure to reuse the previous conversation if possible.`
           },
         ],
         promptContext,
-      };
+      });
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -344,10 +370,10 @@ Make sure to reuse the previous conversation if possible.`
       finished: true,
     };
 
-    return {
+    return await finishOutcome({
       status: 'error',
       error: `Error running subagent '${targetSubagent.name}': ${errorMessage}`,
       promptContext,
-    };
+    });
   }
 };

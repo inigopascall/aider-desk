@@ -1,5 +1,10 @@
 vi.mock('@/logger');
 
+vi.mock('../mcp-secrets', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../mcp-secrets')>();
+  return { ...actual, loadMcpSecrets: () => ({}) };
+});
+
 const fakeTransports = vi.hoisted(() => [] as Array<{ onclose?: () => void }>);
 
 vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => {

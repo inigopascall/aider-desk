@@ -44,6 +44,7 @@ import {
   VoiceSession,
   ChangeRequestItem,
   WorkflowLogsStateData,
+  SwitchToWorktreeOptions,
 } from '@common/types';
 import { compareBaseDirs, normalizeBaseDir } from '@common/utils';
 // @ts-expect-error istextorbinary is not typed properly
@@ -57,6 +58,7 @@ import { McpManager, McpConfigManager, AgentProfileManager } from '@/agent';
 import { MemoryManager } from '@/memory/memory-manager';
 import { ModelManager } from '@/models';
 import { Project, ProjectManager } from '@/project';
+import { checkProject } from '@/project/check-project';
 import { CloudflareTunnelManager } from '@/server';
 import { Store } from '@/store';
 import { TelemetryManager } from '@/telemetry';
@@ -198,6 +200,8 @@ export class EventsHandler {
   getOpenProjects(): ProjectData[] {
     return this.store.getOpenProjects();
   }
+
+  checkProject = checkProject;
 
   async addOpenProject(baseDir: string): Promise<ProjectData[]> {
     const projects = this.store.getOpenProjects();
@@ -372,20 +376,26 @@ export class EventsHandler {
     return await task.getUpdatedFiles();
   }
 
-  async getUpdatedFileDiff(baseDir: string, taskId: string, filePath: string, commitHash?: string): Promise<string> {
+  async getUpdatedFileDiff(baseDir: string, taskId: string, filePath: string, commitHash?: string, previousPath?: string): Promise<string> {
     const task = this.projectManager.getProject(baseDir).getTask(taskId);
     if (!task) {
       return '';
     }
-    return await task.getUpdatedFileDiff(filePath, commitHash);
+    return await task.getUpdatedFileDiff(filePath, commitHash, previousPath);
   }
 
-  async getUpdatedFileContents(baseDir: string, taskId: string, filePath: string, commitHash?: string): Promise<{ oldContent: string; newContent: string }> {
+  async getUpdatedFileContents(
+    baseDir: string,
+    taskId: string,
+    filePath: string,
+    commitHash?: string,
+    previousPath?: string,
+  ): Promise<{ oldContent: string; newContent: string }> {
     const task = this.projectManager.getProject(baseDir).getTask(taskId);
     if (!task) {
       return { oldContent: '', newContent: '' };
     }
-    return await task.getUpdatedFileContents(filePath, commitHash);
+    return await task.getUpdatedFileContents(filePath, commitHash, previousPath);
   }
 
   async getRepositoryMappings(baseDir: string) {
@@ -834,11 +844,7 @@ export class EventsHandler {
     await task.switchToLocalWorkingMode(options);
   }
 
-  async switchToWorktreeWorkingMode(
-    baseDir: string,
-    taskId: string,
-    options?: { carryOverUncommittedChanges?: boolean; dropSourceChanges?: boolean },
-  ): Promise<void> {
+  async switchToWorktreeWorkingMode(baseDir: string, taskId: string, options?: SwitchToWorktreeOptions): Promise<void> {
     const task = this.getTaskOrThrow(baseDir, taskId);
     await task.switchToWorktreeWorkingMode(options);
   }
@@ -863,9 +869,9 @@ export class EventsHandler {
     await task.addFileToGit(filePath);
   }
 
-  async restoreFile(baseDir: string, taskId: string, filePath: string): Promise<void> {
+  async restoreFile(baseDir: string, taskId: string, filePath: string, previousPath?: string): Promise<void> {
     const task = this.getTaskOrThrow(baseDir, taskId);
-    await task.restoreFile(filePath);
+    await task.restoreFile(filePath, previousPath);
   }
 
   async readFile(baseDir: string, taskId: string, filePath: string): Promise<string> {
@@ -962,8 +968,8 @@ export class EventsHandler {
     return await this.getTaskOrThrow(baseDir, taskId).gitPull(rebase);
   }
 
-  async gitPush(baseDir: string, taskId: string, force?: boolean, setUpstream?: boolean): Promise<{ output: string }> {
-    return await this.getTaskOrThrow(baseDir, taskId).gitPush(force, setUpstream);
+  async gitPush(baseDir: string, taskId: string, force?: boolean, setUpstream?: boolean, pushToBase?: boolean): Promise<{ output: string }> {
+    return await this.getTaskOrThrow(baseDir, taskId).gitPush(force, setUpstream, pushToBase);
   }
 
   async getTaskGitStatus(baseDir: string, taskId: string, targetBranch?: string) {

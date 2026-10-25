@@ -1,5 +1,10 @@
 vi.mock('@/logger');
 
+vi.mock('../mcp-secrets', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../mcp-secrets')>();
+  return { ...actual, loadMcpSecrets: () => ({}) };
+});
+
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 
 import { describe, expect, it, vi } from 'vitest';

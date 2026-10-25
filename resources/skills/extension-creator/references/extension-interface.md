@@ -14,6 +14,8 @@ Full TypeScript interface reference for AiderDesk extensions. All methods are op
 - [ProjectContext](#projectcontext)
 - [MemoryContext](#memorycontext)
 - [Supporting Types](#supporting-types)
+  - [ExtensionProviderStrategy](#extensionproviderstrategy)
+  - [ProviderToolApprovalHandler](#providertoolapprovalhandler)
 
 ---
 
@@ -157,8 +159,14 @@ interface Extension {
   /** Called after each agent step completes. */
   onAgentStepFinished?(event: AgentStepFinishedEvent, context: ExtensionContext): Promise<void | Partial<AgentStepFinishedEvent>>;
 
-  /** Called when messages are optimized before being sent to the LLM. Modify `event.optimizedMessages` to change what's sent. */
+  /** Override default Aider/subagent transformations. Receives originalMessages and transformedMessages; transformations are not reapplied. */
+  onTransformMessages?(event: TransformMessagesEvent, context: ExtensionContext): Promise<void | Partial<TransformMessagesEvent>>;
+
+  /** Override optional optimizations. originalMessages is the transformation output, not raw stored context. */
   onOptimizeMessages?(event: OptimizeMessagesEvent, context: ExtensionContext): Promise<void | Partial<OptimizeMessagesEvent>>;
+
+  /** Override final cache annotation. Receives originalMessages, messages, and optional cacheControl, even without a default policy. */
+  onApplyCacheControl?(event: ApplyCacheControlEvent, context: ExtensionContext): Promise<void | Partial<ApplyCacheControlEvent>>;
 
   /** Called when important reminders are added to the user message. Modify `event.remindersContent`. */
   onImportantReminders?(event: ImportantRemindersEvent, context: ExtensionContext): Promise<void | Partial<ImportantRemindersEvent>>;
@@ -511,6 +519,9 @@ interface TaskContext {
 
   /** Get files modified during the current task's execution (compares against main branch). */
   getUpdatedFiles(): Promise<UpdatedFile[]>;
+
+  /** Get a unified diff. Pass the entry's previousPath for rename-aware diffs. */
+  getUpdatedFileDiff(filePath: string, commitHash?: string, previousPath?: string): Promise<string>;
 
   /** Get the cached repository map string summarizing the codebase structure. */
   getRepoMap(): string;
@@ -1203,6 +1214,56 @@ interface ProviderDefinition {
   headers?: Record<string, string>;
 }
 ```
+
+### ExtensionProviderStrategy
+
+Only `createLlm` and `loadModels` are required; omitted optional methods use built-in defaults. `toolSet` contains the active run's executable tools. `providerMetadata` can carry previous provider state; `sessionId` currently identifies the AiderDesk task, **not** a native session or unique subagent run. All trailing `createLlm` arguments are optional.
+
+```typescript
+interface ExtensionProviderStrategy {
+  createLlm: (
+    profile: ProviderProfile,
+    model: Model,
+    settings: SettingsData,
+    projectDir: string,
+    toolSet?: unknown,
+    systemPrompt?: string,
+    providerMetadata?: unknown,
+    tlsRegistrar?: TlsPolicyRegistrar,
+    sessionId?: string,
+    approveTool?: ProviderToolApprovalHandler,
+  ) => unknown | Promise<unknown>;
+  loadModels: (profile: ProviderProfile, settings: SettingsData, tlsRegistrar?: TlsPolicyRegistrar) => Promise<LoadModelsResponse>;
+
+  getAiderMapping?: (provider: ProviderProfile, modelId: string, settings: SettingsData, projectDir: string) => AiderModelMapping;
+  getUsageReport?: (task: unknown, provider: ProviderProfile, model: Model, usage: unknown, providerMetadata?: unknown) => UsageReportData;
+  getProviderOptions?: (model: Model, reasoning?: Reasoning) => Record<string, Record<string, JSONValue | undefined>> | undefined;
+  getCacheControl?: (model: Model) => CacheControl | undefined;
+  getProviderTools?: (model: Model) => Record<string, Tool> | Promise<Record<string, Tool>>;
+  getProviderParameters?: (model: Model, reasoning?: Reasoning) => Record<string, unknown>;
+  createVoiceSession?: (profile: ProviderProfile, settings: SettingsData) => Promise<VoiceSession>;
+  isRetryable?: (error: unknown) => boolean;
+}
+```
+
+### ProviderToolApprovalHandler
+
+The optional tenth `createLlm` argument checks an externally executed tool against the active run's approval manager without executing the tool:
+
+```typescript
+type ProviderToolApprovalHandler = (
+  toolName: string,
+  input: Record<string, unknown>,
+  text: string,
+  subject?: string,
+) => Promise<[approved: boolean, reason?: string]>;
+```
+
+Map native tools to enabled AiderDesk names and input shapes before calling it. For example, native file reading maps to `power---file_read` with `{ filePath }`; native shell execution maps to `power---bash` with `{ command, cwd }`. Await the callback before granting native permission and forward its rejection reason when denied.
+
+Missing/disabled tools and **Never** are denied in every autonomy mode. Power bash denied patterns are enforced. In **Manual**, **Always** or an allowed bash pattern skips the prompt, while **Ask** uses the normal question and shared always-for-this-run keys. **Guided/Autonomous** do not prompt for enabled tools. Approval hooks (`onToolApproval`, `onHandleApproval`) can still veto requests before auto/pre-approval, except that disabled tools and denied bash patterns are rejected before those hooks.
+
+This does not invoke Power executors, execution hooks, sandboxing, or output processing. Do not call an executor just to obtain approval: it may execute the operation twice. If the callback is absent (older host or a non-agent call), reject native execution with an update/restart explanation. For the full native/MCP, streaming, session and lifecycle checklist, read [External-agent providers](external-agent-providers.md).
 
 ### Event Payload Types
 

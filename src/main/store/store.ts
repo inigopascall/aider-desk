@@ -46,6 +46,7 @@ import { migrateSettingsV22toV23 } from '@/store/migrations/v22-to-v23';
 export const DEFAULT_SETTINGS: SettingsData = {
   language: 'en',
   startupMode: ProjectStartMode.Empty,
+  resumeAgentAfterRestart: true,
   zoomLevel: 1,
   notificationsEnabled: false,
   theme: 'dark',
@@ -149,6 +150,7 @@ const CURRENT_SETTINGS_VERSION = 23;
 export class Store {
   // @ts-expect-error expected to be initialized
   private store: Conf<StoreSchema>;
+  private cachedSettings: SettingsData | null = null;
 
   async init(path?: string): Promise<void> {
     const { default: Conf } = await import('conf');
@@ -180,6 +182,15 @@ export class Store {
   }
 
   getSettings(): SettingsData {
+    // conf re-reads and parses the config file on every get, so keep the merged settings in memory
+    if (!this.cachedSettings) {
+      this.cachedSettings = this.loadSettings();
+    }
+
+    return structuredClone(this.cachedSettings);
+  }
+
+  private loadSettings(): SettingsData {
     const settings = this.store.get('settings');
 
     if (!settings) {
@@ -346,6 +357,7 @@ export class Store {
       }
 
       this.store.set('settings', settings as SettingsData);
+      this.cachedSettings = null;
       this.store.set('openProjects', openProjects || []);
       this.store.set('providers', providers || []);
     }
@@ -374,6 +386,7 @@ export class Store {
 
   saveSettings(settings: SettingsData): void {
     this.store.set('settings', settings);
+    this.cachedSettings = null;
   }
 
   getOpenProjects(): ProjectData[] {

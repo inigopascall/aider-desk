@@ -74,6 +74,7 @@ import { fileTypeFromBuffer } from 'file-type';
 import { v4 as uuidv4 } from 'uuid';
 
 import type { ContextAssistantMessage, ContextFile, ContextMessage } from '@common/types';
+import type { ToolResultPart } from 'ai';
 
 // Re-export types that are needed
 import { AIDER_DESK_PROJECT_RULES_DIR } from '@/constants';
@@ -1199,6 +1200,7 @@ describe('Agent - runAgent lifecycle persistence', () => {
           yield { type: 'text-delta', text: 'Hello' };
           await stepEndPromise;
           yield { type: 'text-end' };
+          yield { type: 'finish-step' };
         })(),
       };
     });
@@ -1272,12 +1274,12 @@ describe('Agent - runAgent lifecycle persistence', () => {
       .mockImplementationOnce((options: any) => {
         persistenceLog.push('model-execution');
         const stepEndPromise = options.onStepEnd(firstStep);
-        return { stream: (async function* () { await stepEndPromise; })() };
+        return { stream: (async function* () { await stepEndPromise; yield { type: 'finish-step' }; })() };
       })
       .mockImplementationOnce((options: any) => {
         persistenceLog.push('model-execution');
         const stepEndPromise = options.onStepEnd(secondStep);
-        return { stream: (async function* () { await stepEndPromise; })() };
+        return { stream: (async function* () { await stepEndPromise; yield { type: 'finish-step' }; })() };
       });
 
     const result = await agent.runAgent(mockTask, mockProfile, 'Do it', 'agent', { id: 'pc-1' });
@@ -1348,11 +1350,11 @@ describe('Agent - runAgent lifecycle persistence', () => {
     mockStreamText
       .mockImplementationOnce((options: any) => {
         const stepEndPromise = options.onStepEnd(helperStep);
-        return { stream: (async function* () { await stepEndPromise; })() };
+        return { stream: (async function* () { await stepEndPromise; yield { type: 'finish-step' }; })() };
       })
       .mockImplementationOnce((options: any) => {
         const stepEndPromise = options.onStepEnd(finalStep);
-        return { stream: (async function* () { await stepEndPromise; })() };
+        return { stream: (async function* () { await stepEndPromise; yield { type: 'finish-step' }; })() };
       });
 
     const result = await agent.runAgent(mockTask, mockProfile, 'Do it', 'agent', { id: 'pc-1' });
@@ -1479,8 +1481,9 @@ describe('Agent - compactMessagesIfNeeded', () => {
     },
   ];
 
-  const runCompact = async (resultMessages: any[]) => {
+  const runCompact = async (resultMessages: any[], taskTokensOverride?: number) => {
     const task = createMockTask();
+    task.task.contextCompactingThresholdTokens = taskTokensOverride;
     task.compactConversation = vi.fn().mockResolvedValue(undefined);
     task.smartCompactConversation = vi.fn().mockResolvedValue([]);
     task.handoffConversation = vi.fn().mockResolvedValue(undefined);
@@ -1520,6 +1523,27 @@ describe('Agent - compactMessagesIfNeeded', () => {
     expect(task.compactConversation).toHaveBeenCalledTimes(1);
   });
 
+  it.each([200000, undefined])('should disable auto-compaction for a zero task override with context size %s', async (maxInputTokens) => {
+    agent = buildAgent(() => (maxInputTokens === undefined ? undefined : { maxInputTokens }));
+    mockProfile.autoCompactThresholdPercentage = 90;
+    mockProfile.autoCompactThresholdTokens = 50000;
+
+    const task = await runCompact(makeResultMessages(250000), 0);
+
+    expect(task.compactConversation).not.toHaveBeenCalled();
+    expect(task.smartCompactConversation).not.toHaveBeenCalled();
+    expect(task.handoffConversation).not.toHaveBeenCalled();
+  });
+
+  it('should inherit the profile token threshold when the task override is unset', async () => {
+    agent = buildAgent(() => ({ maxInputTokens: 200000 }));
+    mockProfile.autoCompactThresholdTokens = 50000;
+
+    const task = await runCompact(makeResultMessages(60000));
+
+    expect(task.compactConversation).toHaveBeenCalledTimes(1);
+  });
+
   it('should NOT compact when token usage is below the token threshold and context size is unknown', async () => {
     agent = buildAgent(() => undefined);
 
@@ -1533,7 +1557,8 @@ describe('Agent - compactMessagesIfNeeded', () => {
     agent = buildAgent(() => undefined);
 
     // Set a low task-level override so that 121000 tokens exceeds it
-    const task = createMockTask({ contextCompactingThresholdTokens: 50000 } as any);
+    const task = createMockTask();
+    task.task.contextCompactingThresholdTokens = 50000;
     task.compactConversation = vi.fn().mockResolvedValue(undefined);
     task.getContextMessages = vi.fn().mockResolvedValue([]);
     task.addLogMessage = vi.fn();
@@ -1599,6 +1624,43 @@ describe('Agent - compactMessagesIfNeeded', () => {
     const task = await runCompact(resultMessages);
 
     expect(task.compactConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['json', 'text', 'content'] as const)('should estimate trailing %s image results as attachments without mutating them', async (outputType) => {
+    agent = buildAgent(() => ({ maxInputTokens: 200000 }));
+
+    const data = Buffer.from('binary image payload '.repeat(30000)).toString('base64');
+    const content = [
+      { type: 'text', text: 'Attached binary file image.png.' },
+      { type: 'media', data, mimeType: 'image/png' },
+    ];
+    const output: ToolResultPart['output'] =
+      outputType === 'content'
+        ? {
+            type: 'content',
+            value: [
+              { type: 'text', text: 'Attached binary file image.png.' },
+              { type: 'file', data: { type: 'data', data }, mediaType: 'image/png' },
+            ],
+          }
+        : outputType === 'json'
+          ? { type: 'json', value: { content } }
+          : { type: 'text', value: JSON.stringify({ content }) };
+    const toolMessage = {
+      id: 'tool-1',
+      role: 'tool',
+      content: [{ type: 'tool-result', toolCallId: 'call-1', toolName: 'read_binary_file', output }],
+    };
+    const originalMessage = structuredClone(toolMessage);
+
+    const task = await runCompact([...makeResultMessages(50000), toolMessage], 53000);
+
+    expect(task.compactConversation).not.toHaveBeenCalled();
+    expect(toolMessage).toEqual(originalMessage);
+
+    const taskNearThreshold = await runCompact([...makeResultMessages(50000), toolMessage], 51500);
+
+    expect(taskNearThreshold.compactConversation).toHaveBeenCalledTimes(1);
   });
 
   it('should not compact when the trailing tool result keeps the total below the threshold', async () => {

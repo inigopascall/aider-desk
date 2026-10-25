@@ -164,7 +164,11 @@ describe('Project - stale task recovery on initial load', () => {
       {} as any,
       {} as any,
       {} as any,
-      {} as any,
+      {
+        getAgentExecutions: vi.fn(() => []),
+        saveAgentExecution: vi.fn(),
+        deleteAgentExecution: vi.fn(),
+      } as any,
       mockEventManager as any,
       {} as any,
       {} as any,

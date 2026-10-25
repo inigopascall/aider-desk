@@ -36,6 +36,7 @@ import {
   SwitchToWorktreeOptions,
   TodoItem,
   ToolApprovalState,
+  ToolRecoveryMode,
   TlsPolicyRegistrar,
   UpdatedFile,
   UsageReportData,
@@ -43,7 +44,7 @@ import {
   UncommittedFiles,
 } from '@common/types';
 
-export { AutonomyMode, ContextMemoryMode, InvocationMode, OS, ToolApprovalState };
+export { AutonomyMode, ContextMemoryMode, InvocationMode, OS, ToolApprovalState, ToolRecoveryMode };
 export type { ModelCallSettings, ModelCallTimeout, Reasoning, SwitchToLocalOptions, SwitchToWorktreeOptions, UncommittedFiles };
 
 export type AgentStepResult = unknown;
@@ -126,6 +127,7 @@ export interface Tool {
  * ```
  */
 export interface ToolDefinition<TSchema extends z.ZodType = z.ZodType<Record<string, unknown>>> {
+  recoveryMode?: ToolRecoveryMode;
   /** Tool identifier in kebab-case (e.g., 'run-linter') */
   name: string;
   /** Description for LLM to understand tool purpose */
@@ -158,6 +160,13 @@ export interface CacheControl {
   placement?: 'message' | 'message-part';
 }
 
+export type ProviderToolApprovalHandler = (
+  toolName: string,
+  input: Record<string, unknown>,
+  text: string,
+  subject?: string,
+) => Promise<[approved: boolean, reason?: string]>;
+
 /**
  * Simplified provider strategy for extensions.
  * Only `createLlm` and `loadModels` are required.
@@ -174,6 +183,7 @@ export interface ExtensionProviderStrategy {
     providerMetadata?: unknown,
     tlsRegistrar?: TlsPolicyRegistrar,
     sessionId?: string,
+    approveTool?: ProviderToolApprovalHandler,
   ) => unknown | Promise<unknown>;
   loadModels: (profile: ProviderProfile, settings: SettingsData, tlsRegistrar?: TlsPolicyRegistrar) => Promise<LoadModelsResponse>;
 
@@ -492,10 +502,23 @@ export interface AgentStepFinishedEvent {
   responseMessages: ContextMessage[];
 }
 
-/** Event payload for message optimization events */
+/** Event payload for stored-context to model-message transformations. */
+export interface TransformMessagesEvent {
+  readonly originalMessages: ContextMessage[];
+  transformedMessages: ContextMessage[];
+}
+
+/** Event payload for optional optimizations. Original messages are the transformation stage's output. */
 export interface OptimizeMessagesEvent {
   readonly originalMessages: ContextMessage[];
   optimizedMessages: ContextMessage[];
+}
+
+/** Event payload after provider compatibility and default cache annotation. */
+export interface ApplyCacheControlEvent {
+  readonly originalMessages: ContextMessage[];
+  readonly cacheControl?: CacheControl;
+  messages: ContextMessage[];
 }
 
 /** Event payload for important reminders events */
@@ -516,6 +539,9 @@ export interface ToolApprovalEvent {
 
 /** Event payload for tool called events */
 export interface ToolCalledEvent {
+  recoveryMode?: ToolRecoveryMode;
+  readonly isReplay?: boolean;
+  readonly replayAttempt?: number;
   readonly toolCallId: string;
   readonly toolName: string;
   readonly agentProfile: AgentProfile;
@@ -535,9 +561,34 @@ export interface ToolFinishedEvent {
 
 /** A tool entry as exposed to extensions in toolset events */
 export interface ToolsetToolEntry {
+  recoveryMode?: ToolRecoveryMode;
+  recoveryModeKey?: string;
+  replayOwner?: string;
   description?: string;
   inputSchema?: unknown;
   execute?(input: Record<string, unknown>, options?: unknown): Promise<unknown>;
+}
+
+/**
+ * Marker key set on a tool's execution options when the tool is invoked internally by an
+ * extension (through the `allTools` map passed to `ExtensionTool.execute`) instead of by the
+ * model. The agent's tool wrapper reads it to honour the documented contract that
+ * extension-internal tool calls are not propagated to the UI and do not take part in durability.
+ */
+export const EXTENSION_ORIGIN: unique symbol = Symbol('aiderDesk.extensionOrigin');
+
+/**
+ * Flags describing how an extension-originated tool call should be handled.
+ *
+ * Both flags are currently always `false`. They are kept as a structured option (instead of a
+ * bare boolean) to prepare for a future capability where extensions can opt their internal tool
+ * calls into UI surfacing and/or durable execution.
+ */
+export interface ExtensionToolOrigin {
+  /** Whether the internal call should participate in durable execution/replay. */
+  durable: boolean;
+  /** Whether the internal call should be surfaced as a tool message in the UI. */
+  surfaceInUi: boolean;
 }
 
 /** Event payload for toolset created events */
@@ -916,9 +967,10 @@ export interface TaskContext {
    * Get the diff for a single updated file (lazily loaded from the backend)
    * @param filePath Path of the file (as returned by getUpdatedFiles)
    * @param commitHash Optional commit hash for per-commit diffs in grouped worktree mode
+   * @param previousPath Optional original path for renamed files (as returned by getUpdatedFiles)
    * @returns Unified diff string (empty for binary files or on error)
    */
-  getUpdatedFileDiff(filePath: string, commitHash?: string): Promise<string>;
+  getUpdatedFileDiff(filePath: string, commitHash?: string, previousPath?: string): Promise<string>;
 
   /**
    * Get the cached repository map string.
@@ -2050,8 +2102,21 @@ export interface Extension {
   onAgentStepFinished?(event: AgentStepFinishedEvent, context: ExtensionContext): Promise<void | Partial<AgentStepFinishedEvent>>;
 
   /**
+   * Override default context transformations, including Aider and subagent result reduction.
+   * Original messages include reminders. Transformations are not reapplied after this hook.
+   */
+  onTransformMessages?(event: TransformMessagesEvent, context: ExtensionContext): Promise<void | Partial<TransformMessagesEvent>>;
+
+  /**
+   * Override cache annotation after provider compatibility conversion, even without a default cache policy.
+   * Return originalMessages as messages to disable default cache annotation.
+   */
+  onApplyCacheControl?(event: ApplyCacheControlEvent, context: ExtensionContext): Promise<void | Partial<ApplyCacheControlEvent>>;
+
+  /**
    * Called when messages are optimized before being sent to the LLM
-   * Modify event.optimizedMessages to change the messages that will be sent
+   * Original messages are the transformation output, not raw stored context.
+   * Modify event.optimizedMessages to override optional optimizations
    * @returns void or partial event to modify optimized messages
    */
   onOptimizeMessages?(event: OptimizeMessagesEvent, context: ExtensionContext): Promise<void | Partial<OptimizeMessagesEvent>>;

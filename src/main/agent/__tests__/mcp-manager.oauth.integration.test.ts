@@ -1,5 +1,10 @@
 vi.mock('@/logger');
 
+vi.mock('../mcp-secrets', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../mcp-secrets')>();
+  return { ...actual, loadMcpSecrets: () => ({}) };
+});
+
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';

@@ -60,6 +60,16 @@ scripts/
 src/
   main/
     agent/
+      durability/
+        durability-manager.ts
+      message-preparation/
+        cache-control.ts
+        index.ts
+        optimizations.ts
+        provider-compatibility.ts
+        reminders.ts
+        tool-results.ts
+        transformations.ts
       middlewares/
         extract-reasoning-middleware.ts
       tools/
@@ -74,12 +84,12 @@ src/
         todo.ts
       agent-profile-manager.ts
       agent.ts
+      assistant-message-state.ts
       compaction.ts
       index.ts
       mcp-config-manager.ts
       mcp-manager.ts
       mcp-oauth-manager.ts
-      optimizer.ts
       smart-compaction.ts
       subagent.ts
       utils.ts
@@ -157,6 +167,7 @@ src/
       types.ts
       utils.ts
     project/
+      check-project.ts
       index.ts
       migrations.ts
       project-manager.ts
@@ -300,6 +311,8 @@ src/
             index.ts
           DiffViewer/
             CompactDiffViewer.tsx
+            DiffErrorBoundary.tsx
+            DiffFallback.tsx
             DiffLineCommentPanel.tsx
             DiffViewer.scss
             DiffViewer.tsx
@@ -342,6 +355,7 @@ src/
           ModelSelectorWrapper.tsx
           MultiSelect.tsx
           RadioButton.tsx
+          RichSelect.tsx
           SearchableSelect.tsx
           Section.tsx
           Select.tsx
@@ -393,19 +407,21 @@ src/
           ListMemoriesToolMessage.tsx
           ListTasksToolMessage.tsx
           LoadingMessageBlock.tsx
+          localize-tool-recovery.ts
           LogMessageBlock.tsx
           MessageActions.tsx
           MessageBar.tsx
           MessageBlock.tsx
           MessageBlockWrapper.tsx
           MessageImages.tsx
-          messageMap.ts
           MessageMap.tsx
           MessageMapMarker.tsx
           MessageMapPreview.tsx
+          messageMapUtils.ts
           Messages.tsx
           RebaseConflictsActions.tsx
           RebaseResolvedActions.tsx
+          RecoveryToolMessage.tsx
           ReflectedMessageBlock.tsx
           ResponseMessageBlock.tsx
           RetrieveMemoryToolMessage.tsx
@@ -507,6 +523,7 @@ src/
           OnboardingStepper.tsx
         project/
           TaskSidebar/
+            TaskDeleteConfirm.tsx
             TaskItem.tsx
             TaskMenuButton.tsx
             TaskSectionHeader.tsx
@@ -527,6 +544,7 @@ src/
           OpenProjectDialog.tsx
           ProjectTabContent.tsx
           ProjectTabs.tsx
+          ProjectTrustDialog.tsx
           ProjectView.tsx
           TaskBar.tsx
           TaskControlBar.tsx
@@ -572,6 +590,7 @@ src/
             GenericToolItem.tsx
             SortableAgentProfileItem.tsx
             SystemPromptEditor.tsx
+            ToolRecoverySelect.tsx
           mcp/
             McpOAuthControls.tsx
             McpServerForm.tsx
@@ -623,6 +642,7 @@ src/
           FileEditorModal.tsx
           FileEditorTabs.tsx
           fileEditorUtils.ts
+          FileRenameBadge.tsx
           group-files.ts
           index.ts
           InlineChangeRequest.tsx
@@ -726,6 +746,7 @@ src/
         useUpdatedFileDiff.ts
         useUserMessageNavigation.tsx
         useVersions.ts
+        useVirtualizedListActivation.ts
       i18n/
         index.ts
       icons/
@@ -819,6 +840,7 @@ src/
         string-utils.ts
         task-messages.ts
         task-utils.ts
+        virtualizedList.ts
       voice/
         gemini.ts
         index.ts
@@ -1665,6 +1687,355 @@ File: scripts/validate-locales.mjs
 
 
 ================
+File: src/main/agent/durability/durability-manager.ts
+================
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { isDeepStrictEqual } from 'node:util';
+⋮----
+import { createToolRecoveryNotice, isToolRecoveryNotice, ToolRecoveryCode } from '@common/tool-recovery';
+import {
+  AgentProfile,
+  ContextAssistantMessage,
+  ContextFile,
+  ContextMessage,
+  ContextToolMessage,
+  Mode,
+  PromptContext,
+  ToolRecoveryMode,
+  JSONValue,
+  ProviderOptions,
+} from '@common/types';
+⋮----
+import type { ToolSet, LanguageModelCallEndEvent } from 'ai';
+import type { DataManager } from '@/data-manager';
+⋮----
+enum CallStatus {
+  Pending = 'pending',
+  Running = 'running',
+  Executed = 'executed',
+  Completed = 'completed',
+}
+⋮----
+enum ExecutionStatus {
+  Running = 'running',
+  Cancelled = 'cancelled',
+  Completed = 'completed',
+}
+⋮----
+type ToolCallCheckpoint = {
+  id: string;
+  parentToolCallId?: string;
+  name: string;
+  owner?: string;
+  requestInput?: Record<string, unknown>;
+  input: Record<string, unknown> | undefined;
+  recoveryMode: ToolRecoveryMode;
+  status: CallStatus;
+  output?: JSONValue;
+  modelOutput?: ContextToolMessage['content'][number]['output'];
+  resultFinalized?: boolean;
+  attempt: number;
+};
+⋮----
+type StepCheckpoint = {
+  id: string;
+  assistant: ContextAssistantMessage;
+  calls: ToolCallCheckpoint[];
+  messages?: ContextMessage[];
+  assistantCaptured?: boolean;
+};
+⋮----
+export type ExecutionCheckpoint = {
+  version: 1;
+  promptContext: PromptContext;
+  parentPromptContextId?: string;
+  parentToolCallId?: string;
+  profile: AgentProfile;
+  mode: Mode;
+  contextMessages: ContextMessage[];
+  contextFiles: ContextFile[];
+  systemPrompt?: string;
+  history: ContextMessage[];
+  conversationReplaced?: boolean;
+  status: ExecutionStatus;
+  step?: StepCheckpoint;
+  outcome?: JSONValue;
+};
+⋮----
+type ExecutionInput = Omit<ExecutionCheckpoint, 'version' | 'history' | 'status' | 'step' | 'outcome'>;
+export type ReplayCall = {
+  id: string;
+  name: string;
+  input: Record<string, unknown> | undefined;
+  attempt: number;
+  owner?: string;
+  requestInput?: Record<string, unknown>;
+};
+⋮----
+// Maximum number of times a safe tool may be executed across process restarts (initial run + replays).
+// Once reached, recovery stops replaying the tool and reports it as interrupted so a tool that
+// repeatedly crashes the process cannot keep the app from starting.
+⋮----
+const jsonValue = (value: unknown): JSONValue
+⋮----
+export class DurabilityManager
+⋮----
+constructor(
+⋮----
+registerTools(id: string, tools: ToolSet): void
+⋮----
+getTool(id: string, name: string): ToolSet[string] | undefined
+⋮----
+withToolCall<T>(executionId: string, callId: string, execute: () => Promise<T>, abortSignal?: AbortSignal): Promise<T>
+⋮----
+resolveToolCallId(id: string, callId: string): string
+⋮----
+matchesOwner(id: string, callId: string, owner: string): boolean
+⋮----
+matchesInvocation(id: string, callId: string, name: string, input: unknown, owner: string): boolean
+⋮----
+matchesEffectiveInput(id: string, callId: string, input: unknown): boolean
+⋮----
+replaceConversation(id: string, contextMessages: ContextMessage[], history: ContextMessage[]): void
+⋮----
+checkpointTaskConversation(messages: ContextMessage[], executionId?: string): void
+⋮----
+recordToolExecuted(id: string, callId: string): void
+⋮----
+isToolExecuted(id: string, callId: string): boolean
+⋮----
+private records(): Map<string, ExecutionCheckpoint>
+⋮----
+private save(execution: ExecutionCheckpoint): void
+⋮----
+get(id: string): ExecutionCheckpoint | undefined
+⋮----
+isSettled(id: string): boolean
+⋮----
+getRecoverableRoots(): ExecutionCheckpoint[]
+⋮----
+begin(input: ExecutionInput): ExecutionCheckpoint
+⋮----
+attachChildContext(context: PromptContext): PromptContext
+⋮----
+getParentAbortSignal(): AbortSignal | undefined
+⋮----
+async discardPendingRoots(persist: (messages: ContextMessage[]) => Promise<void>, exceptId: string): Promise<void>
+⋮----
+findParent(toolCallId: string): ExecutionCheckpoint | undefined
+⋮----
+findChild(parentToolCallId: string): ExecutionCheckpoint | undefined
+⋮----
+beginStep(id: string, stepId: string): void
+⋮----
+appendText(id: string, type: 'text' | 'reasoning', text: string): void
+⋮----
+captureModelResponse(
+    id: string,
+    response: LanguageModelCallEndEvent<ToolSet>['content'],
+    resolveMode: (name: string) => ToolRecoveryMode,
+    resolveOwner: (name: string) => string = (name) => name,
+): void
+⋮----
+captureAssistant(id: string, content: ContextAssistantMessage['content']): void
+⋮----
+cancelByInterruptId(interruptId: string): void
+⋮----
+async flushCancelled(persist: (messages: ContextMessage[]) => Promise<void>): Promise<void>
+⋮----
+resolveMode(profile: AgentProfile, name: string, defaultMode?: ToolRecoveryMode, modeKey = name): ToolRecoveryMode
+⋮----
+isReplay(id: string, callId: string): boolean
+⋮----
+async cancelChild(id: string): Promise<ContextMessage[]>
+⋮----
+isToolCompleted(id: string, callId: string): boolean
+⋮----
+beginTool(id: string, call: ReplayCall, recoveryMode: ToolRecoveryMode, pending = false): void
+⋮----
+completeTool(id: string, callId: string, output: unknown, modelOutput?: ContextToolMessage['content'][number]['output']): void
+⋮----
+async recoverStep(id: string, execute: (call: ReplayCall) => Promise<unknown>, cancelled = false): Promise<ContextMessage[]>
+⋮----
+async finishStep(id: string, messages: ContextMessage[], persist?: (messages: ContextMessage[]) => Promise<void>): Promise<void>
+⋮----
+complete(id: string): void
+⋮----
+setOutcome(id: string, outcome: unknown): void
+⋮----
+markCancelled(id?: string): void
+⋮----
+suspend(): void
+⋮----
+isSuspended(id: string): boolean
+⋮----
+isCancelled(id: string): boolean
+⋮----
+clear(id?: string): void
+⋮----
+private clearChildren(id: string): void
+
+================
+File: src/main/agent/message-preparation/cache-control.ts
+================
+import { cloneDeep } from 'lodash';
+⋮----
+import type { ModelMessage, TextPart } from 'ai';
+import type { CacheControl } from '@/models';
+⋮----
+export const applyCacheControl = (messages: ModelMessage[], cacheControl?: CacheControl): ModelMessage[] =>
+
+================
+File: src/main/agent/message-preparation/index.ts
+================
+import { cloneDeep } from 'lodash';
+⋮----
+import { addImportantReminders } from './reminders';
+import { transformMessages } from './transformations';
+import { optimizeMessages } from './optimizations';
+import { convertImageToolResults } from './provider-compatibility';
+import { applyCacheControl } from './cache-control';
+⋮----
+import type { ModelMessage } from 'ai';
+import type { CacheControl as ExtensionCacheControl } from '@common/extensions';
+import type { AgentProfile, ContextMessage } from '@common/types';
+import type { CacheControl } from '@/models';
+import type { Task } from '@/task';
+import type { ExtensionManager } from '@/extensions';
+⋮----
+export const prepareMessagesForModel = async (
+  messages: ModelMessage[],
+  cacheControl?: CacheControl,
+  task: Task | null = null,
+  profile: AgentProfile | null = null,
+  projectProfiles: AgentProfile[] = [],
+  userRequestMessageIndex: number = -1,
+  extensionManager?: ExtensionManager,
+): Promise<ModelMessage[]> =>
+
+================
+File: src/main/agent/message-preparation/optimizations.ts
+================
+import { convertMcpResultToModelOutput } from '../utils';
+⋮----
+import type { ModelMessage, ToolContent, ToolResultPart } from 'ai';
+⋮----
+import logger from '@/logger';
+⋮----
+const hasFileOutput = (output: ToolResultPart['output']): boolean =>
+⋮----
+/**
+ * Some models (Gemini Flash) are trying to call the same tool multiple times in a row.
+ * This function detects this pattern (assistant tool call -> tool result -> same assistant tool call)
+ * and modifies the result of the second tool call to return an error, preventing a loop.
+ */
+export const optimizeMessages = (messages: ModelMessage[]): ModelMessage[] =>
+⋮----
+// Need at least 4 messages for the pattern: assistant, tool, assistant, tool
+⋮----
+const newMessages = [...messages]; // Create a mutable copy
+⋮----
+// Iterate up to the point where the pattern can start
+⋮----
+// Check for the pattern: assistant(call) -> tool(result) -> assistant(call) -> tool(result)
+⋮----
+// Ensure both assistant messages contain tool calls
+⋮----
+// Compare the tool calls
+⋮----
+// This is a duplicate call. Modify the fourth message (the result of the duplicate call).
+⋮----
+// Match the tool result part to the duplicate tool call id
+⋮----
+// Replace the old tool message with the modified one
+⋮----
+// To prevent overlapping checks and unnecessary work, we can advance the index.
+// Since we've processed a block of 4, we can safely jump ahead.
+
+================
+File: src/main/agent/message-preparation/provider-compatibility.ts
+================
+import { convertMcpResultToModelOutput } from '../utils';
+⋮----
+import type { ModelMessage, ToolResultPart, FilePart, TextPart, UserModelMessage } from 'ai';
+⋮----
+import logger from '@/logger';
+⋮----
+/**
+ * Converts tool results containing image data (from MCP tools that return
+ * content with image parts) into a user message with image parts, and
+ * replaces the tool result output with text-only content.
+ *
+ * This is necessary because the OpenAI API (and OpenAI-compatible providers)
+ * only supports string content in tool results — images cannot be sent
+ * inline. By moving images to a user message, all providers can handle
+ * them via their native image support (e.g. OpenAI `image_url`, Anthropic
+ * `image` with base64, Google `inlineData`).
+ */
+export const convertImageToolResults = (messages: ModelMessage[]): ModelMessage[] =>
+⋮----
+// Handle content-type outputs — extract file/image parts into user messages
+// since not all providers support file parts in tool results natively
+⋮----
+// If images were extracted, add a user message with the image parts
+
+================
+File: src/main/agent/message-preparation/reminders.ts
+================
+import { type AgentProfile, AutonomyMode, InvocationMode, ToolApprovalState } from '@common/types';
+import { getSubagentId, isSubagentEnabled } from '@common/agent';
+import {
+  MEMORY_TOOL_GROUP_NAME,
+  MEMORY_TOOL_RETRIEVE,
+  MEMORY_TOOL_STORE,
+  TODO_TOOL_GET_ITEMS,
+  TODO_TOOL_GROUP_NAME,
+  TOOL_GROUP_NAME_SEPARATOR,
+} from '@common/tools';
+⋮----
+import type { ModelMessage, UserModelMessage } from 'ai';
+import type { Task } from '@/task';
+import type { ExtensionManager } from '@/extensions';
+⋮----
+export const addImportantReminders = async (
+  task: Task,
+  profile: AgentProfile,
+  projectProfiles: AgentProfile[],
+  userRequestMessageIndex: number,
+  messages: ModelMessage[],
+  extensionManager?: ExtensionManager,
+): Promise<ModelMessage[]> =>
+⋮----
+// Add reminder about automatic subagents
+⋮----
+// Add reminder about worktree mode
+⋮----
+// Dispatch event to extensions to allow modification of reminders
+
+================
+File: src/main/agent/message-preparation/tool-results.ts
+================
+import { extractTextContent } from '@common/utils';
+⋮----
+import type { ContextMessage } from '@common/types';
+⋮----
+export const getSubagentMessages = (value: unknown): ContextMessage[] | undefined =>
+⋮----
+export const getSubagentFinalText = (value: unknown): string | undefined =>
+
+================
+File: src/main/agent/message-preparation/transformations.ts
+================
+import { cloneDeep } from 'lodash';
+import { AIDER_TOOL_GROUP_NAME, AIDER_TOOL_RUN_PROMPT, SUBAGENTS_TOOL_GROUP_NAME, SUBAGENTS_TOOL_RUN_TASK, TOOL_GROUP_NAME_SEPARATOR } from '@common/tools';
+⋮----
+import { getSubagentFinalText } from './tool-results';
+⋮----
+import type { ModelMessage } from 'ai';
+⋮----
+export const transformMessages = (messages: ModelMessage[]): ModelMessage[] =>
+
+================
 File: src/main/agent/middlewares/extract-reasoning-middleware.ts
 ================
 import type { LanguageModelV4StreamPart } from '@ai-sdk/provider';
@@ -1743,7 +2114,11 @@ export const createAiderToolset = (task: Task, profile: AgentProfile, promptCont
 ================
 File: src/main/agent/tools/approval-manager.ts
 ================
-import { AgentProfile, AutonomyMode, QuestionData, ToolApprovalState } from '@common/types';
+import { AgentProfile, AutonomyMode, BashToolSettings, QuestionData, ToolApprovalState } from '@common/types';
+import { ProviderToolApprovalHandler } from '@common/extensions';
+import { POWER_TOOL_BASH, POWER_TOOL_GROUP_NAME, TOOL_GROUP_NAME_SEPARATOR } from '@common/tools';
+⋮----
+import type { ToolSet } from 'ai';
 ⋮----
 import { Task } from '@/task';
 ⋮----
@@ -1753,15 +2128,20 @@ export class ApprovalManager
 ⋮----
 constructor(
 ⋮----
+createProviderToolApprovalHandler(tools: ToolSet): ProviderToolApprovalHandler
+⋮----
+const matches = (patterns?: string)
+⋮----
 async handleToolApproval(
     toolName: string,
     input: Record<string, unknown> | undefined,
     key: string,
     text: string,
     subject?: string,
+    approvedBySettings = false,
 ): Promise<[boolean, string | undefined]>
 ⋮----
-async handleApproval(key: string, text: string, subject?: string): Promise<[boolean, string | undefined]>
+async handleApproval(key: string, text: string, subject?: string, approvedBySettings = false): Promise<[boolean, string | undefined]>
 ⋮----
 return [true, undefined]; // Auto-approve
 ⋮----
@@ -1879,7 +2259,13 @@ import { RIPGREP_BINARY_PATH } from '@/constants';
  */
 const withFileLock = <T>(filePath: string, operation: () => Promise<T>): Promise<T> =>
 ⋮----
-export const createPowerToolset = (task: Task, profile: AgentProfile, promptContext?: PromptContext, abortSignal?: AbortSignal): ToolSet =>
+export const createPowerToolset = (
+  task: Task,
+  profile: AgentProfile,
+  promptContext?: PromptContext,
+  abortSignal?: AbortSignal,
+  approvalManager = new ApprovalManager(task, profile),
+): ToolSet =>
 ⋮----
 // Sanitize escape characters from searchTerm and replacementText
 const sanitize = (str: string) =>
@@ -1996,9 +2382,11 @@ File: src/main/agent/tools/subagents.ts
 ================
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
-import { AgentProfile, ContextMessage, InvocationMode, SettingsData } from '@common/types';
+import { AgentProfile, ContextMessage, InvocationMode, SettingsData, ToolApprovalState } from '@common/types';
 import { getSubagentId } from '@common/agent';
 import { SUBAGENTS_TOOL_GROUP_NAME, SUBAGENTS_TOOL_RUN_TASK, TOOL_GROUP_NAME_SEPARATOR } from '@common/tools';
+⋮----
+import { ApprovalManager } from './approval-manager';
 ⋮----
 import { AgentProfileManager } from '@/agent/agent-profile-manager';
 import { findEnabledSubagent, getEnabledSubagents, runSubagentTask } from '@/agent/subagent';
@@ -2377,6 +2765,7 @@ File: src/main/agent/agent.ts
 import fs from 'fs/promises';
 import path from 'path';
 ⋮----
+import { createToolRecoveryNotice, isToolRecoveryNotice, ToolRecoveryCode, DEFAULT_TOOL_RECOVERY_MODES } from '@common/tool-recovery';
 import { v4 as uuidv4 } from 'uuid';
 import {
   AgentProfile,
@@ -2392,6 +2781,7 @@ import {
   PromptContext,
   ProviderProfile,
   ToolApprovalState,
+  ToolRecoveryMode,
   UsageReportData,
 } from '@common/types';
 import {
@@ -2399,6 +2789,7 @@ import {
   type FilePart,
   type FinishReason,
   generateText,
+  asSchema,
   InvalidToolInputError,
   type ModelMessage,
   NoSuchToolError,
@@ -2408,6 +2799,7 @@ import {
   streamText,
   type TelemetryOptions,
   type ToolExecutionOptions,
+  type LanguageModelCallEndEvent,
   type ToolSet,
   type TypedToolResult,
   wrapLanguageModel,
@@ -2424,6 +2816,7 @@ import {
   TASKS_TOOL_SEARCH_PARENT_TASK,
   TOOL_GROUP_NAME_SEPARATOR,
 } from '@common/tools';
+import { EXTENSION_ORIGIN } from '@common/extensions';
 ⋮----
 import { createPowerToolset } from './tools/power';
 import { createTodoToolset } from './tools/todo';
@@ -2433,7 +2826,9 @@ import { createHelpersToolset } from './tools/helpers';
 import { createMemoryToolset } from './tools/memory';
 import { createSkillsToolset } from './tools/skills';
 import { McpManager } from './mcp-manager';
+import { AssistantMessageState, StepResultQueue } from './assistant-message-state';
 import { ApprovalManager } from './tools/approval-manager';
+import { convertImageToolResults } from './message-preparation/provider-compatibility';
 import {
   estimateMessageTokens,
   extractPromptContextFromToolResult,
@@ -2445,7 +2840,7 @@ import {
 import { extractReasoningMiddleware } from './middlewares/extract-reasoning-middleware';
 import { CompactionLevel, generateCompactedSummary, getReloadableMessages, getSubagentOldResultIds, smartCompactMessages } from './compaction';
 ⋮----
-import type { ToolsetToolEntry } from '@common/extensions';
+import type { ExtensionToolOrigin, ToolsetToolEntry } from '@common/extensions';
 import type { TextPart } from '@ai-sdk/provider-utils';
 import type { z } from 'zod';
 import type { LanguageModelV4 } from '@ai-sdk/provider';
@@ -2456,7 +2851,7 @@ import { AIDER_DESK_PROJECT_RULES_DIR } from '@/constants';
 import { Task } from '@/task';
 import { Store } from '@/store';
 import logger from '@/logger';
-import { optimizeMessages } from '@/agent/optimizer';
+import { prepareMessagesForModel } from '@/agent/message-preparation';
 import { ModelManager } from '@/models/model-manager';
 import { TelemetryManager } from '@/telemetry/telemetry-manager';
 import { ResponseMessage } from '@/messages';
@@ -2517,6 +2912,7 @@ private async getAvailableTools(
     resultMessages?: ContextMessage[],
     abortSignal?: AbortSignal,
     promptContext?: PromptContext,
+    approvalManager = new ApprovalManager(task, profile),
 ): Promise<ToolSet>
 ⋮----
 // MCP tools
@@ -2533,7 +2929,12 @@ private async getAvailableTools(
 ⋮----
 private wrapToolsWithHooks(task: Task, profile: AgentProfile, toolSet: ToolSet, abortSignal?: AbortSignal, promptContext?: PromptContext): ToolSet
 ⋮----
-// Use modified input from extension if provided
+// Tools invoked internally by an extension (marked via EXTENSION_ORIGIN) must not be
+// propagated to the UI and must not take part in durability, per the documented Tool
+// contract. Delegate straight to the underlying tool. Prepared to honour
+// `surfaceInUi`/`durable` once that extension opt-in is implemented.
+⋮----
+const execute = async ()
 ⋮----
 async runAgent(
     task: Task,
@@ -2570,6 +2971,8 @@ async runAgent(
 ⋮----
 // Normalize messages for provider-specific requirements
 ⋮----
+const finalizeCancellation = async () =>
+⋮----
 // repairToolCall function that attempts to repair tool calls
 const repairToolCall = async (
 ⋮----
@@ -2592,8 +2995,6 @@ error: error.message, // Pass the validation error message
 ⋮----
 const getBaseModelCallParams = async () =>
 ⋮----
-const getOptimizedMessages = async () =>
-⋮----
 const onStepEnd = async (stepResult: StepResult<typeof toolSet>) =>
 ⋮----
 // Reset retry count when we get a response
@@ -2607,8 +3008,6 @@ const onStepEnd = async (stepResult: StepResult<typeof toolSet>) =>
 // no-op
 ⋮----
 // try again
-⋮----
-// Persist new messages incrementally after each iteration
 ⋮----
 // Check for 'stop' with no usable output (model generated tokens, but no messages or reasoning-only message)
 ⋮----
@@ -2723,6 +3122,8 @@ private async processStep<TOOLS extends ToolSet>(
 reasoningText: reasoningText?.substring(0, 100), // Log truncated reasoning
 text: text?.substring(0, 100), // Log truncated text
 ⋮----
+// per-step metadata must not bump updatedAt, otherwise running tasks keep re-sorting in the task list
+⋮----
 const processToolResult = (toolResult: TypedToolResult<TOOLS>, isLast: boolean) =>
 ⋮----
 // Update the existing tool message with the result
@@ -2737,7 +3138,7 @@ private async compactMessagesIfNeeded(
     profile: AgentProfile,
     provider: ProviderProfile,
     model: string,
-    userRequestMessage: ContextUserMessage,
+    userRequestMessage: ContextUserMessage | undefined,
     contextMessages: ContextMessage[],
     contextFiles: ContextFile[],
     messages: ModelMessage[],
@@ -2761,6 +3162,27 @@ private async compactMessagesIfNeeded(
 // reload messages after compacting
 ⋮----
 // Perform handoff
+
+================
+File: src/main/agent/assistant-message-state.ts
+================
+export class AssistantMessageState
+⋮----
+messageId(baseId: string): string
+⋮----
+reasoning(text?: string): void
+⋮----
+text(): void
+⋮----
+tool(): void
+⋮----
+reset(): void
+⋮----
+export class StepResultQueue<T>
+⋮----
+push(result: T): void
+⋮----
+next(): Promise<T>
 
 ================
 File: src/main/agent/compaction.ts
@@ -2876,6 +3298,7 @@ async dispose(): Promise<void>
 ================
 File: src/main/agent/mcp-manager.ts
 ================
+import { createHash } from 'node:crypto';
 import path from 'path';
 import fs from 'fs/promises';
 ⋮----
@@ -3153,128 +3576,6 @@ private save(): Promise<void>
 private async getSafeStorage()
 
 ================
-File: src/main/agent/optimizer.ts
-================
-import { type AgentProfile, AutonomyMode, InvocationMode, ToolApprovalState } from '@common/types';
-import { getSubagentId, isSubagentEnabled } from '@common/agent';
-import { cloneDeep } from 'lodash';
-import { type FilePart, type ModelMessage, type TextPart, type ToolContent, type ToolResultPart, type UserModelMessage } from 'ai';
-import {
-  AIDER_TOOL_GROUP_NAME,
-  AIDER_TOOL_RUN_PROMPT,
-  MEMORY_TOOL_GROUP_NAME,
-  MEMORY_TOOL_RETRIEVE,
-  MEMORY_TOOL_STORE,
-  SUBAGENTS_TOOL_GROUP_NAME,
-  SUBAGENTS_TOOL_RUN_TASK,
-  TODO_TOOL_GET_ITEMS,
-  TODO_TOOL_GROUP_NAME,
-  TOOL_GROUP_NAME_SEPARATOR,
-} from '@common/tools';
-import { extractTextContent } from '@common/utils';
-⋮----
-import { convertMcpResultToModelOutput } from './utils';
-⋮----
-import logger from '@/logger';
-import { type CacheControl } from '@/models';
-import { Task } from '@/task';
-import { ExtensionManager } from '@/extensions';
-⋮----
-/**
- * Optimizes the messages before sending them to the LLM. This should reduce the token count and improve the performance.
- */
-export const optimizeMessages = async (
-  messages: ModelMessage[],
-  cacheControl?: CacheControl,
-  task: Task | null = null,
-  profile: AgentProfile | null = null,
-  projectProfiles: AgentProfile[] = [],
-  userRequestMessageIndex: number = -1,
-  extensionManager?: ExtensionManager,
-): Promise<ModelMessage[]> =>
-⋮----
-const addImportantReminders = async (
-  task: Task,
-  profile: AgentProfile,
-  projectProfiles: AgentProfile[],
-  userRequestMessageIndex: number,
-  messages: ModelMessage[],
-  extensionManager?: ExtensionManager,
-): Promise<ModelMessage[]> =>
-⋮----
-// Add reminder about automatic subagents
-⋮----
-// Add reminder about worktree mode
-⋮----
-// Dispatch event to extensions to allow modification of reminders
-⋮----
-/**
- * For run_prompt tool, which returns `responses` array, we should replace this array with empty array.
- */
-const optimizeAiderMessages = (messages: ModelMessage[]): ModelMessage[] =>
-⋮----
-// @ts-expect-error result is expected to have responses
-⋮----
-// @ts-expect-error result is expected to have promptContext
-⋮----
-// ignore
-⋮----
-/**
- * For subagent tool, which now returns an array of messages, we should replace this array with only the last message for LLM processing.
- */
-const optimizeSubagentMessages = (messages: ModelMessage[]): ModelMessage[] =>
-⋮----
-// @ts-expect-error result is expected to have messages
-⋮----
-// ignore
-⋮----
-/**
- * Converts tool results containing image data (from MCP tools that return
- * content with image parts) into a user message with image parts, and
- * replaces the tool result output with text-only content.
- *
- * This is necessary because the OpenAI API (and OpenAI-compatible providers)
- * only supports string content in tool results — images cannot be sent
- * inline. By moving images to a user message, all providers can handle
- * them via their native image support (e.g. OpenAI `image_url`, Anthropic
- * `image` with base64, Google `inlineData`).
- */
-export const convertImageToolResults = (messages: ModelMessage[]): ModelMessage[] =>
-⋮----
-// Handle content-type outputs — extract file/image parts into user messages
-// since not all providers support file parts in tool results natively
-⋮----
-// If images were extracted, add a user message with the image parts
-⋮----
-/**
- * Some models (Gemini Flash) are trying to call the same tool multiple times in a row.
- * This function detects this pattern (assistant tool call -> tool result -> same assistant tool call)
- * and modifies the result of the second tool call to return an error, preventing a loop.
- */
-const removeDuplicateToolCalls = (messages: ModelMessage[]): ModelMessage[] =>
-⋮----
-// Need at least 4 messages for the pattern: assistant, tool, assistant, tool
-⋮----
-const newMessages = [...messages]; // Create a mutable copy
-⋮----
-// Iterate up to the point where the pattern can start
-⋮----
-// Check for the pattern: assistant(call) -> tool(result) -> assistant(call) -> tool(result)
-⋮----
-// Ensure both assistant messages contain tool calls
-⋮----
-// Compare the tool calls
-⋮----
-// This is a duplicate call. Modify the fourth message (the result of the duplicate call).
-⋮----
-// Match the tool result part to the duplicate tool call id
-⋮----
-// Replace the old tool message with the modified one
-⋮----
-// To prevent overlapping checks and unnecessary work, we can advance the index.
-// Since we've processed a block of 4, we can safely jump ahead.
-
-================
 File: src/main/agent/smart-compaction.ts
 ================
 import { ContextMessage, ContextToolMessage, ContextAssistantMessage, TextPart, ToolResultPart, ToolResultOutput } from '@common/types';
@@ -3436,6 +3737,7 @@ export type RunSubagentTaskParams = {
   abortSignal?: AbortSignal;
   contextMessages?: ContextMessage[];
   currentMessages?: ContextMessage[];
+  parentToolCallId?: string;
   onStarted?: (promptContext: PromptContext) => void | Promise<void>;
 };
 ⋮----
@@ -3498,7 +3800,10 @@ export const runSubagentTask = async ({
   contextMessages = [],
   currentMessages = [],
   onStarted,
+  parentToolCallId,
 }: RunSubagentTaskParams): Promise<RunSubagentTaskResult> =>
+⋮----
+const finishOutcome = async (outcome: RunSubagentTaskResult): Promise<RunSubagentTaskResult> =>
 
 ================
 File: src/main/agent/utils.ts
@@ -3515,6 +3820,8 @@ import { isBinary } from 'istextorbinary';
 import { encode } from 'gpt-tokenizer/model/gpt-4o';
 import { z } from 'zod';
 import { ContextMessage, ContextUserMessage, JSONValue, MessageRole, PromptContext, ToolResultOutput } from '@common/types';
+⋮----
+import logger from '@/logger';
 ⋮----
 /**
  * Zod schema that coerces string values to booleans before validation.
@@ -3633,6 +3940,8 @@ export const readFileContent = async (
 const readLargeFileContent = async (absolutePath: string, withLines: boolean, lineOffset: number, lineLimit: number, sizeLimit: number): Promise<string> =>
 ⋮----
 const finish = ()
+⋮----
+const countTextTokens = (text: string): number =>
 ⋮----
 export const truncateToolResult = async (
   content: string,
@@ -3964,6 +4273,12 @@ private runMigrations(): void
    * @param usageReport The usage report data.
    * @param content The content of the message.
    */
+public getAgentExecutions(project: string, taskId: string): string[]
+⋮----
+public saveAgentExecution(project: string, taskId: string, promptContextId: string, state: string): void
+⋮----
+public deleteAgentExecution(project: string, taskId: string, promptContextId: string): void
+⋮----
 public saveMessage(
     id: string,
     type: 'tool' | 'assistant',
@@ -4520,7 +4835,7 @@ import {
   ToolApprovalState,
 } from '@common/types';
 import { TOOL_GROUP_NAME_SEPARATOR } from '@common/tools';
-import { AIDER_DESK_EXTENSIONS_REPO_URL, ProviderDefinition, Tool, UIComponentDefinition } from '@common/extensions';
+import { AIDER_DESK_EXTENSIONS_REPO_URL, EXTENSION_ORIGIN, ProviderDefinition, Tool, UIComponentDefinition } from '@common/extensions';
 import { DEFAULT_AGENT_PROFILE } from '@common/agent';
 ⋮----
 import { ExtensionLoader } from './extension-loader';
@@ -4544,6 +4859,7 @@ import type {
   CustomCommandExecutedEvent,
   Extension,
   ExtensionContext,
+  ExtensionToolOrigin,
   FilesAddedEvent,
   FilesDroppedEvent,
   HandleApprovalEvent,
@@ -4551,6 +4867,8 @@ import type {
   InterruptedEvent,
   ModeDefinition,
   OptimizeMessagesEvent,
+  TransformMessagesEvent,
+  ApplyCacheControlEvent,
   ProjectStartedEvent,
   ProjectStoppedEvent,
   PromptFinishedEvent,
@@ -4650,6 +4968,8 @@ export type ExtensionEventMap = {
   onAgentStepStarted: AgentStepStartedEvent;
   onAgentStepFinished: AgentStepFinishedEvent;
   onOptimizeMessages: OptimizeMessagesEvent;
+  onTransformMessages: TransformMessagesEvent;
+  onApplyCacheControl: ApplyCacheControlEvent;
   onImportantReminders: ImportantRemindersEvent;
   onAiderPromptStarted: AiderPromptStartedEvent;
   onAiderPromptFinished: AiderPromptFinishedEvent;
@@ -4860,6 +5180,11 @@ createExtensionToolset(
 // --- Tool Approval Logic ---
 ⋮----
 // --- End Tool Approval Logic ---
+⋮----
+// Tools invoked internally by an extension must not be propagated to the UI
+// and must not take part in durability (honours the documented Tool contract).
+// The structured flags are prepared for a future opt-in where extensions could
+// enable UI surfacing and/or durable execution for their internal tool calls.
 ⋮----
 // Error isolation - log and return error message
 ⋮----
@@ -5229,7 +5554,7 @@ async getAllFiles(useGit = true): Promise<string[]>
 ⋮----
 async getUpdatedFiles(): Promise<UpdatedFile[]>
 ⋮----
-async getUpdatedFileDiff(filePath: string, commitHash?: string): Promise<string>
+async getUpdatedFileDiff(filePath: string, commitHash?: string, previousPath?: string): Promise<string>
 ⋮----
 async getUpdatedFileContents(filePath: string, commitHash?: string): Promise<
 ⋮----
@@ -5489,12 +5814,6 @@ const baseRef = baseBranch; // Will be 'HEAD' if not provided
 // Get the base commit (the tip of the existing branch)
 ⋮----
 // A2. Create new branch from baseRef (which defaults to 'HEAD')
-⋮----
-// Verify that the base branch exists if specified and is a branch name
-⋮----
-// Capture the base commit before creating the worktree
-⋮----
-// Create the new branch and checkout the worktree
 ⋮----
 newBranchName = branch; // Use the newly created branch name
 ⋮----
@@ -5800,7 +6119,13 @@ generateMergeCommands(mainBranch: string, branchName: string): string[]
 ⋮----
 async gitPull(worktreePath: string, rebase?: boolean): Promise<
 ⋮----
-async gitPush(worktreePath: string, force?: boolean, setUpstream?: boolean): Promise<
+async gitPush(worktreePath: string, force?: boolean, setUpstream?: boolean, baseBranch?: string): Promise<
+⋮----
+private async getBaseBranchPushTarget(repoPath: string, baseBranch: string): Promise<
+⋮----
+private matchFetchRefspec(pattern: string, ref: string): string | undefined
+⋮----
+private async resolveFetchRefspecPushTarget(repoPath: string, trackingRef: string): Promise<
 ⋮----
 private async getDefaultRemote(repoPath: string): Promise<string>
 ⋮----
@@ -5882,6 +6207,8 @@ async dropStash(path: string, stashId: string): Promise<void>
 // Extract stash reference (e.g., "stash@{0}")
 ⋮----
 // Don't throw - dropping stash is not critical
+⋮----
+private async requireLocalIntegrationTarget(projectPath: string, branch: string): Promise<void>
 ⋮----
 /**
    * Merge worktree to main branch with uncommitted changes support
@@ -6008,6 +6335,8 @@ private buildUntrackedFileDiff(fileContentBuffer: Buffer, filePath: string): str
 ⋮----
 private formatDiffPath(filePath: string): string
 ⋮----
+private parseUpdatedFileNumstat(worktreePath: string, output: string): UpdatedFile[]
+⋮----
 /**
    * Worktree mode: separate committed (per-commit) and uncommitted file diffs.
    */
@@ -6017,19 +6346,9 @@ private async getWorktreeUpdatedFiles(worktreePath: string, mainBranch: string):
 ⋮----
 // 2. For each commit, get its files (diffs are lazy loaded via getFileDiff)
 ⋮----
-// Get numstat for this specific commit
-⋮----
-// Build a map of filePath -> {additions, deletions} from numstat
-⋮----
-// Emit one UpdatedFile per file in this commit (diff not included - lazy loaded via getFileDiff)
-⋮----
-// Skip symlink paths (worktree infrastructure artifacts)
-⋮----
 // 3. Get uncommitted changes (diff against HEAD, not merge-base)
 ⋮----
 // Check if HEAD exists (no commits yet in worktree)
-⋮----
-// Skip symlink paths (worktree infrastructure artifacts)
 ⋮----
 /**
    * Worktree flat mode: all changed files with diff from base to working tree,
@@ -6045,14 +6364,10 @@ private async getWorktreeFlatUpdatedFiles(worktreePath: string, mainBranch: stri
 // git diff (without ...) compares the base directly to the working tree,
 // including both committed and uncommitted changes.
 ⋮----
-// Skip symlink paths (worktree infrastructure artifacts)
-⋮----
 /**
    * Non-worktree mode: simple uncommitted changes vs HEAD.
    */
 private async getNonWorktreeUpdatedFiles(worktreePath: string): Promise<UpdatedFile[]>
-⋮----
-// Skip symlink paths (worktree infrastructure artifacts)
 ⋮----
 /**
    * No-HEAD mode: repo has no commits yet. Uses the well-known empty tree hash
@@ -6070,7 +6385,14 @@ private async getNoHeadUpdatedFiles(worktreePath: string): Promise<UpdatedFile[]
    * - No commitHash: untracked file diff (synthesized) or file diff against HEAD,
    *   merge-base (worktree flat mode) or the empty tree hash (no commits yet).
    */
-async getFileDiff(worktreePath: string, workingMode?: WorkingMode, mainBranch?: string, filePath?: string, commitHash?: string): Promise<string>
+async getFileDiff(
+    worktreePath: string,
+    workingMode?: WorkingMode,
+    mainBranch?: string,
+    filePath?: string,
+    commitHash?: string,
+    previousPath?: string,
+): Promise<string>
 ⋮----
 // Untracked file: synthesize the diff from the file content
 ⋮----
@@ -6087,11 +6409,12 @@ async getFileContents(
     mainBranch?: string,
     filePath?: string,
     commitHash?: string,
+    previousPath?: string,
 ): Promise<
 ⋮----
 // Resolve the base the same way as getFileDiff
 ⋮----
-private async safeGitShow(worktreePath: string, ref: string, escapedPath: string): Promise<string>
+private async safeGitShow(worktreePath: string, ref: string, filePath: string): Promise<string>
 ⋮----
 /**
    * Check if the file at the given path (relative to worktreePath) is binary.
@@ -6124,7 +6447,7 @@ async undoLastCommit(worktreePath: string): Promise<
 ⋮----
 // Reset --soft HEAD~1
 ⋮----
-async restoreFile(worktreePath: string, filePath: string): Promise<void>
+async restoreFile(worktreePath: string, filePath: string, previousPath?: string): Promise<void>
 ⋮----
 // Check if file exists in HEAD (committed)
 ⋮----
@@ -6697,7 +7020,13 @@ export const getAzureProviderParameters = (llmProvider: LlmProvider, model: Mode
 ================
 File: src/main/models/providers/bedrock.ts
 ================
-import { BedrockClient, GetFoundationModelAvailabilityCommand, type InferenceProfileSummary, ListInferenceProfilesCommand } from '@aws-sdk/client-bedrock';
+import {
+  BedrockClient,
+  GetFoundationModelAvailabilityCommand,
+  type InferenceProfileSummary,
+  ListInferenceProfilesCommand,
+  ResourceNotFoundException,
+} from '@aws-sdk/client-bedrock';
 import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import { Model, ModelInfo, ProviderProfile, SettingsData } from '@common/types';
 import { BedrockProvider, isBedrockProvider } from '@common/agent';
@@ -8121,7 +8450,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 ⋮----
 import { AVAILABLE_PROVIDERS, getDefaultProviderParams, LlmProvider, LlmProviderName } from '@common/agent';
-import { ProviderDefinition } from '@common/extensions';
+import { ProviderDefinition, ProviderToolApprovalHandler } from '@common/extensions';
 import {
   Model,
   ModelInfo,
@@ -8313,6 +8642,7 @@ createLlm(
     systemPrompt?: string,
     providerMetadata?: unknown,
     sessionId?: string,
+    approveTool?: ProviderToolApprovalHandler,
 ): LanguageModel | Promise<LanguageModel>
 ⋮----
 // Resolve Model object if string is provided
@@ -8378,6 +8708,7 @@ File: src/main/models/types.ts
 ================
 import { Model, ModelInfo, ProviderProfile, Reasoning, SettingsData, TlsPolicyRegistrar, UsageReportData, VoiceSession } from '@common/types';
 import { LlmProvider } from '@common/agent';
+import { ProviderToolApprovalHandler } from '@common/extensions';
 ⋮----
 import type { SharedV4ProviderOptions } from '@ai-sdk/provider';
 import type { LanguageModel, LanguageModelUsage, ModelMessage, ToolSet } from 'ai';
@@ -8425,6 +8756,7 @@ export interface LlmProviderStrategy {
     providerMetadata?: unknown,
     tlsRegistrar?: TlsPolicyRegistrar,
     sessionId?: string,
+    approveTool?: ProviderToolApprovalHandler,
   ) => LanguageModel | Promise<LanguageModel>;
 
   /**
@@ -8568,6 +8900,24 @@ File: src/main/models/utils.ts
 import type { TlsPolicyOptions, TlsPolicyRegistrar } from '@common/types';
 ⋮----
 export const syncProviderTlsRule = (registrar: TlsPolicyRegistrar | undefined, baseUrl: string | undefined, sslVerify?: boolean, caCertPath?: string): void =>
+
+================
+File: src/main/project/check-project.ts
+================
+import fs from 'fs/promises';
+import path from 'path';
+⋮----
+import { ProjectCheckResult } from '@common/types';
+⋮----
+import { AIDER_DESK_AGENTS_DIR, AIDER_DESK_DIR, AIDER_DESK_EXTENSIONS_DIR, AIDER_DESK_MCP_SERVERS_FILE } from '@/constants';
+⋮----
+const isMissing = (error: unknown): boolean
+⋮----
+const readDirectory = async (directory: string): Promise<string[]> =>
+⋮----
+const exists = async (filePath: string): Promise<boolean> =>
+⋮----
+export const checkProject = async (baseDir: string): Promise<ProjectCheckResult> =>
 
 ================
 File: src/main/project/index.ts
@@ -8977,6 +9327,7 @@ import type { Store } from '@/store';
 import { AIDER_DESK_BUILTIN_PROMPTS_DIR, AIDER_DESK_GLOBAL_PROMPTS_DIR, AIDER_DESK_PROMPTS_DIR } from '@/constants';
 import logger from '@/logger';
 import { Task } from '@/task';
+import { getPreCompactionBackupFiles } from '@/task/context-manager';
 import { shouldUsePolling } from '@/utils/file-watch';
 ⋮----
 export class PromptsManager
@@ -9070,6 +9421,7 @@ export interface PromptTemplateData {
   toolConstants: Record<string, string>;
   workflow: string;
   projectGitRootDirectory?: string;
+  preCompactionHistoryFiles?: string[];
 }
 ⋮----
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -10438,6 +10790,10 @@ createDefaultSettings(): SettingsData
 ⋮----
 getSettings(): SettingsData
 ⋮----
+// conf re-reads and parses the config file on every get, so keep the merged settings in memory
+⋮----
+private loadSettings(): SettingsData
+⋮----
 // Ensure proper merging for nested objects
 ⋮----
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -10658,8 +11014,13 @@ import { Task } from '@/task';
 import { isDirectory, isFileIgnored, withLock } from '@/utils';
 import { atomicWriteJsonFile, cleanupStaleTempFiles } from '@/utils/atomic-write';
 import { extractPromptContextFromToolResult } from '@/agent/utils';
+import { getSubagentMessages, getSubagentFinalText } from '@/agent/message-preparation/tool-results';
 import { migrateContextV1toV2 } from '@/task/migrations/v1-to-v2';
 import { AIDER_DESK_TASKS_DIR } from '@/constants';
+⋮----
+export const getBackupSequence = (file: string): number =>
+⋮----
+export const getPreCompactionBackupFiles = async (dir: string): Promise<string[]> =>
 ⋮----
 export class ContextManager
 ⋮----
@@ -10764,10 +11125,13 @@ async save(): Promise<void>
 // crash mid-write never leaves context.json half-written.
 ⋮----
 /**
-   * Creates a backup of the current context.json file before a destructive operation
-   * (e.g., smart compaction). Backups are named context.backup.001.json, context.backup.002.json, etc.
-   * For debugging purposes only.
+   * Creates a snapshot of the current context.json file before a destructive operation
+   * (e.g., compaction). Snapshots are named context.pre-compaction.001.json, context.pre-compaction.002.json, etc.,
+   * higher numbers mean newer snapshots. They are kept in the task directory so the agent
+   * can read the full pre-compaction conversation history when needed.
    */
+getSnapshotDir(): string
+⋮----
 async backupContext(): Promise<void>
 ⋮----
 private async cleanupContext(): Promise<void>
@@ -10801,7 +11165,7 @@ private async recoverCorruptContext(): Promise<TaskContext | null>
 ⋮----
 private async loadInternal(): Promise<void>
 ⋮----
-async loadMessages(messages: ContextMessage[], updateTaskState = true): Promise<void>
+async loadMessages(messages: ContextMessage[], updateTaskState = true, executionId?: string, createSnapshot = false): Promise<void>
 ⋮----
 // Clear all current messages
 ⋮----
@@ -11004,6 +11368,7 @@ import type { WatchHandle } from '@/file-watcher-manager';
 import type { SmartCompactionPassSelection } from '@/agent/smart-compaction';
 import type { SmartCompactionOptions } from '@common/extensions';
 ⋮----
+import { translate } from '@/utils/i18n';
 import { ExtensionEventMap, ExtensionManager } from '@/extensions/extension-manager';
 import { getAllFiles, isValidProjectFile } from '@/utils/file-system';
 import { atomicWriteJsonFile } from '@/utils/atomic-write';
@@ -11016,8 +11381,9 @@ import {
   WORKTREE_BRANCH_PREFIX,
 } from '@/constants';
 import { Agent, AgentProfileManager, McpConfigManager, McpManager } from '@/agent';
+import { DurabilityManager } from '@/agent/durability/durability-manager';
 import { safeJsonStringify } from '@/agent/utils';
-import { findEnabledSubagent, runSubagentTask } from '@/agent/subagent';
+import { createSubagentPromptContext, findEnabledSubagent, runSubagentTask } from '@/agent/subagent';
 import { Connector } from '@/connector';
 import { DataManager } from '@/data-manager';
 import logger from '@/logger';
@@ -11169,6 +11535,8 @@ public getProjectDir()
 ⋮----
 public getTaskDir()
 ⋮----
+public getContextSnapshotDir()
+⋮----
 public compileCustomSystemPrompt(template: string): Promise<string>
 ⋮----
 /**
@@ -11289,6 +11657,8 @@ public async runSubagent(
     promptContext?: PromptContext,
 ): Promise<ContextMessage[]>
 ⋮----
+const abortChild = ()
+⋮----
 // Register abort controller if provided and promptContext has interruptId
 ⋮----
 // Unregister abort controller if it was registered
@@ -11389,6 +11759,10 @@ public async askQuestion(questionData: QuestionData, awaitAnswer = true): Promis
 ⋮----
 // Store the resolve function for the promise
 ⋮----
+public getAiderModelsData(): ModelsData | null
+⋮----
+public getArchitectModel(): string | null
+⋮----
 public updateAiderModels(modelsData: ModelsData)
 ⋮----
 public updateModels(mainModel: string, weakModel: string | null, editFormat: EditFormat = 'diff')
@@ -11428,9 +11802,9 @@ public async getAllFiles(useGit = true): Promise<string[]>
 ⋮----
 public async getUpdatedFiles(): Promise<UpdatedFile[]>
 ⋮----
-public async getUpdatedFileDiff(filePath: string, commitHash?: string): Promise<string>
+public async getUpdatedFileDiff(filePath: string, commitHash?: string, previousPath?: string): Promise<string>
 ⋮----
-public async getUpdatedFileContents(filePath: string, commitHash?: string): Promise<
+public async getUpdatedFileContents(filePath: string, commitHash?: string, previousPath?: string): Promise<
 ⋮----
 public async getContextFiles(includeRuleFiles = false): Promise<ContextFile[]>
 ⋮----
@@ -11492,6 +11866,14 @@ public async deactivateSkill(skillName: string): Promise<string[]>
 ⋮----
 public async addRoleContextMessage(role: MessageRole, content: string, usageReport?: UsageReportData)
 ⋮----
+public async persistDurableMessages(messages: ContextMessage[]): Promise<void>
+⋮----
+public publishDurableMessages(messages: ContextMessage[]): void
+⋮----
+public async recoverDurableExecutions(): Promise<void>
+⋮----
+public async restoreDurableConversation(messages: ContextMessage[]): Promise<void>
+⋮----
 public async addContextMessage(message: ContextMessage, updateContextInfo = false)
 ⋮----
 public sendAddMessage(role: MessageRole = MessageRole.User, content: string, acknowledge = true)
@@ -11500,7 +11882,7 @@ public sendUserMessage(data: UserMessageData)
 ⋮----
 public sendToolMessage(data: ToolData)
 ⋮----
-public async clearContext(addToHistory = false, updateContextInfo = true, updateTaskState = true, createSnapshot = true)
+public async clearContext(addToHistory = false, updateContextInfo = true, updateTaskState = true, createSnapshot = true, preserveExecution = false)
 ⋮----
 public async resetContext()
 ⋮----
@@ -11514,15 +11896,7 @@ async undoContextChange(): Promise<boolean>
    */
 public async loadContextMessages(messages: ContextMessage[])
 ⋮----
-public async interruptResponse(interruptId?: string)
-⋮----
-// Check for subagent abort controller first
-⋮----
-// Check for conflict resolution agent
-⋮----
-// No specific interruptId - check for running subagents first
-⋮----
-// Cancel the first running subagent
+public async interruptResponse(interruptId?: string, preserveJournal = false)
 ⋮----
 // Default behavior: interrupt main agent
 ⋮----
@@ -11621,9 +11995,10 @@ public async smartCompactConversation(
     contextMessages?: ContextMessage[],
     infoMessage = 'Conversation smart-compacted.',
     options?: SmartCompactionOptions,
+    executionId?: string,
 ): Promise<ContextMessage[]>
 ⋮----
-// backing up the current context before compacting for debugging purposes
+// backing up the current context before compacting so the pre-compaction history stays available
 ⋮----
 // Determine compaction level based on messages since last compaction
 ⋮----
@@ -11641,6 +12016,8 @@ public async compactConversation(
 ): Promise<void>
 ⋮----
 // Get profile if not provided
+⋮----
+// backing up the full context before compacting so the pre-compaction history stays available
 ⋮----
 // Find skill activation messages before generating summary
 ⋮----
@@ -11780,7 +12157,7 @@ async reset()
 ⋮----
 async restartAiderConnector()
 ⋮----
-public async updateTask(updates: Partial<TaskData>): Promise<TaskData>
+public async updateTask(updates: Partial<TaskData>, updateTimestamps = true): Promise<TaskData>
 ⋮----
 // Handle worktree configuration changes
 ⋮----
@@ -11798,7 +12175,7 @@ public async sendUpdatedFilesUpdated()
 ⋮----
 public async sendSkillsUpdated(): Promise<void>
 ⋮----
-private async initWorktree(): Promise<void>
+private async initWorktree(baseBranch?: string): Promise<void>
 ⋮----
 private async runWorktreePostCreateCommand(command: string): Promise<void>
 ⋮----
@@ -11840,7 +12217,7 @@ public async revertLastMerge(): Promise<void>
 ⋮----
 public async addFileToGit(filePath: string): Promise<void>
 ⋮----
-public async restoreFile(filePath: string): Promise<void>
+public async restoreFile(filePath: string, previousPath?: string): Promise<void>
 ⋮----
 public async generateCommitMessage(filePaths?: string[]): Promise<string>
 ⋮----
@@ -11891,7 +12268,7 @@ public async updateGitBranch(branchName: string): Promise<
 ⋮----
 public async gitPull(rebase?: boolean): Promise<
 ⋮----
-public async gitPush(force?: boolean, setUpstream?: boolean): Promise<
+public async gitPush(force?: boolean, setUpstream?: boolean, pushToBase?: boolean): Promise<
 ⋮----
 public async renameGitBranch(newBranchName: string): Promise<void>
 ⋮----
@@ -12028,7 +12405,11 @@ export const getPostHogAiderEnvironmentVariables = (baseDir: string, settings: S
 File: src/main/telemetry/telemetry-manager.ts
 ================
 import { PostHog } from 'posthog-node';
-import { AgentProfile, Mode, SettingsData, TaskData } from '@common/types';
+import { AgentProfile, AIDER_MODES, Mode, SettingsData, TaskData } from '@common/types';
+import { extractProviderModel } from '@common/utils';
+⋮----
+import type { Task } from '@/task/task';
+import type { ModelManager } from '@/models/model-manager';
 ⋮----
 import { Store } from '@/store';
 import logger from '@/logger';
@@ -12037,7 +12418,10 @@ import { getElectronApp } from '@/app';
 ⋮----
 export class TelemetryManager
 ⋮----
-constructor(store: Store)
+constructor(
+    store: Store,
+    private readonly modelManager: ModelManager,
+)
 ⋮----
 settingsChanged(oldSettings: SettingsData, newSettings: SettingsData)
 ⋮----
@@ -12049,9 +12433,15 @@ captureProjectOpened(openedProjectsCount: number)
 ⋮----
 captureProjectClosed(closedProjectsCount: number)
 ⋮----
-captureRunPrompt(mode?: Mode)
+async captureRunPrompt(task: Task, mode: Mode)
 ⋮----
 captureAgentRun(profile: AgentProfile, task?: TaskData, totalMcpServersCount = 0)
+⋮----
+private getTelemetryProviderName(providerId: string): string | undefined
+⋮----
+private getAgentModelProperties(profile: AgentProfile | null)
+⋮----
+private getTelemetryModelName(model?: string | null): string | null | undefined
 ⋮----
 captureCustomCommand(commandName: string, argsCount: number, mode: Mode)
 ⋮----
@@ -12603,7 +12993,7 @@ export const ensureRipgrepBinary = async (): Promise<boolean> =>
 ================
 File: src/main/utils/shell.ts
 ================
-import { exec, execSync } from 'child_process';
+import { exec, execFile, execSync } from 'child_process';
 ⋮----
 import { promisify } from 'util';
 ⋮----
@@ -12819,7 +13209,7 @@ export const initPath = (): void =>
 ⋮----
 // Wrapper for execAsync that includes enhanced PATH
 export const execWithShellPath = async (
-  command: string,
+  command: string | string[],
   options?: { cwd?: string; env?: NodeJS.ProcessEnv; maxBuffer?: number; signal?: AbortSignal; killSignal?: NodeJS.Signals | number },
 ): Promise<
 
@@ -13072,6 +13462,7 @@ import {
   VersionsInfo,
   VoiceSession,
   ChangeRequestItem,
+  SwitchToWorktreeOptions,
 } from '@common/types';
 import { compareBaseDirs, normalizeBaseDir } from '@common/utils';
 // @ts-expect-error istextorbinary is not typed properly
@@ -13085,6 +13476,7 @@ import { McpManager, McpConfigManager, AgentProfileManager } from '@/agent';
 import { MemoryManager } from '@/memory/memory-manager';
 import { ModelManager } from '@/models';
 import { Project, ProjectManager } from '@/project';
+import { checkProject } from '@/project/check-project';
 import { CloudflareTunnelManager } from '@/server';
 import { Store } from '@/store';
 import { TelemetryManager } from '@/telemetry';
@@ -13190,9 +13582,15 @@ async refreshContextFiles(baseDir: string, taskId: string): Promise<void>
 ⋮----
 async getUpdatedFiles(baseDir: string, taskId: string): Promise<UpdatedFile[]>
 ⋮----
-async getUpdatedFileDiff(baseDir: string, taskId: string, filePath: string, commitHash?: string): Promise<string>
+async getUpdatedFileDiff(baseDir: string, taskId: string, filePath: string, commitHash?: string, previousPath?: string): Promise<string>
 ⋮----
-async getUpdatedFileContents(baseDir: string, taskId: string, filePath: string, commitHash?: string): Promise<
+async getUpdatedFileContents(
+    baseDir: string,
+    taskId: string,
+    filePath: string,
+    commitHash?: string,
+    previousPath?: string,
+): Promise<
 ⋮----
 async addFile(baseDir: string, taskId: string, filePath: string, readOnly = false): Promise<void>
 ⋮----
@@ -13292,11 +13690,7 @@ async switchToLocalWorkingMode(
     options?: { mergeBeforeSwitch?: boolean; targetBranch?: string; switchAllInWorktree?: boolean; discardWorktreeChanges?: boolean },
 ): Promise<void>
 ⋮----
-async switchToWorktreeWorkingMode(
-    baseDir: string,
-    taskId: string,
-    options?: { carryOverUncommittedChanges?: boolean; dropSourceChanges?: boolean },
-): Promise<void>
+async switchToWorktreeWorkingMode(baseDir: string, taskId: string, options?: SwitchToWorktreeOptions): Promise<void>
 ⋮----
 async getLocalUncommittedFiles(baseDir: string, taskId: string): Promise<
 ⋮----
@@ -13306,7 +13700,7 @@ async revertLastMerge(baseDir: string, taskId: string): Promise<void>
 ⋮----
 async addFileToGit(baseDir: string, taskId: string, filePath: string): Promise<void>
 ⋮----
-async restoreFile(baseDir: string, taskId: string, filePath: string): Promise<void>
+async restoreFile(baseDir: string, taskId: string, filePath: string, previousPath?: string): Promise<void>
 ⋮----
 async readFile(baseDir: string, taskId: string, filePath: string): Promise<string>
 ⋮----
@@ -13342,7 +13736,7 @@ async updateGitBranch(baseDir: string, taskId: string, branchName: string): Prom
 ⋮----
 async gitPull(baseDir: string, taskId: string, rebase?: boolean): Promise<
 ⋮----
-async gitPush(baseDir: string, taskId: string, force?: boolean, setUpstream?: boolean): Promise<
+async gitPush(baseDir: string, taskId: string, force?: boolean, setUpstream?: boolean, pushToBase?: boolean): Promise<
 ⋮----
 async getTaskGitStatus(baseDir: string, taskId: string, targetBranch?: string)
 ⋮----
@@ -13754,6 +14148,7 @@ import {
   TodoItem,
   AgentProfile,
   ChangeRequestItem,
+  SwitchToWorktreeOptions,
 } from '@common/types';
 import { ipcMain, clipboard, ClipboardItem } from 'electron';
 ⋮----
@@ -13856,8 +14251,6 @@ export const initManagers = async (store: Store, windowManager?: WindowManager):
 // Prevent unhandled promise rejections from crashing the process
 ⋮----
 // Initialize network manager FIRST — must be before any network calls
-⋮----
-// Initialize telemetry manager (non-blocking - analytics not critical for startup)
 ⋮----
 // Initialize MCP manager
 ⋮----
@@ -14681,6 +15074,7 @@ import {
   OpenDialogResult,
   OS,
   ProjectData,
+  ProjectCheckResult,
   ProjectSettings,
   ProjectStartedData,
   ProviderModelsData,
@@ -14871,6 +15265,7 @@ isOpenDialogSupported(): boolean
 showOpenDialog(options: OpenDialogOptions): Promise<OpenDialogResult>
 getPathForFile(file: File): string
 getOpenProjects(): Promise<ProjectData[]>
+checkProject(baseDir: string): Promise<ProjectCheckResult>
 addOpenProject(baseDir: string): Promise<ProjectData[]>
 setActiveProject(baseDir: string): Promise<ProjectData[]>
 removeOpenProject(baseDir: string): Promise<ProjectData[]>
@@ -14894,8 +15289,14 @@ getAddableFiles(baseDir: string, taskId: string): Promise<string[]>
 getAllFiles(baseDir: string, taskId: string, useGit?: boolean): Promise<string[]>
 refreshContextFiles(baseDir: string, taskId: string): Promise<void>
 getUpdatedFiles(baseDir: string, taskId: string): Promise<
-getUpdatedFileDiff(baseDir: string, taskId: string, filePath: string, commitHash?: string): Promise<string>
-getUpdatedFileContents(baseDir: string, taskId: string, filePath: string, commitHash?: string): Promise<
+getUpdatedFileDiff(baseDir: string, taskId: string, filePath: string, commitHash?: string, previousPath?: string): Promise<string>
+getUpdatedFileContents(
+    baseDir: string,
+    taskId: string,
+    filePath: string,
+    commitHash?: string,
+    previousPath?: string,
+): Promise<
 async generateCommitMessage(baseDir: string, taskId: string, filePaths?: string[]): Promise<string>
 async commitChanges(baseDir: string, taskId: string, message: string, amend: boolean, skipGitHooks: boolean, filePaths?: string[]): Promise<void>
 async cancelCommitChanges(baseDir: string, taskId: string): Promise<void>
@@ -15086,7 +15487,7 @@ revertLastMerge(baseDir: string, taskId: string): Promise<void>
 ⋮----
 addFileToGit(baseDir: string, taskId: string, filePath: string): Promise<void>
 ⋮----
-restoreFile(baseDir: string, taskId: string, filePath: string): Promise<void>
+restoreFile(baseDir: string, taskId: string, filePath: string, previousPath?: string): Promise<void>
 ⋮----
 async readFile(baseDir: string, taskId: string, filePath: string): Promise<string>
 ⋮----
@@ -15116,7 +15517,7 @@ initializeGitRepository(baseDir: string, taskId: string): Promise<void>
 ⋮----
 gitPull(baseDir: string, taskId: string, rebase?: boolean): Promise<
 ⋮----
-gitPush(baseDir: string, taskId: string, force?: boolean): Promise<
+gitPush(baseDir: string, taskId: string, force?: boolean, setUpstream?: boolean, pushToBase?: boolean): Promise<
 ⋮----
 resolveGitErrorWithAgent(baseDir: string, taskId: string): Promise<void>
 ⋮----
@@ -15408,7 +15809,7 @@ import { clsx } from 'clsx';
 import { useLocalStorage } from '@reactuses/core';
 ⋮----
 import { TaskStateChip } from '@/components/common/TaskStateChip';
-import { PaletteItem, PaletteItemType, useCommandPaletteStore } from '@/stores/commandPaletteStore';
+import { collectPaletteItems, PaletteItem, PaletteItemType, useCommandPaletteStore } from '@/stores/commandPaletteStore';
 ⋮----
 enum PaletteTab {
   All = 'all',
@@ -15435,6 +15836,8 @@ const handleBackdropClick = () =>
 const handleContentClick = (event: MouseEvent<HTMLDivElement>) =>
 ⋮----
 onClick=
+⋮----
+<span className=
 
 ================
 File: src/renderer/src/components/common/CommandPalette/index.ts
@@ -15451,6 +15854,7 @@ import { clsx } from 'clsx';
 import { HiOutlineSelector } from 'react-icons/hi';
 ⋮----
 import { parseDiff, File, Hunk as HunkType, SkipBlock, Line as LineType } from './utils';
+import { DiffFallback } from './DiffFallback';
 ⋮----
 import { highlightWithRefractor } from '@/utils/highlighter';
 import { useRefractorLanguage } from '@/hooks/useRefractorLanguage';
@@ -15466,6 +15870,49 @@ type HunkProps = { hunk: HunkType | SkipBlock };
 <tr className=
 ⋮----
 className=
+⋮----
+// eslint-disable-next-line no-console
+
+================
+File: src/renderer/src/components/common/DiffViewer/DiffErrorBoundary.tsx
+================
+import { Component, ErrorInfo, ReactNode } from 'react';
+⋮----
+type State = {
+  hasError: boolean;
+  resetKeys: readonly unknown[];
+};
+⋮----
+type Props = {
+  children: ReactNode;
+  fallback: ReactNode;
+  resetKeys: readonly unknown[];
+};
+⋮----
+export class DiffErrorBoundary extends Component<Props, State>
+⋮----
+constructor(props: Props)
+⋮----
+static getDerivedStateFromProps(props: Props, state: State): Partial<State> | null
+⋮----
+static getDerivedStateFromError(): Partial<State>
+⋮----
+componentDidCatch(error: Error, errorInfo: ErrorInfo): void
+⋮----
+// eslint-disable-next-line no-console
+⋮----
+render(): ReactNode
+
+================
+File: src/renderer/src/components/common/DiffViewer/DiffFallback.tsx
+================
+import { useTranslation } from 'react-i18next';
+⋮----
+type Props = {
+  udiff?: string;
+  oldValue?: string;
+  newValue?: string;
+};
 
 ================
 File: src/renderer/src/components/common/DiffViewer/DiffLineCommentPanel.tsx
@@ -16020,6 +16467,8 @@ import { CopyMessageButton } from '../message/CopyMessageButton';
 ⋮----
 import { MermaidDiagram } from './MermaidDiagram';
 import { IconButton } from './IconButton';
+import { DiffErrorBoundary } from './DiffViewer/DiffErrorBoundary';
+import { DiffFallback } from './DiffViewer/DiffFallback';
 ⋮----
 import { DiffViewer, UDiffViewer, CompactDiffViewer } from '@/components/common/DiffViewer';
 import { useApi } from '@/contexts/ApiContext';
@@ -16478,17 +16927,23 @@ type Props = {
 ================
 File: src/renderer/src/components/common/MermaidDiagram.tsx
 ================
-import { useEffect, useId, useState } from 'react';
-import mermaid from 'mermaid';
+import { useEffect, useRef, useState } from 'react';
+import { detectType, load, mount, type Mounted } from 'pele/lazy';
 import { CgSpinner } from 'react-icons/cg';
 import { useTranslation } from 'react-i18next';
+import { clsx } from 'clsx';
 ⋮----
 type Props = {
   code: string;
   className?: string;
+  isComplete?: boolean;
 };
 ⋮----
 const renderDiagram = async () =>
+⋮----
+// Let mount display syntax errors while retaining the last valid diagram.
+⋮----
+<div className=
 
 ================
 File: src/renderer/src/components/common/ModalOverlayLayout.tsx
@@ -16612,6 +17067,44 @@ export const RadioButton = (
 const handleChange = () =>
 ⋮----
 className="sr-only" // Hide the actual input but keep it accessible
+
+================
+File: src/renderer/src/components/common/RichSelect.tsx
+================
+import { KeyboardEvent, ReactNode, useCallback, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { HiCheck, HiChevronUpDown } from 'react-icons/hi2';
+import { clsx } from 'clsx';
+⋮----
+import { useClickOutside } from '@/hooks/useClickOutside';
+import { useDropdownState } from '@/hooks/useDropdownState';
+import { KeyboardKeys } from '@/constants/keyboardKeys';
+⋮----
+export type RichSelectOption = {
+  value: string;
+  label: ReactNode;
+  description?: ReactNode;
+  icon?: ReactNode;
+};
+⋮----
+type Props = {
+  options: RichSelectOption[];
+  value?: string;
+  onChange?: (value: string) => void;
+  renderTrigger?: (selected: RichSelectOption | undefined, isOpen: boolean) => ReactNode;
+  triggerClassName?: string;
+  menuWidth?: number;
+  align?: 'left' | 'right';
+  placement?: 'bottom' | 'top';
+  disabled?: boolean;
+  ariaLabel?: string;
+};
+⋮----
+const handleSelect = (option: RichSelectOption) =>
+⋮----
+const handleKeyDown = (e: KeyboardEvent) =>
+⋮----
+className=
 
 ================
 File: src/renderer/src/components/common/SearchableSelect.tsx
@@ -16854,6 +17347,7 @@ className={twMerge(
 File: src/renderer/src/components/common/Toggle.tsx
 ================
 import { clsx } from 'clsx';
+import { ReactNode } from 'react';
 ⋮----
 export type ToggleColor = 'primary' | 'secondary' | 'tertiary' | 'danger';
 export type ToggleSize = 'sm' | 'md';
@@ -16862,12 +17356,11 @@ type Props = {
   checked: boolean;
   onChange: (checked: boolean) => void;
   disabled?: boolean;
+  label?: ReactNode;
   'aria-label'?: string;
   color?: ToggleColor;
   size?: ToggleSize;
 };
-⋮----
-export const Toggle = (
 ⋮----
 const handleChange = () =>
 ⋮----
@@ -16947,6 +17440,7 @@ type Props<T> = {
   overscanCount?: number;
   disableHeader?: boolean;
   getRowClassName?: (row: T, index: number) => string | undefined;
+  minTableWidth?: number;
 };
 ⋮----
 // Apply manual sorting to data
@@ -17325,6 +17819,7 @@ import { VscError } from 'react-icons/vsc';
 import { clsx } from 'clsx';
 import { ToolMessage } from '@common/types';
 ⋮----
+import { localizeToolRecoveryContent } from './localize-tool-recovery';
 import { CopyMessageButton } from './CopyMessageButton';
 import { ExpandableMessageBlock } from './ExpandableMessageBlock';
 import { parseToolContent } from './utils';
@@ -17465,6 +17960,7 @@ import {
 } from '@common/tools';
 import { ToolMessage } from '@common/types';
 ⋮----
+import { getToolRecoveryCodes, localizeToolRecoveryContent } from './localize-tool-recovery';
 import { CopyMessageButton } from './CopyMessageButton';
 import { formatName, parseToolContent } from './utils';
 import { ToolResultImages } from './ToolResultImages';
@@ -18090,6 +18586,19 @@ type Props = {
 };
 
 ================
+File: src/renderer/src/components/message/localize-tool-recovery.ts
+================
+import { isToolRecoveryNotice, type ToolRecoveryCode } from '@common/tool-recovery';
+⋮----
+export const localizeToolRecoveryContent = (content: string, translate: (key: string) => string): string =>
+⋮----
+const localize = (value: unknown): unknown =>
+⋮----
+export const getToolRecoveryCodes = (content: string): ToolRecoveryCode[] =>
+⋮----
+const collect = (value: unknown): void =>
+
+================
 File: src/renderer/src/components/message/LogMessageBlock.tsx
 ================
 import { FaInfoCircle, FaExclamationTriangle, FaExclamationCircle } from 'react-icons/fa';
@@ -18270,6 +18779,8 @@ import {
   ToolMessage,
 } from '@common/types';
 ⋮----
+import { getToolRecoveryCodes } from './localize-tool-recovery';
+import { RecoveryToolMessage } from './RecoveryToolMessage';
 import { CommandOutputMessageBlock } from './CommandOutputMessageBlock';
 import { LoadingMessageBlock } from './LoadingMessageBlock';
 import { LogMessageBlock } from './LogMessageBlock';
@@ -18399,7 +18910,73 @@ e.stopPropagation();
 handleExpandedClick();
 
 ================
-File: src/renderer/src/components/message/messageMap.ts
+File: src/renderer/src/components/message/MessageMap.tsx
+================
+import { memo, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { MdKeyboardArrowDown, MdKeyboardArrowUp, MdKeyboardDoubleArrowDown } from 'react-icons/md';
+import { Message } from '@common/types';
+⋮----
+import { createMessageMapMarkers, createMessageMapTurns, getActiveMarkerId } from './messageMapUtils';
+import { MessageMapMarker } from './MessageMapMarker';
+⋮----
+import { Tooltip } from '@/components/ui/Tooltip';
+⋮----
+type Props = {
+  messages: Message[];
+  visibleIndex: number;
+  onNavigate: (index: number, animated: boolean) => void;
+  onPreviousUserMessage: () => void;
+  onNextUserMessage: () => void;
+  hasPreviousUserMessage: boolean;
+  hasNextUserMessage: boolean;
+  onScrollToBottom: () => void;
+};
+
+================
+File: src/renderer/src/components/message/MessageMapMarker.tsx
+================
+import { memo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { clsx } from 'clsx';
+⋮----
+import { MessageMapRole } from './messageMapUtils';
+import { MessageMapPreview } from './MessageMapPreview';
+⋮----
+import { Tooltip } from '@/components/ui/Tooltip';
+⋮----
+type Props = {
+  turnNumber: number;
+  role: MessageMapRole;
+  index: number;
+  preview: string;
+  active: boolean;
+  onNavigate: (index: number, animated: boolean) => void;
+};
+⋮----
+const handleClick = ()
+
+================
+File: src/renderer/src/components/message/MessageMapPreview.tsx
+================
+import { useTranslation } from 'react-i18next';
+import { clsx } from 'clsx';
+⋮----
+import { MessageMapRole } from './messageMapUtils';
+⋮----
+type Props = {
+  turnNumber: number;
+  role: MessageMapRole;
+  preview: string;
+};
+⋮----
+export const MessageMapPreview = (
+⋮----
+className=
+⋮----
+
+================
+File: src/renderer/src/components/message/messageMapUtils.ts
 ================
 import { isAssistantGroupMessage, isGroupMessage, isResponseMessage, isUserMessage, Message } from '@common/types';
 ⋮----
@@ -18449,72 +19026,6 @@ export const createMessageMapMarkers = (turns: MessageMapTurn[]): MessageMapMark
 // Selection follows user messages only: the active marker is the user message currently in the
 // scroll view, or the previous one when the viewport sits within that turn's replies.
 export const getActiveMarkerId = (markers: MessageMapMarkerItem[], visibleIndex: number): string | null =>
-
-================
-File: src/renderer/src/components/message/MessageMap.tsx
-================
-import { memo, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
-import { MdKeyboardArrowDown, MdKeyboardArrowUp, MdKeyboardDoubleArrowDown } from 'react-icons/md';
-import { Message } from '@common/types';
-⋮----
-import { createMessageMapMarkers, createMessageMapTurns, getActiveMarkerId } from './messageMap';
-import { MessageMapMarker } from './MessageMapMarker';
-⋮----
-import { Tooltip } from '@/components/ui/Tooltip';
-⋮----
-type Props = {
-  messages: Message[];
-  visibleIndex: number;
-  onNavigate: (index: number, animated: boolean) => void;
-  onPreviousUserMessage: () => void;
-  onNextUserMessage: () => void;
-  hasPreviousUserMessage: boolean;
-  hasNextUserMessage: boolean;
-  onScrollToBottom: () => void;
-};
-
-================
-File: src/renderer/src/components/message/MessageMapMarker.tsx
-================
-import { memo } from 'react';
-import { useTranslation } from 'react-i18next';
-import { clsx } from 'clsx';
-⋮----
-import { MessageMapRole } from './messageMap';
-import { MessageMapPreview } from './MessageMapPreview';
-⋮----
-import { Tooltip } from '@/components/ui/Tooltip';
-⋮----
-type Props = {
-  turnNumber: number;
-  role: MessageMapRole;
-  index: number;
-  preview: string;
-  active: boolean;
-  onNavigate: (index: number, animated: boolean) => void;
-};
-⋮----
-const handleClick = ()
-
-================
-File: src/renderer/src/components/message/MessageMapPreview.tsx
-================
-import { useTranslation } from 'react-i18next';
-import { clsx } from 'clsx';
-⋮----
-import { MessageMapRole } from './messageMap';
-⋮----
-type Props = {
-  turnNumber: number;
-  role: MessageMapRole;
-  preview: string;
-};
-⋮----
-export const MessageMapPreview = (
-⋮----
-className=
-⋮----
 
 ================
 File: src/renderer/src/components/message/Messages.tsx
@@ -18607,6 +19118,29 @@ type Props = {
 const handleContinueRebase = () =>
 ⋮----
 const handleAbortRebase = () =>
+
+================
+File: src/renderer/src/components/message/RecoveryToolMessage.tsx
+================
+import { useTranslation } from 'react-i18next';
+import { RiAlertLine, RiPauseCircleFill } from 'react-icons/ri';
+import { ToolMessage } from '@common/types';
+import { isToolRecoveryNotice } from '@common/tool-recovery';
+⋮----
+import { ExpandableMessageBlock } from './ExpandableMessageBlock';
+import { getToolRecoveryCodes, localizeToolRecoveryContent } from './localize-tool-recovery';
+import { formatName } from './utils';
+⋮----
+type Props = {
+  message: ToolMessage;
+  compact?: boolean;
+  onRemove?: () => void;
+  onFork?: () => void;
+  onRemoveUpTo?: () => void;
+  hideMessageBar?: boolean;
+};
+⋮----
+const isPureNotice = (value: unknown): boolean
 
 ================
 File: src/renderer/src/components/message/ReflectedMessageBlock.tsx
@@ -19027,6 +19561,7 @@ import {
 } from '@common/tools';
 import { ToolMessage } from '@common/types';
 ⋮----
+import { localizeToolRecoveryContent } from './localize-tool-recovery';
 import { CopyMessageButton } from './CopyMessageButton';
 import { formatName, parseToolContent } from './utils';
 import { ExpandableMessageBlock } from './ExpandableMessageBlock';
@@ -19153,6 +19688,8 @@ import { Fragment, ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import {
   Group,
   AssistantGroupMessage,
@@ -19400,7 +19937,9 @@ import { MessageMap } from './MessageMap';
 import { IconButton } from '@/components/common/IconButton';
 import { groupAssistantMessages, groupMessagesByPromptContext } from '@/components/message/utils';
 import { useUserMessageNavigation } from '@/hooks/useUserMessageNavigation';
+import { useVirtualizedListActivation } from '@/hooks/useVirtualizedListActivation';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { getVirtualizedListBottomOffset } from '@/utils/virtualizedList';
 ⋮----
 export type VirtualizedMessagesRef = {
   exportToImage: () => void;
@@ -19411,6 +19950,7 @@ type Props = {
   baseDir: string;
   taskId: string;
   inProgress: boolean;
+  isActive?: boolean;
   messages: Message[];
   allFiles?: string[];
   renderMarkdown: boolean;
@@ -21433,6 +21973,23 @@ className=
 {/* Connector Line */}
 
 ================
+File: src/renderer/src/components/project/TaskSidebar/TaskDeleteConfirm.tsx
+================
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+⋮----
+import { Button } from '@/components/common/Button';
+⋮----
+type Props = {
+  taskId: string;
+  getAllSubtasksCount: (taskId: string) => number;
+  onConfirm: (taskId: string) => Promise<void>;
+  onCancel: () => void;
+};
+⋮----
+const handleConfirm = () =>
+
+================
 File: src/renderer/src/components/project/TaskSidebar/TaskItem.tsx
 ================
 import { TaskData, DefaultTaskState } from '@common/types';
@@ -21448,18 +22005,17 @@ import { BiArchiveIn } from 'react-icons/bi';
 ⋮----
 import { TaskStatusIcon } from './TaskStatusIcon';
 import { TaskMenuButton } from './TaskMenuButton';
+import { TaskDeleteConfirm } from './TaskDeleteConfirm';
 ⋮----
 import { InlineEditPanel } from '@/components/common/InlineEditPanel';
-import { Button } from '@/components/common/Button';
 import { LoadingText } from '@/components/common/LoadingText';
 import { TaskStateChip } from '@/components/common/TaskStateChip';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
 import { Tooltip } from '@/components/ui/Tooltip';
-import { countAllSubtasks } from '@/utils/task-utils';
 ⋮----
 type Props = {
   task: TaskData;
-  tasks: TaskData[];
+  getAllSubtasksCount: (taskId: string) => number;
   readonly?: boolean;
   level: number;
   selectedTasks: Set<string>;
@@ -21500,8 +22056,6 @@ type Props = {
 const arePropsEqual = (prevProps: Props, nextProps: Props): boolean =>
 ⋮----
 // Compare task object - only properties used in rendering
-⋮----
-// Compare tasks array reference (used for subtasks computation)
 ⋮----
 // Compare primitive props
 ⋮----
@@ -21657,7 +22211,7 @@ import { TaskItem } from './TaskItem';
 import { TaskSectionHeader } from './TaskSectionHeader';
 ⋮----
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
-import { flattenTasksForVirtualization } from '@/utils/task-utils';
+import { countAllSubtasks, flattenTasksForVirtualization } from '@/utils/task-utils';
 import { Input } from '@/components/common/Input';
 import { useClickOutside } from '@/hooks/useClickOutside';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
@@ -21716,6 +22270,8 @@ const handleKeyDown = (e: globalThis.KeyboardEvent) =>
 // eslint-disable-next-line react-hooks/incompatible-library
 ⋮----
 // the active task may be activated before the task list update arrives, retry on the next tasks update
+⋮----
+// stable identity, so task items don't re-render on every tasks change just to be able to count subtasks
 ⋮----
 // eslint-disable-next-line no-console
 ⋮----
@@ -22026,7 +22582,7 @@ type Props = {
   taskName?: string;
   disabled?: boolean;
   onSwitchToLocal: () => void;
-  onSwitchToWorktree: () => void;
+  onSwitchToWorktree: (baseBranch?: string) => void;
   willShowConfirmDialog?: boolean;
   onMerge: (targetBranch?: string) => void;
   onSquash: (targetBranch?: string, commitMessage?: string) => void;
@@ -22084,6 +22640,8 @@ const handleUpdateBranch = async (branch: BranchInfo) =>
 ⋮----
 const handlePushConfirm = async () =>
 ⋮----
+const handlePushToBaseChange = (checked: boolean) =>
+⋮----
 const handlePushCancel = () =>
 ⋮----
 const handleBranchEditConfirm = async () =>
@@ -22091,6 +22649,8 @@ const handleBranchEditConfirm = async () =>
 const handleBranchEditCancel = () =>
 ⋮----
 const handleSwitchToLocal = () =>
+⋮----
+const handleCreateWorktreeFrom = (branch: BranchInfo) =>
 ⋮----
 const handleSwitchToWorktree = () =>
 ⋮----
@@ -22155,6 +22715,7 @@ type Props = {
   worktreeMode?: boolean;
   onSelect: (branch: BranchInfo) => void;
   onNewBranchFrom: (branch: BranchInfo) => void;
+  onCreateWorktreeFrom?: (branch: BranchInfo) => void;
   onUpdateBranch?: (branch: BranchInfo) => void;
   onMergeIntoCurrent: (branch: BranchInfo) => void;
   onRebaseOnto: (branch: BranchInfo) => void;
@@ -22364,12 +22925,14 @@ type Props = {
 ================
 File: src/renderer/src/components/project/OpenProjectDialog.tsx
 ================
-import { ChangeEvent, useCallback, useEffect, useState } from 'react';
+import { ChangeEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { CgSpinner } from 'react-icons/cg';
 import { FaFolder } from 'react-icons/fa';
 import { useTranslation } from 'react-i18next';
-import { ProjectData } from '@common/types';
+import { ProjectCheckResult, ProjectData } from '@common/types';
 import { useHotkeys } from 'react-hotkeys-hook';
+⋮----
+import { ProjectTrustDialog } from './ProjectTrustDialog';
 ⋮----
 import { useConfiguredHotkeys } from '@/hooks/useConfiguredHotkeys';
 import { AutocompletionInput } from '@/components/AutocompletionInput';
@@ -22394,6 +22957,8 @@ type Props = {
   openProjects: ProjectData[];
 };
 ⋮----
+export const OpenProjectDialog = (
+⋮----
 // eslint-disable-next-line no-console
 ⋮----
 // Browse for folder
@@ -22405,6 +22970,12 @@ const updateSuggestions = async () =>
 const updateDestinationSuggestions = async () =>
 ⋮----
 // eslint-disable-next-line no-console
+⋮----
+const requestOpenProject = async (baseDir: string) =>
+⋮----
+const handleCancel = () =>
+⋮----
+const handleTrust = () =>
 ⋮----
 const handleAddProject = () =>
 ⋮----
@@ -22431,8 +23002,7 @@ setProjectPath(value);
 ⋮----
 placeholder=
 ⋮----
-onAddProject(path);
-onClose();
+void requestOpenProject(path);
 
 ================
 File: src/renderer/src/components/project/ProjectTabContent.tsx
@@ -22507,6 +23077,24 @@ const handleDragEnd = (event: DragEndEvent) =>
 onChange=
 
 ================
+File: src/renderer/src/components/project/ProjectTrustDialog.tsx
+================
+import { ProjectCheckResult } from '@common/types';
+import { useTranslation } from 'react-i18next';
+⋮----
+import { BaseDialog } from '@/components/common/BaseDialog';
+import { Button } from '@/components/common/Button';
+⋮----
+type Props = {
+  projectPath: string;
+  inventory: ProjectCheckResult;
+  onTrust: () => void;
+  onCancel: () => void;
+};
+⋮----
+title=
+
+================
 File: src/renderer/src/components/project/ProjectView.tsx
 ================
 import { AutonomyMode, InputHistoryData, ProjectStartMode, TaskCreatedData, TaskData, DefaultTaskState } from '@common/types';
@@ -22543,6 +23131,7 @@ import { useConfiguredHotkeys } from '@/hooks/useConfiguredHotkeys';
 import { useOverlayFocusRestore } from '@/hooks/useOverlayFocusRestore';
 import { useResponsive } from '@/hooks/useResponsive';
 import { useBooleanState } from '@/hooks/useBooleanState';
+import { useCustomModes } from '@/hooks/useCustomModes';
 import { showNotification } from '@/utils/browser-notifications';
 import { showErrorNotification, showInfoNotification, showWarningNotification } from '@/utils/notifications';
 import { ExtensionsProvider } from '@/contexts/ExtensionsContext';
@@ -22779,12 +23368,14 @@ import { IconButton } from '@/components/common/IconButton';
 import { GitBranchesButton } from '@/components/project/GitBranchesButton';
 import { GitInitButton } from '@/components/project/GitInitButton';
 import { WorktreeRevertButton } from '@/components/project/WorktreeRevertButton';
+import { WorktreeActionDialog } from '@/components/project/WorktreeActionDialog';
 import { BaseDialog } from '@/components/common/BaseDialog';
 import { RadioButton } from '@/components/common/RadioButton';
 import { useApi } from '@/contexts/ApiContext';
 import { useTaskGitStatus } from '@/hooks/useTaskGitStatus';
 import { useCommitChanges } from '@/hooks/useCommitChanges';
 import { useProjectTasks } from '@/stores/projectStore';
+import { showErrorNotification } from '@/utils/notifications';
 ⋮----
 enum LocalSwitchOption {
   Merge = 'merge',
@@ -22818,13 +23409,17 @@ type Props = {
 ⋮----
 // eslint-disable-next-line no-console
 ⋮----
-const performMergeAndSwitch = async () =>
+const performMergeAndSwitch = async (targetBranch = taskGitStatus?.worktree?.targetBranch) =>
 ⋮----
 // eslint-disable-next-line no-console
 ⋮----
-const performMergeAndSwitchAll = async () =>
+const performMergeAndSwitchAll = async (targetBranch = taskGitStatus?.worktree?.targetBranch) =>
 ⋮----
 // eslint-disable-next-line no-console
+⋮----
+const handleLocalTargetConfirm = async (targetBranch: string) =>
+⋮----
+const handleLocalTargetCancel = () =>
 ⋮----
 const handleLocalConfirm = async () =>
 ⋮----
@@ -22838,18 +23433,18 @@ const getWarningMessage = () =>
 ⋮----
 const handleSwitchToLocal = () =>
 ⋮----
-const handleSwitchToWorktree = () =>
+const handleSwitchToWorktree = (baseBranch?: string) =>
 ⋮----
 const handleCancelCommit = () =>
 ⋮----
+title=
+⋮----
 <Button onClick=
+
 ⋮----
 onChange=
 ⋮----
 <div className="font-medium">
-⋮----
-title=
-⋮----
 
 ================
 File: src/renderer/src/components/project/TaskView.tsx
@@ -23786,7 +24381,7 @@ onClick=
 ================
 File: src/renderer/src/components/settings/agent/sections/ProfileToolsSection.tsx
 ================
-import { AgentProfile, ExtensionToolInfo, GenericTool, McpServerConfig, ToolApprovalState } from '@common/types';
+import { AgentProfile, ExtensionToolInfo, GenericTool, McpServerConfig, ToolApprovalState, ToolRecoveryMode } from '@common/types';
 import { useTranslation } from 'react-i18next';
 import { FaPlug } from 'react-icons/fa';
 import {
@@ -23794,6 +24389,8 @@ import {
   AIDER_TOOL_DESCRIPTIONS,
   AIDER_TOOL_DROP_CONTEXT_FILES,
   AIDER_TOOL_GET_CONTEXT_FILES,
+  SUBAGENTS_TOOL_GROUP_NAME,
+  SUBAGENTS_TOOL_RUN_TASK,
   AIDER_TOOL_GROUP_NAME,
   AIDER_TOOL_RUN_PROMPT,
   POWER_TOOL_BASH,
@@ -23844,6 +24441,8 @@ type Props = {
   onToggleServerEnabled: (serverKey: string, checked: boolean) => void;
   onOpenMcpServers?: () => void;
 };
+⋮----
+const handleRecoveryModeChange = (toolId: string, recoveryMode: ToolRecoveryMode) =>
 ⋮----
 const handleExtEnabledChange = (enabled: boolean) =>
 
@@ -24053,7 +24652,7 @@ onDelete=
 File: src/renderer/src/components/settings/agent/BashToolItem.tsx
 ================
 import { useTranslation } from 'react-i18next';
-import { AgentProfile, BashToolSettings, GenericTool, ToolApprovalState } from '@common/types';
+import { AgentProfile, BashToolSettings, GenericTool, ToolApprovalState, ToolRecoveryMode } from '@common/types';
 import { POWER_TOOL_BASH, POWER_TOOL_GROUP_NAME, TOOL_GROUP_NAME_SEPARATOR } from '@common/tools';
 ⋮----
 import { GenericToolItem } from './GenericToolItem';
@@ -24065,6 +24664,7 @@ type Props = {
   tool: GenericTool;
   profile: AgentProfile;
   onApprovalChange?: (toolId: string, approval: ToolApprovalState) => void;
+  onRecoveryModeChange?: (toolId: string, recoveryMode: ToolRecoveryMode) => void;
   onProfileChange: (field: keyof AgentProfile, value: AgentProfile[keyof AgentProfile]) => void;
 };
 ⋮----
@@ -24073,7 +24673,7 @@ type Props = {
 ================
 File: src/renderer/src/components/settings/agent/GenericToolGroupItem.tsx
 ================
-import { AgentProfile, GenericTool, ToolApprovalState } from '@common/types';
+import { AgentProfile, GenericTool, ToolApprovalState, ToolRecoveryMode } from '@common/types';
 import { useTranslation } from 'react-i18next';
 import { POWER_TOOL_BASH, TOOL_GROUP_NAME_SEPARATOR } from '@common/tools';
 ⋮----
@@ -24094,6 +24694,8 @@ type Props = {
   onEnabledChange?: (enabled: boolean) => void;
 };
 ⋮----
+const handleRecoveryModeChange = (toolId: string, mode: ToolRecoveryMode) =>
+⋮----
 <Accordion title=
 
 ================
@@ -24101,8 +24703,11 @@ File: src/renderer/src/components/settings/agent/GenericToolItem.tsx
 ================
 import { useTranslation } from 'react-i18next';
 import { ReactNode } from 'react';
-import { AgentProfile, GenericTool, ToolApprovalState } from '@common/types';
+import { AgentProfile, GenericTool, ToolApprovalState, ToolRecoveryMode } from '@common/types';
 import { TOOL_GROUP_NAME_SEPARATOR } from '@common/tools';
+import { DEFAULT_TOOL_RECOVERY_MODES } from '@common/tool-recovery';
+⋮----
+import { ToolRecoverySelect } from './ToolRecoverySelect';
 ⋮----
 import { Select } from '@/components/common/Select';
 import { InfoIcon } from '@/components/common/InfoIcon';
@@ -24111,12 +24716,15 @@ type Props = {
   tool: GenericTool;
   profile: AgentProfile;
   onApprovalChange?: (toolId: string, approval: ToolApprovalState) => void;
+  onRecoveryModeChange?: (toolId: string, recoveryMode: ToolRecoveryMode) => void;
   renderToolSettings?: () => ReactNode;
 };
 ⋮----
 // Default to 'Always' if approvals are not being managed in this context
 ⋮----
 const handleApprovalChange = (value: string) =>
+⋮----
+const handleRecoveryModeChange = (value: ToolRecoveryMode) =>
 ⋮----
 {/* Conditionally render the approval select only if onApprovalChange is provided */}
 
@@ -24166,6 +24774,30 @@ export const SystemPromptEditor = (
 const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) =>
 ⋮----
 const handleInsertPlaceholder = (placeholderName: SystemPromptPlaceholder) =>
+
+================
+File: src/renderer/src/components/settings/agent/ToolRecoverySelect.tsx
+================
+import { useTranslation } from 'react-i18next';
+import { RiAlertLine, RiProhibitedLine, RiRefreshLine } from 'react-icons/ri';
+import { clsx } from 'clsx';
+import { ToolRecoveryMode } from '@common/types';
+⋮----
+import type { IconType } from 'react-icons';
+⋮----
+import { RichSelect, RichSelectOption } from '@/components/common/RichSelect';
+import { Tooltip } from '@/components/ui/Tooltip';
+⋮----
+type Props = {
+  value: ToolRecoveryMode;
+  onChange: (value: ToolRecoveryMode) => void;
+};
+⋮----
+icon: <Icon className=
+⋮----
+const handleChange = (next: string) =>
+⋮----
+className=
 
 ================
 File: src/renderer/src/components/settings/mcp/McpOAuthControls.tsx
@@ -24240,7 +24872,7 @@ placeholder=
 ================
 File: src/renderer/src/components/settings/mcp/McpServerItem.tsx
 ================
-import { McpOAuthStatus, McpServerConfig, McpTool, ToolApprovalState } from '@common/types';
+import { McpOAuthStatus, McpServerConfig, McpTool, ToolApprovalState, ToolRecoveryMode } from '@common/types';
 import { extractIpcErrorMessage } from '@common/utils';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -24262,6 +24894,8 @@ type Props = {
   config: McpServerConfig;
   onRemove?: () => void;
   onEdit?: () => void;
+  toolRecoveryModes?: Record<string, ToolRecoveryMode>;
+  onRecoveryModeChange?: (toolId: string, recoveryMode: ToolRecoveryMode) => void;
   toolApprovals?: Record<string, ToolApprovalState>;
   onApprovalChange?: (toolId: string | string[], approval: ToolApprovalState) => void;
   reloadTrigger?: number;
@@ -24429,8 +25063,10 @@ export const McpToolCard = (
 File: src/renderer/src/components/settings/mcp/McpToolItem.tsx
 ================
 import { useTranslation } from 'react-i18next';
-import { McpTool, ToolApprovalState } from '@common/types';
+import { McpTool, ToolApprovalState, ToolRecoveryMode } from '@common/types';
 import { TOOL_GROUP_NAME_SEPARATOR } from '@common/tools';
+⋮----
+import { ToolRecoverySelect } from '../agent/ToolRecoverySelect';
 ⋮----
 import { Select } from '@/components/common/Select';
 import { InfoIcon } from '@/components/common/InfoIcon';
@@ -24439,12 +25075,16 @@ type Props = {
   tool: McpTool;
   serverName: string;
   toolApprovals?: Record<string, ToolApprovalState>;
+  toolRecoveryModes?: Record<string, ToolRecoveryMode>;
+  onRecoveryModeChange?: (toolId: string, recoveryMode: ToolRecoveryMode) => void;
   onApprovalChange?: (toolId: string, approval: ToolApprovalState) => void;
 };
 ⋮----
 // Default to 'Always' if approvals are not being managed in this context
 ⋮----
 const handleApprovalChange = (value: string) =>
+⋮----
+const handleRecoveryModeChange = (value: ToolRecoveryMode) =>
 ⋮----
 {/* Conditionally render the approval select only if onApprovalChange is provided */}
 
@@ -24532,7 +25172,7 @@ import type { AvailableExtension, InstalledExtension } from '@common/types';
 import { Button } from '@/components/common/Button';
 import { IconButton } from '@/components/common/IconButton';
 import { Toggle } from '@/components/common/Toggle';
-import { MARKDOWN_COMPONENTS, REMARK_PLUGINS } from '@/components/message/utils';
+import { MARKDOWN_COMPONENTS, REMARK_PLUGINS, REHYPE_PLUGINS } from '@/components/message/utils';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { useOS } from '@/hooks/useOS';
 import { ExtensionSettingsDialog } from '@/components/settings/ExtensionSettingsDialog';
@@ -24786,6 +25426,7 @@ import { Section } from '../common/Section';
 import { Slider } from '../common/Slider';
 import { InfoIcon } from '../common/InfoIcon';
 import { Input } from '../common/Input';
+import { Toggle } from '../common/Toggle';
 ⋮----
 import { LanguageSelector } from './LanguageSelector';
 ⋮----
@@ -24802,6 +25443,8 @@ type Props = {
 const handleStartupModeChange = (mode: ProjectStartMode) =>
 ⋮----
 const handleStartupModeClick = (value: string) =>
+⋮----
+const handleResumeAgentAfterRestartChange = (checked: boolean) =>
 ⋮----
 const handleZoomChange = (value: string) =>
 ⋮----
@@ -26001,6 +26644,8 @@ import { DiffViewMode, UpdatedFile } from '@common/types';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 ⋮----
+import { FileRenameBadge } from './FileRenameBadge';
+⋮----
 import { Tooltip } from '@/components/ui/Tooltip';
 import { Button } from '@/components/common/Button';
 import { IconButton } from '@/components/common/IconButton';
@@ -26288,6 +26933,20 @@ export const remapLineAnchors = <T extends LineAnchor>(
 ): T[]
 
 ================
+File: src/renderer/src/components/Workspace/FileRenameBadge.tsx
+================
+import { VscArrowSwap } from 'react-icons/vsc';
+import { useTranslation } from 'react-i18next';
+⋮----
+import { Tooltip } from '@/components/ui/Tooltip';
+⋮----
+type Props = {
+  previousPath?: string;
+};
+⋮----
+export const FileRenameBadge = (
+
+================
 File: src/renderer/src/components/Workspace/group-files.ts
 ================
 import { UpdatedFile } from '@common/types';
@@ -26506,6 +27165,7 @@ import { hotkeysCoreFeature, propMemoizationFeature, syncDataLoaderFeature } fro
 import { clsx } from 'clsx';
 ⋮----
 import { normalizePath, INDENT_PX } from './types';
+import { FileRenameBadge } from './FileRenameBadge';
 ⋮----
 import type { TreeItem, GroupTree } from './types';
 import type { ItemInstance } from '@headless-tree/core';
@@ -26630,6 +27290,7 @@ import { useTranslation } from 'react-i18next';
 import { twMerge } from 'tailwind-merge';
 ⋮----
 import { INDENT_PX, normalizePath } from './types';
+import { FileRenameBadge } from './FileRenameBadge';
 ⋮----
 import type { SectionType, TreeItem } from './types';
 ⋮----
@@ -26714,6 +27375,7 @@ import { DiffViewMode, UpdatedFile } from '@common/types';
 import { clsx } from 'clsx';
 ⋮----
 import { sortFilesByTreeOrder } from './group-files';
+import { FileRenameBadge } from './FileRenameBadge';
 ⋮----
 import { ModalOverlayLayout } from '@/components/common/ModalOverlayLayout';
 import { IconButton } from '@/components/common/IconButton';
@@ -28433,6 +29095,28 @@ export const useVersions = () =>
 // eslint-disable-next-line react-hooks/set-state-in-effect
 
 ================
+File: src/renderer/src/hooks/useVirtualizedListActivation.ts
+================
+import { RefObject, useLayoutEffect, useRef } from 'react';
+import { LegendListRef } from '@legendapp/list/react';
+⋮----
+import { getVirtualizedListBottomOffset } from '../utils/virtualizedList';
+⋮----
+type Props = {
+  isActive: boolean;
+  listRef: RefObject<LegendListRef | null>;
+  itemKeys: string[];
+  scrollingPausedRef: RefObject<boolean>;
+  onRestored?: () => void;
+};
+⋮----
+export const useVirtualizedListActivation = (
+⋮----
+const waitForNextFrame = ()
+⋮----
+const restore = async () =>
+
+================
 File: src/renderer/src/i18n/index.ts
 ================
 import i18n from 'i18next';
@@ -28440,6 +29124,7 @@ import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 // Import your translation files
 import en from '@common/locales/en.json';
+import de from '@common/locales/de.json';
 import zh from '@common/locales/zh.json';
 import ru from '@common/locales/ru.json';
 import ko from '@common/locales/ko.json';
@@ -29698,15 +30383,13 @@ export type PaletteItem = {
 ⋮----
 type CommandPaletteStore = {
   isOpen: boolean;
-  items: Map<string, PaletteItem>;
+  providersByScope: Map<string, () => PaletteItem[]>;
   recentlyUsed: string[];
-  itemIdsByScope: Map<string, Set<string>>;
-  itemsByScope: Map<string, Map<string, PaletteItem>>;
 
   openPalette: () => void;
   closePalette: () => void;
   togglePalette: () => void;
-  replaceItems: (scope: string, items: PaletteItem[]) => void;
+  setItemsProvider: (scope: string, provider: () => PaletteItem[]) => void;
   clearItems: (scope: string) => void;
   addRecentlyUsed: (itemId: string) => void;
 };
@@ -29717,7 +30400,7 @@ const saveRecentlyUsed = (ids: string[]) =>
 ⋮----
 // Ignore storage errors.
 ⋮----
-const hasSameMetadata = (first: PaletteItem, second: PaletteItem)
+export const collectPaletteItems = (providersByScope: ReadonlyMap<string, () => PaletteItem[]>): Map<string, PaletteItem> =>
 
 ================
 File: src/renderer/src/stores/commitStore.ts
@@ -32341,6 +33024,8 @@ export const isToday = (dateString: string): boolean =>
 ⋮----
 export const isYesterday = (dateString: string): boolean =>
 ⋮----
+// toLocaleString creates a new Intl formatter on every call, which is costly for long task lists
+⋮----
 export const formatDateShort = (dateString: string): string =>
 ⋮----
 export const getTaskDateGroup = (task: TaskData): string =>
@@ -32617,7 +33302,12 @@ export const getTaskDir = (task: TaskData): string
 ⋮----
 export const countAllSubtasks = (taskId: string, allTasks: TaskData[]): number
 ⋮----
-const getMostRecentUpdatedAt = (task: TaskData, allTasks: TaskData[]): string | undefined =>
+const groupByParentId = (tasks: TaskData[]): Map<string, TaskData[]> =>
+⋮----
+// Returns a memoized resolver of the most recent updatedAt of a task including all its subtasks within allTasks
+const createMostRecentUpdatedAtResolver = (allTasks: TaskData[]): ((task: TaskData) => string | undefined) =>
+⋮----
+const resolve = (task: TaskData): string | undefined =>
 ⋮----
 export const getSortedVisibleTasks = (tasks: TaskData[], selectedStates: Set<string>, showArchived: boolean = false, searchQuery: string = ''): TaskData[] =>
 ⋮----
@@ -32642,6 +33332,11 @@ export const flattenTasksForVirtualization = (
 const addTaskWithSubtasks = (task: TaskData, level: number) =>
 ⋮----
 // Add pinned tasks first (without header)
+
+================
+File: src/renderer/src/utils/virtualizedList.ts
+================
+export const getVirtualizedListBottomOffset = (element: HTMLElement) =>
 
 ================
 File: src/renderer/src/voice/gemini.ts
@@ -32869,6 +33564,14 @@ File: src/renderer/src/main.css
 @tailwind components;
 @tailwind utilities;
 ⋮----
+.Toastify__toast-container {
+⋮----
+.Toastify__toast-body {
+⋮----
+.Toastify .Toastify__toast-container {
+⋮----
+.katex-display {
+⋮----
 .react-resizable {
 ⋮----
 .react-resizable-handle {
@@ -32919,6 +33622,20 @@ code {
 .cm-tooltip-autocomplete::-webkit-scrollbar-thumb:hover {
 ⋮----
 ::selection {
+⋮----
+.mermaid-diagram {
+⋮----
+.mermaid-diagram > div > svg.pele {
+⋮----
+.mermaid-diagram[data-streaming] .pele-error {
+⋮----
+.mermaid-diagram[data-streaming] svg.pele {
+⋮----
+.mermaid-diagram > div:has(> .pele-zoom) {
+⋮----
+.mermaid-diagram .pele-zoom {
+⋮----
+.mermaid-diagram .pele-zoom button:focus-visible {
 
 ================
 File: src/renderer/src/main.tsx
@@ -33299,7 +34016,7 @@ File: package.json
 ================
 {
   "name": "aider-desk",
-  "version": "0.87.0-dev",
+  "version": "0.89.0-dev",
   "description": "Aider desktop application wrapper",
   "main": "./out/main/index.js",
   "author": "Hotovo",
@@ -33437,21 +34154,22 @@ File: package.json
     "global-agent": "4.1.3",
     "google-auth-library": "10.6.2",
     "gpt-tokenizer": "2.9.0",
-    "handlebars": "4.7.9",
+    "handlebars": "4.7.10",
     "hast-util-to-jsx-runtime": "2.3.6",
     "html-to-image": "1.11.13",
     "i18next": "24.2.3",
     "i18next-browser-languagedetector": "8.2.1",
     "istextorbinary": "9.5.0",
     "jiti": "2.6.1",
+    "katex": "0.16.47",
     "langfuse-vercel": "3.38.6",
     "lodash": "4.18.1",
     "lowlight": "3.3.0",
     "mark.js": "8.11.1",
     "match-sorter": "8.2.0",
-    "mermaid": "11.16.1",
     "ollama-ai-provider-v2": "4.0.1",
     "os-name": "6.1.0",
+    "pele": "1.6.0",
     "posthog-node": "5.29.1",
     "prismjs": "1.30.0",
     "react-country-flag": "3.1.0",
@@ -33467,7 +34185,9 @@ File: package.json
     "react-toastify": "10.0.6",
     "recharts": "3.0.2",
     "refractor": "5.0.0",
+    "rehype-katex": "7.0.1",
     "remark-gfm": "4.0.1",
+    "remark-math": "6.0.0",
     "simple-git": "4.0.2",
     "slugify": "1.6.6",
     "socket.io": "4.8.3",
@@ -33516,7 +34236,7 @@ File: package.json
     "@vitest/ui": "4.1.11",
     "adm-zip": "0.6.1",
     "autoprefixer": "10.4.24",
-    "concurrently": "10.0.4",
+    "concurrently": "10.0.6",
     "dts-bundle-generator": "9.5.1",
     "electron": "44.7.0",
     "electron-builder": "26.15.7",

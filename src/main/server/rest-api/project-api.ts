@@ -326,6 +326,7 @@ const SwitchToLocalWorkingModeSchema = z.object({
 });
 
 const SwitchToWorktreeWorkingModeSchema = z.object({
+  baseBranch: z.string().min(1).optional(),
   projectDir: z.string().min(1, 'Project directory is required'),
   taskId: z.string().min(1, 'Task id is required'),
   carryOverUncommittedChanges: z.boolean().optional(),
@@ -357,6 +358,7 @@ const RestoreFileSchema = z.object({
   projectDir: z.string().min(1, 'Project directory is required'),
   taskId: z.string().min(1, 'Task id is required'),
   filePath: z.string().min(1, 'File path is required'),
+  previousPath: z.string().min(1).optional(),
 });
 
 const ReadFileSchema = z.object({
@@ -468,6 +470,7 @@ const GitPushSchema = z.object({
   taskId: z.string().min(1, 'Task id is required'),
   force: z.boolean().optional(),
   setUpstream: z.boolean().optional(),
+  pushToBase: z.boolean().optional(),
 });
 
 const ResolveGitErrorSchema = z.object({
@@ -1151,8 +1154,8 @@ export class ProjectApi extends BaseApi {
           return;
         }
 
-        const { projectDir, taskId, carryOverUncommittedChanges, dropSourceChanges } = parsed;
-        await this.eventsHandler.switchToWorktreeWorkingMode(projectDir, taskId, { carryOverUncommittedChanges, dropSourceChanges });
+        const { projectDir, taskId, baseBranch, carryOverUncommittedChanges, dropSourceChanges } = parsed;
+        await this.eventsHandler.switchToWorktreeWorkingMode(projectDir, taskId, { baseBranch, carryOverUncommittedChanges, dropSourceChanges });
         res.status(200).json({ message: 'Switched to worktree working mode' });
       }),
     );
@@ -1225,8 +1228,8 @@ export class ProjectApi extends BaseApi {
           return;
         }
 
-        const { projectDir, taskId, filePath } = parsed;
-        await this.eventsHandler.restoreFile(projectDir, taskId, filePath);
+        const { projectDir, taskId, filePath, previousPath } = parsed;
+        await this.eventsHandler.restoreFile(projectDir, taskId, filePath, previousPath);
         res.status(200).json({ message: 'File restored' });
       }),
     );
@@ -1496,8 +1499,8 @@ export class ProjectApi extends BaseApi {
           return;
         }
 
-        const { projectDir, taskId, force, setUpstream } = parsed;
-        const result = await this.eventsHandler.gitPush(projectDir, taskId, force, setUpstream);
+        const { projectDir, taskId, force, setUpstream, pushToBase } = parsed;
+        const result = await this.eventsHandler.gitPush(projectDir, taskId, force, setUpstream, pushToBase);
         res.status(200).json(result);
       }),
     );
@@ -1998,6 +2001,17 @@ export class ProjectApi extends BaseApi {
         const { projectDir } = parsed;
         await this.eventsHandler.stopProject(projectDir);
         res.status(200).json({ message: 'Project stopped' });
+      }),
+    );
+
+    router.post(
+      '/project/check',
+      this.handleRequest(async (req, res) => {
+        const parsed = this.validateRequest(AddOpenProjectSchema, req.body, res);
+        if (!parsed) {
+          return;
+        }
+        res.status(200).json(await this.eventsHandler.checkProject(parsed.projectDir));
       }),
     );
 

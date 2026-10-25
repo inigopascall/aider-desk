@@ -42,6 +42,7 @@ import {
   OpenDialogResult,
   OS,
   ProjectData,
+  ProjectCheckResult,
   ProjectSettings,
   ProjectStartedData,
   PromptSidecarFilename,
@@ -141,6 +142,7 @@ export interface ApplicationAPI {
   showOpenDialog: (options: OpenDialogOptions) => Promise<OpenDialogResult>;
   getPathForFile: (file: File) => string;
   getOpenProjects: () => Promise<ProjectData[]>;
+  checkProject: (baseDir: string) => Promise<ProjectCheckResult>;
   addOpenProject: (baseDir: string) => Promise<ProjectData[]>;
   setActiveProject: (baseDir: string) => Promise<ProjectData[]>;
   removeOpenProject: (baseDir: string) => Promise<ProjectData[]>;
@@ -161,10 +163,16 @@ export interface ApplicationAPI {
   getRepositoryMappings: (baseDir: string) => Promise<ContextFile[]>;
   regenerateRepositoryMappings: (baseDir: string, taskId: string) => Promise<RegenerateRepositoryMappingsResult>;
   deleteRepositoryMapping: (baseDir: string, filePath: string) => Promise<ContextFile[]>;
-  getUpdatedFileDiff: (baseDir: string, taskId: string, filePath: string, commitHash?: string) => Promise<string>;
-  getUpdatedFileContents: (baseDir: string, taskId: string, filePath: string, commitHash?: string) => Promise<{ oldContent: string; newContent: string }>;
+  getUpdatedFileDiff: (baseDir: string, taskId: string, filePath: string, commitHash?: string, previousPath?: string) => Promise<string>;
+  getUpdatedFileContents: (
+    baseDir: string,
+    taskId: string,
+    filePath: string,
+    commitHash?: string,
+    previousPath?: string,
+  ) => Promise<{ oldContent: string; newContent: string }>;
   addFileToGit: (baseDir: string, taskId: string, filePath: string) => Promise<void>;
-  restoreFile: (baseDir: string, taskId: string, filePath: string) => Promise<void>;
+  restoreFile: (baseDir: string, taskId: string, filePath: string, previousPath?: string) => Promise<void>;
   readFile: (baseDir: string, taskId: string, filePath: string) => Promise<string>;
   saveFile: (baseDir: string, taskId: string, filePath: string, content: string) => Promise<void>;
   generateCommitMessage: (baseDir: string, taskId: string, filePaths?: string[]) => Promise<string>;
@@ -383,7 +391,7 @@ export interface ApplicationAPI {
   isGitRepository: (baseDir: string, taskId: string) => Promise<boolean>;
   initializeGitRepository: (baseDir: string, taskId: string) => Promise<void>;
   gitPull: (baseDir: string, taskId: string, rebase?: boolean) => Promise<{ output: string }>;
-  gitPush: (baseDir: string, taskId: string, force?: boolean, setUpstream?: boolean) => Promise<{ output: string }>;
+  gitPush: (baseDir: string, taskId: string, force?: boolean, setUpstream?: boolean, pushToBase?: boolean) => Promise<{ output: string }>;
   resolveGitErrorWithAgent: (baseDir: string, taskId: string) => Promise<void>;
 
   // Agent profile operations

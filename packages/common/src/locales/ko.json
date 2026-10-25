@@ -1,4 +1,15 @@
 {
+  "projectTrust": {
+    "title": "이 프로젝트를 신뢰하시겠습니까?",
+    "warning": "이 프로젝트에는 에이전트, MCP 서버 또는 확장 기능이 포함되어 있습니다. 사용자 권한으로 악성 코드를 실행하거나, 파일과 인증 정보에 접근하거나, 외부 서비스로 데이터를 전송할 수 있습니다.",
+    "review": "계속하기 전에 아래 파일을 검토하세요. 출처를 신뢰하는 경우에만 이 프로젝트를 신뢰하세요. 취소하면 프로젝트가 열리지 않습니다.",
+    "confirm": "프로젝트 신뢰",
+    "agents": "에이전트",
+    "mcpServers": "MCP 서버",
+    "extensions": "확장 기능",
+    "checking": "프로젝트 설정 확인 중…",
+    "checkFailed": "프로젝트 설정을 확인할 수 없어 프로젝트를 열지 않았습니다. 파일 권한과 설정 파일을 확인한 후 다시 시도하세요."
+  },
   "languages": {
     "en": "English",
     "zh": "中文",
@@ -46,6 +57,12 @@
     "switchToLocal": "로컬 모드로 전환",
     "switchToWorktree": "워크트리 모드로 전환",
     "switchWorkingMode": "작업 모드 전환",
+    "switchToAgentMode": "에이전트 모드로 전환",
+    "switchToCodeMode": "코드 모드로 전환",
+    "switchToAskMode": "질문 모드로 전환",
+    "switchToArchitectMode": "아키텍트 모드로 전환",
+    "switchToContextMode": "컨텍스트 모드로 전환",
+    "switchToMode": "{{mode}} 모드로 전환",
     "gitAction": "Git 작업",
     "gitBranches": "Git 브랜치 표시"
   },
@@ -281,7 +298,10 @@
     }
   },
   "mermaid": {
-    "renderFailed": "다이어그램 렌더링 실패:"
+    "renderFailed": "다이어그램 렌더링 실패:",
+    "zoomIn": "확대",
+    "zoomOut": "축소",
+    "resetZoom": "확대/축소 초기화"
   },
   "clinepass": {
     "getApiKeyLink": "ClinePass API 키 받기",
@@ -759,8 +779,12 @@
     },
     "startup": {
       "title": "시작 방식",
+      "taskMode": "시작 시",
+      "recovery": "복구",
       "emptyTask": "빈 작업으로 시작",
-      "lastTask": "마지막 작업 불러오기"
+      "lastTask": "마지막 작업 불러오기",
+      "resumeAgentAfterRestart": "재시작 후 중단된 에이전트 재개",
+      "resumeAgentAfterRestartTooltip": "활성화하면 앱 종료나 충돌로 중단된 에이전트 실행이 다음에 프로젝트를 열 때 자동으로 재개됩니다. 재실행이 안전한 도구는 다시 실행될 수 있으며, 부작용이 있는 도구는 반복되지 않습니다. 비활성화하면 중단된 실행이 그대로 유지됩니다."
     },
     "tasks": {
       "title": "작업",
@@ -1331,6 +1355,7 @@
     "title": "에디터"
   },
   "contextFiles": {
+    "renamedFrom": "{{path}}에서 이름 변경됨",
     "workspaceTitle": "워크스페이스",
     "repositoryMappingFile": "저장소 매핑 파일",
     "regenerateMappings": "매핑 다시 생성",
@@ -1521,6 +1546,18 @@
       "never": "안 함",
       "always": "항상",
       "ask": "물어보기"
+    },
+    "recovery": {
+      "forget": "미완료 호출 삭제",
+      "safe": "안전하게 재실행",
+      "notify": "중단 알림",
+      "label": "복구 모드",
+      "description": "앱 충돌과 같은 예기치 않은 중단 후 작업을 재개할 때 미완료 도구 호출을 처리하는 방식을 설정합니다.",
+      "descriptions": {
+        "forget": "작업 재개 시 미완료 호출을 삭제합니다.",
+        "safe": "재개 시 미완료 호출을 다시 실행합니다. 도구는 반복 실행을 허용해야 합니다.",
+        "notify": "결과를 알 수 없음으로 보고하여 모델이 재시도 전에 확인하도록 합니다."
+      }
     }
   },
   "autocompletion": {
@@ -2179,6 +2216,10 @@
     "noCommitsToPush": "푸시할 커밋이 없습니다",
     "confirmPushSetUpstreamMessage": "'{{branch}}' 브랜치에 업스트림이 없습니다. 원격에 푸시하고 원격 브랜치를 업스트림으로 설정하시겠습니까?",
     "force": "강제",
+    "pushToBaseUpstream": "기준 브랜치의 업스트림으로 푸시",
+    "pushToBaseDestination": "대상: {{upstream}}",
+    "pushToBaseNoUpstream": "기준 브랜치에 원격 업스트림이 설정되어 있지 않습니다.",
+    "confirmPushToBaseMessage": "{{branch}}의 HEAD를 {{upstream}}에 푸시하시겠습니까? 로컬 브랜치와 업스트림 추적 설정은 변경되지 않습니다.",
     "aheadCommits_one": "{{count}}개 커밋 앞섬",
     "aheadCommits_other": "{{count}}개 커밋 앞섬",
     "behindCommits_one": "{{count}}개 커밋 뒤처짐",
@@ -2186,6 +2227,7 @@
     "recentBranches": "최근",
     "checkoutBranch": "'{{branch}}' 체크아웃",
     "newBranchFrom": "'{{branch}}'에서 새 브랜치...",
+    "createWorktreeFrom": "'{{branch}}'에서 워크트리 생성",
     "mergeBranchInto": "'{{branch}}' 브랜치를 '{{current}}'에 병합",
     "rebaseOnto": "'{{current}}' 브랜치를 '{{branch}}' 위로 리베이스",
     "deleteBranchName": "'{{branch}}' 삭제",
@@ -2335,5 +2377,28 @@
     "caCertPath": "CA 인증서 경로",
     "caCertPathInfo": "공급자 엔드포인트를 검증하는 데 사용되는 CA 인증서 파일(PEM)의 절대 경로입니다. 자체 서명 또는 사설 CA 인증서를 사용할 때는 검증 비활성화보다 이 방법을 권장합니다.",
     "caCertPathPlaceholder": "/path/to/ca.pem"
+  },
+  "durability": {
+    "notices": {
+      "interrupted": "도구 실행이 중단되어 결과를 알 수 없습니다. 다시 시도하기 전에 상태를 확인하세요.",
+      "finalizationInterrupted": "도구 실행은 완료되었지만 최종 출력을 사용할 수 없습니다. 출력을 복구하기 위해 작업을 반복하지 마세요.",
+      "unavailable": "중단된 도구를 더 이상 사용할 수 없거나 실행이 허용되지 않습니다.",
+      "argumentsChanged": "도구 인수가 변경되었거나 검증에 실패하여 복구가 중지되었습니다.",
+      "ownerChanged": "도구 소유자가 변경되어 복구가 중지되었습니다.",
+      "identityConflict": "실행이 거부되었습니다. 이 호출 ID는 다른 작업에 속합니다."
+    },
+    "labels": {
+      "interrupted": "중단됨",
+      "finalizationInterrupted": "마무리 중단",
+      "unavailable": "사용 불가",
+      "argumentsChanged": "인수 변경됨",
+      "ownerChanged": "소유자 변경됨",
+      "identityConflict": "ID 충돌"
+    },
+    "recovery": {
+      "detailsTitle": "보존된 출력",
+      "noOutput": "추가로 보존된 출력이 없습니다."
+    },
+    "missingProfile": "에이전트 프로필을 사용할 수 없어 작업을 복구할 수 없습니다."
   }
 }

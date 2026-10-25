@@ -1,8 +1,32 @@
 @import './fonts.css';
+@import 'katex/dist/katex.min.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+.Toastify__toast-container {
+  max-width: 90vw;
+}
+
+.Toastify__toast-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media only screen and (max-width: 480px) {
+  .Toastify .Toastify__toast-container {
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+  }
+}
+
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25em 0;
+}
 
 .react-resizable {
   position: relative;
@@ -161,6 +185,7 @@ code {
 ::selection {
   background-color: var(--color-bg-selection);
 }
+
 
 /* Prompt editor: markdown highlighting. The classes come from components/PromptField/promptMarkdown.ts. */
 .pf-prompt-editor .pf-md-heading {
@@ -339,4 +364,53 @@ body.disable-css-streaming-animations *:not(.Toastify):not(.Toastify *)::before,
 body.disable-css-streaming-animations *:not(.Toastify):not(.Toastify *)::after {
   animation: none !important;
   transition: none !important;
+}
+
+.mermaid-diagram {
+  --pele-bg: var(--color-bg-primary);
+  --pele-fg: var(--color-text-primary);
+  --pele-muted: var(--color-text-secondary);
+  --pele-line: var(--color-text-secondary);
+  --pele-surface: var(--color-bg-secondary);
+  --pele-surface-alt: var(--color-bg-tertiary);
+  --pele-border: var(--color-border-accent);
+  --pele-accent: var(--color-info-light);
+  --pele-critical: var(--color-error);
+  --pele-error: var(--color-error-light);
+  --pele-font: var(--font-family, "Sono"), monospace;
+  --pele-font-mono: var(--font-family, "Sono"), monospace;
+  --pele-series-1: var(--color-info-light);
+  --pele-series-2: var(--color-warning);
+  --pele-series-3: var(--color-success);
+  --pele-series-4: var(--color-error);
+  --pele-series-5: var(--color-agent-power-tools);
+  --pele-series-6: var(--color-agent-tasks-tools);
+  --pele-series-7: var(--color-agent-memory-tools);
+  --pele-series-8: var(--color-agent-context-files);
+}
+
+.mermaid-diagram > div > svg.pele {
+  display: block;
+  margin-inline: auto;
+}
+
+.mermaid-diagram[data-streaming] .pele-error {
+  display: none;
+}
+
+.mermaid-diagram[data-streaming] svg.pele {
+  opacity: 1 !important;
+}
+
+.mermaid-diagram > div:has(> .pele-zoom) {
+  padding-top: 2.5rem;
+}
+
+.mermaid-diagram .pele-zoom {
+  flex-direction: row !important;
+}
+
+.mermaid-diagram .pele-zoom button:focus-visible {
+  outline: 2px solid var(--color-info-light);
+  outline-offset: 1px;
 }

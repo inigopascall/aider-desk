@@ -173,7 +173,7 @@ describe('Task - findSkillActivationMessages', () => {
       getProfile: vi.fn(() => null),
     };
     mockTelemetryManager = {};
-    mockDataManager = {};
+    mockDataManager = { getAgentExecutions: vi.fn(() => []), saveAgentExecution: vi.fn(), deleteAgentExecution: vi.fn() };
     mockEventManager = {
       sendTaskUpdated: vi.fn(),
       sendTaskCreated: vi.fn(),

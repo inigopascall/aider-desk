@@ -88,6 +88,7 @@ const api: ApplicationAPI = {
   showOpenDialog: (options: OpenDialogOptions) => ipcRenderer.invoke('show-open-dialog', options),
   getPathForFile: (file) => webUtils.getPathForFile(file),
   getOpenProjects: () => ipcRenderer.invoke('get-open-projects'),
+  checkProject: (baseDir) => ipcRenderer.invoke('check-project', baseDir),
   addOpenProject: (baseDir) => ipcRenderer.invoke('add-open-project', baseDir),
   setActiveProject: (baseDir) => ipcRenderer.invoke('set-active-project', baseDir),
   removeOpenProject: (baseDir) => ipcRenderer.invoke('remove-open-project', baseDir),
@@ -108,10 +109,12 @@ const api: ApplicationAPI = {
   getRepositoryMappings: (baseDir) => ipcRenderer.invoke('get-repository-mappings', baseDir),
   regenerateRepositoryMappings: (baseDir, taskId) => ipcRenderer.invoke('regenerate-repository-mappings', baseDir, taskId),
   deleteRepositoryMapping: (baseDir, filePath) => ipcRenderer.invoke('delete-repository-mapping', baseDir, filePath),
-  getUpdatedFileDiff: (baseDir, taskId, filePath, commitHash) => ipcRenderer.invoke('get-updated-file-diff', baseDir, taskId, filePath, commitHash),
-  getUpdatedFileContents: (baseDir, taskId, filePath, commitHash) => ipcRenderer.invoke('get-updated-file-contents', baseDir, taskId, filePath, commitHash),
+  getUpdatedFileDiff: (baseDir, taskId, filePath, commitHash, previousPath) =>
+    ipcRenderer.invoke('get-updated-file-diff', baseDir, taskId, filePath, commitHash, previousPath),
+  getUpdatedFileContents: (baseDir, taskId, filePath, commitHash, previousPath) =>
+    ipcRenderer.invoke('get-updated-file-contents', baseDir, taskId, filePath, commitHash, previousPath),
   addFileToGit: (baseDir, taskId, filePath) => ipcRenderer.invoke('add-file-to-git', baseDir, taskId, filePath),
-  restoreFile: (baseDir, taskId, filePath) => ipcRenderer.invoke('restore-file', baseDir, taskId, filePath),
+  restoreFile: (baseDir, taskId, filePath, previousPath) => ipcRenderer.invoke('restore-file', baseDir, taskId, filePath, previousPath),
   readFile: (baseDir, taskId, filePath) => ipcRenderer.invoke('read-file', baseDir, taskId, filePath),
   saveFile: (baseDir, taskId, filePath, content) => ipcRenderer.invoke('save-file', baseDir, taskId, filePath, content),
   generateCommitMessage: (baseDir, taskId, filePaths) => ipcRenderer.invoke('generate-commit-message', baseDir, taskId, filePaths),
@@ -839,7 +842,7 @@ const api: ApplicationAPI = {
   initializeGitRepository: (baseDir, taskId) => ipcRenderer.invoke('git-init-repo', baseDir, taskId),
 
   gitPull: (baseDir, taskId, rebase) => ipcRenderer.invoke('git-pull', baseDir, taskId, rebase),
-  gitPush: (baseDir, taskId, force, setUpstream) => ipcRenderer.invoke('git-push', baseDir, taskId, force, setUpstream),
+  gitPush: (baseDir, taskId, force, setUpstream, pushToBase) => ipcRenderer.invoke('git-push', baseDir, taskId, force, setUpstream, pushToBase),
   resolveGitErrorWithAgent: (baseDir, taskId) => ipcRenderer.invoke('resolve-git-error-with-agent', baseDir, taskId),
 
   // Agent profile operations

@@ -1,5 +1,38 @@
 # Changelog
 
+## [UNRELEASED]
+
+- improved Mermaid diagrams with theme-aware colors and fonts and smoother streaming using Pele library
+- added support for pushing worktree fixes to the base branch’s upstream from the Push dialog
+- added pre-compaction context snapshots kept across compactions and exposed to the agent in the system prompt
+- fixed message map scrollbar styling to match the rest of the interface
+- added native tool approval support for extension providers, respecting task autonomy and Power tool approval settings
+- fixed duplicated and incorrectly grouped assistant messages when streaming reasoning and tool calls
+- added automatic task and subagent recovery after app restarts, preserving completed tool results and supporting configurable per-tool replay modes
+- fixed notification overflow and centering on small screens
+- fixed dialog overflow on small screens with responsive widths and wrapping footer buttons
+- fixed Model Library layout on small screens with a wrapping toolbar and a horizontally scrollable models table
+
+## [0.88.0]
+
+- improved performance when switching between loaded tasks by preserving virtualized message size caches
+- fixed extension settings actions not respecting the selected project
+- added command palette actions for switching task modes
+- added branch menu action to create a clean worktree from a selected branch without moving uncommitted changes
+- added extension hooks for message transformation and cache control; updated optimization hooks to use transformed messages
+- fixed Aider tool responses not staying grouped after reloading tasks
+- fixed special-token text crashing token counting, with fallback estimates when tokenization fails
+- fixed bash tool calls hanging when command output processing fails
+- fixed failed subagent runs returning success with empty or incomplete results
+- optimized task list rendering, settings caching, and date formatting
+- added support for inline and block LaTeX formulas in chat messages
+- fixed malformed or incomplete compact diffs crashing the chat, with plain-text fallback for unsupported diffs
+- improved background performance by building command palette items only while open and preserved selection during live updates
+- fixed task auto-compaction not being disabled when its threshold was set to zero
+- added a trust confirmation before opening projects containing agents, MCP servers, or extensions through the UI
+- fixed image tool results triggering unnecessary auto-compaction due to inflated token estimates
+- fixed renamed files missing from Updated Files, including rename-aware diffs, reverting, and extension support
+
 ## [0.87.0]
 
 - added option to skip Git hooks on commit
