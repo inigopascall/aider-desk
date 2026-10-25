@@ -1455,7 +1455,7 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
             editable={!disabled}
             spellCheck={false}
             className={clsx(
-              'pf-prompt-editor w-full px-2 py-1 border-2 border-border-default-dark rounded-md focus:outline-none focus:border-border-accent text-sm bg-bg-secondary text-text-primary placeholder-text-muted-dark resize-none overflow-y-auto transition-colors duration-200 scrollbar-thin scrollbar-track-bg-secondary-light scrollbar-thumb-bg-fourth hover:scrollbar-thumb-bg-fourth',
+              'pf-prompt-editor w-full px-2 py-1 border-2 border-transparent rounded-md focus:outline-none text-sm bg-bg-secondary text-text-primary placeholder-text-muted-dark resize-none overflow-y-auto transition-colors duration-200 scrollbar-thin scrollbar-track-bg-secondary-light scrollbar-thumb-bg-fourth hover:scrollbar-thumb-bg-fourth',
               buttonsStacked ? (isRecording ? 'pr-16' : 'pr-9') : voiceAvailable ? (isRecording ? 'pr-24' : 'pr-20') : 'pr-16',
               editorSized ? 'pf-prompt-editor-sized absolute inset-0' : editorCompact ? 'pf-prompt-editor-sized h-[8.5rem]' : 'max-h-[40vh]',
               editorLarge && 'pf-prompt-editor-large',

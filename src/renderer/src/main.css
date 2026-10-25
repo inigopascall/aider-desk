@@ -203,11 +203,12 @@ code {
   text-decoration: line-through;
 }
 .pf-prompt-editor .pf-md-code {
-  color: var(--color-success-light);
-  background-color: var(--color-bg-code-block);
+  color: var(--color-text-secondary);
+  background-color: color-mix(in srgb, var(--color-bg-code-block) 60%, var(--color-bg-secondary));
   border-radius: 0.25rem;
   font-family: 'JetBrainsMono', 'SourceCodePro', monospace;
   font-size: 0.88em;
+  padding: 0 1px;
 }
 .pf-prompt-editor .pf-md-link {
   color: var(--color-info-lighter);
@@ -229,36 +230,29 @@ code {
 
 /* Fenced code blocks: a whole-line background, with tokens coloured in the block's own language. */
 .pf-prompt-editor .pf-md-codeblock-line {
-  background-color: var(--color-bg-code-block);
+  background-color: color-mix(in srgb, var(--color-bg-code-block) 60%, var(--color-bg-secondary));
+  color: var(--color-text-secondary);
   font-family: 'JetBrainsMono', 'SourceCodePro', monospace;
-  font-size: 0.88em;
+  font-size: calc(0.88em - 1px);
 }
 .pf-prompt-editor .pf-md-codeblock-line .pf-md-code {
   color: inherit;
   background-color: transparent;
   border-radius: 0;
   font-size: 1em;
+  padding: 0;
 }
-.pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-keyword {
-  color: var(--color-error-light);
-}
-.pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-string {
-  color: var(--color-success-light);
-}
-.pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-literal {
-  color: var(--color-warning-light);
-}
-.pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-function {
-  color: var(--color-info-lighter);
-}
-.pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-type {
-  color: var(--color-warning-light);
-}
-.pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-property {
-  color: var(--color-info-lightest);
-}
-.pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-tag {
-  color: var(--color-success-light);
+.pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-keyword,
+.pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-string,
+.pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-literal,
+.pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-function,
+.pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-type,
+.pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-property,
+.pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-tag,
+.pf-prompt-editor .pf-md-codeblock-line .pf-md-comment,
+.pf-prompt-editor .pf-md-codeblock-line .pf-md-mark,
+.pf-prompt-editor .pf-md-codeblock-line .pf-md-meta {
+  color: inherit;
 }
 
 /* Markup characters (#, **, backticks, link brackets, list bullets) are faded. This rule must stay after the ones above. */
@@ -308,8 +302,7 @@ code {
   border-top: 1px solid var(--color-border-default);
 }
 .pf-prompt-editor .pf-md-fence-line {
-  color: var(--color-text-muted-light);
-  opacity: 0.6;
+  color: var(--color-text-secondary);
 }
 
 /* Larger headings once the prompt editor is tall. */
