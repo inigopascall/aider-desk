@@ -33,7 +33,6 @@ import { ResizableBox, ResizeCallbackData } from 'react-resizable';
 import { clsx } from 'clsx';
 import { getProviderModelId } from '@common/agent';
 import { RiMenuUnfold4Line } from 'react-icons/ri';
-import { LuEye, LuMinimize2 } from 'react-icons/lu';
 import { useEvent, useLocalStorage } from '@reactuses/core';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { v4 as uuidv4 } from 'uuid';
@@ -205,6 +204,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
     const promptFieldRef = useRef<PromptFieldRef>(null);
     const centralColumnRef = useRef<HTMLDivElement>(null);
     const promptAreaRef = useRef<HTMLDivElement>(null);
+    const messagesSectionRef = useRef<HTMLDivElement>(null);
     const projectTopBarRef = useRef<TaskBarRef>(null);
     const taskControlBarRef = useRef<TaskControlBarRef>(null);
     const messagesRef = useRef<MessagesRef | VirtualizedMessagesRef>(null);
@@ -260,40 +260,79 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
 
     // Prompt area size. Desktop only: on mobile the prompt keeps its natural height
     // and the expand control opens the full-screen Milkdown editor.
-    const [isPromptMaximized, setIsPromptMaximized] = useState(false);
     const {
+      mode: promptAreaMode,
       fraction: promptAreaFraction,
       isResizing: isPromptAreaResizing,
       startResize: startPromptAreaResize,
       resetSize: resetPromptAreaSize,
-    } = usePromptAreaResize(promptAreaRef, centralColumnRef);
-    const promptAreaMaximized = !isMobile && isPromptMaximized;
-    const promptAreaSized = !isMobile && (isPromptMaximized || promptAreaFraction !== null);
-    const promptAreaLarge = !isMobile && isLargePromptArea(promptAreaFraction, isPromptMaximized);
+      cycleMode: cyclePromptAreaMode,
+      setMode: setPromptAreaMode,
+      stepSize: stepPromptAreaSize,
+    } = usePromptAreaResize(promptAreaRef, centralColumnRef, messagesSectionRef);
+    const promptAreaMaximized = !isMobile && promptAreaMode === 'full';
+    const promptAreaCompact = !isMobile && promptAreaMode === 'compact';
+    const promptAreaHeightFraction = !isMobile && promptAreaMode === 'user' ? promptAreaFraction : null;
+    const promptAreaSized = promptAreaMaximized || promptAreaHeightFraction !== null;
+    const promptAreaLarge = !isMobile && isLargePromptArea(promptAreaMode, promptAreaFraction);
 
-    const togglePromptMaximized = useCallback(() => {
+    const focusPromptSoon = useCallback(() => {
+      requestAnimationFrame(() => promptFieldRef.current?.focus());
+    }, []);
+
+    // Cycle the prompt editor between the user's size, full height and compact.
+    const cyclePromptAreaSize = useCallback(() => {
       const overlay = useMarkdownEditorOverlayStore.getState();
       if (isMobile || (overlay.isOpen && overlay.ownerId === task.id)) {
         promptFieldRef.current?.toggleExpanded();
         return;
       }
-      setIsPromptMaximized((prev) => !prev);
-      requestAnimationFrame(() => promptFieldRef.current?.focus());
-    }, [isMobile, task.id]);
+      cyclePromptAreaMode();
+      focusPromptSoon();
+    }, [isMobile, task.id, cyclePromptAreaMode, focusPromptSoon]);
 
-    const openRenderedPromptEditor = useCallback(() => {
-      promptFieldRef.current?.toggleExpanded();
-    }, []);
+    const restorePromptAreaSize = useCallback(() => {
+      setPromptAreaMode('user');
+      focusPromptSoon();
+    }, [setPromptAreaMode, focusPromptSoon]);
 
-    // Maximise or restore the prompt editor
     useHotkeys(
       TASK_HOTKEYS.TOGGLE_MARKDOWN_EDITOR,
       (e) => {
         e.preventDefault();
-        togglePromptMaximized();
+        cyclePromptAreaSize();
       },
       {
         enabled: isActive,
+        scopes: 'task',
+        enableOnFormTags: true,
+        enableOnContentEditable: true,
+      },
+    );
+
+    // Holding the grow or shrink hotkey moves the prompt area one step per key repeat.
+    useHotkeys(
+      TASK_HOTKEYS.GROW_PROMPT_EDITOR,
+      (e) => {
+        e.preventDefault();
+        stepPromptAreaSize(1);
+      },
+      {
+        enabled: isActive && !isMobile,
+        scopes: 'task',
+        enableOnFormTags: true,
+        enableOnContentEditable: true,
+      },
+    );
+
+    useHotkeys(
+      TASK_HOTKEYS.SHRINK_PROMPT_EDITOR,
+      (e) => {
+        e.preventDefault();
+        stepPromptAreaSize(-1);
+      },
+      {
+        enabled: isActive && !isMobile,
         scopes: 'task',
         enableOnFormTags: true,
         enableOnContentEditable: true,
@@ -948,7 +987,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
             disabled={!!selectedWorkflowId}
           />
           <ContextUsageBar task={task} mode={currentMode} maxInputTokens={maxInputTokens} contextFiles={contextFiles} />
-          <div className={clsx('overflow-y-hidden relative flex flex-col', promptAreaMaximized ? 'h-0 flex-grow-0' : 'flex-grow')}>
+          <div ref={messagesSectionRef} className={clsx('overflow-y-hidden relative flex flex-col', promptAreaMaximized ? 'h-0 flex-grow-0' : 'flex-grow')}>
             {renderSearchInput()}
             {!loading && todoListVisible && (
               <TodoWindow
@@ -1058,7 +1097,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
               editingMessageIndex !== null && 'pt-1',
               promptAreaMaximized && 'flex-grow min-h-0',
             )}
-            style={!isMobile && !promptAreaMaximized && promptAreaFraction !== null ? { height: `${(promptAreaFraction * 100).toFixed(2)}%` } : undefined}
+            style={promptAreaHeightFraction !== null ? { height: `${(promptAreaHeightFraction * 100).toFixed(2)}%` } : undefined}
           >
             {!isMobile && !promptAreaMaximized && (
               <div
@@ -1073,28 +1112,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                 )}
               />
             )}
-            {promptAreaMaximized && (
-              <div className="flex items-center justify-end gap-1 px-4 pt-2 flex-shrink-0">
-                <Tooltip content={t('promptField.openRenderedEditor')}>
-                  <button
-                    onClick={openRenderedPromptEditor}
-                    aria-label={t('promptField.openRenderedEditor')}
-                    className="text-text-muted-light hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200"
-                  >
-                    <LuEye className="w-4 h-4" />
-                  </button>
-                </Tooltip>
-                <Tooltip content={t('promptField.restoreEditorSize')}>
-                  <button
-                    onClick={togglePromptMaximized}
-                    aria-label={t('promptField.restoreEditorSize')}
-                    className="text-text-muted-light hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200"
-                  >
-                    <LuMinimize2 className="w-4 h-4" />
-                  </button>
-                </Tooltip>
-              </div>
-            )}
+
             <div className={clsx('p-4 pb-2', editingMessageIndex !== null && 'pt-1', promptAreaSized && 'flex-grow min-h-0 flex flex-col')}>
               {editingMessageIndex !== null && (
                 <div className="flex items-center justify-between px-2 py-1 text-xs text-text-muted-light border-b border-border-default-dark mb-2">
@@ -1157,6 +1175,8 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                   editorSized={promptAreaSized}
                   editorLarge={promptAreaLarge}
                   editorMaximized={promptAreaMaximized}
+                  editorCompact={promptAreaCompact}
+                  onRestoreEditorSize={restorePromptAreaSize}
                 />
                 <TaskControlBar
                   ref={taskControlBarRef}
@@ -1170,7 +1190,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                   terminalVisible={terminalVisible}
                   showTaskInfoPanel={showTaskInfoPanel}
                   onToggleTaskInfoPanel={handleToggleTaskInfoPanel}
-                  onExpandEditor={togglePromptMaximized}
+                  onExpandEditor={cyclePromptAreaSize}
                   onAutonomyModeChanged={handleAutonomyModeChanged}
                   canUndoContextChange={canUndoContextChange && messages.length === 0}
                   onUndoContextChange={handleUndoContextChange}

@@ -206,7 +206,8 @@ code {
   color: var(--color-success-light);
   background-color: var(--color-bg-code-block);
   border-radius: 0.25rem;
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+  font-family: 'JetBrainsMono', 'SourceCodePro', monospace;
+  font-size: 0.88em;
 }
 .pf-prompt-editor .pf-md-link {
   color: var(--color-info-lighter);
@@ -229,12 +230,14 @@ code {
 /* Fenced code blocks: a whole-line background, with tokens coloured in the block's own language. */
 .pf-prompt-editor .pf-md-codeblock-line {
   background-color: var(--color-bg-code-block);
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+  font-family: 'JetBrainsMono', 'SourceCodePro', monospace;
+  font-size: 0.88em;
 }
 .pf-prompt-editor .pf-md-codeblock-line .pf-md-code {
   color: inherit;
   background-color: transparent;
   border-radius: 0;
+  font-size: 1em;
 }
 .pf-prompt-editor .pf-md-codeblock-line .pf-md-tok-keyword {
   color: var(--color-error-light);

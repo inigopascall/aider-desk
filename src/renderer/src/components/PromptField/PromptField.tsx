@@ -22,7 +22,7 @@ import { BiSend } from 'react-icons/bi';
 import { CgSpinner } from 'react-icons/cg';
 import { MdSave, MdStop, MdMic, MdMicOff, MdOutlineScheduleSend } from 'react-icons/md';
 import { AiOutlineClose } from 'react-icons/ai';
-import { LuChevronsLeftRight, LuChevronsRightLeft } from 'react-icons/lu';
+import { LuChevronsLeftRight, LuChevronsRightLeft, LuEye, LuMinimize2 } from 'react-icons/lu';
 import { clsx } from 'clsx';
 import { parseCommandArgs, parseSkillCommand, SKILL_COMMAND_PREFIX } from '@common/utils';
 import { getSubagentId } from '@common/agent';
@@ -189,6 +189,10 @@ type Props = {
   editorLarge?: boolean;
   /** The editor fills the task view; Ctrl/Cmd + wheel changes its font size. */
   editorMaximized?: boolean;
+  /** The editor has a fixed height of about six lines. */
+  editorCompact?: boolean;
+  /** Shown as a button while the editor is maximised. */
+  onRestoreEditorSize?: () => void;
 };
 
 export const PromptField = forwardRef<PromptFieldRef, Props>(
@@ -236,6 +240,8 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
       editorSized = false,
       editorLarge = false,
       editorMaximized = false,
+      editorCompact = false,
+      onRestoreEditorSize,
     }: Props,
     ref,
   ) => {
@@ -1771,11 +1777,11 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
             spellCheck={false}
             className={clsx(
               'pf-prompt-editor w-full px-2 py-1 border-2 border-border-default-dark rounded-md focus:outline-none focus:border-border-accent text-sm bg-bg-secondary text-text-primary placeholder-text-muted-dark resize-none overflow-y-auto transition-colors duration-200 scrollbar-thin scrollbar-track-bg-secondary-light scrollbar-thumb-bg-fourth hover:scrollbar-thumb-bg-fourth',
-              voiceAvailable ? (isRecording ? 'pr-24' : 'pr-20') : 'pr-16',
-              editorSized ? 'pf-prompt-editor-sized absolute inset-0' : 'max-h-[40vh]',
+              editorMaximized ? 'pr-28' : voiceAvailable ? (isRecording ? 'pr-24' : 'pr-20') : 'pr-16',
+              editorSized ? 'pf-prompt-editor-sized absolute inset-0' : editorCompact ? 'pf-prompt-editor-sized h-[8.5rem]' : 'max-h-[40vh]',
               editorLarge && 'pf-prompt-editor-large',
               editorMaximized && 'pf-prompt-editor-maximized',
-              !text && !editorSized && '!h-[40px]',
+              !text && !editorSized && !editorCompact && '!h-[40px]',
             )}
             theme={promptEditorTheme}
             basicSetup={BASIC_SETUP}
@@ -1798,6 +1804,28 @@ export const PromptField = forwardRef<PromptFieldRef, Props>(
               <Tooltip content={isProcessing ? t('promptField.queueMessage') : t('promptField.sendMessage')}>
                 <button onClick={handleSubmit} disabled={disabled} className="hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200">
                   {isProcessing && !question ? <MdOutlineScheduleSend className="w-4 h-4" /> : <BiSend className="w-4 h-4" />}
+                </button>
+              </Tooltip>
+            )}
+            {editorMaximized && (
+              <Tooltip content={t('promptField.openRenderedEditor')}>
+                <button
+                  onClick={openExpanded}
+                  aria-label={t('promptField.openRenderedEditor')}
+                  className="text-text-muted-light hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200"
+                >
+                  <LuEye className="w-4 h-4" />
+                </button>
+              </Tooltip>
+            )}
+            {editorMaximized && onRestoreEditorSize && (
+              <Tooltip content={t('promptField.restoreEditorSize')}>
+                <button
+                  onClick={onRestoreEditorSize}
+                  aria-label={t('promptField.restoreEditorSize')}
+                  className="text-text-muted-light hover:text-text-tertiary hover:bg-bg-tertiary rounded p-1 transition-all duration-200"
+                >
+                  <LuMinimize2 className="w-4 h-4" />
                 </button>
               </Tooltip>
             )}

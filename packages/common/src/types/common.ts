@@ -918,6 +918,8 @@ export interface HotkeyConfig {
     toggleMarkdownEditor: string;
     toggleMarkdownEditorMode: string;
     toggleMarkdownEditorWidth: string;
+    growPromptEditor: string;
+    shrinkPromptEditor: string;
   };
   gitHotkeys: {
     pull: string;

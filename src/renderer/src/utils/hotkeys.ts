@@ -36,6 +36,8 @@ export const DEFAULT_HOTKEY_CONFIG: HotkeyConfig = {
     toggleMarkdownEditor: 'mod+shift+m',
     toggleMarkdownEditorMode: 'shift+ctrl+n',
     toggleMarkdownEditorWidth: 'shift+ctrl+e',
+    growPromptEditor: 'ctrl+shift+up',
+    shrinkPromptEditor: 'ctrl+shift+down',
   },
   gitHotkeys: {
     pull: 'mod+shift+u',
@@ -127,6 +129,8 @@ export const getHotkeys = (config?: HotkeyConfig) => {
       TOGGLE_MARKDOWN_EDITOR: tk.toggleMarkdownEditor || tkDef.toggleMarkdownEditor,
       TOGGLE_MARKDOWN_EDITOR_MODE: tk.toggleMarkdownEditorMode ?? tkDef.toggleMarkdownEditorMode,
       TOGGLE_MARKDOWN_EDITOR_WIDTH: tk.toggleMarkdownEditorWidth ?? tkDef.toggleMarkdownEditorWidth,
+      GROW_PROMPT_EDITOR: tk.growPromptEditor ?? tkDef.growPromptEditor,
+      SHRINK_PROMPT_EDITOR: tk.shrinkPromptEditor ?? tkDef.shrinkPromptEditor,
     },
     GIT_HOTKEYS: {
       PULL: gh.pull || ghDef.pull,
