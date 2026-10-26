@@ -87,6 +87,34 @@ describe('DurabilityManager', () => {
     expect(messages[0].content).toEqual([{ type: 'reasoning', text: '', providerOptions: { anthropic: { redactedData: 'opaque-data' } } }]);
   });
 
+  it('exposes the captured assistant message of an in-flight root step until the step finishes', async () => {
+    start();
+    manager.appendText('root', 'text', 'Streaming');
+    expect(manager.getInFlightAssistantMessages()).toEqual([]);
+
+    manager.captureModelResponse(
+      'root',
+      [
+        { type: 'text', text: 'Waiting on the sub-task' },
+        { type: 'tool-call', toolCallId: 'wait', toolName: 'service_wait', input: { id: 'wait' } },
+      ] as never,
+      () => ToolRecoveryMode.Notify,
+    );
+    start('child', 'root', 'wait');
+    manager.captureAssistant('child', [{ type: 'text', text: 'Child text' }]);
+
+    const inFlight = manager.getInFlightAssistantMessages();
+    expect(inFlight).toHaveLength(1);
+    expect(inFlight[0].id).toBe('root-step');
+    expect(inFlight[0].content).toEqual([
+      { type: 'text', text: 'Waiting on the sub-task' },
+      { type: 'tool-call', toolCallId: 'wait', toolName: 'service_wait', input: { id: 'wait' } },
+    ]);
+
+    await manager.finishStep('root', []);
+    expect(manager.getInFlightAssistantMessages()).toEqual([]);
+  });
+
   it('restores the compacted child conversation rather than append-only precompaction history', async () => {
     start();
     start('child', 'root', 'parent-call');

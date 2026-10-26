@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { DefaultTaskState } from '@common/types';
 
 vi.mock('@/logger', () => ({
   default: {
@@ -241,5 +242,39 @@ describe('Task - readonly init', () => {
 
     expect(autocompletionSpy).toHaveBeenCalledWith(undefined, true);
     expect(aiderManager.sendUpdateAiderModels).toHaveBeenCalled();
+  });
+
+  const inFlightStep = [
+    {
+      id: 'step',
+      role: 'assistant',
+      content: [
+        { type: 'text', text: 'Waiting' },
+        { type: 'tool-call', toolCallId: 'call', toolName: 'tasks---run_prompt', input: { taskId: 'child' } },
+      ],
+    },
+  ] as never;
+
+  it('appends the in-flight agent step to the loaded messages while the task is in progress', async () => {
+    const task = createTask();
+    task.task.state = DefaultTaskState.InProgress;
+    vi.spyOn(task.durabilityManager, 'getInFlightAssistantMessages').mockReturnValue(inFlightStep);
+
+    const state = await task.load(true);
+
+    expect(state.messages).toEqual([
+      expect.objectContaining({ type: 'response-completed', messageId: 'step', content: 'Waiting' }),
+      expect.objectContaining({ type: 'tool', id: 'call', serverName: 'tasks', toolName: 'run_prompt', args: { taskId: 'child' } }),
+    ]);
+    expect(state.messages[1]).not.toHaveProperty('response');
+  });
+
+  it('leaves the in-flight agent step out when the task is not in progress', async () => {
+    const task = createTask();
+    vi.spyOn(task.durabilityManager, 'getInFlightAssistantMessages').mockReturnValue(inFlightStep);
+
+    const state = await task.load(true);
+
+    expect(state.messages).toEqual([]);
   });
 });

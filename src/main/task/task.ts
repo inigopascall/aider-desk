@@ -173,6 +173,9 @@ const getTaskFinishedNotificationText = (task: TaskData) => {
   }`;
 };
 
+const getMessageDataId = (message: UserMessageData | ResponseCompletedData | ToolData) =>
+  message.type === 'response-completed' ? message.messageId : message.id;
+
 export class Task {
   private initialized = false;
   private initPromise: Promise<void> | null = null;
@@ -756,13 +759,32 @@ export class Task {
 
     const mode = this.getCurrentMode();
     return {
-      messages: this.contextManager.getContextMessagesData(),
+      messages: this.getLoadedMessagesData(),
       files: await this.getContextFiles(!AIDER_MODES.includes(mode), true),
       todoItems: await this.getTodos(),
       question: this.currentQuestion,
       queuedPrompts: this.queuedPrompts,
       workingMode: this.task.workingMode || 'local',
     };
+  }
+
+  /**
+   * The saved conversation plus any agent step the model has finished writing whose tool calls are
+   * still running. The agent saves a step only when its tool calls return, so without this a page
+   * reload during a long tool call (e.g. one waiting on a sub-task) would drop the step's text and
+   * running tool calls until the step ends. The step's messages carry the ids the step-end events
+   * use, so the UI updates them in place. Nothing here is saved or sent to the model.
+   */
+  private getLoadedMessagesData(): (UserMessageData | ResponseCompletedData | ToolData)[] {
+    const messages = this.contextManager.getContextMessagesData();
+    if (this.task.state !== DefaultTaskState.InProgress) {
+      return messages;
+    }
+    const loadedIds = new Set(messages.map(getMessageDataId));
+    const inFlightMessages = this.contextManager
+      .getContextMessagesData(this.durabilityManager.getInFlightAssistantMessages())
+      .filter((message) => !loadedIds.has(getMessageDataId(message)));
+    return [...messages, ...inFlightMessages];
   }
 
   private async loadContext() {

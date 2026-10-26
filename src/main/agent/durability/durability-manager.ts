@@ -247,6 +247,14 @@ export class DurabilityManager {
     return [...this.records().values()].filter((execution) => !execution.parentPromptContextId && execution.status === ExecutionStatus.Running);
   }
 
+  /**
+   * Assistant messages of root steps the model has finished writing but whose tool calls have not
+   * all returned yet. A read-only view for the UI: these are never added to the task context.
+   */
+  getInFlightAssistantMessages(): ContextAssistantMessage[] {
+    return this.getRecoverableRoots().flatMap((execution) => (execution.step?.assistantCaptured ? [execution.step.assistant] : []));
+  }
+
   begin(input: ExecutionInput): ExecutionCheckpoint {
     if (input.parentPromptContextId && this.isSuspended(input.parentPromptContextId)) {
       this.suspended.add(input.promptContext.id);
