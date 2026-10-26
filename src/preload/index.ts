@@ -237,6 +237,7 @@ const api: ApplicationAPI = {
   getSearchIndexStatus: () => ipcRenderer.invoke('task-navigation-index-status'),
   rebuildSearchIndex: () => ipcRenderer.invoke('task-navigation-rebuild-index'),
   regenerateTaskSummary: (baseDir, taskId) => ipcRenderer.invoke('task-navigation-regenerate-summary', baseDir, taskId),
+  regenerateTaskTitle: (baseDir, taskId) => ipcRenderer.invoke('task-navigation-regenerate-title', baseDir, taskId),
   previewTopicCompaction: (baseDir, taskId, target) => ipcRenderer.invoke('task-navigation-compaction-preview', baseDir, taskId, target),
   compactTopic: (baseDir, taskId, target, options) => ipcRenderer.invoke('task-navigation-compaction-compact', baseDir, taskId, target, options),
   undoTopicCompaction: (baseDir, taskId, compactionId) => ipcRenderer.invoke('task-navigation-compaction-undo', baseDir, taskId, compactionId),

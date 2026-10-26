@@ -41,8 +41,10 @@ import { ConversationEntry, collapseWhitespace, hashText, toConversationEntries,
 import { ContextFingerprint, IndexMessageRow, IndexedTaskInfo, KeywordHit, SearchIndex, VectorWrite, buildFtsQuery } from './search-index';
 import {
   SUMMARY_SYSTEM_PROMPT,
+  TITLE_SYSTEM_PROMPT,
   applySummaryUpdate,
   buildSummaryPrompt,
+  buildTitlePrompt,
   chunkEntries,
   cleanDescription,
   cleanTitle,
@@ -89,6 +91,7 @@ import logger from '@/logger';
 
 const INTERNAL_TASK_ID = 'internal';
 const GENERATING_NAME = '<<generating>>';
+
 const SEARCH_INDEX_FILE = path.join(AIDER_DESK_DATA_DIR, 'task-navigation.db');
 const DISCOVERY_MARKER_FILE = path.join(AIDER_DESK_DATA_DIR, 'task-navigation.discovered');
 
@@ -460,6 +463,35 @@ export class TaskNavigationManager {
   /** Rebuilds the topic map of a task from scratch. Resolves with the saved task data. */
   regenerateTaskSummary(baseDir: string, taskId: string): Promise<TaskData | null> {
     return this.queueSummary(baseDir, taskId, true);
+  }
+
+  /** Names the task from its whole conversation, on request only. Resolves with the saved task data. */
+  regenerateTaskTitle(baseDir: string, taskId: string): Promise<TaskData | null> {
+    return this.enqueue('summary', () => this.runTitleGeneration(baseDir, taskId));
+  }
+
+  private async runTitleGeneration(baseDir: string, taskId: string): Promise<TaskData | null> {
+    const task = this.findTask(baseDir, taskId);
+    if (!task) {
+      return null;
+    }
+    const entries = toConversationEntries(await task.getContextMessages());
+    if (entries.length === 0) {
+      throw new Error('The task has no messages to name it from');
+    }
+    const modelId = await this.resolveSummaryModel(task, this.getSettings());
+    if (!modelId) {
+      throw new Error('No model is available for task titles');
+    }
+    const summary = getTaskSummary(task.task);
+    const prompt = buildTitlePrompt(entries, summary?.topics ?? [], summary?.description ?? '');
+    const response = await this.generate(modelId, task.task.baseDir, taskId, TITLE_SYSTEM_PROMPT, prompt);
+    const title = cleanTitle((response ?? '').split('\n').find((line) => line.trim()) ?? '');
+    if (!title) {
+      throw new Error('The model returned an empty title');
+    }
+    logger.info('[TaskNavigation] Regenerated the task title', { taskId, modelId });
+    return task.saveTask({ name: title }, false);
   }
 
   // Topic compaction
@@ -1043,8 +1075,8 @@ export class TaskNavigationManager {
 
   /**
    * Extends the task's topic map with the messages it does not cover yet (or rebuilds it), divides the topics that
-   * closed into sections, then saves the topic map, the last-message preview and, unless the title is locked, the
-   * regenerated title.
+   * closed into sections, then saves the topic map, the last-message preview and, only when automatic titles are enabled
+   * and the title is not manually locked, the regenerated title.
    */
   private async summarize(baseDir: string, taskId: string, rebuild: boolean): Promise<TaskData | null> {
     const task = this.findTask(baseDir, taskId);

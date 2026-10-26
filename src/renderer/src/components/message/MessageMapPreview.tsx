@@ -24,7 +24,7 @@ export const MessageMapPreview = ({ turnNumber, role, preview }: Props) => {
           })}
         />
         <span className="text-4xs font-semibold uppercase tracking-wide text-text-muted">
-          {t('messages.map.turn', { number: turnNumber })} · {label}
+          {t('messages.map.bookmark', { number: turnNumber })} · {label}
         </span>
       </div>
       <p className="line-clamp-4 whitespace-pre-wrap break-words text-3xs text-text-secondary">{preview || t('messages.map.emptyPreview')}</p>

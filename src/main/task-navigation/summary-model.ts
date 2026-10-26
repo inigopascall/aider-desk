@@ -535,3 +535,45 @@ export const sectionTopics = async (
 
   return { topics: result, done, withSections, calls, warnings };
 };
+
+// Task titles
+
+const NEWLINE = String.fromCharCode(10);
+
+export const TITLE_SYSTEM_PROMPT = [
+  'You name a conversation between a developer and an AI coding assistant. You receive messages sampled evenly from the whole conversation, from its first message to its last, and possibly its topic map and description.',
+  '',
+  'Respond with the title only: four to ten words in plain, everyday language that names what the whole conversation is about. Take in every part of it, from the start to the end, not only the most recent part. No quotes, no trailing period, nothing else.',
+].join(NEWLINE);
+
+const TITLE_PROMPT_CHARACTERS = 16000;
+const TITLE_TEXT_LIMIT = 400;
+
+/**
+ * Prompt for a task title that covers the whole conversation: the description, every topic summary, and messages sampled
+ * evenly from the first to the last so that a long conversation is represented end to end.
+ */
+export const buildTitlePrompt = (entries: ConversationEntry[], topics: TaskTopic[], description = '', maxCharacters = TITLE_PROMPT_CHARACTERS): string => {
+  const lines: string[] = [];
+  if (description) {
+    lines.push(`Description: ${description}`, '');
+  }
+  if (topics.length > 0) {
+    lines.push('Topics, first to last:');
+    topics.forEach((topic, index) => lines.push(`T${index + 1}: ${topic.summary}`));
+    lines.push('');
+  }
+  const rendered = entries.map((entry) => `${entry.role.toUpperCase()}: ${truncateText(collapseWhitespace(entry.text), TITLE_TEXT_LIMIT)}`);
+  if (rendered.length === 0) {
+    return lines.join(NEWLINE);
+  }
+  const budget = Math.max(0, maxCharacters - lines.join(NEWLINE).length);
+  const average = rendered.reduce((total, text) => total + text.length + 1, 0) / rendered.length;
+  const count = Math.max(1, Math.min(rendered.length, Math.floor(budget / Math.max(1, average))));
+  lines.push(`Messages sampled from the whole conversation (${count} of ${rendered.length}, in order):`);
+  for (let position = 0; position < count; position++) {
+    const index = count === 1 ? 0 : Math.round((position * (rendered.length - 1)) / (count - 1));
+    lines.push(rendered[index]);
+  }
+  return lines.join(NEWLINE);
+};

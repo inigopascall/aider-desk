@@ -16,6 +16,7 @@ import { composeMessagesWithWorkflowRuns } from '@/utils/workflow-messages';
 import { EMPTY_WORKFLOW_RUNS, WorkflowRunState } from '@/stores/taskStore';
 import { IconButton } from '@/components/common/IconButton';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useTaskBookmarks } from '@/stores/bookmarkStore';
 
 export type MessagesRef = {
   exportToImage: () => void;
@@ -64,6 +65,7 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
   ) => {
     const { t } = useTranslation();
     const showMessageMap = useSettingsStore((state) => state.settings?.showMessageMap ?? true);
+    const hasBookmarks = Object.keys(useTaskBookmarks(taskId)).length > 0;
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const [visibleIndex, setVisibleIndex] = useState(0);
@@ -97,10 +99,7 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
       return latestActivityMessageId;
     }, [inProgress, messages]);
 
-    const timelineMessages = useMemo(
-      () => composeMessagesWithWorkflowRuns(messages, workflowRuns ?? EMPTY_WORKFLOW_RUNS),
-      [messages, workflowRuns],
-    );
+    const timelineMessages = useMemo(() => composeMessagesWithWorkflowRuns(messages, workflowRuns ?? EMPTY_WORKFLOW_RUNS), [messages, workflowRuns]);
     const processedMessages = useProcessedMessages(timelineMessages);
 
     const { scrollingPaused, setScrollingPaused, scrollToBottom, eventHandlers } = useScrollingPaused({
@@ -126,14 +125,7 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
       return processedMessages.filter(isUserMessage).map((message) => message.id);
     }, [processedMessages]);
 
-    const {
-      hasPreviousUserMessage,
-      hasNextUserMessage,
-      handleNavigateToPreviousUserMessage,
-      handleNavigateToNextUserMessage,
-      renderGoToPrevious,
-      renderGoToNext,
-    } = useUserMessageNavigation({
+    const { hasPreviousUserMessage, hasNextUserMessage, renderGoToPrevious, renderGoToNext } = useUserMessageNavigation({
       containerRef: messagesContainerRef,
       userMessageIds,
       scrollToMessageByElement: (element: HTMLElement) => {
@@ -176,7 +168,7 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
 
     useEffect(() => {
       const container = messagesContainerRef.current;
-      if (!showMessageMap || !container) {
+      if (!showMessageMap || !hasBookmarks || !container) {
         return undefined;
       }
       let frame: number | null = null;
@@ -197,7 +189,7 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
           cancelAnimationFrame(frame);
         }
       };
-    }, [getVisibleIndex, showMessageMap]);
+    }, [getVisibleIndex, showMessageMap, hasBookmarks]);
 
     useEffect(() => {
       onContainerRef?.(messagesContainerRef.current);
@@ -271,16 +263,13 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
             ))}
             <div ref={messagesEndRef} />
           </div>
-          {showMessageMap && (
+          {showMessageMap && hasBookmarks && (
             <MessageMap
               key={taskId}
+              taskId={taskId}
               messages={processedMessages}
               visibleIndex={visibleIndex}
               onNavigate={scrollToMessageIndex}
-              onPreviousUserMessage={handleNavigateToPreviousUserMessage}
-              onNextUserMessage={handleNavigateToNextUserMessage}
-              hasPreviousUserMessage={hasPreviousUserMessage}
-              hasNextUserMessage={hasNextUserMessage}
               onScrollToBottom={scrollToBottom}
             />
           )}

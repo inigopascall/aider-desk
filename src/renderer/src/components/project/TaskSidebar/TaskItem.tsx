@@ -19,6 +19,8 @@ import { TaskStateChip } from '@/components/common/TaskStateChip';
 import { ExtensionComponentWrapper } from '@/components/extensions/ExtensionComponentWrapper';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { TaskNamePreview } from '@/components/task-navigation/TaskNamePreview';
+import { useApi } from '@/contexts/ApiContext';
+import { showErrorNotification } from '@/utils/notifications';
 
 type Props = {
   task: TaskData;
@@ -196,6 +198,7 @@ export const TaskItem = memo(
     setDragOverTaskId,
   }: Props) => {
     const { t } = useTranslation();
+    const api = useApi();
     const [editTaskName, setEditTaskName] = useState(task.name);
     const isGeneratingName = task.name === '<<generating>>';
     const isEditing = editingTaskId === task.id;
@@ -234,6 +237,12 @@ export const TaskItem = memo(
     const handleOnEdit = () => {
       setEditTaskName(task.name);
       onEditClick(task.id);
+    };
+
+    const handleAutoRename = () => {
+      api.regenerateTaskTitle(task.baseDir, task.id).catch((error: unknown) => {
+        showErrorNotification(t('taskNavigation.topicMap.regenerateTitleFailed', { error: error instanceof Error ? error.message : String(error) }));
+      });
     };
 
     const isDragged = draggedTaskIds.has(task.id);
@@ -400,6 +409,7 @@ export const TaskItem = memo(
                 <TaskMenuButton
                   task={task}
                   onEdit={handleOnEdit}
+                  onAutoRename={task.createdAt ? handleAutoRename : undefined}
                   onDelete={task.createdAt ? () => onDeleteClick(task.id) : undefined}
                   onCopyAsMarkdown={onCopyAsMarkdown && task.createdAt ? () => onCopyAsMarkdown(task.id) : undefined}
                   onExportToMarkdown={onExportToMarkdown && task.createdAt ? () => onExportToMarkdown(task.id) : undefined}
