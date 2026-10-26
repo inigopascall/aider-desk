@@ -167,3 +167,42 @@ describe('ModelManager - getUsageReport', () => {
     expect(() => manager.getUsageReport(task, unknownProfile, 'glm-5.3', usage)).toThrow('Unsupported LLM provider');
   });
 });
+
+describe('ModelManager - acceptsTemperature', () => {
+  type ManagerInternals = {
+    enrichWithModelInfo: (models: Model[], profile: ProviderProfile, strategy: unknown) => Model[];
+    enrichWithOverrides: (models: Model[], providerId: string) => Model[];
+    modelOverrides: Model[];
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network disabled')));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const loadModel = (useTemperature: boolean | undefined, savedOverride?: Partial<Model>): Model => {
+    const manager = createManager() as unknown as ManagerInternals;
+    manager.modelOverrides = savedOverride ? [{ id: 'glm-5.3', providerId: 'zai-plan', ...savedOverride }] : [];
+    const strategy = { getModelInfo: () => (useTemperature === undefined ? undefined : { useTemperature }) };
+
+    const models = manager.enrichWithModelInfo([{ id: 'glm-5.3', providerId: 'zai-plan' }], zaiProfile, strategy);
+    return manager.enrichWithOverrides(models, 'zai-plan')[0];
+  };
+
+  it('defaults to false when the models metadata says the model takes no temperature', () => {
+    expect(loadModel(false).acceptsTemperature).toBe(false);
+  });
+
+  it('defaults to true when the metadata allows a temperature or says nothing', () => {
+    expect(loadModel(true).acceptsTemperature).toBe(true);
+    expect(loadModel(undefined).acceptsTemperature).toBe(true);
+  });
+
+  it('an explicit saved value wins in both directions', () => {
+    expect(loadModel(false, { acceptsTemperature: true }).acceptsTemperature).toBe(true);
+    expect(loadModel(true, { acceptsTemperature: false }).acceptsTemperature).toBe(false);
+  });
+});

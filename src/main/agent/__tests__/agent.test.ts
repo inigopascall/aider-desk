@@ -1244,6 +1244,33 @@ describe('Agent - runAgent lifecycle persistence', () => {
     expect(persistenceLog).toEqual(['add:user', 'flush:1', 'model-execution', 'add:assistant', 'flush:2']);
   });
 
+  it('sends no temperature for a model locked in the Model Library, even when the profile and an extension set one', async () => {
+    mockSingleStepStream(makeStepResult());
+    agent['modelManager'].getModelSettings = vi.fn(() => ({ id: 'test-model', providerId: 'test-provider', temperature: 0.7, acceptsTemperature: false }));
+    const defaultDispatch = mockExtensionManager.dispatchEvent.getMockImplementation();
+    mockExtensionManager.dispatchEvent.mockImplementation(async (event: string, data: any) =>
+      event === 'onAgentStarted' ? { ...data, modelCallSettings: { ...data.modelCallSettings, temperature: 0.9 } } : defaultDispatch?.(event, data),
+    );
+    mockTask.getTaskAgentProfileId = vi.fn(() => mockProfile.id);
+    mockTask.task.temperatureOverride = 0.3;
+
+    await agent.runAgent(mockTask, { ...mockProfile, temperature: 0.4 }, 'Do it', 'agent', { id: 'pc-1' });
+
+    expect(mockStreamText).toHaveBeenCalled();
+    expect(mockStreamText.mock.calls[0][0].temperature).toBeUndefined();
+  });
+
+  it("sends the task's temperature override to the task's main agent", async () => {
+    mockSingleStepStream(makeStepResult());
+    mockTask.getTaskAgentProfileId = vi.fn(() => mockProfile.id);
+    mockTask.task.temperatureOverride = 0.3;
+
+    await agent.runAgent(mockTask, { ...mockProfile, temperature: 0.4 }, 'Do it', 'agent', { id: 'pc-1' });
+
+    expect(mockStreamText).toHaveBeenCalled();
+    expect(mockStreamText.mock.calls[0][0].temperature).toBe(0.3);
+  });
+
   it('persists one completed assistant message exactly once and returns it exactly once', async () => {
     mockSingleStepStream(makeStepResult());
 

@@ -95,6 +95,7 @@ import {
   TopicCompactionOptions,
   TopicCompactionPreview,
   TopicCompactionTarget,
+  EffectiveModelSettings,
 } from '@common/types';
 import { ApplicationAPI, RendererProcessMemoryInfo } from '@common/api';
 import { type AxiosInstance, create } from 'axios';
@@ -874,6 +875,9 @@ export class BrowserApi implements ApplicationAPI {
   }
   updateTask(baseDir: string, id: string, updates: Partial<TaskData>): Promise<boolean> {
     return this.post('/project/tasks', { projectDir: baseDir, id, updates });
+  }
+  getEffectiveModelSettings(baseDir: string, taskId: string): Promise<EffectiveModelSettings | null> {
+    return this.post('/project/tasks/effective-model-settings', { projectDir: baseDir, taskId });
   }
   deleteTask(baseDir: string, id: string): Promise<boolean> {
     return this.post('/project/tasks/delete', { projectDir: baseDir, id });

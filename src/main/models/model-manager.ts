@@ -455,24 +455,25 @@ export class ModelManager {
     const enrichedModels = [...models];
 
     for (const model of enrichedModels) {
-      if (strategy.getModelInfo) {
-        const modelInfo = strategy.getModelInfo(profile, model.id, this.modelsInfo);
-        if (modelInfo) {
-          logger.debug(`Enriching model ${model.id} with info`, modelInfo);
+      const modelInfo = strategy.getModelInfo ? strategy.getModelInfo(profile, model.id, this.modelsInfo) : undefined;
+      if (modelInfo) {
+        logger.debug(`Enriching model ${model.id} with info`, modelInfo);
 
-          model.maxInputTokens = model.maxInputTokens ?? modelInfo.maxInputTokens;
-          model.maxOutputTokensLimit = model.maxOutputTokensLimit ?? modelInfo.maxOutputTokens;
-          model.inputCostPerToken = model.inputCostPerToken ?? modelInfo.inputCostPerToken;
-          model.outputCostPerToken = model.outputCostPerToken ?? modelInfo.outputCostPerToken;
-          model.cacheWriteInputTokenCost = model.cacheWriteInputTokenCost ?? modelInfo.cacheWriteInputTokenCost;
-          model.cacheReadInputTokenCost = model.cacheReadInputTokenCost ?? modelInfo.cacheReadInputTokenCost;
+        model.maxInputTokens = model.maxInputTokens ?? modelInfo.maxInputTokens;
+        model.maxOutputTokensLimit = model.maxOutputTokensLimit ?? modelInfo.maxOutputTokens;
+        model.inputCostPerToken = model.inputCostPerToken ?? modelInfo.inputCostPerToken;
+        model.outputCostPerToken = model.outputCostPerToken ?? modelInfo.outputCostPerToken;
+        model.cacheWriteInputTokenCost = model.cacheWriteInputTokenCost ?? modelInfo.cacheWriteInputTokenCost;
+        model.cacheReadInputTokenCost = model.cacheReadInputTokenCost ?? modelInfo.cacheReadInputTokenCost;
 
-          // remove temperature if model does not support it
-          if (modelInfo.useTemperature === false) {
-            model.temperature = undefined;
-          }
+        // remove temperature if model does not support it
+        if (modelInfo.useTemperature === false) {
+          model.temperature = undefined;
         }
       }
+
+      // Default for the Model Library's "Accepts custom temperature" flag; a saved choice is applied by enrichWithOverrides.
+      model.acceptsTemperature = model.acceptsTemperature ?? modelInfo?.useTemperature !== false;
     }
 
     return enrichedModels;

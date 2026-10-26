@@ -22,6 +22,7 @@ export const createMockTask = (overrides: Partial<TaskData> = {}) => {
     })),
     getRepositoryMappingFiles: vi.fn((): Promise<ContextFile[]> => Promise.resolve([])),
     resolveContextFilePath: vi.fn((): Promise<string | null> => Promise.resolve(null)),
+    getTaskAgentProfileId: vi.fn((): string | undefined => undefined),
   };
 
   return { ...defaultMock, ...overrides } as unknown as Task;

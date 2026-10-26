@@ -507,6 +507,8 @@
     "limit": "Limit",
     "temperature": "Temperature",
     "temperatureTooltip": "Controls the randomness of model responses. Lower values (0.0-0.3) produce more focused and deterministic outputs, while higher values (0.7-1.0) generate more creative and varied responses.",
+    "acceptsTemperature": "Accepts custom temperature",
+    "acceptsTemperatureTooltip": "Untick for models that only accept their own temperature. No temperature is then ever sent to this model, whatever the task or agent profile says.",
     "cacheWrites": "Cache Writes",
     "cachedInput": "Cached Input",
     "inputCost": "Input",
@@ -2599,5 +2601,30 @@
       "noOutput": "No additional output was preserved."
     },
     "missingProfile": "Unable to recover task: agent profile is unavailable."
+  },
+  "taskModelSettings": {
+    "reasoningLabel": "Reasoning:",
+    "temperatureLabel": "Temperature:",
+    "inheritedValue": "{{value}} · {{source}}",
+    "sourceAgentProfile": "agent profile",
+    "sourceModelLibrary": "model library",
+    "fromAgentProfile": "From agent profile {{name}}",
+    "fromModelLibrary": "From the Model Library",
+    "overrideTooltip": "Set for this task only",
+    "useAgentProfileSetting": "Use agent profile's setting",
+    "modelDefault": "Model default",
+    "reasoningDefaultTooltip": "Not set by the agent profile: the provider's default applies.",
+    "temperatureDefaultTooltip": "Not set by the agent profile or the Model Library: no temperature is sent.",
+    "temperatureLockedTooltip": "This model only accepts its own temperature. Change this in the Model Library.",
+    "temperatureClearedTooltip": "Not sent while thinking is on for this model.",
+    "reasoningOptions": {
+      "provider-default": "Provider default",
+      "none": "None",
+      "minimal": "Minimal",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "xhigh": "xHigh"
+    }
   }
 }

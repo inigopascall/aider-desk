@@ -211,6 +211,11 @@ const UpdateTaskSchema = z.object({
   updates: TaskDataSchema.partial(),
 });
 
+const GetEffectiveModelSettingsSchema = z.object({
+  projectDir: z.string().min(1, 'Project directory is required'),
+  taskId: z.string().min(1, 'Task id is required'),
+});
+
 const LoadTaskSchema = z.object({
   projectDir: z.string().min(1, 'Project directory is required'),
   id: z.string().min(1, 'Task id is required'),
@@ -789,6 +794,20 @@ export class ProjectApi extends BaseApi {
         const { projectDir, id, updates } = parsed;
         const savedTask = await this.eventsHandler.updateTask(projectDir, id, updates);
         res.status(200).json(savedTask);
+      }),
+    );
+
+    // Effective reasoning and temperature for the task's main agent
+    router.post(
+      '/project/tasks/effective-model-settings',
+      this.handleRequest(async (req, res) => {
+        const parsed = this.validateRequest(GetEffectiveModelSettingsSchema, req.body, res);
+        if (!parsed) {
+          return;
+        }
+
+        const { projectDir, taskId } = parsed;
+        res.status(200).json(await this.eventsHandler.getEffectiveModelSettings(projectDir, taskId));
       }),
     );
 

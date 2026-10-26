@@ -678,7 +678,7 @@ describe('Tasks Tools - search_task', () => {
       );
     });
 
-    it('passes the requested reasoning level as task metadata', async () => {
+    it('writes the requested reasoning level as the task reasoning override', async () => {
       const taskInstance = {
         init: vi.fn().mockResolvedValue(undefined),
         saveTask: vi.fn().mockResolvedValue(undefined),
@@ -693,7 +693,28 @@ describe('Tasks Tools - search_task', () => {
       const tools = createTasksToolset(mockSettings, mockTask, mockProfile, mockPromptContext);
       await tools[createTaskToolKey].execute({ prompt: 'Create a task', name: 'New task', asSubtask: true, reasoning: 'medium' }, { toolCallId: 'tool-call-123' });
 
-      expect(mockProject.createNewTask).toHaveBeenCalledWith(expect.objectContaining({ metadata: { reasoningEffort: 'medium' } }));
+      expect(mockProject.createNewTask).toHaveBeenCalledWith(expect.objectContaining({ reasoningOverride: 'medium' }));
+      expect(taskInstance.saveTask).toHaveBeenCalledWith(expect.objectContaining({ reasoningOverride: 'medium' }));
+      expect(mockProject.createNewTask).not.toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.anything() }));
+    });
+
+    it('writes the requested temperature as the task temperature override', async () => {
+      const taskInstance = {
+        init: vi.fn().mockResolvedValue(undefined),
+        saveTask: vi.fn().mockResolvedValue(undefined),
+        savePromptOnly: vi.fn().mockResolvedValue(undefined),
+        getContextMessages: vi.fn().mockResolvedValue([]),
+      };
+      Object.assign(mockProfile, { id: 'calling-profile', provider: 'anthropic', model: 'claude-sonnet' });
+
+      mockProject.createNewTask = vi.fn().mockResolvedValue({ id: 'new-task-id', name: 'New task' });
+      mockProject.getTask.mockReturnValue(taskInstance);
+
+      const tools = createTasksToolset(mockSettings, mockTask, mockProfile, mockPromptContext);
+      await tools[createTaskToolKey].execute({ prompt: 'Create a task', name: 'New task', asSubtask: true, temperature: 0.3 }, { toolCallId: 'tool-call-123' });
+
+      expect(mockProject.createNewTask).toHaveBeenCalledWith(expect.objectContaining({ temperatureOverride: 0.3 }));
+      expect(taskInstance.saveTask).toHaveBeenCalledWith(expect.objectContaining({ temperatureOverride: 0.3 }));
     });
 
     it('sets no metadata when no reasoning level is requested', async () => {
@@ -762,6 +783,12 @@ describe('Tasks Tools - search_task', () => {
     it('rejects an unknown reasoning level', () => {
       const tools = createTasksToolset(mockSettings, mockTask, mockProfile, mockPromptContext);
       expect(() => tools[createTaskToolKey].inputSchema.parse({ prompt: 'p', name: 'n', reasoning: 'max' })).toThrow();
+    });
+
+    it('rejects a temperature outside 0–1', () => {
+      const tools = createTasksToolset(mockSettings, mockTask, mockProfile, mockPromptContext);
+      expect(() => tools[createTaskToolKey].inputSchema.parse({ prompt: 'p', name: 'n', temperature: 1.5 })).toThrow();
+      expect(() => tools[createTaskToolKey].inputSchema.parse({ prompt: 'p', name: 'n', temperature: 0.3 })).not.toThrow();
     });
   });
 

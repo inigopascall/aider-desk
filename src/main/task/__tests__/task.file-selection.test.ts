@@ -304,6 +304,32 @@ describe('Task - per-task file selection', () => {
     expect(saved.disabledRepositoryMappingFiles).toEqual([MAP_ONE]);
   });
 
+  it('a task loaded from disk with a legacy metadata reasoning level takes it as its reasoning override, persisted on the next save', async () => {
+    await write(
+      TASK_SETTINGS_FILE,
+      JSON.stringify({
+        id: TASK_ID,
+        baseDir: PROJECT_DIR,
+        name: 'Old task',
+        createdAt: CREATED_AT,
+        mainModel: 'm',
+        aiderTotalCost: 0,
+        agentTotalCost: 0,
+        metadata: { reasoningEffort: 'high', other: 1 },
+      }),
+    );
+    const { task } = createTask();
+    await task.waitForTaskDataLoad();
+
+    expect(task.task.reasoningOverride).toBe('high');
+    expect(task.task.metadata).toEqual({ other: 1 });
+
+    await task.saveTask({ name: 'Renamed' });
+    const saved = await readSavedTask();
+    expect(saved.reasoningOverride).toBe('high');
+    expect(saved.metadata).toEqual({ other: 1 });
+  });
+
   it('a task loaded from disk with the selection fields keeps its own lists', async () => {
     await write(
       TASK_SETTINGS_FILE,

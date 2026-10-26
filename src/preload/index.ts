@@ -225,6 +225,7 @@ const api: ApplicationAPI = {
 
   createNewTask: (baseDir, params?: CreateTaskParams) => ipcRenderer.invoke('create-new-task', baseDir, params),
   updateTask: (baseDir, id, updates) => ipcRenderer.invoke('update-task', baseDir, id, updates),
+  getEffectiveModelSettings: (baseDir, taskId) => ipcRenderer.invoke('get-effective-model-settings', baseDir, taskId),
   deleteTask: (baseDir, id) => ipcRenderer.invoke('delete-task', baseDir, id),
   duplicateTask: (baseDir, taskId) => ipcRenderer.invoke('duplicate-task', baseDir, taskId),
   forkTask: (baseDir, taskId, messageId) => ipcRenderer.invoke('fork-task', baseDir, taskId, messageId),

@@ -1302,6 +1302,8 @@ export interface SwitchToWorktreeOptions {
   dropSourceChanges?: boolean;
 }
 
+export const ReasoningSchema = z.enum(['provider-default', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh']);
+
 export const TaskDataSchema = z.object({
   id: z.string(),
   baseDir: z.string(),
@@ -1337,6 +1339,13 @@ export const TaskDataSchema = z.object({
   lastAgentProviderMetadata: z.unknown().optional(),
   lastAgentProviderMetadataModel: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  /** Reasoning level for this task's main agent only; null or undefined inherits the agent profile's. */
+  reasoningOverride: ReasoningSchema.nullable().optional(),
+  /** Temperature for this task's main agent only; 'model-default' sends none; null or undefined inherits. */
+  temperatureOverride: z
+    .union([z.number().min(0).max(1), z.literal('model-default')])
+    .nullable()
+    .optional(),
   /** Rule-file selection keys unticked for this task. */
   disabledRuleFiles: z.array(z.string()).optional(),
   /** Repository-mapping paths unticked for this task. */
@@ -1415,6 +1424,8 @@ export interface Model {
   maxOutputTokens?: number;
   maxOutputTokensLimit?: number;
   temperature?: number;
+  /** False for models that only accept their own temperature: none is then ever sent to them. */
+  acceptsTemperature?: boolean;
   inputCostPerToken?: number;
   outputCostPerToken?: number;
   cacheWriteInputTokenCost?: number;
@@ -1424,6 +1435,33 @@ export interface Model {
   isHidden?: boolean;
   hasModelOverrides?: boolean;
   providerOverrides?: Record<string, unknown>;
+}
+
+export type EffectiveReasoningSource = 'task' | 'agent-profile' | 'default';
+
+export type EffectiveTemperatureSource = 'task' | 'agent-profile' | 'model-library' | 'default';
+
+export interface EffectiveReasoning {
+  value: Reasoning;
+  source: EffectiveReasoningSource;
+}
+
+export interface EffectiveTemperature {
+  /** The temperature sent to the model; undefined sends none. */
+  value?: number;
+  source: EffectiveTemperatureSource;
+  /** The Model Library marks the model as not accepting a custom temperature, so none is sent. */
+  locked: boolean;
+  /** The provider drops temperature at the resolved reasoning level (thinking on), so none is sent. */
+  clearedByReasoning: boolean;
+}
+
+/** The reasoning and temperature an agent run sends, and where each comes from. */
+export interface EffectiveModelSettings {
+  agentProfileId: string;
+  agentProfileName: string;
+  reasoning: EffectiveReasoning;
+  temperature: EffectiveTemperature;
 }
 
 export interface ProviderModelsData {

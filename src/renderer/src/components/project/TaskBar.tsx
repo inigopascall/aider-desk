@@ -17,6 +17,7 @@ import { ModelSelector, ModelSelectorRef } from '@/components/ModelSelector';
 import { showErrorNotification } from '@/utils/notifications';
 import { EditFormatSelector } from '@/components/PromptField/EditFormatSelector';
 import { TaskGitControls } from '@/components/project/TaskGitControls';
+import { TaskModelSettingsControls } from '@/components/project/task-model-settings/TaskModelSettingsControls';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { useSaveSettings, useSettingsStore } from '@/stores/settingsStore';
 import { useApi } from '@/contexts/ApiContext';
@@ -586,6 +587,7 @@ export const TaskBar = forwardRef<TaskBarRef, Props>(
                       />
                     )}
                   </div>
+                  {currentTaskModelId && <TaskModelSettingsControls task={task} updateTask={updateTask} />}
                 </div>
 
                 {/* Row 2: AIDER */}
@@ -616,6 +618,7 @@ export const TaskBar = forwardRef<TaskBarRef, Props>(
                         />
                       )}
                     </div>
+                    {currentTaskModelId && <TaskModelSettingsControls task={task} updateTask={updateTask} disabled={disabled} />}
                     {showAiderInfo && <div className="h-3 w-px bg-bg-fourth flex-shrink-0"></div>}
                   </>
                 ) : (

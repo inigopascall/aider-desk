@@ -351,6 +351,8 @@
     "limit": "限制",
     "temperature": "温度",
     "temperatureTooltip": "控制模型响应的随机性。较低的值（0.0-0.3）产生更专注和确定性的输出，而较高的值（0.7-1.0）生成更有创意和多样化的响应。当未设置时，使用模型的默认温度。",
+    "acceptsTemperature": "接受自定义温度",
+    "acceptsTemperatureTooltip": "对于只接受自身温度的模型，请取消勾选。之后无论任务或智能体配置如何设置，都不会向此模型发送温度。",
     "cacheWrites": "缓存写入",
     "cachedInput": "缓存输入",
     "inputCost": "输入",
@@ -2411,5 +2413,30 @@
       "noOutput": "没有保留额外的输出。"
     },
     "missingProfile": "无法恢复任务：智能体配置不可用。"
+  },
+  "taskModelSettings": {
+    "reasoningLabel": "推理：",
+    "temperatureLabel": "温度：",
+    "inheritedValue": "{{value}} · {{source}}",
+    "sourceAgentProfile": "智能体配置",
+    "sourceModelLibrary": "模型库",
+    "fromAgentProfile": "来自智能体配置 {{name}}",
+    "fromModelLibrary": "来自模型库",
+    "overrideTooltip": "仅为此任务设置",
+    "useAgentProfileSetting": "使用智能体配置的设置",
+    "modelDefault": "模型默认",
+    "reasoningDefaultTooltip": "智能体配置未设置：使用提供商默认值。",
+    "temperatureDefaultTooltip": "智能体配置和模型库均未设置：不发送温度。",
+    "temperatureLockedTooltip": "此模型仅接受其自身的温度。请在模型库中更改。",
+    "temperatureClearedTooltip": "此模型开启思考时不发送。",
+    "reasoningOptions": {
+      "provider-default": "提供商默认",
+      "none": "无",
+      "minimal": "最低",
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "xhigh": "xHigh"
+    }
   }
 }

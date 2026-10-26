@@ -358,6 +358,8 @@
     "limit": "Limit",
     "temperature": "Temperatur",
     "temperatureTooltip": "Steuert die Zufälligkeit der Modellantworten. Niedrigere Werte (0,0-0,3) erzeugen fokussiertere und deterministischere Ausgaben, während höhere Werte (0,7-1,0) kreativere und variablere Antworten erzeugen.",
+    "acceptsTemperature": "Akzeptiert eigene Temperatur",
+    "acceptsTemperatureTooltip": "Für Modelle abwählen, die nur ihre eigene Temperatur akzeptieren. Dann wird an dieses Modell nie eine Temperatur gesendet, unabhängig von Aufgabe oder Agentenprofil.",
     "cacheWrites": "Cache-Schreibvorgänge",
     "cachedInput": "Zwischengespeicherte Eingabe",
     "inputCost": "Eingabe",
@@ -2290,5 +2292,30 @@
     "actionNotAvailableInWorktree": "Diese Aktion ist im Worktree-Modus nicht verfügbar",
     "updateFromRemote": "Von '{{upstream}}' aktualisieren",
     "branchUpdated": "Zweig '{{branch}}' vom Remote aktualisiert"
+  },
+  "taskModelSettings": {
+    "reasoningLabel": "Reasoning:",
+    "temperatureLabel": "Temperatur:",
+    "inheritedValue": "{{value}} · {{source}}",
+    "sourceAgentProfile": "Agentenprofil",
+    "sourceModelLibrary": "Modellbibliothek",
+    "fromAgentProfile": "Aus Agentenprofil {{name}}",
+    "fromModelLibrary": "Aus der Modellbibliothek",
+    "overrideTooltip": "Nur für diese Aufgabe festgelegt",
+    "useAgentProfileSetting": "Einstellung des Agentenprofils verwenden",
+    "modelDefault": "Modellstandard",
+    "reasoningDefaultTooltip": "Vom Agentenprofil nicht festgelegt: Es gilt der Standard des Anbieters.",
+    "temperatureDefaultTooltip": "Weder vom Agentenprofil noch von der Modellbibliothek festgelegt: Es wird keine Temperatur gesendet.",
+    "temperatureLockedTooltip": "Dieses Modell akzeptiert nur seine eigene Temperatur. Ändern Sie dies in der Modellbibliothek.",
+    "temperatureClearedTooltip": "Wird nicht gesendet, solange Thinking für dieses Modell aktiv ist.",
+    "reasoningOptions": {
+      "provider-default": "Anbieterstandard",
+      "none": "Keine",
+      "minimal": "Minimal",
+      "low": "Niedrig",
+      "medium": "Mittel",
+      "high": "Hoch",
+      "xhigh": "xHigh"
+    }
   }
 }

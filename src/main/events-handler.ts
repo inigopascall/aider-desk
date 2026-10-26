@@ -50,7 +50,7 @@ import { compareBaseDirs, normalizeBaseDir } from '@common/utils';
 // @ts-expect-error istextorbinary is not typed properly
 import { isBinary } from 'istextorbinary';
 
-import type { ModeDefinition, ExtensionConfigComponent, ExtensionOperationResult, ExtensionUIComponent } from '@common/types';
+import type { ModeDefinition, ExtensionConfigComponent, ExtensionOperationResult, ExtensionUIComponent, EffectiveModelSettings } from '@common/types';
 import type { WindowManager } from '@/window-manager';
 import type { GitAskpassManager } from '@/git/git-askpass-manager';
 
@@ -1090,6 +1090,11 @@ export class EventsHandler {
 
     // Delegate to Task.updateTask method which handles worktree logic
     return task.updateTask(updates);
+  }
+
+  async getEffectiveModelSettings(baseDir: string, taskId: string): Promise<EffectiveModelSettings | null> {
+    const task = this.projectManager.getProject(baseDir).getTask(taskId);
+    return task ? task.getEffectiveModelSettings() : null;
   }
 
   async deleteTask(baseDir: string, id: string): Promise<void> {

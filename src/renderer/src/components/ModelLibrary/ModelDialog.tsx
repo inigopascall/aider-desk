@@ -1,6 +1,7 @@
 import { startTransition, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Model, ProviderProfile } from '@common/types';
+import { clsx } from 'clsx';
 
 import { ModelParameterOverrides } from './ModelParameterOverrides';
 
@@ -38,6 +39,7 @@ export const ModelDialog = ({ model, providers, onSave, onCancel }: Props) => {
       model?.cacheWriteInputTokenCost !== undefined && model.cacheWriteInputTokenCost !== null ? (model.cacheWriteInputTokenCost * 1000000).toFixed(4) : '',
   });
   const selectedProvider = providers.find((p) => p.id === formData.providerId);
+  const temperatureAccepted = formData.acceptsTemperature !== false;
 
   useEffect(() => {
     if (model) {
@@ -47,6 +49,7 @@ export const ModelDialog = ({ model, providers, onSave, onCancel }: Props) => {
         maxInputTokens: model.maxInputTokens,
         maxOutputTokens: model.maxOutputTokens,
         temperature: model.temperature,
+        acceptsTemperature: model.acceptsTemperature,
         inputCostPerToken: model.inputCostPerToken,
         outputCostPerToken: model.outputCostPerToken,
         cacheReadInputTokenCost: model.cacheReadInputTokenCost,
@@ -145,6 +148,7 @@ export const ModelDialog = ({ model, providers, onSave, onCancel }: Props) => {
       maxInputTokens: formData.maxInputTokens,
       maxOutputTokens: formData.maxOutputTokens,
       temperature: temperatureEnabled ? formData.temperature : undefined,
+      acceptsTemperature: formData.acceptsTemperature,
       inputCostPerToken: costDisplayValues.inputCostPerToken !== '' ? parseFloat(costDisplayValues.inputCostPerToken) / 1000000 : undefined,
       outputCostPerToken: costDisplayValues.outputCostPerToken !== '' ? parseFloat(costDisplayValues.outputCostPerToken) / 1000000 : undefined,
       cacheReadInputTokenCost: costDisplayValues.cacheReadInputTokenCost !== '' ? parseFloat(costDisplayValues.cacheReadInputTokenCost) / 1000000 : undefined,
@@ -325,14 +329,41 @@ export const ModelDialog = ({ model, providers, onSave, onCancel }: Props) => {
                   </div>
                 }
                 checked={temperatureEnabled}
-                onChange={handleTemperatureToggle}
+                onChange={(enabled) => {
+                  if (temperatureAccepted) {
+                    handleTemperatureToggle(enabled);
+                  }
+                }}
+                disabled={!temperatureAccepted}
+                className={clsx(!temperatureAccepted && 'opacity-50 cursor-not-allowed')}
               />
-              {temperatureEnabled && <span className="text-sm font-medium text-text-primary">{formData.temperature}</span>}
+              {temperatureEnabled && (
+                <span className={clsx('text-sm font-medium text-text-primary', !temperatureAccepted && 'opacity-50')}>{formData.temperature}</span>
+              )}
             </div>
             {temperatureEnabled && (
-              <Slider min={0} max={2} step={0.05} value={formData.temperature ?? 0.0} onChange={(value) => handleInputChange('temperature', value)} />
+              <Slider
+                min={0}
+                max={2}
+                step={0.05}
+                value={formData.temperature ?? 0.0}
+                onChange={(value) => handleInputChange('temperature', value)}
+                disabled={!temperatureAccepted}
+              />
             )}
             {errors.temperature && <p className="text-error text-2xs mt-1">{errors.temperature}</p>}
+          </div>
+          <div>
+            <Checkbox
+              label={
+                <div className="flex items-center text-sm">
+                  <span>{t('modelLibrary.acceptsTemperature')}</span>
+                  <InfoIcon tooltip={t('modelLibrary.acceptsTemperatureTooltip')} className="ml-2" />
+                </div>
+              }
+              checked={temperatureAccepted}
+              onChange={(checked) => handleInputChange('acceptsTemperature', checked)}
+            />
           </div>
         </div>
 

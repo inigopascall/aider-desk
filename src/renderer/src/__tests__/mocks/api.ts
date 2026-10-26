@@ -178,6 +178,7 @@ export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedOb
     // Task operations
     createNewTask: vi.fn((): Promise<TaskData> => Promise.resolve({ id: 'mock-task-id' } as TaskData)),
     updateTask: vi.fn((): Promise<boolean> => Promise.resolve(true)),
+    getEffectiveModelSettings: vi.fn(() => Promise.resolve(null)),
     deleteTask: vi.fn((): Promise<boolean> => Promise.resolve(true)),
     duplicateTask: vi.fn((): Promise<TaskData> => Promise.resolve({ id: 'mock-duplicate-task-id' } as TaskData)),
     forkTask: vi.fn((): Promise<TaskData> => Promise.resolve({ id: 'mock-fork-task-id' } as TaskData)),

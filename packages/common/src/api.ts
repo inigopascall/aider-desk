@@ -19,6 +19,7 @@ import {
   CreateTaskParams,
   CommandsData,
   EditFormat,
+  EffectiveModelSettings,
   EnvironmentVariable,
   GitSyncCommits,
   FileEdit,
@@ -249,6 +250,7 @@ export interface ApplicationAPI {
 
   createNewTask: (baseDir: string, params?: CreateTaskParams) => Promise<TaskData>;
   updateTask: (baseDir: string, id: string, updates: Partial<TaskData>) => Promise<boolean>;
+  getEffectiveModelSettings: (baseDir: string, taskId: string) => Promise<EffectiveModelSettings | null>;
   deleteTask: (baseDir: string, id: string) => Promise<boolean>;
   duplicateTask: (baseDir: string, taskId: string) => Promise<TaskData>;
   forkTask: (baseDir: string, taskId: string, messageId: string) => Promise<TaskData>;

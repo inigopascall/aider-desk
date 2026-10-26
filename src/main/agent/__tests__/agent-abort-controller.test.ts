@@ -69,6 +69,7 @@ const createTask = () =>
     getProject: vi.fn(() => ({ baseDir: '/test/project' })),
     project: { baseDir: '/test/project' },
     task: {},
+    getTaskAgentProfileId: vi.fn(() => undefined),
     getContextMessages: vi.fn(async () => []),
     getContextFiles: vi.fn(async () => []),
     addContextMessage: vi.fn(async () => {}),

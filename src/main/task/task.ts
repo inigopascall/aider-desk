@@ -60,6 +60,7 @@ import {
   UncommittedFiles,
   WorkflowLogData,
   WorkflowRunInfo,
+  ReasoningSchema,
 } from '@common/types';
 import { parsePartialJson } from 'ai';
 import {
@@ -93,7 +94,7 @@ import debounce from 'lodash/debounce';
 import { isEqual } from 'lodash';
 
 import type { z } from 'zod';
-import type { ToolContent, JSONValue } from '@common/types';
+import type { ToolContent, JSONValue, EffectiveModelSettings } from '@common/types';
 import type { RegisteredCommand } from '@/extensions/extension-manager';
 import type { WatchHandle } from '@/file-watcher-manager';
 import type { SmartCompactionPassSelection } from '@/agent/smart-compaction';
@@ -122,6 +123,7 @@ import logger from '@/logger';
 import { MessageAction, ResponseMessage } from '@/messages';
 import { Store } from '@/store';
 import { ModelManager } from '@/models';
+import { resolveEffectiveModelSettings } from '@/models/effective-model-settings';
 import { CustomCommandManager, ShellCommandError } from '@/custom-commands';
 import { TelemetryManager } from '@/telemetry';
 import { EventManager } from '@/events';
@@ -301,15 +303,13 @@ export class Task {
     return true;
   }
 
-  public async getTaskAgentProfile(): Promise<AgentProfile | null> {
-    // Check task-level agent profile first
-    let agentProfileId = this.task.agentProfileId;
+  /** The id of the task's own main agent profile: the task's, else the project's. */
+  public getTaskAgentProfileId(): string | undefined {
+    return this.task.agentProfileId || this.project.getProjectSettings()?.agentProfileId || undefined;
+  }
 
-    // If no task-level profile, fall back to project-level
-    if (!agentProfileId) {
-      const projectSettings = this.project.getProjectSettings();
-      agentProfileId = projectSettings.agentProfileId;
-    }
+  public async getTaskAgentProfile(): Promise<AgentProfile | null> {
+    const agentProfileId = this.getTaskAgentProfileId();
 
     if (!agentProfileId) {
       return null;
@@ -332,6 +332,23 @@ export class Task {
     }
 
     return profile;
+  }
+
+  /** The reasoning and temperature this task's main agent will send, and where each comes from. */
+  public async getEffectiveModelSettings(): Promise<EffectiveModelSettings | null> {
+    const profile = await this.getTaskAgentProfile();
+    if (!profile) {
+      return null;
+    }
+
+    const provider = this.modelManager.getProviders().find((p) => p.id === profile.provider);
+    return resolveEffectiveModelSettings({
+      profile,
+      taskAgentProfileId: profile.id,
+      overrides: this.task,
+      model: this.modelManager.getModelSettings(profile.provider, profile.model),
+      getProviderParameters: (reasoning) => (provider ? this.modelManager.getProviderParameters(provider, profile.model, reasoning) : {}),
+    });
   }
 
   private getAuxiliaryModelId(baseProfile: AgentProfile, auxiliaryModelId: string | null | undefined): string {
@@ -362,7 +379,7 @@ export class Task {
     }
 
     const content = await fs.readFile(this.taskDataPath, 'utf8');
-    const data = this.migrateLegacyFileSelection(JSON.parse(content) as Partial<TaskData>);
+    const data = this.migrateLegacyReasoningEffort(this.migrateLegacyFileSelection(JSON.parse(content) as Partial<TaskData>));
 
     logger.debug('Loaded task data', {
       baseDir: this.project.baseDir,
@@ -386,6 +403,26 @@ export class Task {
       ...data,
       disabledRuleFiles: data.disabledRuleFiles ?? [...(projectSettings?.disabledRuleFiles ?? [])],
       disabledRepositoryMappingFiles: data.disabledRepositoryMappingFiles ?? [...(projectSettings?.disabledRepositoryMappingFiles ?? [])],
+    };
+  }
+
+  /**
+   * Tasks saved while the per-task reasoning level lived in metadata take it as their reasoning override.
+   * In-memory migration; persisted on the next saveTask().
+   */
+  private migrateLegacyReasoningEffort(data: Partial<TaskData>): Partial<TaskData> {
+    if (!data.metadata || !('reasoningEffort' in data.metadata)) {
+      return data;
+    }
+
+    const { reasoningEffort, ...metadata } = data.metadata;
+    const legacyReasoning = ReasoningSchema.safeParse(reasoningEffort);
+    const hasOverride = data.reasoningOverride !== undefined && data.reasoningOverride !== null;
+
+    return {
+      ...data,
+      metadata,
+      ...(!hasOverride && legacyReasoning.success ? { reasoningOverride: legacyReasoning.data } : {}),
     };
   }
 

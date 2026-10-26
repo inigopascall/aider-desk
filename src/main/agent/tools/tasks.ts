@@ -380,12 +380,18 @@ export const createTasksToolset = (settings: SettingsData, task: Task, profile: 
       reasoning: z
         .enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh'])
         .optional()
+        .describe("Optional reasoning level for the new task's agent. When omitted, the agent profile's own setting applies, then the provider's default."),
+      temperature: z
+        .number()
+        .min(0)
+        .max(1)
+        .optional()
         .describe(
-          "Optional reasoning level for the new task's agent. When omitted, the agent profile's own reasoning setting applies, then the provider default.",
+          "Optional temperature (0–1) for the new task's agent. When omitted, the agent profile's own setting applies, then the model's default. Ignored for models marked in the Model Library as not accepting a custom temperature.",
         ),
     }),
     execute: async (input, { toolCallId }) => {
-      const { prompt, name, agentProfileId, modelId, mode = 'agent', asSubtask = false, autonomyMode, worktree, executionMode, reasoning } = input;
+      const { prompt, name, agentProfileId, modelId, mode = 'agent', asSubtask = false, autonomyMode, worktree, executionMode, reasoning, temperature } = input;
       // `Project.createNewTask` clamps this to the configured maximum nesting
       // depth, so pass through the caller's actual intent.
       const parentTaskId: string | null | undefined = asSubtask ? task.taskId : 'parentTaskId' in input ? (input.parentTaskId as string | null) : undefined;
@@ -425,6 +431,8 @@ export const createTasksToolset = (settings: SettingsData, task: Task, profile: 
           provider,
           model,
           mainModel: effectiveModelId,
+          ...(reasoning && { reasoningOverride: reasoning }),
+          ...(temperature !== undefined && { temperatureOverride: temperature }),
         };
         const newTask = await task.getProject().createNewTask({
           parentId: parentTaskId || null,
@@ -434,7 +442,6 @@ export const createTasksToolset = (settings: SettingsData, task: Task, profile: 
             autonomyMode ??
             (executionMode === TaskExecutionMode.WaitForFinish || executionMode === TaskExecutionMode.RunInBackground ? AutonomyMode.Autonomous : undefined),
           ...(worktree !== undefined && { workingMode: worktree ? 'worktree' : 'local' }),
-          ...(reasoning && { metadata: { reasoningEffort: reasoning } }),
           ...updates,
         });
 

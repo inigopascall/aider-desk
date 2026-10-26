@@ -87,6 +87,22 @@ describe('ModelDialog', () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
+  it('saves an unticked "Accepts custom temperature" and disables the temperature controls', () => {
+    const onSave = vi.fn();
+    const model: Model = { id: 'kimi', providerId: 'provider-1', temperature: 0.4, acceptsTemperature: true };
+    render(<ModelDialog model={model} providers={mockProviders} onSave={onSave} onCancel={vi.fn()} />);
+
+    expect(screen.getAllByRole('slider')[0]).not.toBeDisabled();
+
+    fireEvent.click(screen.getByText('modelLibrary.acceptsTemperature'));
+
+    expect(screen.getAllByRole('slider')[0]).toBeDisabled();
+
+    fireEvent.click(screen.getByText('common.confirm'));
+
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ acceptsTemperature: false }));
+  });
+
   describe('Cost Input Fields', () => {
     const getCostInputs = () => {
       const allInputs = screen.getAllByRole('spinbutton');

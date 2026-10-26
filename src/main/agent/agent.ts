@@ -100,6 +100,7 @@ import { Store } from '@/store';
 import logger from '@/logger';
 import { prepareMessagesForModel } from '@/agent/message-preparation';
 import { ModelManager } from '@/models/model-manager';
+import { getReasoningForCall, isTaskMainAgent, resolveEffectiveModelSettings, resolveEffectiveReasoning } from '@/models/effective-model-settings';
 import { TelemetryManager } from '@/telemetry/telemetry-manager';
 import { ResponseMessage } from '@/messages';
 import { createSubagentsToolset } from '@/agent/tools/subagents';
@@ -740,12 +741,16 @@ export class Agent {
 
     let provider = providers.find((p) => p.id === profile.provider);
     let modelName = profile.model;
-    // The profile's own reasoning level is the base value; an onAgentStarted
-    // extension result (e.g. the reasoning selector) is spread over it below.
+    // Task overrides apply only to the task's own main agent; sub-agents, workflow and internal agents ignore them.
+    const taskAgentProfileId = task.getTaskAgentProfileId();
+    const taskOverrides = { reasoningOverride: task.task.reasoningOverride, temperatureOverride: task.task.temperatureOverride };
+    // The task's reasoning override, else the profile's own level, is the base value; an onAgentStarted
+    // extension result is spread over it below.
+    const reasoningForCall = getReasoningForCall(resolveEffectiveReasoning(profile, taskOverrides, isTaskMainAgent(profile, taskAgentProfileId)));
     let modelCallSettings: ModelCallSettings = {
       maxRetries: MAX_RETRIES,
       abortSignal,
-      ...(profile.reasoning && { reasoning: profile.reasoning }),
+      ...(reasoningForCall && { reasoning: reasoningForCall }),
     };
 
     if (provider) {
@@ -1174,7 +1179,15 @@ export class Agent {
 
       // Get the model to use its temperature and max output tokens settings
       const modelSettings = this.modelManager.getModelSettings(provider.id, modelName);
-      const effectiveTemperature = profile.temperature ?? modelSettings?.temperature;
+      const effectiveModelSettings = resolveEffectiveModelSettings({
+        profile,
+        taskAgentProfileId,
+        overrides: taskOverrides,
+        model: modelSettings,
+        getProviderParameters: () => providerParameters,
+      });
+      const effectiveTemperature = effectiveModelSettings.temperature.value;
+      const isTemperatureLocked = effectiveModelSettings.temperature.locked;
       const effectiveMaxOutputTokens = profile.maxTokens ?? modelSettings?.maxOutputTokens;
 
       logger.debug('Parameters:', {
@@ -1213,6 +1226,8 @@ export class Agent {
           telemetry: this.getTelemetrySettings(),
           ...modelCallSettings,
           ...providerParameters,
+          // Enforced last: a model that does not accept a custom temperature never receives one, whatever an extension set.
+          ...(isTemperatureLocked ? { temperature: undefined } : {}),
           onLanguageModelCallEnd: (event: LanguageModelCallEndEvent<ToolSet>) => {
             if (!isDurable) {
               return;

@@ -362,6 +362,8 @@
     "limit": "제한",
     "temperature": "Temperature",
     "temperatureTooltip": "모델 응답의 무작위성을 제어합니다. 값이 낮을수록(0.0~0.3) 더 집중적이고 결정론적인 출력을 생성하고, 값이 높을수록(0.7~1.0) 더 창의적이고 다양한 응답을 생성합니다.",
+    "acceptsTemperature": "사용자 지정 온도 허용",
+    "acceptsTemperatureTooltip": "자체 온도만 허용하는 모델은 선택 해제하세요. 그러면 작업이나 에이전트 프로필 설정과 관계없이 이 모델에는 온도가 전송되지 않습니다.",
     "cacheWrites": "캐시 쓰기",
     "cachedInput": "캐시된 입력",
     "inputCost": "입력",
@@ -2402,5 +2404,30 @@
       "noOutput": "추가로 보존된 출력이 없습니다."
     },
     "missingProfile": "에이전트 프로필을 사용할 수 없어 작업을 복구할 수 없습니다."
+  },
+  "taskModelSettings": {
+    "reasoningLabel": "추론:",
+    "temperatureLabel": "온도:",
+    "inheritedValue": "{{value}} · {{source}}",
+    "sourceAgentProfile": "에이전트 프로필",
+    "sourceModelLibrary": "모델 라이브러리",
+    "fromAgentProfile": "에이전트 프로필 {{name}}에서",
+    "fromModelLibrary": "모델 라이브러리에서",
+    "overrideTooltip": "이 작업에만 설정됨",
+    "useAgentProfileSetting": "에이전트 프로필 설정 사용",
+    "modelDefault": "모델 기본값",
+    "reasoningDefaultTooltip": "에이전트 프로필에 설정되지 않음: 공급자 기본값이 적용됩니다.",
+    "temperatureDefaultTooltip": "에이전트 프로필이나 모델 라이브러리에 설정되지 않음: 온도가 전송되지 않습니다.",
+    "temperatureLockedTooltip": "이 모델은 자체 온도만 허용합니다. 모델 라이브러리에서 변경하세요.",
+    "temperatureClearedTooltip": "이 모델에서 사고 기능이 켜져 있는 동안에는 전송되지 않습니다.",
+    "reasoningOptions": {
+      "provider-default": "공급자 기본값",
+      "none": "없음",
+      "minimal": "최소",
+      "low": "낮음",
+      "medium": "보통",
+      "high": "높음",
+      "xhigh": "xHigh"
+    }
   }
 }

@@ -334,6 +334,10 @@ export const setupIpcHandlers = (eventsHandler: EventsHandler, serverController:
     return await eventsHandler.updateTask(baseDir, id, updates);
   });
 
+  ipcMain.handle('get-effective-model-settings', async (_, baseDir: string, taskId: string) => {
+    return await eventsHandler.getEffectiveModelSettings(baseDir, taskId);
+  });
+
   ipcMain.handle('delete-task', async (_, baseDir: string, id: string) => {
     return await eventsHandler.deleteTask(baseDir, id);
   });
