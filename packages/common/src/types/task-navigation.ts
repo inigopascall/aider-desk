@@ -54,7 +54,7 @@ export interface TaskNavigationSettings {
   autoSummarize: boolean;
   /** Model id (`provider/model`) for topic maps. Null falls back to the task name model, then to the task's agent model. */
   summaryModel: string | null;
-  /** Replace the task name with the topic map title unless the user renamed the task by hand. */
+  /** Replace the task name with the topic map title when enabled, unless the user renamed the task by hand. */
   autoRegenerateTitle: boolean;
   /** Maintain the global search index. */
   searchIndexEnabled: boolean;
@@ -71,7 +71,7 @@ export interface TaskNavigationSettings {
 export const DEFAULT_TASK_NAVIGATION_SETTINGS: TaskNavigationSettings = {
   autoSummarize: true,
   summaryModel: null,
-  autoRegenerateTitle: true,
+  autoRegenerateTitle: false,
   searchIndexEnabled: true,
   conceptSearchEnabled: true,
   quickSwitcherCount: 6,

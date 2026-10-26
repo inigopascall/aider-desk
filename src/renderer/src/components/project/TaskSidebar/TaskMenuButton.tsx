@@ -1,7 +1,7 @@
 import { DefaultTaskState, TaskData } from '@common/types';
 import { useTranslation } from 'react-i18next';
 import { MouseEvent, useRef, useState, useEffect, memo } from 'react';
-import { HiCheck, HiOutlinePencil, HiOutlineTrash } from 'react-icons/hi';
+import { HiCheck, HiOutlinePencil, HiOutlineTrash, HiSparkles } from 'react-icons/hi';
 import { FaEllipsisVertical } from 'react-icons/fa6';
 import { IoLogoMarkdown } from 'react-icons/io';
 import { MdClose, MdImage, MdPushPin, MdVerticalAlignTop } from 'react-icons/md';
@@ -17,6 +17,7 @@ const TASK_HIGHLIGHT_COLORS = ['#E74C3C', '#E67E22', '#F1C40F', '#2ECC71', '#349
 type Props = {
   task: TaskData;
   onEdit: () => void;
+  onAutoRename?: () => void;
   onDelete?: () => void;
   onCopyAsMarkdown?: () => void;
   onExportToMarkdown?: () => void;
@@ -35,6 +36,7 @@ export const TaskMenuButton = memo(
   ({
     task,
     onEdit,
+    onAutoRename,
     onDelete,
     onCopyAsMarkdown,
     onExportToMarkdown,
@@ -124,6 +126,12 @@ export const TaskMenuButton = memo(
       e.stopPropagation();
       setIsMenuOpen(false);
       onEdit();
+    };
+
+    const handleAutoRenameClick = (e: MouseEvent) => {
+      e.stopPropagation();
+      setIsMenuOpen(false);
+      onAutoRename?.();
     };
 
     const handleDeleteClick = (e: MouseEvent) => {
@@ -220,6 +228,15 @@ export const TaskMenuButton = memo(
                   <HiOutlinePencil className="w-4 h-4" />
                   <span className="whitespace-nowrap">{t('taskSidebar.rename')}</span>
                 </li>
+                {onAutoRename && (
+                  <li
+                    className="flex items-center gap-2 px-2 py-1 text-2xs text-text-primary hover:bg-bg-tertiary cursor-pointer transition-colors"
+                    onClick={handleAutoRenameClick}
+                  >
+                    <HiSparkles className="w-4 h-4" />
+                    <span className="whitespace-nowrap">{t('taskSidebar.autoRename')}</span>
+                  </li>
+                )}
                 {onTogglePin && !isNewTask && (
                   <li
                     className="flex items-center gap-2 px-2 py-1 text-2xs text-text-primary hover:bg-bg-tertiary cursor-pointer transition-colors"

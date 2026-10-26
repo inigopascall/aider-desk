@@ -7,6 +7,7 @@ export enum MessageMapRole {
 
 export type MessageMapEntry = {
   id: string;
+  messageId: string;
   index: number;
   role: MessageMapRole;
   preview: string;
@@ -35,6 +36,7 @@ export const createMessageMapEntries = (messages: Message[]): MessageMapEntry[] 
     } else if (isUserMessage(message) || isResponseMessage(message)) {
       entries.push({
         id: `${path}-${message.id}`,
+        messageId: message.id,
         index,
         role: isUserMessage(message) ? MessageMapRole.User : MessageMapRole.Assistant,
         preview: message.content.trim().slice(0, PREVIEW_LENGTH),
@@ -120,4 +122,29 @@ export const getActiveMarkerId = (markers: MessageMapMarkerItem[], visibleIndex:
     }
   }
   return (active ?? userMarkers[0])?.id ?? null;
+};
+
+/** One marker per bookmarked message, in rendered order; the preview is the bookmark's label. */
+export const createBookmarkMarkers = (messages: Message[], bookmarks: Record<string, { label: string }>): MessageMapMarkerItem[] =>
+  createMessageMapEntries(messages)
+    .filter((entry) => entry.messageId in bookmarks)
+    .map((entry, position) => ({
+      id: entry.id,
+      turnNumber: position + 1,
+      role: entry.role,
+      index: entry.index,
+      preview: bookmarks[entry.messageId].label || entry.preview,
+    }));
+
+/** The bookmark nearest above the scroll position, or the first bookmark. */
+export const getActiveBookmarkMarkerId = (markers: MessageMapMarkerItem[], visibleIndex: number): string | null => {
+  let active: MessageMapMarkerItem | undefined;
+  for (const marker of markers) {
+    if (marker.index <= visibleIndex) {
+      active = marker;
+    } else {
+      break;
+    }
+  }
+  return (active ?? markers[0])?.id ?? null;
 };

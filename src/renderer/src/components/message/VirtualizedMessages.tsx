@@ -18,6 +18,7 @@ import { composeMessagesWithWorkflowRuns } from '@/utils/workflow-messages';
 import { EMPTY_WORKFLOW_RUNS, WorkflowRunState } from '@/stores/taskStore';
 import { useVirtualizedListActivation } from '@/hooks/useVirtualizedListActivation';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useTaskBookmarks } from '@/stores/bookmarkStore';
 import { getVirtualizedListBottomOffset } from '@/utils/virtualizedList';
 
 export type VirtualizedMessagesRef = {
@@ -69,6 +70,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
   ) => {
     const { t } = useTranslation();
     const showMessageMap = useSettingsStore((state) => state.settings?.showMessageMap ?? true);
+    const hasBookmarks = Object.keys(useTaskBookmarks(taskId)).length > 0;
     const listRef = useRef<LegendListRef>(null);
     const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(null);
 
@@ -101,10 +103,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
       return latestActivityMessageId;
     }, [inProgress, messages]);
 
-    const timelineMessages = useMemo(
-      () => composeMessagesWithWorkflowRuns(messages, workflowRuns ?? EMPTY_WORKFLOW_RUNS),
-      [messages, workflowRuns],
-    );
+    const timelineMessages = useMemo(() => composeMessagesWithWorkflowRuns(messages, workflowRuns ?? EMPTY_WORKFLOW_RUNS), [messages, workflowRuns]);
     const processedMessages = useProcessedMessages(timelineMessages);
 
     const [messagesLength, setMessagesLength] = useState(processedMessages.length);
@@ -336,14 +335,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
       [updateScrollingPaused],
     );
 
-    const {
-      hasPreviousUserMessage,
-      hasNextUserMessage,
-      handleNavigateToPreviousUserMessage,
-      handleNavigateToNextUserMessage,
-      renderGoToPrevious,
-      renderGoToNext,
-    } = useUserMessageNavigation({
+    const { hasPreviousUserMessage, hasNextUserMessage, renderGoToPrevious, renderGoToNext } = useUserMessageNavigation({
       containerRef: scrollContainerRef,
       userMessageIds,
       userMessageIndices,
@@ -468,16 +460,13 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
             drawDistance={250}
             className="absolute inset-0 scrollbar-thin scrollbar-track-bg-primary-light scrollbar-thumb-bg-tertiary hover:scrollbar-thumb-bg-fourth px-4"
           />
-          {showMessageMap && (
+          {showMessageMap && hasBookmarks && (
             <MessageMap
               key={`map-${taskId}`}
+              taskId={taskId}
               messages={processedMessages}
               visibleIndex={visibleIndex}
               onNavigate={scrollToMessageIndex}
-              onPreviousUserMessage={handleNavigateToPreviousUserMessage}
-              onNextUserMessage={handleNavigateToNextUserMessage}
-              hasPreviousUserMessage={hasPreviousUserMessage}
-              hasNextUserMessage={hasNextUserMessage}
               onScrollToBottom={scrollToBottom}
             />
           )}

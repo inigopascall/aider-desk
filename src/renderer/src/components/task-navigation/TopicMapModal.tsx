@@ -16,7 +16,7 @@ import {
 } from '@common/types';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { MdCompress, MdOutlineArchive, MdOutlineRefresh, MdUndo, MdUnfoldLess, MdUnfoldMore } from 'react-icons/md';
+import { MdBookmark, MdCompress, MdDriveFileRenameOutline, MdOutlineArchive, MdOutlineRefresh, MdUndo, MdUnfoldLess, MdUnfoldMore } from 'react-icons/md';
 import { FaRegUser } from 'react-icons/fa';
 import { RiRobot2Line } from 'react-icons/ri';
 import { VscLock } from 'react-icons/vsc';
@@ -49,6 +49,7 @@ import { extractFirstLine, truncateTitle } from '@/components/message/outline';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { useApi } from '@/contexts/ApiContext';
 import { useTaskMessages } from '@/stores/taskStore';
+import { useTaskBookmarks } from '@/stores/bookmarkStore';
 import { TopicMapViewState, getTopicMapViewKey, useTaskNavigationStore } from '@/stores/taskNavigationStore';
 import { showErrorNotification } from '@/utils/notifications';
 
@@ -147,6 +148,8 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
   const view = storedView ?? EMPTY_VIEW;
   const messages = useTaskMessages(task.id);
   const [regenerating, setRegenerating] = useState(false);
+  const [regeneratingTitle, setRegeneratingTitle] = useState(false);
+  const bookmarks = useTaskBookmarks(task.id);
   const [compactionTarget, setCompactionTarget] = useState<CompactionTargetState | null>(null);
   const [archivesOpen, setArchivesOpen] = useState(false);
   const [undoing, setUndoing] = useState(false);
@@ -319,6 +322,17 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
       showErrorNotification(t('taskNavigation.topicMap.regenerateFailed', { error: error instanceof Error ? error.message : String(error) }));
     } finally {
       setRegenerating(false);
+    }
+  }, [api, task.baseDir, task.id, t]);
+
+  const handleRegenerateTitle = useCallback(async () => {
+    setRegeneratingTitle(true);
+    try {
+      await api.regenerateTaskTitle(task.baseDir, task.id);
+    } catch (error) {
+      showErrorNotification(t('taskNavigation.topicMap.regenerateTitleFailed', { error: error instanceof Error ? error.message : String(error) }));
+    } finally {
+      setRegeneratingTitle(false);
     }
   }, [api, task.baseDir, task.id, t]);
 
@@ -518,6 +532,17 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
               </button>
             </Tooltip>
           )}
+          <Tooltip content={t('taskNavigation.topicMap.regenerateTitle')}>
+            <button
+              type="button"
+              aria-label={t('taskNavigation.topicMap.regenerateTitle')}
+              disabled={regeneratingTitle}
+              onClick={() => void handleRegenerateTitle()}
+              className="shrink-0 text-text-muted hover:text-text-primary disabled:opacity-50"
+            >
+              <MdDriveFileRenameOutline className={clsx('w-4 h-4', regeneratingTitle && 'animate-pulse')} />
+            </button>
+          </Tooltip>
           <Tooltip content={t('taskNavigation.topicMap.regenerate')}>
             <button
               type="button"
@@ -639,6 +664,7 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
                     {label && (label.role === 'user' ? <FaRegUser className="w-3 h-3" /> : <RiRobot2Line className="w-3 h-3" />)}
                   </span>
                   <span className="flex-1 min-w-0 truncate text-text-muted">{label?.text || t('taskNavigation.topicMap.messageNotLoaded')}</span>
+                  {bookmarks[row.messageId] && <MdBookmark className="w-3.5 h-3.5 shrink-0 text-amber-400" aria-label={t('messages.bookmark')} />}
                 </div>
               );
             })

@@ -14,6 +14,10 @@ export const setupTaskNavigationIpcHandlers = (): void => {
     requireTaskNavigationManager().regenerateTaskSummary(baseDir, taskId),
   );
 
+  ipcMain.handle('task-navigation-regenerate-title', async (_, baseDir: string, taskId: string) =>
+    requireTaskNavigationManager().regenerateTaskTitle(baseDir, taskId),
+  );
+
   ipcMain.handle('task-navigation-compaction-preview', async (_, baseDir: string, taskId: string, target: TopicCompactionTarget) =>
     requireTaskNavigationManager().previewTopicCompaction(baseDir, taskId, target),
   );

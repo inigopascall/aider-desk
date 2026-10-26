@@ -261,6 +261,7 @@ export interface ApplicationAPI {
   getSearchIndexStatus: () => Promise<SearchIndexStatus>;
   rebuildSearchIndex: () => Promise<SearchIndexStatus>;
   regenerateTaskSummary: (baseDir: string, taskId: string) => Promise<TaskData | null>;
+  regenerateTaskTitle: (baseDir: string, taskId: string) => Promise<TaskData | null>;
   previewTopicCompaction: (baseDir: string, taskId: string, target: TopicCompactionTarget) => Promise<TopicCompactionPreview>;
   compactTopic: (baseDir: string, taskId: string, target: TopicCompactionTarget, options: TopicCompactionOptions) => Promise<TaskData>;
   undoTopicCompaction: (baseDir: string, taskId: string, compactionId: string) => Promise<TaskData>;

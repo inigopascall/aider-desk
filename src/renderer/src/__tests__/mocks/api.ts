@@ -189,6 +189,7 @@ export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedOb
     getSearchIndexStatus: vi.fn((): Promise<SearchIndexStatus> => Promise.resolve(EMPTY_SEARCH_INDEX_STATUS)),
     rebuildSearchIndex: vi.fn((): Promise<SearchIndexStatus> => Promise.resolve(EMPTY_SEARCH_INDEX_STATUS)),
     regenerateTaskSummary: vi.fn((): Promise<TaskData | null> => Promise.resolve(null)),
+    regenerateTaskTitle: vi.fn((): Promise<TaskData | null> => Promise.resolve(null)),
     previewTopicCompaction: vi.fn(
       (): Promise<TopicCompactionPreview> =>
         Promise.resolve({ compactable: false, reason: 'not-found', messageCount: 0, sourceCharacters: 0, targetCharacters: {} }),

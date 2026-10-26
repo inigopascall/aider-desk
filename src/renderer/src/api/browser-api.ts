@@ -942,6 +942,9 @@ export class BrowserApi implements ApplicationAPI {
   regenerateTaskSummary(baseDir: string, taskId: string): Promise<TaskData | null> {
     return this.post('/task-navigation/regenerate-summary', { projectDir: baseDir, taskId });
   }
+  regenerateTaskTitle(baseDir: string, taskId: string): Promise<TaskData | null> {
+    return this.post('/task-navigation/regenerate-title', { projectDir: baseDir, taskId });
+  }
   previewTopicCompaction(baseDir: string, taskId: string, target: TopicCompactionTarget): Promise<TopicCompactionPreview> {
     return this.post('/task-navigation/compaction/preview', { projectDir: baseDir, taskId, target });
   }
