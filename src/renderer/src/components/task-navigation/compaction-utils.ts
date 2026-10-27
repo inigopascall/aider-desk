@@ -2,6 +2,8 @@ import { TaskTopic, TopicCompactionBlockReason, TopicCompactionInfo, TopicCompac
 
 import { NavigableRow, RecapRow } from './topic-map-rows';
 
+import type { PendingCompaction } from '@/stores/taskNavigationStore';
+
 /** Rows of the topic map that the compaction keys act on. */
 export type CompactionRow = NavigableRow | RecapRow;
 
@@ -135,6 +137,62 @@ export const getCompactionErrorText = (error: unknown, failedKey: string): Trans
   const message = error instanceof Error ? error.message : String(error);
   const reasonKey = getCompactionErrorReasonKey(message);
   return reasonKey ? { key: reasonKey } : { key: failedKey, values: { error: message } };
+};
+
+/** Formats a token estimate compactly, using an em dash when the estimate is unknown. */
+export const formatTopicTokenCount = (tokens: number | null | undefined): string => {
+  if (typeof tokens !== 'number' || !Number.isFinite(tokens)) {
+    return '—';
+  }
+  if (tokens < 1000) {
+    return String(Math.round(tokens));
+  }
+  return `${Math.round((tokens / 1000) * 10) / 10}k`;
+};
+
+/** Finds whether a pending compaction targets the current topic or overlaps its section. */
+export const getPendingTargetState = (
+  pending: Record<string, PendingCompaction>,
+  baseDir: string,
+  taskId: string,
+  topics: TaskTopic[],
+  topicIndex: number,
+  sectionIndex?: number,
+): 'active' | 'overlap' | undefined => {
+  const topic = topics[topicIndex];
+  if (!topic) {
+    return undefined;
+  }
+  const currentFirst = topic.messageIds[0];
+  const currentSection = sectionIndex === undefined ? undefined : topic.sections?.[sectionIndex];
+  if (!currentFirst || (sectionIndex !== undefined && !currentSection)) {
+    return undefined;
+  }
+  for (const item of Object.values(pending)) {
+    if (item.baseDir !== baseDir || item.taskId !== taskId) {
+      continue;
+    }
+    const target = item.target;
+    const pendingSectionStart = target?.sectionIndex === undefined ? undefined : target.firstMessageId;
+    const pendingTopicFirst = item.topicFirstMessageId ?? target?.firstMessageId;
+    const sectionMatchesCurrent = pendingSectionStart === currentSection?.startMessageId;
+    if (pendingTopicFirst !== currentFirst && !(pendingSectionStart !== undefined && sectionMatchesCurrent)) {
+      continue;
+    }
+    if (sectionIndex === undefined) {
+      if (pendingSectionStart === undefined) {
+        return 'active';
+      }
+      return 'overlap';
+    }
+    if (pendingSectionStart === currentSection?.startMessageId) {
+      return 'active';
+    }
+    if (pendingSectionStart === undefined) {
+      return 'overlap';
+    }
+  }
+  return undefined;
 };
 
 /** Rough word count of a length in characters, at six characters a word. */

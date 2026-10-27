@@ -83,6 +83,8 @@
       "collapseAll": "Collapse all topics (Shift+Enter)",
       "regenerateFailed": "Topic map generation failed: {{error}}",
       "regenerateTitleFailed": "Task title generation failed: {{error}}",
+      "messageTokens_one": "[{{count}} message, {{tokens}}]",
+      "messageTokens_other": "[{{count}} messages, {{tokens}}]",
       "hint": "↑↓ navigate · Enter expand / jump · Shift+Enter expand / collapse all · ← → collapse / expand · c compact · u undo · Esc close"
     },
     "compaction": {
@@ -96,6 +98,9 @@
       "compacting": "Compacting…",
       "undoTopicFirst": "Undo the topic's compaction first",
       "taskRunning": "Not available while the task is running",
+      "reasons": {
+        "compacting": "This part overlaps a compaction already in progress."
+      },
       "recap": "AI recap",
       "recapLost": "Recap removed by a built-in compaction",
       "compactFailed": "Compaction failed: {{error}}",
@@ -103,8 +108,8 @@
       "restoreFailed": "Restore failed: {{error}}",
       "panel": {
         "loading": "Measuring the selection…",
-        "size_one": "{{count}} message, about {{words}} words",
-        "size_other": "{{count}} messages, about {{words}} words",
+        "size_one": "{{count}} message, {{tokens}} tokens, about {{words}} words",
+        "size_other": "{{count}} messages, {{tokens}} tokens, about {{words}} words",
         "words": "≈ {{words}} words",
         "levels": {
           "1": "Brief",

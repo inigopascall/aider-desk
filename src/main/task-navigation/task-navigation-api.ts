@@ -125,6 +125,21 @@ export class TaskNavigationApi extends BaseApi {
     );
 
     router.post(
+      '/task-navigation/topic-estimates',
+      this.handleRequest(async (req, res) => {
+        const parsed = this.validateRequest(RegenerateSummarySchema, req.body, res);
+        if (!parsed) {
+          return;
+        }
+        const manager = this.requireManager(res);
+        if (!manager) {
+          return;
+        }
+        res.status(200).json(await manager.getTaskTopicEstimates(parsed.projectDir, parsed.taskId));
+      }),
+    );
+
+    router.post(
       '/task-navigation/regenerate-title',
       this.handleRequest(async (req, res) => {
         const parsed = this.validateRequest(RegenerateSummarySchema, req.body, res);

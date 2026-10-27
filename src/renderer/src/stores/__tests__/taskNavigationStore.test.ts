@@ -71,6 +71,27 @@ describe('taskNavigationStore', () => {
     expect(localStorage.getItem('task-navigation-pending-compactions')).toBeNull();
   });
 
+  it('stores independent pending compactions with task and stable target details', () => {
+    useTaskNavigationStore.setState({ pendingCompactions: {} });
+    const store = useTaskNavigationStore.getState();
+    const first = store.startPendingCompaction('a', 'b', {
+      baseDir: '/p',
+      taskId: 't',
+      target: { topicIndex: 0, firstMessageId: 'a' },
+      topicFirstMessageId: 'topic-a',
+    });
+    const second = store.startPendingCompaction('c', null, {
+      baseDir: '/p',
+      taskId: 't',
+      target: { topicIndex: 1, firstMessageId: 'c' },
+      topicFirstMessageId: 'topic-c',
+    });
+    expect(useTaskNavigationStore.getState().pendingCompactions).toMatchObject({
+      a: { nonce: first, baseDir: '/p', taskId: 't', topicFirstMessageId: 'topic-a' },
+      c: { nonce: second, baseDir: '/p', taskId: 't', topicFirstMessageId: 'topic-c' },
+    });
+  });
+
   it('remembers the compaction level, clamped to 1–5, in localStorage', () => {
     const store = useTaskNavigationStore.getState();
 

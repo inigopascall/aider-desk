@@ -22,6 +22,10 @@ export const setupTaskNavigationIpcHandlers = (): void => {
     requireTaskNavigationManager().previewTopicCompaction(baseDir, taskId, target),
   );
 
+  ipcMain.handle('task-navigation-topic-estimates', async (_, baseDir: string, taskId: string) =>
+    requireTaskNavigationManager().getTaskTopicEstimates(baseDir, taskId),
+  );
+
   ipcMain.handle(
     'task-navigation-compaction-compact',
     async (_, baseDir: string, taskId: string, target: TopicCompactionTarget, options: TopicCompactionOptions) =>

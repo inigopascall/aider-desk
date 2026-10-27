@@ -95,6 +95,7 @@ import {
   TopicCompactionOptions,
   TopicCompactionPreview,
   TopicCompactionTarget,
+  TaskTopicEstimates,
   EffectiveModelSettings,
 } from '@common/types';
 import { ApplicationAPI, RendererProcessMemoryInfo } from '@common/api';
@@ -951,6 +952,9 @@ export class BrowserApi implements ApplicationAPI {
   }
   previewTopicCompaction(baseDir: string, taskId: string, target: TopicCompactionTarget): Promise<TopicCompactionPreview> {
     return this.post('/task-navigation/compaction/preview', { projectDir: baseDir, taskId, target });
+  }
+  getTaskTopicEstimates(baseDir: string, taskId: string): Promise<TaskTopicEstimates> {
+    return this.post('/task-navigation/topic-estimates', { projectDir: baseDir, taskId });
   }
   compactTopic(baseDir: string, taskId: string, target: TopicCompactionTarget, options: TopicCompactionOptions): Promise<TaskData> {
     return this.post('/task-navigation/compaction/compact', { projectDir: baseDir, taskId, target, options });

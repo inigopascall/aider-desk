@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   CompactionArchiveInfo,
   DefaultTaskState,
+  TaskTopicEstimates,
   TASK_NAVIGATION_METADATA_KEYS,
   TaskData,
   TopicCompactionInfo,
@@ -19,6 +20,7 @@ import { clsx } from 'clsx';
 import { MdBookmark, MdCompress, MdDriveFileRenameOutline, MdOutlineArchive, MdOutlineRefresh, MdUndo, MdUnfoldLess, MdUnfoldMore } from 'react-icons/md';
 import { FaRegUser } from 'react-icons/fa';
 import { RiRobot2Line } from 'react-icons/ri';
+import { CgSpinner } from 'react-icons/cg';
 import { VscLock } from 'react-icons/vsc';
 
 import {
@@ -26,6 +28,8 @@ import {
   getCompactionTargetForRow,
   getTopicCompactionTarget,
   getUndoCompactionIdForRow,
+  getPendingTargetState,
+  formatTopicTokenCount,
   isCompactableFromClient,
 } from './compaction-utils';
 import { useTaskNavigationSettings } from './hooks';
@@ -153,6 +157,10 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
   const [compactionTarget, setCompactionTarget] = useState<CompactionTargetState | null>(null);
   const [archivesOpen, setArchivesOpen] = useState(false);
   const [undoing, setUndoing] = useState(false);
+  const [estimates, setEstimates] = useState<TaskTopicEstimates | null>(null);
+  const pendingCompactions = useTaskNavigationStore((state) => state.pendingCompactions);
+  const hasPendingCompactions = Object.values(pendingCompactions).some((pending) => pending.baseDir === task.baseDir && pending.taskId === task.id);
+  const estimateIdentity = useRef<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -163,6 +171,46 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
   const taskName = task.name === GENERATING_TASK_NAME ? t('taskNavigation.generatingName') : task.name || t('taskNavigation.untitled');
   const running = task.state === DefaultTaskState.InProgress;
   const archives = useMemo(() => [...getCompactionArchives(task)].sort((first, second) => second.createdAt.localeCompare(first.createdAt)), [task]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      const identity = `${task.baseDir}:${task.id}:${topics[0]?.messageIds[0] ?? ''}`;
+      if (estimateIdentity.current !== identity) {
+        estimateIdentity.current = identity;
+        setEstimates(null);
+      }
+      void api
+        .getTaskTopicEstimates(task.baseDir, task.id)
+        .then((value) => {
+          if (!cancelled) {
+            setEstimates(value);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setEstimates(null);
+          }
+        });
+    }, 80);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [api, task.baseDir, task.id, messages, topics]);
+
+  const topicEstimate = (topicIndex: number) => {
+    const estimate = estimates?.topics[topicIndex];
+    const topic = topics[topicIndex];
+    return estimate?.firstMessageId === topic?.messageIds[0] ? estimate : undefined;
+  };
+
+  const sectionEstimate = (topicIndex: number, sectionIndex: number) => {
+    const topic = topics[topicIndex];
+    const estimate = topicEstimate(topicIndex);
+    const section = topic?.sections?.[sectionIndex];
+    return estimate?.sections.find((item) => item.firstMessageId === section?.startMessageId);
+  };
 
   // Every topic is expanded until the user changes the view of this task
   const expanded = useMemo(
@@ -402,9 +450,17 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
         break;
       case 'u': {
         const compactionId = row && !hasModifier ? getUndoCompactionIdForRow(topics, row) : undefined;
+        const pendingState =
+          row && row.kind !== 'message'
+            ? getPendingTargetState(pendingCompactions, task.baseDir, task.id, topics, row.topicIndex, row.kind === 'recap' ? row.sectionIndex : undefined)
+            : undefined;
         if (compactionId) {
           event.preventDefault();
-          void undoCompaction(compactionId);
+          if (pendingState === 'active' || pendingState === 'overlap') {
+            showErrorNotification(t('taskNavigation.compaction.reasons.compacting'));
+          } else {
+            void undoCompaction(compactionId);
+          }
         }
         break;
       }
@@ -420,13 +476,13 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
 
   const stopPropagation = (event: MouseEvent<HTMLElement>) => event.stopPropagation();
 
-  const renderIconButton = (label: string, icon: ReactNode, onClick: () => void, busy = false) => (
-    <Tooltip content={running ? t('taskNavigation.compaction.taskRunning') : label}>
+  const renderIconButton = (label: string, icon: ReactNode, onClick: () => void, busy = false, disabled = false, tooltip?: string) => (
+    <Tooltip content={running ? t('taskNavigation.compaction.taskRunning') : (tooltip ?? label)}>
       <span className="inline-flex shrink-0" onClick={stopPropagation}>
         <button
           type="button"
           aria-label={label}
-          disabled={running || busy}
+          disabled={running || busy || disabled}
           onClick={onClick}
           className="p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-bg-tertiary disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
         >
@@ -437,19 +493,41 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
   );
 
   const renderCompactionControls = (topicIndex: number, sectionIndex: number | undefined, compaction: TopicCompactionInfo | undefined): ReactNode => {
+    const pendingState = getPendingTargetState(pendingCompactions, task.baseDir, task.id, topics, topicIndex, sectionIndex);
+    if (pendingState === 'active') {
+      return (
+        <CgSpinner
+          className="w-3.5 h-3.5 shrink-0 animate-spin"
+          aria-label={t('taskNavigation.compaction.compacting')}
+          data-testid={`compacting-${topicIndex}-${sectionIndex ?? 'topic'}`}
+        />
+      );
+    }
     if (compaction) {
       return (
         <>
           <span className="shrink-0 text-2xs font-normal text-text-muted">{t('taskNavigation.compaction.compactedTag')}</span>
-          {renderIconButton(t('taskNavigation.compaction.undo'), <MdUndo className="w-3.5 h-3.5" />, () => void undoCompaction(compaction.id), undoing)}
+          {renderIconButton(
+            t('taskNavigation.compaction.undo'),
+            <MdUndo className="w-3.5 h-3.5" />,
+            () => void undoCompaction(compaction.id),
+            undoing,
+            pendingState === 'overlap',
+            pendingState === 'overlap' ? t('taskNavigation.compaction.reasons.compacting') : undefined,
+          )}
         </>
       );
     }
     if (!isCompactableFromClient(topics, topicIndex, sectionIndex)) {
       return null;
     }
-    return renderIconButton(t('taskNavigation.compaction.compact'), <MdCompress className="w-3.5 h-3.5" />, () =>
-      openCompaction(getTopicCompactionTarget(topics, topicIndex, sectionIndex)),
+    return renderIconButton(
+      t('taskNavigation.compaction.compact'),
+      <MdCompress className="w-3.5 h-3.5" />,
+      () => openCompaction(getTopicCompactionTarget(topics, topicIndex, sectionIndex)),
+      false,
+      pendingState === 'overlap',
+      pendingState === 'overlap' ? t('taskNavigation.compaction.reasons.compacting') : undefined,
     );
   };
 
@@ -462,13 +540,13 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
           target={compactionTarget.target}
           title={compactionTarget.title}
           onCancel={closeBottomPanel}
-          onStarted={closeTopicMap}
-          onScrollToMessage={onScrollToMessage}
+          onStarted={closeBottomPanel}
+          topicFirstMessageId={topics[compactionTarget.target.topicIndex]?.messageIds[0]}
         />
       );
     }
     if (archivesOpen) {
-      return <ArchiveList archives={archives} disabled={running} onSelect={requestRestore} onClose={closeBottomPanel} />;
+      return <ArchiveList archives={archives} disabled={running || hasPendingCompactions} onSelect={requestRestore} onClose={closeBottomPanel} />;
     }
     return (
       <div className="px-3 py-1.5 border-t border-bg-tertiary-strong flex items-center gap-3 text-2xs text-text-muted">
@@ -508,7 +586,7 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
                 <button
                   type="button"
                   aria-label={t('taskNavigation.compaction.archives.open')}
-                  disabled={running}
+                  disabled={running || hasPendingCompactions}
                   onClick={() => {
                     setCompactionTarget(null);
                     setArchivesOpen(true);
@@ -536,7 +614,7 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
             <button
               type="button"
               aria-label={t('taskNavigation.topicMap.regenerateTitle')}
-              disabled={regeneratingTitle}
+              disabled={regeneratingTitle || hasPendingCompactions}
               onClick={() => void handleRegenerateTitle()}
               className="shrink-0 text-text-muted hover:text-text-primary disabled:opacity-50"
             >
@@ -546,7 +624,7 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
           <Tooltip content={t('taskNavigation.topicMap.regenerate')}>
             <button
               type="button"
-              disabled={regenerating}
+              disabled={regenerating || hasPendingCompactions}
               onClick={() => void handleRegenerate()}
               className="shrink-0 text-text-muted hover:text-text-primary disabled:opacity-50"
             >
@@ -596,6 +674,7 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
                   >
                     {connectorPart && <TopicConnector part={connectorPart} />}
                     <span className="flex-1 min-w-0">{row.summary}</span>
+                    <span className="shrink-0 text-text-muted">[{formatTopicTokenCount(sectionEstimate(row.topicIndex, row.sectionIndex)?.tokens)}]</span>
                     {renderCompactionControls(row.topicIndex, row.sectionIndex, section?.compaction)}
                   </div>
                 );
@@ -622,7 +701,12 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
                     <span className="mt-0.5 w-6 shrink-0 text-right text-2xs text-text-muted">{`${row.topicIndex + 1}.`}</span>
                     <span className="flex-1 min-w-0 text-xs text-text-primary">{topic.summary}</span>
                     <span className="mt-0.5 shrink-0 text-2xs text-text-muted">
-                      {topic.detached ? t('taskNavigation.topicMap.compacted') : t('taskNavigation.messageCount', { count: topic.messageIds.length })}
+                      {topic.detached
+                        ? t('taskNavigation.topicMap.compacted')
+                        : t('taskNavigation.topicMap.messageTokens', {
+                            count: topicEstimate(row.topicIndex)?.messageCount ?? (topic.compaction ? 1 : topic.messageIds.length),
+                            tokens: formatTopicTokenCount(topicEstimate(row.topicIndex)?.tokens),
+                          })}
                     </span>
                     {renderCompactionControls(row.topicIndex, undefined, topic.compaction)}
                   </div>

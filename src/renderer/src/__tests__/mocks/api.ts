@@ -195,6 +195,7 @@ export const createMockApi = (overrides: Partial<ApplicationAPI> = {}): MockedOb
       (): Promise<TopicCompactionPreview> =>
         Promise.resolve({ compactable: false, reason: 'not-found', messageCount: 0, sourceCharacters: 0, targetCharacters: {} }),
     ),
+    getTaskTopicEstimates: vi.fn().mockResolvedValue({ topics: [] }),
     compactTopic: vi.fn((): Promise<TaskData> => Promise.resolve({ id: 'mock-task-id' } as TaskData)),
     undoTopicCompaction: vi.fn((): Promise<TaskData> => Promise.resolve({ id: 'mock-task-id' } as TaskData)),
     restoreCompactionArchive: vi.fn((): Promise<TaskData> => Promise.resolve({ id: 'mock-task-id' } as TaskData)),

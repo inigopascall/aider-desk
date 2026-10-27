@@ -12,6 +12,8 @@ import { TaskNavigationGenerate, TaskNavigationManager, TaskNavigationManagerDep
 import { COMPACTION_SYSTEM_PROMPT } from '../topic-compaction';
 import { getTopicCompactionsDir, listCompactionSidecars } from '../topic-compaction-store';
 
+import { estimateMessageTokens } from '@/agent/utils';
+
 vi.mock('@/logger', () => ({
   default: {
     info: vi.fn(),
@@ -148,6 +150,57 @@ describe('TaskNavigationManager topic compaction', () => {
     baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'task-nav-manager-'));
     task = new FakeTask(baseDir);
     manager = undefined;
+  });
+
+  it('allows disjoint compactions to generate concurrently and preserves both for reverse completion', async () => {
+    let entered = 0;
+    const resolvers: Array<(value: string) => void> = [];
+    const generate = vi.fn<TaskNavigationGenerate>(() => {
+      entered++;
+      return new Promise<string>((resolve) => resolvers.push(resolve));
+    });
+    const navigation = start(generate);
+    const original = clone(task.messages);
+    const first = navigation.compactTopic(baseDir, TASK_ID, { topicIndex: 0, sectionIndex: 0, firstMessageId: 'u1' }, { level: 2 });
+    const second = navigation.compactTopic(baseDir, TASK_ID, { topicIndex: 0, sectionIndex: 1, firstMessageId: 'u2' }, { level: 2 });
+    await vi.waitFor(() => expect(entered).toBe(2));
+    resolvers[1]('Second recap');
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    resolvers[0]('First recap');
+    await Promise.all([first, second]);
+    expect(task.messages).not.toEqual(original);
+    const topics = task.topics;
+    expect(topics[0].sections?.[0].compaction).toBeDefined();
+    expect(topics[0].sections?.[1].compaction).toBeDefined();
+    const firstId = topics[0].sections![0].compaction!.id;
+    const secondId = topics[0].sections![1].compaction!.id;
+    await navigation.undoTopicCompaction(baseDir, TASK_ID, secondId);
+    await navigation.undoTopicCompaction(baseDir, TASK_ID, firstId);
+    expect(task.messages).toEqual(original);
+  });
+
+  it('refuses overlapping targets while generating and releases the reservation after a model error', async () => {
+    let resolve!: (value: string) => void;
+    const generate = vi.fn<TaskNavigationGenerate>(
+      () =>
+        new Promise<string>((r) => {
+          resolve = r;
+        }),
+    );
+    const navigation = start(generate);
+    const pending = navigation.compactTopic(baseDir, TASK_ID, { topicIndex: 1, firstMessageId: 'u4' }, { level: 2 });
+    await vi.waitFor(() => expect(generate).toHaveBeenCalledTimes(1));
+    await expect(navigation.compactTopic(baseDir, TASK_ID, { topicIndex: 1, firstMessageId: 'u4' }, { level: 2 })).rejects.toThrow(/^compacting: /);
+    resolve('Recap');
+    await pending;
+
+    const failing = start(
+      vi.fn<TaskNavigationGenerate>(async () => {
+        throw new Error('failed');
+      }),
+    );
+    await expect(failing.compactTopic(baseDir, TASK_ID, { topicIndex: 0, sectionIndex: 0, firstMessageId: 'u1' }, { level: 2 })).rejects.toThrow('failed');
+    expect((await failing.previewTopicCompaction(baseDir, TASK_ID, { topicIndex: 0, sectionIndex: 0, firstMessageId: 'u1' })).reason).not.toBe('compacting');
   });
 
   afterEach(async () => {
@@ -303,6 +356,57 @@ describe('TaskNavigationManager topic compaction', () => {
     expect(restoredSearch.results[0].hits.map((hit) => hit.messageId).sort()).toEqual(['a4', 'u4']);
   });
 
+  it('reports live context tokens before compact, from the recap pair after compact, and after undo', async () => {
+    const navigation = start(vi.fn<TaskNavigationGenerate>(async () => 'Recap of the cache work'));
+    const before = await navigation.getTaskTopicEstimates(baseDir, TASK_ID);
+    expect(before.topics[1].tokens).toBe(estimateMessageTokens(conversation().slice(7, 9)));
+    expect((await navigation.previewTopicCompaction(baseDir, TASK_ID, topicB)).sourceTokens).toBe(before.topics[1].tokens);
+
+    const saved = await navigation.compactTopic(baseDir, TASK_ID, topicB, { level: 3 });
+    const info = getTaskSummary(saved)!.topics[1].compaction!;
+    const livePair = task.messages.filter((message) => [info.promptMessageId, info.summaryMessageId].includes(message.id));
+    const after = await navigation.getTaskTopicEstimates(baseDir, TASK_ID);
+    expect(after.topics[1].tokens).toBe(estimateMessageTokens(livePair));
+    expect(after.topics[1].messageCount).toBe(1);
+
+    await navigation.undoTopicCompaction(baseDir, TASK_ID, info.id);
+    expect(await navigation.getTaskTopicEstimates(baseDir, TASK_ID)).toEqual(before);
+  });
+
+  it('rejects rebuilding while a recap reservation exists, then permits rebuilding after release', async () => {
+    let entered!: () => void;
+    let resolveRecap!: (value: string) => void;
+    const generatorEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const generate = vi.fn<TaskNavigationGenerate>((_model, _dir, _id, systemPrompt) => {
+      if (systemPrompt === COMPACTION_SYSTEM_PROMPT) {
+        entered();
+        return new Promise<string>((resolve) => {
+          resolveRecap = resolve;
+        });
+      }
+      return Promise.resolve(
+        JSON.stringify({
+          title: 'Rebuilt',
+          topics: [{ key: 'T3', summary: 'Rebuilt last topic' }],
+          assignments: [
+            { ref: 'm1', topic: 'T3' },
+            { ref: 'm2', topic: 'T3' },
+          ],
+        }),
+      );
+    });
+    const navigation = start(generate);
+    const pending = navigation.compactTopic(baseDir, TASK_ID, topicB, { level: 3 });
+    await generatorEntered;
+    await expect(navigation.regenerateTaskSummary(baseDir, TASK_ID)).rejects.toThrow(/^compacting: /);
+    expect((await navigation.previewTopicCompaction(baseDir, TASK_ID, topicB)).reason).toBe('compacting');
+    expect((await navigation.previewTopicCompaction(baseDir, TASK_ID, { topicIndex: 0, firstMessageId: 'u1' })).compactable).toBe(true);
+    resolveRecap('Recap of the cache work');
+    await pending;
+  });
+
   it('keeps the topics up to the last compacted one when the topic map is rebuilt', async () => {
     const generate = vi.fn<TaskNavigationGenerate>(async (_modelId, _projectDir, _sessionId, systemPrompt) =>
       systemPrompt === SUMMARY_SYSTEM_PROMPT
@@ -326,5 +430,77 @@ describe('TaskNavigationManager topic compaction', () => {
     const summaryPrompt = generate.mock.calls.find((call) => call[3] === SUMMARY_SYSTEM_PROMPT)![4];
     expect(summaryPrompt).toContain('[m1] USER: Question u5');
     expect(summaryPrompt).not.toContain('zebra');
+  });
+
+  it('starts two whole-topic recaps together and merges reverse-order completions', async () => {
+    const resolvers: Array<(text: string) => void> = [];
+    const generate = vi.fn<TaskNavigationGenerate>(
+      () =>
+        new Promise<string>((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+    const navigation = start(generate);
+    const first = navigation.compactTopic(baseDir, TASK_ID, { topicIndex: 0, firstMessageId: 'u1' }, { level: 3 });
+    const second = navigation.compactTopic(baseDir, TASK_ID, topicB, { level: 3 });
+    await vi.waitFor(() => expect(resolvers).toHaveLength(2));
+    expect((await navigation.previewTopicCompaction(baseDir, TASK_ID, { topicIndex: 0, firstMessageId: 'u1' })).reason).toBe('compacting');
+    resolvers[1]('Second recap');
+    await second;
+    resolvers[0]('First recap');
+    await first;
+    expect(task.topics[0].compaction).toBeDefined();
+    expect(task.topics[1].compaction).toBeDefined();
+    expect(await listCompactionSidecars(baseDir, TASK_ID)).toHaveLength(2);
+    await navigation.undoTopicCompaction(baseDir, TASK_ID, task.topics[0].compaction!.id);
+    await navigation.undoTopicCompaction(baseDir, TASK_ID, task.topics[1].compaction!.id);
+    expect(task.messages).toEqual(conversation());
+  });
+
+  it('rejects same-id text changes during generation without writing originals away', async () => {
+    const navigation = start(
+      vi.fn<TaskNavigationGenerate>(async () => {
+        task.messages[7] = { ...task.messages[7], content: 'Changed same-id prompt' } as ContextMessage;
+        return 'Recap';
+      }),
+    );
+    await expect(navigation.compactTopic(baseDir, TASK_ID, topicB, { level: 3 })).rejects.toThrow(/^not-found: /);
+    expect(task.messages[7].content).toBe('Changed same-id prompt');
+    expect(task.topics).toEqual(topicMap());
+    expect(await listCompactionSidecars(baseDir, TASK_ID)).toEqual([]);
+  });
+
+  it('re-resolves a topic by its original first message when map indexes shift', async () => {
+    const navigation = start(
+      vi.fn<TaskNavigationGenerate>(async () => {
+        const summary = getTaskSummary(task.task)!;
+        summary.topics.unshift({ summary: 'Old detached topic', messageIds: ['old'], detached: true });
+        return 'Shifted recap';
+      }),
+    );
+    await navigation.compactTopic(baseDir, TASK_ID, topicB, { level: 3 });
+    expect(task.topics[1].summary).toBe('Topic A');
+    expect(task.topics[1].compaction).toBeUndefined();
+    expect(task.topics[2].summary).toBe('Topic B');
+    expect(task.topics[2].compaction).toBeDefined();
+  });
+
+  it('retains sidecar originals when replacement succeeds but metadata and rollback fail', async () => {
+    const navigation = start(vi.fn<TaskNavigationGenerate>(async () => 'Recap'));
+    const originalReplace = task.replaceContextMessages.bind(task);
+    let replacementCalls = 0;
+    vi.spyOn(task, 'replaceContextMessages').mockImplementation(async (messages) => {
+      replacementCalls++;
+      if (replacementCalls > 1) {
+        throw new Error('Rollback disk unavailable');
+      }
+      await originalReplace(messages);
+    });
+    vi.spyOn(task, 'saveTask').mockRejectedValue(new Error('Metadata disk unavailable'));
+    await expect(navigation.compactTopic(baseDir, TASK_ID, topicB, { level: 3 })).rejects.toThrow('Metadata disk unavailable');
+    const sidecars = await listCompactionSidecars(baseDir, TASK_ID);
+    expect(sidecars).toHaveLength(1);
+    expect(sidecars[0].originalMessages).toEqual(conversation().slice(7, 9));
+    expect(task.messages.some((m) => m.id === sidecars[0].summaryMessageId)).toBe(true);
   });
 });

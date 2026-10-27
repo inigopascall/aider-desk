@@ -33,6 +33,7 @@ const compactablePreview: TopicCompactionPreview = {
   endBeforeMessageId: 'b1',
   messageCount: 12,
   sourceCharacters: 6000,
+  sourceTokens: 16000,
   targetCharacters: { 1: 300, 2: 600, 3: 1000, 4: 1600, 5: 2700 },
 };
 
@@ -77,7 +78,7 @@ describe('TopicCompactionPanel', () => {
       expect(screen.getByText(new RegExp(`panel\\.levels\\.${level}$`))).toBeInTheDocument();
       expect(screen.getByText(`taskNavigation.compaction.panel.words {"words":${words}}`)).toBeInTheDocument();
     }
-    expect(screen.getByText('taskNavigation.compaction.panel.size {"count":12,"words":1000}')).toBeInTheDocument();
+    expect(screen.getByText('taskNavigation.compaction.panel.size {"count":12,"words":1000,"tokens":"16k"}')).toBeInTheDocument();
     expect(mockApi.previewTopicCompaction).toHaveBeenCalledWith(BASE_DIR, TASK_ID, target);
   });
 

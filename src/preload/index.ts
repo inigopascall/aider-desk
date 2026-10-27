@@ -47,6 +47,7 @@ import {
   TaskGitStatusUpdatedData,
   AiderConnectorStatus,
   InputPromptData,
+  TaskTopicEstimates,
 } from '@common/types';
 import { electronAPI } from '@electron-toolkit/preload';
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
@@ -240,6 +241,7 @@ const api: ApplicationAPI = {
   regenerateTaskSummary: (baseDir, taskId) => ipcRenderer.invoke('task-navigation-regenerate-summary', baseDir, taskId),
   regenerateTaskTitle: (baseDir, taskId) => ipcRenderer.invoke('task-navigation-regenerate-title', baseDir, taskId),
   previewTopicCompaction: (baseDir, taskId, target) => ipcRenderer.invoke('task-navigation-compaction-preview', baseDir, taskId, target),
+  getTaskTopicEstimates: (baseDir, taskId): Promise<TaskTopicEstimates> => ipcRenderer.invoke('task-navigation-topic-estimates', baseDir, taskId),
   compactTopic: (baseDir, taskId, target, options) => ipcRenderer.invoke('task-navigation-compaction-compact', baseDir, taskId, target, options),
   undoTopicCompaction: (baseDir, taskId, compactionId) => ipcRenderer.invoke('task-navigation-compaction-undo', baseDir, taskId, compactionId),
   restoreCompactionArchive: (baseDir, taskId, archiveId) => ipcRenderer.invoke('task-navigation-compaction-restore-archive', baseDir, taskId, archiveId),

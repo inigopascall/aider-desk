@@ -9,21 +9,17 @@ import {
   TopicCompactionOptions,
   TopicCompactionPreview,
   TopicCompactionTarget,
-  getTaskSummary,
   normalizeTopicCompactionLevel,
+  getTaskSummary,
 } from '@common/types';
 
-import { TranslatedText, estimateWords, getCompactionErrorText, getCompactionReasonKey } from './compaction-utils';
-import { getCompactingPlaceholderId } from './compaction-view';
+import { TranslatedText, estimateWords, formatTopicTokenCount, getCompactionErrorText, getCompactionReasonKey } from './compaction-utils';
 
 import { Button } from '@/components/common/Button';
 import { TextArea } from '@/components/common/TextArea';
 import { useApi } from '@/contexts/ApiContext';
 import { useTaskNavigationStore } from '@/stores/taskNavigationStore';
 import { showErrorNotification } from '@/utils/notifications';
-
-/** Delay before scrolling, so the conversation has rendered the placeholder or the recap. */
-const SCROLL_DELAY_MS = 120;
 
 type Translate = (key: string, values?: Record<string, unknown>) => string;
 
@@ -34,7 +30,8 @@ type RunTopicCompactionOptions = {
   target: TopicCompactionTarget;
   preview: TopicCompactionPreview;
   options: TopicCompactionOptions;
-  onScrollToMessage: (messageId: string) => void;
+  onScrollToMessage?: (messageId: string) => void;
+  topicFirstMessageId?: string;
   translate: Translate;
 };
 
@@ -45,26 +42,22 @@ export const getRecapMessageId = (task: TaskData | null | undefined, target: Top
   return compaction?.summaryMessageId;
 };
 
-const scrollSoon = (onScrollToMessage: (messageId: string) => void, messageId: string) => {
-  window.setTimeout(() => onScrollToMessage(messageId), SCROLL_DELAY_MS);
-};
-
-/** Shows the "Compacting…" placeholder in place of the stretch, compacts the target, then scrolls to the recap. */
-export const runTopicCompaction = async ({ api, baseDir, taskId, target, preview, options, onScrollToMessage, translate }: RunTopicCompactionOptions) => {
+/** Shows the "Compacting…" placeholder in place of the stretch while the target is compacted. */
+export const runTopicCompaction = async ({ api, baseDir, taskId, target, preview, options, topicFirstMessageId, translate }: RunTopicCompactionOptions) => {
   const firstMessageId = preview.firstMessageId ?? target.firstMessageId;
-  const nonce = useTaskNavigationStore.getState().startPendingCompaction(firstMessageId, preview.endBeforeMessageId ?? null);
-  scrollSoon(onScrollToMessage, getCompactingPlaceholderId(nonce));
+  const nonce = useTaskNavigationStore.getState().startPendingCompaction(firstMessageId, preview.endBeforeMessageId ?? null, {
+    baseDir,
+    taskId,
+    target,
+    topicFirstMessageId: topicFirstMessageId ?? (target.sectionIndex === undefined ? target.firstMessageId : undefined),
+  });
   try {
-    const task = await api.compactTopic(baseDir, taskId, target, options);
-    useTaskNavigationStore.getState().endPendingCompaction(firstMessageId, nonce);
-    const recapId = getRecapMessageId(task, target);
-    if (recapId) {
-      scrollSoon(onScrollToMessage, recapId);
-    }
+    await api.compactTopic(baseDir, taskId, target, options);
   } catch (error) {
-    useTaskNavigationStore.getState().endPendingCompaction(firstMessageId, nonce);
     const text = getCompactionErrorText(error, 'taskNavigation.compaction.compactFailed');
     showErrorNotification(translate(text.key, text.values));
+  } finally {
+    useTaskNavigationStore.getState().endPendingCompaction(firstMessageId, nonce);
   }
 };
 
@@ -78,7 +71,8 @@ type Props = {
   onCancel: () => void;
   /** Called once the compaction starts, before the recap is written. */
   onStarted: () => void;
-  onScrollToMessage: (messageId: string) => void;
+  onScrollToMessage?: (messageId: string) => void;
+  topicFirstMessageId?: string;
 };
 
 /**
@@ -86,7 +80,7 @@ type Props = {
  * ←/→ or 1–5 choose the level, Tab moves to and from the instructions, Enter (Ctrl/Cmd+Enter in the instructions) starts
  * the compaction, Esc goes back to the list.
  */
-export const TopicCompactionPanel = ({ baseDir, taskId, target, title, onCancel, onStarted, onScrollToMessage }: Props) => {
+export const TopicCompactionPanel = ({ baseDir, taskId, target, title, onCancel, onStarted, onScrollToMessage, topicFirstMessageId }: Props) => {
   const { t } = useTranslation();
   const api = useApi();
   const storedLevel = useTaskNavigationStore((state) => state.compactionLevel);
@@ -96,6 +90,7 @@ export const TopicCompactionPanel = ({ baseDir, taskId, target, title, onCancel,
   const [state, setState] = useState<PreviewState>({ status: 'loading' });
   const panelRef = useRef<HTMLDivElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const confirmedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -124,12 +119,12 @@ export const TopicCompactionPanel = ({ baseDir, taskId, target, title, onCancel,
   const compactable = !!preview?.compactable;
 
   const confirm = () => {
-    if (!preview?.compactable) {
+    if (!preview?.compactable || confirmedRef.current) {
       return;
     }
+    confirmedRef.current = true;
     const trimmed = instructions.trim();
     setCompactionLevel(level);
-    onStarted();
     void runTopicCompaction({
       api,
       baseDir,
@@ -137,9 +132,11 @@ export const TopicCompactionPanel = ({ baseDir, taskId, target, title, onCancel,
       target,
       preview,
       options: trimmed ? { level, instructions: trimmed } : { level },
+      topicFirstMessageId,
       onScrollToMessage,
       translate: (key, values) => t(key, values),
     });
+    onStarted();
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -255,7 +252,11 @@ export const TopicCompactionPanel = ({ baseDir, taskId, target, title, onCancel,
         <span className="flex-1 min-w-0 truncate text-xs text-text-primary">{title}</span>
         {preview?.compactable && (
           <span className="shrink-0">
-            {t('taskNavigation.compaction.panel.size', { count: preview.messageCount, words: estimateWords(preview.sourceCharacters) })}
+            {t('taskNavigation.compaction.panel.size', {
+              count: preview.messageCount,
+              words: estimateWords(preview.sourceCharacters),
+              tokens: formatTopicTokenCount(preview.sourceTokens),
+            })}
           </span>
         )}
       </div>

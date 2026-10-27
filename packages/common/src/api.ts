@@ -98,6 +98,7 @@ import {
   TopicCompactionOptions,
   TopicCompactionPreview,
   TopicCompactionTarget,
+  TaskTopicEstimates,
 } from '@common/types';
 
 export type ExtensionDisplayAPI = Pick<
@@ -265,6 +266,7 @@ export interface ApplicationAPI {
   regenerateTaskSummary: (baseDir: string, taskId: string) => Promise<TaskData | null>;
   regenerateTaskTitle: (baseDir: string, taskId: string) => Promise<TaskData | null>;
   previewTopicCompaction: (baseDir: string, taskId: string, target: TopicCompactionTarget) => Promise<TopicCompactionPreview>;
+  getTaskTopicEstimates: (baseDir: string, taskId: string) => Promise<TaskTopicEstimates>;
   compactTopic: (baseDir: string, taskId: string, target: TopicCompactionTarget, options: TopicCompactionOptions) => Promise<TaskData>;
   undoTopicCompaction: (baseDir: string, taskId: string, compactionId: string) => Promise<TaskData>;
   restoreCompactionArchive: (baseDir: string, taskId: string, archiveId: string) => Promise<TaskData>;

@@ -1,4 +1,4 @@
-import { DEFAULT_TOPIC_COMPACTION_LEVEL, SEARCH_TASK_ROW_MESSAGE_ID, normalizeTopicCompactionLevel } from '@common/types';
+import { DEFAULT_TOPIC_COMPACTION_LEVEL, SEARCH_TASK_ROW_MESSAGE_ID, TopicCompactionTarget, normalizeTopicCompactionLevel } from '@common/types';
 import { createWithEqualityFn } from 'zustand/traditional';
 import { shallow } from 'zustand/vanilla/shallow';
 
@@ -31,6 +31,10 @@ export interface PendingCompaction {
   /** Id of the first message after the stretch, or null when the stretch runs to the end of the conversation. */
   endBeforeMessageId: string | null;
   nonce: number;
+  baseDir?: string;
+  taskId?: string;
+  target?: TopicCompactionTarget;
+  topicFirstMessageId?: string;
 }
 
 /** Order of global search results: best match first, or most recently updated task first. */
@@ -67,7 +71,11 @@ type TaskNavigationStore = {
   completeTaskActivation: (nonce: number) => void;
   completeMessageScroll: (nonce: number) => void;
   /** Shows a stretch of messages as a placeholder until endPendingCompaction is called with the returned nonce. */
-  startPendingCompaction: (firstMessageId: string, endBeforeMessageId: string | null) => number;
+  startPendingCompaction: (
+    firstMessageId: string,
+    endBeforeMessageId: string | null,
+    details?: Pick<PendingCompaction, 'baseDir' | 'taskId' | 'target' | 'topicFirstMessageId'>,
+  ) => number;
   endPendingCompaction: (firstMessageId: string, nonce: number) => void;
   setCompactionLevel: (level: number) => void;
 };
@@ -217,9 +225,9 @@ export const useTaskNavigationStore = createWithEqualityFn<TaskNavigationStore>(
         set({ pendingScroll: null });
       }
     },
-    startPendingCompaction: (firstMessageId, endBeforeMessageId) => {
+    startPendingCompaction: (firstMessageId, endBeforeMessageId, details) => {
       const nonce = nextNonce++;
-      set({ pendingCompactions: { ...get().pendingCompactions, [firstMessageId]: { endBeforeMessageId, nonce } } });
+      set({ pendingCompactions: { ...get().pendingCompactions, [firstMessageId]: { endBeforeMessageId, nonce, ...details } } });
       return nonce;
     },
     endPendingCompaction: (firstMessageId, nonce) => {

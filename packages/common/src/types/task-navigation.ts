@@ -248,8 +248,23 @@ export interface TopicCompactionOptions {
   instructions?: string;
 }
 
+export interface TaskTopicSectionEstimate {
+  firstMessageId: string;
+  tokens: number | null;
+  messageCount: number;
+}
+
+export interface TaskTopicEstimate extends TaskTopicSectionEstimate {
+  sections: TaskTopicSectionEstimate[];
+}
+
+export interface TaskTopicEstimates {
+  topics: TaskTopicEstimate[];
+}
+
 export type TopicCompactionBlockReason =
   | 'running'
+  | 'compacting'
   | 'current-topic'
   | 'detached'
   | 'not-contiguous'
@@ -263,6 +278,7 @@ export type TopicCompactionBlockReason =
 /** Every block reason. The message of an error thrown for a refusal starts with one of them followed by `: `. */
 export const TOPIC_COMPACTION_BLOCK_REASONS: readonly TopicCompactionBlockReason[] = [
   'running',
+  'compacting',
   'current-topic',
   'detached',
   'not-contiguous',
@@ -281,6 +297,8 @@ export interface TopicCompactionPreview {
   /** Stored id of the first message after the stretch (an entry or a marker), or null when the stretch ends the conversation. */
   endBeforeMessageId?: string | null;
   messageCount: number;
+  /** Local token occupancy estimate including tools, reasoning, and images. */
+  sourceTokens?: number;
   sourceCharacters: number;
   targetCharacters: Record<number, number>;
 }
