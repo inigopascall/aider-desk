@@ -1582,7 +1582,7 @@ export class Task {
       });
 
       const trimmedAnswer = answer.trim();
-      const validStates = [DefaultTaskState.MoreInfoNeeded, DefaultTaskState.ReadyForImplementation, DefaultTaskState.ReadyForReview];
+      const validStates = [DefaultTaskState.Done, DefaultTaskState.MoreInfoNeeded, DefaultTaskState.ReadyForImplementation, DefaultTaskState.ReadyForReview];
 
       if (validStates.includes(trimmedAnswer as DefaultTaskState)) {
         logger.debug(`Determined task state: ${trimmedAnswer}`);

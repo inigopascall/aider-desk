@@ -251,6 +251,21 @@ describe('Task - task-state determination (determineTaskState)', () => {
   });
 
   describe('successful classification', () => {
+    it.each([
+      [DefaultTaskState.Done, '## Status\nDONE'],
+      [DefaultTaskState.MoreInfoNeeded, 'The agent needs more information.'],
+      [DefaultTaskState.ReadyForImplementation, 'The implementation plan is ready.'],
+      [DefaultTaskState.ReadyForReview, 'The implementation is ready for review.'],
+    ])('preserves the valid classifier response %s returned before the deadline', async (expectedState, content) => {
+      getGenerateTextMock().mockResolvedValue(`  ${expectedState}  `);
+
+      const result = await (task as any).determineTaskState(createResultMessages(content));
+
+      expect(result).toBe(expectedState);
+      expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('Invalid task state returned'), expect.anything());
+      expect((task as any).isDeterminingTaskState).toBe(false);
+    });
+
     it('preserves a valid classifier response returned before the deadline as the task-state result', async () => {
       getGenerateTextMock().mockResolvedValue(DefaultTaskState.ReadyForImplementation);
 
@@ -293,7 +308,10 @@ describe('Task - task-state determination (determineTaskState)', () => {
       const result = await (task as any).determineTaskState(createResultMessages());
 
       expect(result).toBeNull();
-      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Invalid task state returned'), expect.objectContaining({ answer: 'NOT_A_VALID_STATE' }));
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid task state returned'),
+        expect.objectContaining({ answer: 'NOT_A_VALID_STATE' }),
+      );
       expect((task as any).isDeterminingTaskState).toBe(false);
     });
   });
@@ -334,7 +352,10 @@ describe('Task - task-state determination (determineTaskState)', () => {
         // Exactly at the deadline the classifier is aborted
         await vi.advanceTimersByTimeAsync(1);
         expect(capturedSignal?.aborted).toBe(true);
-        expect(logger.warn).toHaveBeenCalledWith('Task state determination timed out', expect.objectContaining({ timeoutMs: TASK_STATE_DETERMINATION_TIMEOUT_MS }));
+        expect(logger.warn).toHaveBeenCalledWith(
+          'Task state determination timed out',
+          expect.objectContaining({ timeoutMs: TASK_STATE_DETERMINATION_TIMEOUT_MS }),
+        );
 
         const result = await resultPromise;
         expect(result).toBeNull();

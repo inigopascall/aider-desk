@@ -156,10 +156,35 @@ describe('Prompts with Handlebars', () => {
 
       expect(prompt).toContain('You are a helpful assistant that determines the appropriate task state');
       expect(prompt).toContain('Available task states:');
+      expect(prompt).toContain('DONE');
       expect(prompt).toContain('MORE_INFO_NEEDED');
       expect(prompt).toContain('READY_FOR_IMPLEMENTATION');
       expect(prompt).toContain('READY_FOR_REVIEW');
       expect(prompt).toContain('NONE');
+    });
+
+    it('should render the shipped update-task-state template with explicit statuses', async () => {
+      const manager = new PromptsManager(
+        createMockExtensionManager(),
+        { getSettings: () => ({ fileWatchMode: 'auto' }) } as any,
+        path.resolve(__dirname, '../../../../resources/prompts'),
+        path.join(__dirname, 'templates', 'nonexistent-global'),
+      );
+      await manager.init();
+      try {
+        const prompt = await manager.getUpdateTaskStatePrompt(mockTask);
+        expect(prompt).toContain('- DONE:');
+        expect(prompt).toContain('- MORE_INFO_NEEDED:');
+        expect(prompt).toContain('- READY_FOR_IMPLEMENTATION:');
+        expect(prompt).toContain('- READY_FOR_REVIEW:');
+        expect(prompt).toContain('STATUS: DONE');
+        expect(prompt).toContain('CHECKPOINT');
+        expect(prompt).toContain('BUDGET');
+        expect(prompt).toContain('Do not infer DONE');
+        expect(prompt).not.toContain('{{MoreInfoNeeded}}');
+      } finally {
+        await manager.dispose();
+      }
     });
   });
 
