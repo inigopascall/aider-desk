@@ -209,8 +209,7 @@ export const WORKFLOW_OPTIONAL_AGENT_ROLES: Record<string, string[]> = {
  * configuration's `enabledAgents` record. Absent configuration, absent records,
  * and absent or false flags all mean the optional agent is disabled.
  */
-export const isWorkflowAgentEnabled = (config: WorkflowConfig | undefined, role: string): boolean =>
-  config?.enabledAgents?.[role] === true;
+export const isWorkflowAgentEnabled = (config: WorkflowConfig | undefined, role: string): boolean => config?.enabledAgents?.[role] === true;
 
 /**
  * Roles that default to persist-primary behavior (primary-model backoff before
@@ -227,7 +226,9 @@ export const WORKFLOW_PERSIST_PRIMARY_DEFAULT_ROLES = ['GRAND-PLANNER', 'ARBITER
  */
 export const isWorkflowPersistPrimaryEnabled = (config: WorkflowConfig | undefined, role: string): boolean => {
   const stored = config?.persistPrimary?.[role];
-  if (stored !== undefined) return stored;
+  if (stored !== undefined) {
+    return stored;
+  }
   return WORKFLOW_PERSIST_PRIMARY_DEFAULT_ROLES.includes(role);
 };
 
@@ -760,12 +761,7 @@ export interface SubagentConfig {
  * Each agent directory contains one sidecar per prompt field; the loader
  * hydrates these into the in-memory AgentProfile at read time.
  */
-export const PROMPT_SIDECAR_FILES = [
-  'customInstructions.md',
-  'systemPrompt.md',
-  'subagent.systemPrompt.md',
-  'subagent.description.md',
-] as const;
+export const PROMPT_SIDECAR_FILES = ['customInstructions.md', 'systemPrompt.md', 'subagent.systemPrompt.md', 'subagent.description.md'] as const;
 
 /** A validated filename from the prompt sidecar whitelist. */
 export type PromptSidecarFilename = (typeof PROMPT_SIDECAR_FILES)[number];

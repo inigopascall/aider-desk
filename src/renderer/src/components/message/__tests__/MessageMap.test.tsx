@@ -1,11 +1,12 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AssistantGroupMessage, GroupMessage, Message } from '@common/types';
 
 import { MessageMap } from '../MessageMap';
 import { createMessageMapMarkers, createMessageMapTurns, MessageMapRole } from '../messageMapUtils';
 
 import { render } from '@/__tests__/render';
+import { useBookmarkStore } from '@/stores/bookmarkStore';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -33,25 +34,24 @@ const markerName = (role: MessageMapRole, number: number) =>
   `messages.map.goToMessage messages.map.${role === MessageMapRole.User ? 'userPrompt' : 'assistantReply'} ${number}`;
 
 const renderMap = (overrides: Partial<Parameters<typeof MessageMap>[0]> = {}) =>
-  render(
-    <MessageMap
-      messages={messages}
-      visibleIndex={0}
-      onNavigate={vi.fn()}
-      onPreviousUserMessage={vi.fn()}
-      onNextUserMessage={vi.fn()}
-      hasPreviousUserMessage
-      hasNextUserMessage
-      onScrollToBottom={vi.fn()}
-      {...overrides}
-    />,
-  );
+  render(<MessageMap taskId="task-1" messages={messages} visibleIndex={0} onNavigate={vi.fn()} onScrollToBottom={vi.fn()} {...overrides} />);
 
 describe('MessageMap', () => {
+  beforeEach(() => {
+    useBookmarkStore.setState({
+      bookmarksByTask: {
+        'task-1': Object.fromEntries(
+          messages
+            .filter((message) => message.type === 'user' || message.type === 'response')
+            .map((message) => [message.id, { id: message.id, label: '', createdAt: 0 }]),
+        ),
+      },
+    });
+  });
   it('previews the assistant reply on hover without navigating and navigates to it on click', async () => {
     const onNavigate = vi.fn();
     renderMap({ onNavigate });
-    const marker = screen.getByRole('button', { name: markerName(MessageMapRole.Assistant, 2) });
+    const marker = screen.getByRole('button', { name: markerName(MessageMapRole.Assistant, 4) });
 
     fireEvent.pointerEnter(marker);
     await waitFor(() => expect(screen.getByText('Latest answer')).toBeInTheDocument());
@@ -66,19 +66,8 @@ describe('MessageMap', () => {
     const onNavigate = vi.fn();
     const { rerender } = renderMap({ onNavigate });
     const updatedMessages = messages.map((message) => (message.id === 'assistant-2' ? { ...message, content: 'Latest answer continued' } : message));
-    rerender(
-      <MessageMap
-        messages={updatedMessages}
-        visibleIndex={0}
-        onNavigate={onNavigate}
-        onPreviousUserMessage={vi.fn()}
-        onNextUserMessage={vi.fn()}
-        hasPreviousUserMessage
-        hasNextUserMessage
-        onScrollToBottom={vi.fn()}
-      />,
-    );
-    const marker = screen.getByRole('button', { name: markerName(MessageMapRole.Assistant, 2) });
+    rerender(<MessageMap taskId="task-1" messages={updatedMessages} visibleIndex={0} onNavigate={onNavigate} onScrollToBottom={vi.fn()} />);
+    const marker = screen.getByRole('button', { name: markerName(MessageMapRole.Assistant, 4) });
 
     fireEvent.pointerEnter(marker);
     await waitFor(() => expect(screen.getByText('Latest answer continued')).toBeInTheDocument());
@@ -87,11 +76,11 @@ describe('MessageMap', () => {
     fireEvent.pointerLeave(marker);
   });
 
-  it('navigates to the user prompt of a turn on click', () => {
+  it('navigates to a bookmarked user prompt on click', () => {
     const onNavigate = vi.fn();
     renderMap({ onNavigate });
 
-    fireEvent.click(screen.getByRole('button', { name: markerName(MessageMapRole.User, 2) }));
+    fireEvent.click(screen.getByRole('button', { name: markerName(MessageMapRole.User, 3) }));
     expect(onNavigate).toHaveBeenCalledExactlyOnceWith(3, false);
   });
 
@@ -109,39 +98,27 @@ describe('MessageMap', () => {
   it('colors user markers green and assistant markers blue', () => {
     renderMap();
     expect(screen.getByRole('button', { name: markerName(MessageMapRole.User, 1) }).firstChild).toHaveClass('bg-success-light');
-    expect(screen.getByRole('button', { name: markerName(MessageMapRole.Assistant, 1) }).firstChild).toHaveClass('bg-info-light');
+    expect(screen.getByRole('button', { name: markerName(MessageMapRole.Assistant, 2) }).firstChild).toHaveClass('bg-info-light');
   });
 
-  it('marks only the user message in view (or the previous one) and never an assistant marker', () => {
+  it('marks the nearest bookmarked message at or before the visible index', () => {
     const { rerender } = renderMap({ visibleIndex: 0 });
     const firstMarker = screen.getByRole('button', { name: markerName(MessageMapRole.User, 1) });
     expect(firstMarker).toHaveAttribute('aria-current', 'true');
     expect(firstMarker.firstChild).toHaveClass('ring-1');
 
     const renderAt = (visibleIndex: number) =>
-      rerender(
-        <MessageMap
-          messages={messages}
-          visibleIndex={visibleIndex}
-          onNavigate={vi.fn()}
-          onPreviousUserMessage={vi.fn()}
-          onNextUserMessage={vi.fn()}
-          hasPreviousUserMessage
-          hasNextUserMessage
-          onScrollToBottom={vi.fn()}
-        />,
-      );
+      rerender(<MessageMap taskId="task-1" messages={messages} visibleIndex={visibleIndex} onNavigate={vi.fn()} onScrollToBottom={vi.fn()} />);
 
-    // Scrolled into the first turn's reply: still the first user message.
     renderAt(2);
-    expect(screen.getByRole('button', { name: markerName(MessageMapRole.User, 1) })).toHaveAttribute('aria-current', 'true');
-
-    // Scrolled onto the second turn's reply: the second user message, not the assistant marker.
-    renderAt(4);
-    expect(screen.getByRole('button', { name: markerName(MessageMapRole.User, 2) })).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByRole('button', { name: markerName(MessageMapRole.Assistant, 2) })).toHaveAttribute('aria-current', 'true');
     expect(screen.getByRole('button', { name: markerName(MessageMapRole.User, 1) })).not.toHaveAttribute('aria-current');
-    expect(screen.getByRole('button', { name: markerName(MessageMapRole.Assistant, 1) })).not.toHaveAttribute('aria-current');
+
+    renderAt(4);
+    expect(screen.getByRole('button', { name: markerName(MessageMapRole.Assistant, 4) })).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByRole('button', { name: markerName(MessageMapRole.User, 1) })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('button', { name: markerName(MessageMapRole.Assistant, 2) })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('button', { name: markerName(MessageMapRole.User, 3) })).not.toHaveAttribute('aria-current');
   });
 
   it('becomes opaque only on hover, has a solid background and no left border', () => {
@@ -152,29 +129,40 @@ describe('MessageMap', () => {
     expect(nav.className).not.toMatch(/(^|\s)border-l(\s|$)/);
   });
 
-  it('delegates user navigation to the provided handlers and scrolls to bottom', () => {
-    const onPrev = vi.fn();
-    const onNext = vi.fn();
+  it('navigates between bookmarks and scrolls to bottom', () => {
+    const onNavigate = vi.fn();
     const onScrollToBottom = vi.fn();
-    renderMap({ onPreviousUserMessage: onPrev, onNextUserMessage: onNext, onScrollToBottom });
+    renderMap({ visibleIndex: 3, onNavigate, onScrollToBottom });
 
-    fireEvent.click(screen.getByRole('button', { name: 'messages.previousUserMessage' }));
-    expect(onPrev).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole('button', { name: 'messages.nextUserMessage' }));
-    expect(onNext).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: 'messages.map.previousBookmark' }));
+    fireEvent.click(screen.getByRole('button', { name: 'messages.map.nextBookmark' }));
     fireEvent.click(screen.getByRole('button', { name: 'messages.scrollToBottom' }));
+    expect(onNavigate).toHaveBeenNthCalledWith(1, 2, true);
+    expect(onNavigate).toHaveBeenNthCalledWith(2, 4, true);
+    expect(onNavigate).toHaveBeenCalledTimes(2);
     expect(onScrollToBottom).toHaveBeenCalledOnce();
   });
 
-  it('disables the user navigation shortcuts based on the provided availability flags', () => {
-    renderMap({ hasPreviousUserMessage: false, hasNextUserMessage: false });
-    expect(screen.getByRole('button', { name: 'messages.previousUserMessage' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'messages.nextUserMessage' })).toBeDisabled();
+  it('disables bookmark navigation at the boundaries', () => {
+    const { rerender } = renderMap({ visibleIndex: 0 });
+    expect(screen.getByRole('button', { name: 'messages.map.previousBookmark' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'messages.map.nextBookmark' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'messages.scrollToBottom' })).toBeEnabled();
+
+    rerender(<MessageMap taskId="task-1" messages={messages} visibleIndex={4} onNavigate={vi.fn()} onScrollToBottom={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'messages.map.previousBookmark' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'messages.map.nextBookmark' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'messages.scrollToBottom' })).toBeEnabled();
   });
 
   it('hides the map without conversational messages', () => {
     renderMap({ messages: [] });
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
+  });
+
+  it('hides the map without bookmarks', () => {
+    useBookmarkStore.setState({ bookmarksByTask: {} });
+    renderMap();
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
   });
 });

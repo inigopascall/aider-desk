@@ -1,14 +1,20 @@
 import { forwardRef, useImperativeHandle, useRef, UIEventHandler } from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Message } from '@common/types';
 
 import { Messages } from '../Messages';
 import { VirtualizedMessages } from '../VirtualizedMessages';
 
+import { render } from '@/__tests__/render';
+
 const { settings, getListState } = vi.hoisted(() => ({
   settings: { showMessageMap: true, messageViewMode: 'normal' },
   getListState: vi.fn(() => ({ start: 0, end: 9 })),
+}));
+
+vi.mock('@/stores/bookmarkStore', () => ({
+  useTaskBookmarks: () => ({ '0': { id: '0', label: '', createdAt: 0 } }),
 }));
 
 vi.mock('@/stores/settingsStore', () => ({
@@ -27,11 +33,13 @@ vi.mock('@/hooks/useUserMessageNavigation', () => ({
   useUserMessageNavigation: () => ({
     hasPreviousUserMessage: false,
     hasNextUserMessage: false,
+    renderGoToPrevious: () => null,
+    renderGoToNext: () => null,
   }),
 }));
 
 vi.mock('@/hooks/useScrollingPaused', () => ({
-  useScrollingPaused: () => ({ scrollingPaused: true, eventHandlers: {} }),
+  useScrollingPaused: () => ({ scrollingPaused: true, eventHandlers: {}, setScrollingPaused: vi.fn(), scrollToBottom: vi.fn() }),
 }));
 
 vi.mock('@legendapp/list/react', () => ({

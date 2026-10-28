@@ -6,6 +6,9 @@ import { TaskSidebar } from '../TaskSidebar';
 
 import { render } from '@/__tests__/render';
 import { useOptimizedTaskState, EMPTY_TASK_STATE } from '@/stores/taskStore';
+import { globalMockApi } from '@/__tests__/mocks/api';
+
+vi.mock('@/contexts/ApiContext', () => ({ useApi: () => globalMockApi }));
 
 // Mock @tanstack/react-virtual
 vi.mock('@tanstack/react-virtual', () => ({
@@ -70,9 +73,7 @@ vi.mock('@/stores/settingsStore', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/stores/settingsStore')>();
   return {
     ...actual,
-    useSettingsStore: vi.fn((selector: (state: { settings: unknown }) => unknown) =>
-      selector({ settings: { taskSettings: { allowSubSubTasks: true } } }),
-    ),
+    useSettingsStore: vi.fn((selector: (state: { settings: unknown }) => unknown) => selector({ settings: { taskSettings: { allowSubSubTasks: true } } })),
   };
 });
 

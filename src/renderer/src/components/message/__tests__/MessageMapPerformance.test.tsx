@@ -5,6 +5,7 @@ import { Message } from '@common/types';
 import { MessageMap } from '../MessageMap';
 
 import { render } from '@/__tests__/render';
+import { useBookmarkStore } from '@/stores/bookmarkStore';
 
 const { translate } = vi.hoisted(() => ({
   translate: vi.fn((key: string, values?: { label?: string; number?: number }) => (values?.label ? `${key} ${values.label} ${values.number}` : key)),
@@ -26,16 +27,18 @@ const createMessages = (answer = 'x'.repeat(280)): Message[] => [
 const createProps = () => ({
   messages: createMessages(),
   visibleIndex: 0,
+  taskId: 'task-1',
   onNavigate: vi.fn(),
-  onPreviousUserMessage: vi.fn(),
-  onNextUserMessage: vi.fn(),
-  hasPreviousUserMessage: true,
-  hasNextUserMessage: true,
   onScrollToBottom: vi.fn(),
 });
 
 describe('MessageMap streaming performance', () => {
   beforeEach(() => {
+    useBookmarkStore.setState({
+      bookmarksByTask: {
+        'task-1': Object.fromEntries(createMessages().map((message) => [message.id, { id: message.id, label: '', createdAt: 0 }])),
+      },
+    });
     translate.mockClear();
   });
 
@@ -62,7 +65,7 @@ describe('MessageMap streaming performance', () => {
     expect(markerRenderCount()).toBe(1);
   });
 
-  it('rerenders only the two user markers when the active turn changes', () => {
+  it('rerenders only the two affected markers when the active bookmark changes', () => {
     const props = createProps();
     const { rerender } = render(<MessageMap {...props} />);
     translate.mockClear();
@@ -79,7 +82,7 @@ describe('MessageMap streaming performance', () => {
     const nextMessages: Message[] = [props.messages[0], { id: 'tool', type: 'tool', content: '' }, ...props.messages.slice(1)];
 
     rerender(<MessageMap {...props} messages={nextMessages} />);
-    fireEvent.click(screen.getByRole('button', { name: 'messages.map.goToMessage messages.map.assistantReply 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'messages.map.goToMessage messages.map.assistantReply 4' }));
 
     expect(props.onNavigate).toHaveBeenCalledExactlyOnceWith(4, false);
   });
@@ -90,7 +93,7 @@ describe('MessageMap streaming performance', () => {
     const onNavigate = vi.fn();
 
     rerender(<MessageMap {...props} onNavigate={onNavigate} />);
-    fireEvent.click(screen.getByRole('button', { name: 'messages.map.goToMessage messages.map.assistantReply 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'messages.map.goToMessage messages.map.assistantReply 4' }));
 
     expect(onNavigate).toHaveBeenCalledExactlyOnceWith(3, false);
     expect(props.onNavigate).not.toHaveBeenCalled();

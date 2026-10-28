@@ -9,6 +9,7 @@ import { VirtualizedMessages } from '../VirtualizedMessages';
 import { render } from '@/__tests__/render';
 import { useApi } from '@/contexts/ApiContext';
 import { createMockApi } from '@/__tests__/mocks/api';
+import { useBookmarkStore } from '@/stores/bookmarkStore';
 
 const { scrollToIndex, scrollToEnd } = vi.hoisted(() => ({ scrollToIndex: vi.fn(), scrollToEnd: vi.fn() }));
 
@@ -40,6 +41,7 @@ vi.mock('@legendapp/list/react', () => ({
       estimatedItemSize: _estimatedItemSize,
       initialScrollAtEnd: _initialScrollAtEnd,
       drawDistance: _drawDistance,
+      alwaysRender: _alwaysRender,
       ...domProps
     } = props;
     const attachRef = (node: HTMLDivElement | null) => {
@@ -78,6 +80,7 @@ describe('Messages container ref reporting', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(useApi).mockReturnValue(mockApi);
+    useBookmarkStore.setState({ bookmarksByTask: { 'task-1': { first: { id: 'first', label: '', createdAt: 0 } } } });
 
     if (!('ResizeObserver' in globalThis)) {
       class ResizeObserverStub {
@@ -105,7 +108,7 @@ describe('Messages container ref reporting', () => {
     return { consoleError };
   };
 
-  it('clicking a map turn marker scrolls the regular list to the turn start and pauses following during streaming', () => {
+  it('clicking a bookmark marker scrolls the regular list to the bookmarked message and pauses following during streaming', () => {
     const messages: Message[] = [createMessage('first'), { id: 'reply', type: 'response', content: 'Answer' }, createMessage('last')];
     const { rerender } = render(<Messages baseDir="/project" taskId="task-1" inProgress messages={messages} renderMarkdown />);
     const target = screen.getByTestId('message-first');
@@ -124,7 +127,7 @@ describe('Messages container ref reporting', () => {
     scrollIntoView.mockRestore();
   });
 
-  it('clicking a map turn marker navigates by rendered index in the virtualized list', () => {
+  it('clicking a bookmark marker navigates by rendered index in the virtualized list', () => {
     const messages: Message[] = [createMessage('first'), { id: 'reply', type: 'response', content: 'Answer' }, createMessage('last')];
     render(<VirtualizedMessages baseDir="/project" taskId="task-1" inProgress messages={messages} renderMarkdown />);
 

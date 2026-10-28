@@ -7,6 +7,9 @@ import { TaskSidebar } from '../TaskSidebar';
 import { render } from '@/__tests__/render';
 import { useOptimizedTaskState, EMPTY_TASK_STATE } from '@/stores/taskStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { globalMockApi } from '@/__tests__/mocks/api';
+
+vi.mock('@/contexts/ApiContext', () => ({ useApi: () => globalMockApi }));
 
 // Mock @tanstack/react-virtual
 vi.mock('@tanstack/react-virtual', () => ({

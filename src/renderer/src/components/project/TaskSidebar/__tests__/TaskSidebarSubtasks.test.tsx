@@ -8,6 +8,9 @@ import { render } from '@/__tests__/render';
 import { useTask } from '@/contexts/TasksContext';
 import { useOptimizedTaskState, EMPTY_TASK_STATE } from '@/stores/taskStore';
 import { createMockTaskContext } from '@/__tests__/mocks/contexts';
+import { globalMockApi } from '@/__tests__/mocks/api';
+
+vi.mock('@/contexts/ApiContext', () => ({ useApi: () => globalMockApi }));
 
 // Mock @tanstack/react-virtual
 vi.mock('@tanstack/react-virtual', () => ({
@@ -133,9 +136,7 @@ describe('TaskSidebar Subtasks', () => {
       <TaskSidebar loading={false} tasks={tasks} activeTaskId="parent-1" onTaskSelect={vi.fn()} isCollapsed={false} onToggleCollapse={vi.fn()} />,
     );
 
-    rerender(
-      <TaskSidebar loading={false} tasks={tasks} activeTaskId="grandchild-1" onTaskSelect={vi.fn()} isCollapsed={false} onToggleCollapse={vi.fn()} />,
-    );
+    rerender(<TaskSidebar loading={false} tasks={tasks} activeTaskId="grandchild-1" onTaskSelect={vi.fn()} isCollapsed={false} onToggleCollapse={vi.fn()} />);
 
     // Both the parent and the intermediate child must be expanded for the grandchild to render
     expect(screen.getByText('Parent 1')).toBeInTheDocument();

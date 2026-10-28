@@ -10,6 +10,9 @@ import { useTask } from '@/contexts/TasksContext';
 import { useOptimizedTaskState, EMPTY_TASK_STATE } from '@/stores/taskStore';
 import { createMockTaskContext } from '@/__tests__/mocks/contexts';
 import { useTaskNavigationStore } from '@/stores/taskNavigationStore';
+import { globalMockApi } from '@/__tests__/mocks/api';
+
+vi.mock('@/contexts/ApiContext', () => ({ useApi: () => globalMockApi }));
 
 // Mock @tanstack/react-virtual
 vi.mock('@tanstack/react-virtual', () => ({
