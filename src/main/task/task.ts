@@ -61,6 +61,8 @@ import {
   WorkflowLogData,
   WorkflowRunInfo,
   ReasoningSchema,
+  ContextEntryStatus,
+  getRepositoryMappingsSettings,
 } from '@common/types';
 import { parsePartialJson } from 'ai';
 import {
@@ -114,7 +116,10 @@ import {
 } from '@/constants';
 import { Agent, AgentProfileManager, McpConfigManager, McpManager } from '@/agent';
 import { DurabilityManager } from '@/agent/durability/durability-manager';
-import { safeJsonStringify } from '@/agent/utils';
+import { CONTEXT_FILE_LINE_LIMIT, safeJsonStringify } from '@/agent/utils';
+import { getTextFileStats } from '@/task/file-stats';
+import { selectMappingsWithinBudget } from '@/repository-mappings/mapping-budget';
+import { readRepositoryMappingsState, REPOSITORY_MAPPING_GENERATOR_LABELS } from '@/repository-mappings/mappings-state';
 import { createSubagentPromptContext, findEnabledSubagent, runSubagentTask } from '@/agent/subagent';
 import { getWorkflow, runWorkflow } from '@/workflows';
 import { Connector } from '@/connector';
@@ -2165,6 +2170,54 @@ export class Task {
   public async getContextManifest(): Promise<TaskContextManifest> {
     await this.waitForTaskDataLoad();
     const profile = await this.getTaskAgentProfile();
+    const contextFiles = await this.getContextFiles(false, true);
+    const mappingStatuses: Record<string, ContextEntryStatus> = {};
+    const mappingNotices: string[] = [];
+    try {
+      const state = await readRepositoryMappingsState(this.project.baseDir);
+      for (const [id, generator] of Object.entries(state.generators)) {
+        if (generator.message) {
+          mappingNotices.push(`${REPOSITORY_MAPPING_GENERATOR_LABELS[id] ?? id}: ${generator.message}`);
+        }
+        for (const [filePath, file] of Object.entries(generator.files)) {
+          if (file.status === 'stale') {
+            mappingStatuses[filePath] = { kind: 'stale', message: file.message };
+          }
+        }
+      }
+    } catch (error) {
+      logger.warn('Failed to read repository mappings state', { error });
+    }
+    try {
+      const { maxTokens } = getRepositoryMappingsSettings(this.store.getSettings());
+      for (const item of (await this.getRepositoryMappingFilesForPrompt()).overBudget) {
+        mappingStatuses[item.path] = {
+          kind: 'over-budget',
+          message: `${item.tokens.toLocaleString('en')} tokens; the budget is ${maxTokens.toLocaleString('en')} (Settings → Tasks → Repository Mappings).`,
+        };
+      }
+    } catch (error) {
+      logger.warn('Failed to calculate repository mappings budget', { error });
+    }
+    const fileStatuses: Record<string, ContextEntryStatus> = {};
+    try {
+      for (const file of contextFiles) {
+        if (!file.disabled) {
+          const absolute = await this.resolveContextFilePath(file.path);
+          if (absolute) {
+            const stats = await getTextFileStats(absolute);
+            if (stats && stats.lines > CONTEXT_FILE_LINE_LIMIT) {
+              fileStatuses[file.path] = {
+                kind: 'truncated',
+                message: `${stats.lines.toLocaleString('en')} lines; only the first ${CONTEXT_FILE_LINE_LIMIT.toLocaleString('en')} are sent.`,
+              };
+            }
+          }
+        }
+      }
+    } catch (error) {
+      logger.warn('Failed to calculate context file statuses', { error });
+    }
     return buildContextManifest({
       baseDir: this.project.baseDir,
       taskId: this.taskId,
@@ -2176,7 +2229,10 @@ export class Task {
       disabledRuleFiles: this.getDisabledRuleFiles(),
       mappingFiles: await this.getRepositoryMappingFiles(true),
       disabledMappingFiles: this.getDisabledRepositoryMappingFiles(),
-      contextFiles: await this.getContextFiles(false, true),
+      mappingStatuses,
+      mappingNotices,
+      contextFiles,
+      fileStatuses,
     });
   }
 
@@ -2198,6 +2254,7 @@ export class Task {
 
   public async refreshContextFiles(): Promise<void> {
     await this.sendContextFilesUpdated();
+    void this.updateAgentEstimatedTokens();
   }
 
   public async runCommand(command: string, addToHistory = true) {
@@ -2229,6 +2286,10 @@ export class Task {
       this.contextManager.clearMessages();
       await this.clearWorkflowEvents();
       this.eventManager.sendClearTask(this.project.baseDir, this.taskId, true, false);
+    }
+
+    if (command.trim() === 'drop' || command.trim() === 'reset') {
+      void this.updateAgentEstimatedTokens();
     }
 
     if (command.trim() === 'undo') {
@@ -3189,6 +3250,17 @@ export class Task {
     }
     const disabledFiles = new Set(this.getDisabledRepositoryMappingFiles());
     return files.filter((file) => !disabledFiles.has(file.path));
+  }
+
+  /** The selected mapping files that fit the repository mappings budget, in order, and those left out. */
+  public async getRepositoryMappingFilesForPrompt(): Promise<{ files: ContextFile[]; overBudget: { path: string; tokens: number }[] }> {
+    const files = await this.getRepositoryMappingFiles();
+    const { maxTokens } = getRepositoryMappingsSettings(this.store.getSettings());
+    const measured = await Promise.all(
+      files.map(async (file) => ({ file, tokens: (await getTextFileStats(path.join(this.project.baseDir, file.path)))?.tokens ?? 0 })),
+    );
+    const selection = selectMappingsWithinBudget(measured, maxTokens);
+    return { files: selection.sent, overBudget: selection.overBudget.map(({ file, tokens }) => ({ path: file.path, tokens })) };
   }
 
   public getDisabledRuleFiles(): string[] {
@@ -4748,8 +4820,7 @@ export class Task {
   }
 
   private debouncedEstimateTokens = debounce(async (agentProfile: AgentProfile) => {
-    const includeBreakdown = this.store.getSettings().showContextUsageBar ?? true;
-    const { tokens, breakdown } = await this.agent.estimateTokensWithBreakdown(this, agentProfile, includeBreakdown);
+    const { tokens, breakdown } = await this.agent.estimateTokensWithBreakdown(this, agentProfile, true);
 
     this.updateTokensInfo({
       agent: {
@@ -4801,10 +4872,6 @@ export class Task {
 
     if (!this.initialized) {
       return;
-    }
-
-    if ((oldSettings.showContextUsageBar ?? true) !== (newSettings.showContextUsageBar ?? true)) {
-      void this.updateAgentEstimatedTokens();
     }
 
     if (oldSettings.aider?.addRuleFiles !== newSettings.aider?.addRuleFiles) {

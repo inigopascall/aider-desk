@@ -67,6 +67,8 @@ type Props = {
   setProviders?: (providers: ProviderProfile[]) => void;
   workflowsByProject?: Record<string, string[]>;
   onToggleWorkflowForProject?: (baseDir: string, workflowId: string, checked: boolean) => void;
+  outlineRulesByProject?: Record<string, string[]>;
+  onOutlineRulesForProjectChange?: (baseDir: string, rules: string[]) => void;
   onShowLogs?: () => void;
 };
 
@@ -89,6 +91,8 @@ export const Settings = ({
   setProviders,
   workflowsByProject,
   onToggleWorkflowForProject,
+  outlineRulesByProject,
+  onOutlineRulesForProjectChange,
   onShowLogs,
 }: Props) => {
   const { t } = useTranslation();
@@ -311,7 +315,15 @@ export const Settings = ({
       case 'memory':
         return <MemorySettings settings={settings} setSettings={updateSettings} />;
       case 'tasks':
-        return <TaskSettings settings={settings} setSettings={updateSettings} />;
+        return (
+          <TaskSettings
+            settings={settings}
+            setSettings={updateSettings}
+            openProjects={openProjects}
+            outlineRulesByProject={outlineRulesByProject}
+            onOutlineRulesForProjectChange={onOutlineRulesForProjectChange}
+          />
+        );
       case 'voice':
         return <VoiceSettings providers={providers} setProviders={setProviders} initialProviderId={initialOptions?.providerId as string | undefined} />;
       case 'hotkeys':

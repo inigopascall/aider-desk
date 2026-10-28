@@ -107,6 +107,33 @@ describe('buildContextManifest', () => {
     expect(section(manifest, 'files').entries[0]).toMatchObject({ selected: false, delivery: 'none', notSentReason: 'unselected' });
   });
 
+  it('applies status to a selected mapping entry', () => {
+    const manifest = buildContextManifest(input({ mappingStatuses: { '.aider-desk/mappings/map.md': { kind: 'stale', message: 'outdated' } } }));
+    expect(section(manifest, 'mappings').entries[0]).toMatchObject({ status: { kind: 'stale', message: 'outdated' } });
+  });
+
+  it('does not apply status to an unselected mapping entry', () => {
+    const manifest = buildContextManifest(
+      input({
+        disabledMappingFiles: ['.aider-desk/mappings/map.md'],
+        mappingStatuses: { '.aider-desk/mappings/map.md': { kind: 'over-budget' } },
+      }),
+    );
+    expect(section(manifest, 'mappings').entries[0]).not.toHaveProperty('status');
+  });
+
+  it('includes mapping notices only when non-empty', () => {
+    expect(section(buildContextManifest(input()), 'mappings')).not.toHaveProperty('notices');
+    expect(section(buildContextManifest(input({ mappingNotices: ['generator failed'] })), 'mappings')).toMatchObject({ notices: ['generator failed'] });
+  });
+
+  it('applies truncated status to a context file', () => {
+    const manifest = buildContextManifest(input({ fileStatuses: { 'src/edit.ts': { kind: 'truncated', message: 'too long' } } }));
+    expect(section(manifest, 'files').entries.find((entry) => entry.path === 'src/edit.ts')).toMatchObject({
+      status: { kind: 'truncated', message: 'too long' },
+    });
+  });
+
   it('sets notSentReason exactly when delivery is none', () => {
     for (const manifest of [buildContextManifest(input()), buildContextManifest(input({ mode: 'code', addRuleFiles: false }))]) {
       for (const entry of manifest.sections.flatMap((candidate) => candidate.entries)) {

@@ -1,5 +1,14 @@
-import { useCallback } from 'react';
-import { Mode, SettingsData, ContextCompactionType, Model, WorkingMode } from '@common/types';
+import { useCallback, useState } from 'react';
+import {
+  Mode,
+  SettingsData,
+  ContextCompactionType,
+  Model,
+  WorkingMode,
+  RepositoryMappingsSettings,
+  getRepositoryMappingsSettings,
+  ProjectData,
+} from '@common/types';
 import { useTranslation } from 'react-i18next';
 import { AiFillFolderOpen } from 'react-icons/ai';
 import { IoGitBranch } from 'react-icons/io5';
@@ -18,6 +27,7 @@ import { useModes } from '@/hooks/useModes';
 import { Input } from '@/components/common/Input';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { TaskNavigationSettings } from '@/components/task-navigation/TaskNavigationSettings';
+import { getPathBasename } from '@/utils/path-utils';
 
 const WORKING_MODE_ITEMS: ItemConfig<WorkingMode>[] = [
   {
@@ -37,10 +47,14 @@ const WORKING_MODE_ITEMS: ItemConfig<WorkingMode>[] = [
 type Props = {
   settings: SettingsData;
   setSettings: (settings: SettingsData) => void;
+  openProjects?: ProjectData[];
+  outlineRulesByProject?: Record<string, string[]>;
+  onOutlineRulesForProjectChange?: (baseDir: string, rules: string[]) => void;
 };
 
-export const TaskSettings = ({ settings, setSettings }: Props) => {
+export const TaskSettings = ({ settings, setSettings, openProjects = [], outlineRulesByProject = {}, onOutlineRulesForProjectChange }: Props) => {
   const { t } = useTranslation();
+  const projectRulesDescription = t('settings.repositoryMappings.outlineRulesProjectsDescription');
 
   const handleSmartTaskStateChange = (checked: boolean) => {
     setSettings({
@@ -187,6 +201,33 @@ export const TaskSettings = ({ settings, setSettings }: Props) => {
     });
   };
 
+  const mappings = getRepositoryMappingsSettings(settings);
+  const [pathRulesText, setPathRulesText] = useState(() => mappings.laravelPathRules.map((rule) => `${rule.from} => ${rule.to}`).join('\n'));
+  const [outlineRulesText, setOutlineRulesText] = useState(() => mappings.outlineRules.join('\n'));
+
+  const updateMappings = (patch: Partial<RepositoryMappingsSettings>) =>
+    setSettings({
+      ...settings,
+      repositoryMappings: { ...settings.repositoryMappings, ...patch },
+    });
+
+  const handlePathRulesBlur = () => {
+    const laravelPathRules = pathRulesText
+      .split('\n')
+      .filter((line) => line.trim())
+      .map((line) => {
+        const separator = line.indexOf('=>');
+        if (separator === -1) {
+          return null;
+        }
+        const from = line.slice(0, separator).trim();
+        const to = line.slice(separator + 2).trim();
+        return from ? { from, to } : null;
+      })
+      .filter((rule): rule is { from: string; to: string } => rule !== null);
+    updateMappings({ laravelPathRules });
+  };
+
   const modes = useModes();
   const taskModeOptions: Option[] = modes.map((mode) => ({ value: mode.value, label: t(mode.labelKey) }));
   const defaultTaskModeOptions: Option[] = [{ label: t('settings.tasks.defaultTaskModeLast'), value: 'last' }, ...taskModeOptions];
@@ -319,7 +360,6 @@ export const TaskSettings = ({ settings, setSettings }: Props) => {
             />
             <InfoIcon tooltip={t('settings.tasks.allowSubSubTasksTooltip')} />
           </div>
-
 
           <div className="flex gap-4">
             <div className="flex-1 min-w-48">
@@ -462,6 +502,168 @@ export const TaskSettings = ({ settings, setSettings }: Props) => {
                 {t('settings.tasks.contextCompactionTypeHandoff')}
               </button>
             </Tooltip>
+          </div>
+        </div>
+      </Section>
+
+      <Section title={t('settings.repositoryMappings.title')}>
+        <div className="px-4 py-3 pt-4 space-y-3">
+          <div className="text-2xs text-text-muted mb-4">{t('settings.repositoryMappings.description')}</div>
+
+          <div className="flex items-start gap-1">
+            <Checkbox
+              id="repository-mappings-auto-regenerate"
+              checked={mappings.autoRegenerate}
+              onChange={(checked) => updateMappings({ autoRegenerate: checked })}
+              label={t('settings.repositoryMappings.autoRegenerate')}
+            />
+            <InfoIcon tooltip={t('settings.repositoryMappings.autoRegenerateTooltip')} />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-start gap-1">
+              <Checkbox
+                id="repository-mappings-outline-enabled"
+                checked={mappings.outlineEnabled}
+                onChange={(checked) => updateMappings({ outlineEnabled: checked })}
+                label={t('settings.repositoryMappings.outlineEnabled')}
+              />
+              <InfoIcon tooltip={t('settings.repositoryMappings.outlineEnabledTooltip')} />
+            </div>
+            {mappings.outlineEnabled && (
+              <div className="ml-6 space-y-3">
+                <div className="flex items-start gap-1">
+                  <Checkbox
+                    id="repository-mappings-outline-descriptions"
+                    checked={mappings.outlineDescriptions}
+                    onChange={(checked) => updateMappings({ outlineDescriptions: checked })}
+                    label={t('settings.repositoryMappings.outlineDescriptions')}
+                  />
+                  <InfoIcon tooltip={t('settings.repositoryMappings.outlineDescriptionsTooltip')} />
+                </div>
+                <Input
+                  type="number"
+                  value={mappings.outlineMaxTokens}
+                  onChange={(e) => updateMappings({ outlineMaxTokens: Number(e.target.value) })}
+                  label={
+                    <div className="flex items-center gap-1">
+                      <label className="text-xs text-text-primary font-medium">{t('settings.repositoryMappings.outlineMaxTokens')}</label>
+                      <InfoIcon tooltip={t('settings.repositoryMappings.outlineMaxTokensTooltip')} />
+                    </div>
+                  }
+                />
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="repository-mappings-outline-rules" className="text-xs text-text-primary font-medium">
+                    {t('settings.repositoryMappings.outlineRules')} <InfoIcon tooltip={t('settings.repositoryMappings.outlineRulesTooltip')} />
+                  </label>
+                  <textarea
+                    id="repository-mappings-outline-rules"
+                    className="w-full font-mono bg-bg-secondary-light border-2 border-border-default rounded p-2 text-xs"
+                    rows={4}
+                    value={outlineRulesText}
+                    onChange={(e) => setOutlineRulesText(e.target.value)}
+                    onBlur={() =>
+                      updateMappings({
+                        outlineRules: getRepositoryMappingsSettings({
+                          repositoryMappings: { outlineRules: outlineRulesText.split('\n') },
+                        }).outlineRules,
+                      })
+                    }
+                  />
+                  {!!openProjects.length && <div className="text-2xs text-text-muted">{projectRulesDescription}</div>}
+                  {openProjects.map((project) => {
+                    const id = `repository-mappings-outline-rules-${project.baseDir}`;
+                    return (
+                      <div key={project.baseDir} className="flex flex-col gap-1">
+                        <label htmlFor={id} title={project.baseDir} className="text-xs text-text-primary font-medium">
+                          {getPathBasename(project.baseDir)}
+                        </label>
+                        <textarea
+                          id={id}
+                          className="w-full font-mono bg-bg-secondary-light border-2 border-border-default rounded p-2 text-xs"
+                          rows={4}
+                          value={(outlineRulesByProject[project.baseDir] ?? []).join('\n')}
+                          onChange={(e) => onOutlineRulesForProjectChange?.(project.baseDir, e.target.value.split('\n'))}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <Input
+            type="number"
+            value={mappings.maxTokens}
+            onChange={(e) => updateMappings({ maxTokens: Number(e.target.value) })}
+            label={
+              <div className="flex items-center gap-1">
+                <label className="text-xs text-text-primary font-medium">{t('settings.repositoryMappings.maxTokens')}</label>
+                <InfoIcon tooltip={t('settings.repositoryMappings.maxTokensTooltip')} />
+              </div>
+            }
+          />
+
+          <div className="space-y-3">
+            <div className="flex items-start gap-1">
+              <Checkbox
+                id="repository-mappings-laravel-enabled"
+                checked={mappings.laravelEnabled}
+                onChange={(checked) => updateMappings({ laravelEnabled: checked })}
+                label={t('settings.repositoryMappings.laravelEnabled')}
+              />
+              <InfoIcon tooltip={t('settings.repositoryMappings.laravelEnabledTooltip')} />
+            </div>
+            {mappings.laravelEnabled && (
+              <div className="ml-6 space-y-3">
+                <Input
+                  value={mappings.laravelCommandTemplate}
+                  onChange={(e) => updateMappings({ laravelCommandTemplate: e.target.value })}
+                  label={
+                    <div className="flex items-center gap-1">
+                      <label className="text-xs text-text-primary font-medium">{t('settings.repositoryMappings.laravelCommandTemplate')}</label>
+                      <InfoIcon tooltip={t('settings.repositoryMappings.laravelCommandTemplateTooltip')} />
+                    </div>
+                  }
+                  className="w-full font-mono"
+                />
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-text-primary font-medium">
+                    {t('settings.repositoryMappings.laravelPathRules')} <InfoIcon tooltip={t('settings.repositoryMappings.laravelPathRulesTooltip')} />
+                  </label>
+                  <textarea
+                    className="w-full font-mono bg-bg-secondary-light border-2 border-border-default rounded p-2 text-xs"
+                    rows={3}
+                    value={pathRulesText}
+                    onChange={(e) => setPathRulesText(e.target.value)}
+                    onBlur={handlePathRulesBlur}
+                  />
+                </div>
+                <Input
+                  value={mappings.laravelPreExportCommand}
+                  onChange={(e) => updateMappings({ laravelPreExportCommand: e.target.value })}
+                  label={
+                    <div className="flex items-center gap-1">
+                      <label className="text-xs text-text-primary font-medium">{t('settings.repositoryMappings.laravelPreExportCommand')}</label>
+                      <InfoIcon tooltip={t('settings.repositoryMappings.laravelPreExportCommandTooltip')} />
+                    </div>
+                  }
+                  className="w-full font-mono"
+                />
+                <Input
+                  type="number"
+                  value={mappings.laravelTimeoutSeconds}
+                  onChange={(e) => updateMappings({ laravelTimeoutSeconds: Number(e.target.value) })}
+                  label={
+                    <div className="flex items-center gap-1">
+                      <label className="text-xs text-text-primary font-medium">{t('settings.repositoryMappings.laravelTimeoutSeconds')}</label>
+                      <InfoIcon tooltip={t('settings.repositoryMappings.laravelTimeoutSecondsTooltip')} />
+                    </div>
+                  }
+                />
+              </div>
+            )}
           </div>
         </div>
       </Section>

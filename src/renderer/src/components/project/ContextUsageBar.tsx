@@ -2,14 +2,7 @@ import { AIDER_MODES, ContextFile, Mode, TaskData } from '@common/types';
 import { MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import {
-  buildAiderCategories,
-  CONTEXT_USAGE_COLORS,
-  findItemAt,
-  getCompactingThresholdTokens,
-  getDividerOffsets,
-  layoutContextUsage,
-} from './context-usage-layout';
+import { CONTEXT_USAGE_COLORS, findItemAt, getCompactingThresholdTokens, getContextUsageDisplay, getDividerOffsets } from './context-usage-layout';
 
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useTaskTokensInfo } from '@/stores/taskStore';
@@ -54,16 +47,10 @@ export const ContextUsageBar = ({ task, mode, maxInputTokens, contextFiles, onSc
     return () => observer.disconnect();
   }, [visible]);
 
-  const categories = useMemo(() => {
-    if (!tokensInfo) {
-      return [];
-    }
-    return isAiderMode ? buildAiderCategories(tokensInfo, contextFiles) : (tokensInfo.contextBreakdown?.categories ?? []);
-  }, [tokensInfo, isAiderMode, contextFiles]);
-
-  const usedTokens = isAiderMode ? categories.reduce((sum, category) => sum + category.tokens, 0) : (tokensInfo?.agent?.tokens ?? 0);
-  const tokensEstimated = !isAiderMode && !!tokensInfo?.agent?.tokensEstimated;
-  const segments = useMemo(() => layoutContextUsage(categories, usedTokens, maxInputTokens), [categories, usedTokens, maxInputTokens]);
+  const { usedTokens, tokensEstimated, segments } = useMemo(
+    () => getContextUsageDisplay(tokensInfo, mode, contextFiles, maxInputTokens),
+    [tokensInfo, mode, contextFiles, maxInputTokens],
+  );
   const usedPercent = maxInputTokens > 0 ? Math.min((usedTokens / maxInputTokens) * 100, 100) : 0;
 
   const thresholdTokens = isAiderMode
@@ -192,7 +179,7 @@ export const ContextUsageBar = ({ task, mode, maxInputTokens, contextFiles, onSc
           {hovered.item.detail && <div className="text-text-muted-light">{hovered.item.detail}</div>}
           <div className="mt-1 text-text-muted-light">
             {t('costInfo.contextUsage.itemTokens', {
-              tokens: formatHumanReadable(t, hovered.item.tokens),
+              tokens: formatHumanReadable(t, hovered.item.scaledTokens),
             })}
           </div>
           <div className="text-text-muted-light">

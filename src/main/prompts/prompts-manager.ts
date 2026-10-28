@@ -363,7 +363,12 @@ export class PromptsManager {
     const customSystemPrompt = agentProfile.systemPrompt?.trim();
     if (customSystemPrompt) {
       const compiledSystemPrompt = await this.compileCustomSystemPrompt(task, customSystemPrompt);
-      const parts = [compiledSystemPrompt];
+      const taskDir = task.getTaskDir();
+      const projectDir = task.getProjectDir();
+      const parts = [
+        compiledSystemPrompt,
+        `<SystemInformation>\n<ProjectWorkingDirectory>${taskDir}</ProjectWorkingDirectory>${taskDir !== projectDir ? `\n<ProjectGitRootDirectory>${projectDir}</ProjectGitRootDirectory>` : ''}\n</SystemInformation>`,
+      ];
       if (rulesFiles) {
         parts.push(`<Rules>\n${rulesFiles}\n</Rules>`);
       }

@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { ContextUsageCategory, TokensInfoData } from '@common/types';
 
-import { buildAiderCategories, findItemAt, getCompactingThresholdTokens, getDividerOffsets, layoutContextUsage } from '../context-usage-layout';
+import {
+  buildAiderCategories,
+  findItemAt,
+  getCompactingThresholdTokens,
+  getContextUsageDisplay,
+  getDividerOffsets,
+  layoutContextUsage,
+} from '../context-usage-layout';
 
 const category = (id: ContextUsageCategory['id'], itemTokens: number[]): ContextUsageCategory => ({
   id,
@@ -21,6 +28,7 @@ describe('layoutContextUsage', () => {
     expect(segments[0].widthPercent + segments[1].widthPercent).toBeCloseTo(40);
     expect(segments[0].scaledTokens).toBe(200);
     expect(segments[1].scaledTokens).toBe(200);
+    expect(segments[1].items.map((item) => item.scaledTokens)).toEqual([100, 100]);
     expect(segments[1].leftPercent).toBeCloseTo(20);
     expect(segments[1].items[0].leftPercent).toBeCloseTo(20);
     expect(segments[1].items[1].leftPercent).toBeCloseTo(30);
@@ -101,6 +109,80 @@ describe('buildAiderCategories', () => {
     expect(categories[1].items.map((i) => i.id)).toEqual(['/project/docs/b.md']);
     expect(categories[2].items.map((i) => i.id)).toEqual(['src/a.ts']);
     expect(categories[3].tokens).toBe(300);
+  });
+});
+
+describe('getContextUsageDisplay', () => {
+  const baseTokensInfo: TokensInfoData = {
+    baseDir: '/project',
+    taskId: 'task',
+    chatHistory: { tokens: 10, cost: 0 },
+    files: {},
+    repoMap: { tokens: 0, cost: 0 },
+    systemMessages: { tokens: 20, cost: 0 },
+  };
+
+  it('scales agent totals and preserves scaled item and segment tokens', () => {
+    const result = getContextUsageDisplay(
+      {
+        ...baseTokensInfo,
+        agent: { tokens: 400, cost: 0, tokensEstimated: false },
+        contextBreakdown: {
+          categories: [category('conversation', [100]), category('tools', [100])],
+          totalTokens: [category('conversation', [100]), category('tools', [100])].reduce((sum, item) => sum + item.tokens, 0),
+        },
+      },
+      'agent',
+      [],
+      1000,
+    );
+
+    expect(result.usedTokens).toBe(400);
+    expect(result.segments.map((segment) => segment.scaledTokens)).toEqual([200, 200]);
+    expect(result.segments.flatMap((segment) => segment.items.map((item) => item.scaledTokens))).toEqual([200, 200]);
+  });
+
+  it('reports estimated agent totals', () => {
+    const result = getContextUsageDisplay(
+      {
+        ...baseTokensInfo,
+        agent: { tokens: 100, cost: 0, tokensEstimated: true },
+        contextBreakdown: { categories: [category('tools', [100])], totalTokens: category('tools', [100]).tokens },
+      },
+      'agent',
+      [],
+    );
+
+    expect(result.tokensEstimated).toBe(true);
+  });
+
+  it('has no breakdown for missing or undefined agent breakdown data', () => {
+    expect(getContextUsageDisplay(undefined, 'agent', [])).toEqual({
+      categories: [],
+      usedTokens: 0,
+      tokensEstimated: false,
+      segments: [],
+      hasBreakdown: false,
+    });
+    expect(getContextUsageDisplay({ ...baseTokensInfo, agent: { tokens: 100, cost: 0 } }, 'agent', []).hasBreakdown).toBe(false);
+  });
+
+  it('uses Aider accounting for Aider modes', () => {
+    const result = getContextUsageDisplay(
+      {
+        ...baseTokensInfo,
+        files: { 'src/a.ts': { tokens: 40, cost: 0 } },
+        repoMap: { tokens: 5, cost: 0 },
+        systemMessages: { tokens: 20, cost: 0 },
+        chatHistory: { tokens: 35, cost: 0 },
+      },
+      'ask',
+      [{ path: 'src/a.ts' }],
+    );
+
+    expect(result.usedTokens).toBe(100);
+    expect(result.categories.map((category) => category.id)).toEqual(['systemPrompt', 'repoMappings', 'editableFiles', 'conversation']);
+    expect(result.hasBreakdown).toBe(true);
   });
 });
 

@@ -84,7 +84,8 @@ import { AIDER_DESK_TMP_DIR, LOGS_DIR } from '@/constants';
 import { EventManager } from '@/events';
 import { isElectron } from '@/app';
 import { NetworkManager } from '@/network-manager';
-import { deleteRepositoryMappingFile, listRepositoryMappingFiles, runRepositoryMappingsGenerator } from '@/repository-mappings';
+import { deleteRepositoryMappingFile, listRepositoryMappingFiles } from '@/repository-mappings';
+import { requireRepositoryMappingsManager } from '@/repository-mappings/instance';
 
 export class EventsHandler {
   constructor(
@@ -403,13 +404,13 @@ export class EventsHandler {
   }
 
   async regenerateRepositoryMappings(baseDir: string, taskId: string) {
-    const result = await runRepositoryMappingsGenerator(baseDir);
-    const files = await listRepositoryMappingFiles(baseDir);
-    this.eventManager.sendRepositoryMappingsUpdated(baseDir, files);
-    this.sendContextManifestsForProject(baseDir);
+    const result = await requireRepositoryMappingsManager().regenerate(baseDir);
 
     if (!result.success) {
-      this.projectManager.getProject(baseDir).getTask(taskId)?.addLogMessage('error', result.error || 'Failed to regenerate repository mappings.', true);
+      this.projectManager
+        .getProject(baseDir)
+        .getTask(taskId)
+        ?.addLogMessage('error', result.error || 'Failed to regenerate repository mappings.', true);
     }
 
     return result;
@@ -426,6 +427,7 @@ export class EventsHandler {
   private sendContextManifestsForProject(baseDir: string): void {
     this.projectManager.getProject(baseDir).forEachTask((task) => {
       void task.sendContextManifestUpdated();
+      void task.updateAgentEstimatedTokens();
     });
   }
 

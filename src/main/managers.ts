@@ -23,6 +23,7 @@ import { EventsHandler } from '@/events-handler';
 import { PromptsManager } from '@/prompts';
 import { PythonDependenciesInstaller } from '@/python-dependencies-installer';
 import { initTaskNavigation } from '@/task-navigation/task-navigation-manager';
+import { initRepositoryMappings } from '@/repository-mappings/mappings-manager';
 
 export interface ManagersResult {
   eventsHandler: EventsHandler;
@@ -150,6 +151,9 @@ export const initManagers = async (store: Store, windowManager?: WindowManager):
   // Initialize task navigation (task numbers, topic maps, global search index)
   const taskNavigationManager = initTaskNavigation({ store, projectManager, modelManager });
 
+  // Initialize built-in repository mappings (codebase outline, Laravel schema/models/routes)
+  const repositoryMappingsManager = initRepositoryMappings({ store, projectManager, modelManager, eventManager });
+
   // Initialize terminal manager
   const terminalManager = new TerminalManager(eventManager, telemetryManager);
 
@@ -206,6 +210,7 @@ export const initManagers = async (store: Store, windowManager?: WindowManager):
       versionsManager.destroy();
       dataManager.close();
       taskNavigationManager.dispose();
+      repositoryMappingsManager.dispose();
 
       await Promise.all([
         connectorManager.close(),

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Task } from '../task';
 
-import type { AgentProfile, ContextFile, TaskData } from '@common/types';
+import type { AgentProfile, ContextFile, ContextUsageCategory, ContextUsageCategoryId, TaskData } from '@common/types';
 
 const ROOT = vi.hoisted(() => `/tmp/aider-desk-task-file-selection-${process.pid}`);
 
@@ -36,7 +36,7 @@ vi.mock('@/constants', () => ({
   AIDER_DESK_GLOBAL_RULES_DIR: `${ROOT}/global-rules`,
   AIDER_DESK_PROJECT_MAPPINGS_DIR: '.aider-desk/mappings',
   AIDER_DESK_MAPPINGS_SCRIPT: '.aider-desk/mappings.sh',
-  AIDER_DESK_GENERATE_REPO_MAP_SCRIPT: '.aider-desk/generate-repo-map.sh',
+
   AIDER_DESK_COMMANDS_DIR: '.aider-desk/commands',
   AIDER_DESK_PROMPTS_DIR: '.aider-desk/prompts',
   AIDER_DESK_BUILTIN_PROMPTS_DIR: '/resources/prompts',
@@ -53,6 +53,7 @@ vi.mock('@/agent', () => ({
   Agent: class {
     runAgent = vi.fn().mockResolvedValue([]);
     estimateTokens = vi.fn().mockResolvedValue(0);
+    estimateTokensWithBreakdown = vi.fn().mockResolvedValue({ tokens: 0, breakdown: { categories: [], totalTokens: 0 } });
     dispose = vi.fn();
   },
   McpManager: class {},
@@ -135,6 +136,7 @@ const createTask = (initialTaskData?: Partial<TaskData>, projectSettings: Record
     baseDir: PROJECT_DIR,
     getProjectSettings: vi.fn(() => settings),
     isWorktreeSharedWithOtherTasks: vi.fn(() => false),
+    addToInputHistory: vi.fn().mockResolvedValue(undefined),
   };
   const store = {
     getSettings: vi.fn(() => ({
@@ -162,6 +164,7 @@ const createTask = (initialTaskData?: Partial<TaskData>, projectSettings: Record
     sendContextFilesUpdated: vi.fn(),
     sendContextManifestUpdated: vi.fn(),
     sendContextInfoUpdated: vi.fn(),
+    sendUpdateTokensInfo: vi.fn(),
     sendSkillsUpdated: vi.fn(),
     sendUpdateAutocompletion: vi.fn(),
   };
@@ -230,6 +233,97 @@ describe('Task - per-task file selection', () => {
   afterEach(async () => {
     vi.restoreAllMocks();
     await fs.rm(ROOT, { recursive: true, force: true });
+  });
+
+  it('refreshContextFiles updates estimated tokens and sends the manifest update', async () => {
+    const { task, eventManager } = createTask();
+    const updateAgentEstimatedTokens = vi.mocked(task.updateAgentEstimatedTokens);
+
+    await task.refreshContextFiles();
+
+    expect(eventManager.sendContextManifestUpdated).toHaveBeenCalled();
+    expect(updateAgentEstimatedTokens).toHaveBeenCalled();
+  });
+
+  it('estimates the breakdown even when context usage is hidden', async () => {
+    vi.useFakeTimers();
+    try {
+      const { task } = createTask();
+      vi.mocked(task.updateAgentEstimatedTokens).mockRestore();
+      vi.spyOn(task, 'updateTokensInfo').mockResolvedValue(undefined);
+      const current = task['store'].getSettings();
+      vi.mocked(task['store'].getSettings).mockReturnValue({ ...current, showContextUsageBar: false });
+      const estimate = vi.mocked(task['agent'].estimateTokensWithBreakdown);
+
+      await task.updateAgentEstimatedTokens();
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(estimate).toHaveBeenCalledWith(task, PROFILE, true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('re-estimates and publishes the remaining context after dropping all files', async () => {
+    const { task, eventManager } = createTask();
+    await task.waitForTaskDataLoad();
+    await setContextFiles(task, [{ path: 'src/a.ts' }, { path: 'src/b.ts', readOnly: true }]);
+    vi.mocked(task.updateAgentEstimatedTokens).mockRestore();
+
+    const category = (id: ContextUsageCategoryId, tokens: number): ContextUsageCategory => ({
+      id,
+      tokens,
+      items: [{ id: `${id}-item`, label: id, tokens }],
+    });
+    const residual: ContextUsageCategory[] = [
+      category('systemPrompt', 40),
+      category('rules', 10),
+      category('tools', 50),
+      category('repoMappings', 20),
+      category('conversation', 30),
+    ];
+    const estimate = vi.mocked(task['agent'].estimateTokensWithBreakdown);
+    estimate.mockImplementation(async (taskUnderEstimate) => {
+      const files = await taskUnderEstimate.getContextFiles();
+      const categories = [...residual];
+      const editableTokens = files.filter((file) => !file.readOnly).length * 100;
+      const readOnlyTokens = files.filter((file) => file.readOnly).length * 100;
+      if (editableTokens > 0) {
+        categories.push(category('editableFiles', editableTokens));
+      }
+      if (readOnlyTokens > 0) {
+        categories.push(category('readOnlyFiles', readOnlyTokens));
+      }
+      const tokens = 150 + files.length * 100;
+      return { tokens, breakdown: { categories, totalTokens: tokens } };
+    });
+    task.updateTokensInfo({
+      agent: { tokens: 350, cost: 0 },
+      contextBreakdown: {
+        totalTokens: 350,
+        categories: [...residual, category('editableFiles', 100), category('readOnlyFiles', 100)],
+      },
+    });
+    eventManager.sendUpdateTokensInfo.mockClear();
+    estimate.mockClear();
+
+    vi.useFakeTimers();
+    try {
+      await task.runCommand('drop', false);
+      await vi.advanceTimersByTimeAsync(600);
+
+      expect(contextManagerOf(task).getContextFiles(true)).toEqual([]);
+      expect(estimate).toHaveBeenCalledWith(task, PROFILE, true);
+      expect(eventManager.sendUpdateTokensInfo).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          agent: expect.objectContaining({ tokens: 150, tokensEstimated: true }),
+          contextBreakdown: { categories: residual, totalTokens: 150 },
+        }),
+      );
+      expect(eventManager.sendUpdateTokensInfo).not.toHaveBeenLastCalledWith(expect.objectContaining({ agent: expect.objectContaining({ tokens: 350 }) }));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('sub-agents receive only enabled context files, and onSubagentStarted sees the same list', async () => {

@@ -21,6 +21,7 @@ export const createMockTask = (overrides: Partial<TaskData> = {}) => {
       baseDir: '/test/project',
     })),
     getRepositoryMappingFiles: vi.fn((): Promise<ContextFile[]> => Promise.resolve([])),
+    getRepositoryMappingFilesForPrompt: vi.fn(() => Promise.resolve({ files: [], overBudget: [] })),
     resolveContextFilePath: vi.fn((): Promise<string | null> => Promise.resolve(null)),
     getTaskAgentProfileId: vi.fn((): string | undefined => undefined),
   };

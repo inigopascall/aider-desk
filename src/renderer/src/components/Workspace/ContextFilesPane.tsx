@@ -10,11 +10,12 @@ import { ContextManifestSectionView } from './ContextManifestSectionView';
 import { ContextFilesActions } from './ContextFilesActions';
 import { EmptyContextInfo } from './EmptyContextInfo';
 import { useContextFileSelection } from './useContextFileSelection';
+import { buildContextFileTokenUsage } from './context-token-usage';
 
 import { Tooltip } from '@/components/ui/Tooltip';
 import { useApi } from '@/contexts/ApiContext';
 import { useFileEditorStore } from '@/stores/fileEditorStore';
-import { useTaskContextManifest } from '@/stores/taskStore';
+import { useTaskContextManifest, useTaskTokensInfo } from '@/stores/taskStore';
 import { showErrorNotification } from '@/utils/notifications';
 
 type Props = {
@@ -55,7 +56,9 @@ const ContextFilesPaneComponent = ({
   const api = useApi();
   const openFile = useFileEditorStore((state) => state.openFile);
   const manifest = useTaskContextManifest(taskId);
+  const tokensInfo = useTaskTokensInfo(taskId);
   const { sections, setSelection } = useContextFileSelection(baseDir, taskId, manifest);
+  const tokenUsage = useMemo(() => buildContextFileTokenUsage(tokensInfo, mode, sections, baseDir), [tokensInfo, mode, sections, baseDir]);
   const [isRefreshingRules, setIsRefreshingRules] = useState(false);
   const [isRegeneratingMappings, setIsRegeneratingMappings] = useState(false);
 
@@ -197,6 +200,9 @@ const ContextFilesPaneComponent = ({
                 key={section.id}
                 section={section}
                 fileTokensInfo={fileTokensInfo}
+                tokenTotal={tokenUsage.totals[section.id]}
+                entryTokenUsage={tokenUsage.entries[section.id]}
+                maxFileTokens={tokenUsage.maxTokens}
                 actions={renderSectionActions(section)}
                 emptyContent={renderSectionEmpty(section)}
                 removeTooltip={section.id === 'mappings' ? t('contextFiles.removeMappingFile') : undefined}

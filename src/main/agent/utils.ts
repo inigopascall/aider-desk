@@ -352,6 +352,22 @@ export const safeStringifyToolOutput = (value: unknown, maxChars = TOOL_RESULT_M
  * @returns The file content as a string, formatted according to the parameters
  * @throws Error if the file is binary or cannot be read
  */
+/** Line limit for files sent as context. Longer files are cut off with a note giving the total line count. */
+export const CONTEXT_FILE_LINE_LIMIT = 10_000;
+
+/** Applies CONTEXT_FILE_LINE_LIMIT to already-read text, adding the same note readFileContent adds. */
+export const limitContextFileText = (content: string): { text: string; truncated: boolean; totalLines: number } => {
+  const lines = content.split('\n');
+  if (lines.length <= CONTEXT_FILE_LINE_LIMIT) {
+    return { text: content, truncated: false, totalLines: lines.length };
+  }
+  return {
+    text: [...lines.slice(0, CONTEXT_FILE_LINE_LIMIT), '...', `Total lines in the file: ${lines.length}`].join('\n'),
+    truncated: true,
+    totalLines: lines.length,
+  };
+};
+
 export const LARGE_FILE_READ_THRESHOLD_BYTES = 10 * 1024 * 1024;
 const LARGE_FILE_BINARY_SNIFF_BYTES = 8192;
 

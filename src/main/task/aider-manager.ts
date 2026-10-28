@@ -132,11 +132,6 @@ export class AiderManager {
       args.push('--thinking-tokens', thinkingTokens);
     }
 
-    const agentProfile = await this.task.getTaskAgentProfile();
-    if (agentProfile?.includeRepoMappings && !optionsArgsSet.has('--map-tokens')) {
-      args.push('--map-tokens', '0');
-    }
-
     const rulesDir = path.join(this.task.getProjectDir(), AIDER_DESK_PROJECT_RULES_DIR);
     if (settings.aider.addRuleFiles && (await fileExists(rulesDir))) {
       try {

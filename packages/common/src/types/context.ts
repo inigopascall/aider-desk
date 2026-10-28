@@ -274,6 +274,14 @@ export type ContextNotSentReason =
 
 export type ContextPlacement = 'system-prompt' | 'messages-before-history' | 'messages-after-history' | 'aider-context';
 
+export type ContextEntryStatusKind = 'stale' | 'over-budget' | 'truncated';
+
+export interface ContextEntryStatus {
+  kind: ContextEntryStatusKind;
+  /** Plain-text detail shown in the entry's tooltip. */
+  message?: string;
+}
+
 export interface ContextManifestEntry {
   /** Selection key, exactly what setTaskFileSelection expects. */
   path: string;
@@ -285,6 +293,8 @@ export interface ContextManifestEntry {
   delivery: ContextDelivery;
   /** Set exactly when delivery === 'none'. */
   notSentReason?: ContextNotSentReason;
+  /** A problem with what is sent for this entry: stale or over-budget mappings, or a file cut off at the line limit. */
+  status?: ContextEntryStatus;
 }
 
 export interface ContextManifestSection {
@@ -292,6 +302,8 @@ export interface ContextManifestSection {
   placement: ContextPlacement;
   /** In the order the model receives them. */
   entries: ContextManifestEntry[];
+  /** Plain-text problems that concern the section rather than one entry, e.g. a mapping generator that produced nothing. */
+  notices?: string[];
 }
 
 export interface TaskContextManifest {

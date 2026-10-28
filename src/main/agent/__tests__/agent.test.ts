@@ -807,6 +807,32 @@ describe('Agent - getContextFilesAsToolCallMessages', () => {
     });
   });
 
+  describe('Channel context file filtering', () => {
+    it('excludes rule files and disabled files while retaining ordinary files', async () => {
+      const ruleFiles = ['/project/AGENTS.md', '~/.aider-desk/rules/global.md'];
+      mockTask.getProjectDir = vi.fn(() => '/project');
+      mockTask.getRuleFilesAsContextFiles = vi.fn().mockResolvedValue(ruleFiles.map((filePath) => ({ path: filePath, readOnly: true })));
+
+      const result = await agent['getChannelContextFiles'](mockTask, mockProfile, [
+        { path: 'src/app.ts' },
+        { path: '/project/AGENTS.md' },
+        { path: 'AGENTS.md' },
+        { path: '/home/inigo/.aider-desk/rules/global.md' },
+        { path: '~/.aider-desk/rules/global.md' },
+        { path: 'disabled.ts', disabled: true },
+      ]);
+
+      expect(result.map((file) => file.path)).toEqual(['src/app.ts']);
+    });
+
+    it('does not read rule files for empty input', async () => {
+      mockTask.getRuleFilesAsContextFiles = vi.fn();
+
+      await expect(agent['getChannelContextFiles'](mockTask, mockProfile, [])).resolves.toEqual([]);
+      expect(mockTask.getRuleFilesAsContextFiles).not.toHaveBeenCalled();
+    });
+  });
+
   describe('Edge Cases', () => {
     beforeEach(() => {
       mockProfile.toolApprovals = {
@@ -985,7 +1011,7 @@ describe('Agent - prepareMessages sanitisation', () => {
     mockProfile.toolApprovals = {
       [fileReadToolId]: ToolApprovalState.Always,
     };
-    mockTask.getRepositoryMappingFiles = vi.fn().mockResolvedValue([{ path: '.aider-desk/mappings/map.md', readOnly: true, source: 'repo-mapping' }]);
+    mockTask.getRepositoryMappingFilesForPrompt = vi.fn().mockResolvedValue({ files: [{ path: '.aider-desk/mappings/map.md', readOnly: true, source: 'repo-mapping' }], overBudget: [] });
     mockTask.resolveContextFilePath = vi.fn((filePath: string) => Promise.resolve(`/test/project/${filePath}`));
     vi.mocked(fs.readFile).mockResolvedValue(Buffer.from('mapping content') as any);
 
@@ -1014,7 +1040,7 @@ describe('Agent - prepareMessages sanitisation', () => {
     mockProfile.toolApprovals = {
       [fileReadToolId]: ToolApprovalState.Always,
     };
-    mockTask.getRepositoryMappingFiles = vi.fn().mockResolvedValue([{ path: '.aider-desk/mappings/map.md', readOnly: true, source: 'repo-mapping' }]);
+    mockTask.getRepositoryMappingFilesForPrompt = vi.fn().mockResolvedValue({ files: [{ path: '.aider-desk/mappings/map.md', readOnly: true, source: 'repo-mapping' }], overBudget: [] });
     mockTask.resolveContextFilePath = vi.fn((filePath: string) => Promise.resolve(`/test/project/${filePath}`));
     vi.mocked(fs.readFile).mockResolvedValue(Buffer.from('mapping content') as any);
 

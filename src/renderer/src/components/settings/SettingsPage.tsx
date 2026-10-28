@@ -1,4 +1,4 @@
-import { McpServersData, ProjectData, ProviderProfile, SettingsData } from '@common/types';
+import { McpServersData, ProjectData, ProviderProfile, SettingsData, getRepositoryMappingsSettings } from '@common/types';
 import { extractIpcErrorMessage } from '@common/utils';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { isEqual } from 'lodash';
@@ -37,6 +37,8 @@ export const SettingsPage = ({ onClose, initialPageId, initialOptions, openProje
   const [originalProviders, setOriginalProviders] = useState<ProviderProfile[]>([]);
   const [workflowsByProject, setWorkflowsByProject] = useState<Record<string, string[]>>({});
   const [originalWorkflowsByProject, setOriginalWorkflowsByProject] = useState<Record<string, string[]>>({});
+  const [outlineRulesByProject, setOutlineRulesByProject] = useState<Record<string, string[]>>({});
+  const [originalOutlineRulesByProject, setOriginalOutlineRulesByProject] = useState<Record<string, string[]>>({});
 
   const [mcpServers, setMcpServers] = useState<McpServersData>({ global: {}, projectServers: {} });
   const [originalMcpServers, setOriginalMcpServers] = useState<McpServersData>({ global: {}, projectServers: {} });
@@ -93,14 +95,51 @@ export const SettingsPage = ({ onClose, initialPageId, initialOptions, openProje
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openProjects]);
 
+  useEffect(() => {
+    if (openProjects) {
+      setOutlineRulesByProject((prev) => {
+        const next = { ...prev };
+        for (const project of openProjects) {
+          if (!(project.baseDir in next)) {
+            next[project.baseDir] = project.settings.outlineRules ?? [];
+          }
+        }
+        return next;
+      });
+      setOriginalOutlineRulesByProject((prev) => {
+        const next = { ...prev };
+        for (const project of openProjects) {
+          if (!(project.baseDir in next)) {
+            next[project.baseDir] = project.settings.outlineRules ?? [];
+          }
+        }
+        return next;
+      });
+    }
+  }, [openProjects]);
+
   const hasChanges = useMemo(() => {
     const settingsChanged = localSettings && originalSettings && !isEqual(localSettings, originalSettings);
     const agentProfilesChanged = !isEqual(agentProfiles, originalAgentProfiles);
     const providersChanged = !isEqual(providers, originalProviders);
     const workflowsChanged = !isEqual(workflowsByProject, originalWorkflowsByProject);
     const mcpServersChanged = !isEqual(mcpServers, originalMcpServers);
-    return settingsChanged || agentProfilesChanged || providersChanged || workflowsChanged || mcpServersChanged;
-  }, [localSettings, originalSettings, agentProfiles, originalAgentProfiles, providers, originalProviders, workflowsByProject, originalWorkflowsByProject, mcpServers, originalMcpServers]);
+    const outlineRulesChanged = !isEqual(outlineRulesByProject, originalOutlineRulesByProject);
+    return settingsChanged || agentProfilesChanged || providersChanged || workflowsChanged || outlineRulesChanged || mcpServersChanged;
+  }, [
+    localSettings,
+    originalSettings,
+    agentProfiles,
+    originalAgentProfiles,
+    providers,
+    originalProviders,
+    workflowsByProject,
+    originalWorkflowsByProject,
+    outlineRulesByProject,
+    originalOutlineRulesByProject,
+    mcpServers,
+    originalMcpServers,
+  ]);
 
   const handleCancel = useCallback(() => {
     if (originalSettings && localSettings?.language !== originalSettings.language) {
@@ -124,6 +163,7 @@ export const SettingsPage = ({ onClose, initialPageId, initialOptions, openProje
     setAgentProfiles(originalAgentProfiles);
     setProviders(originalProviders);
     setWorkflowsByProject(originalWorkflowsByProject);
+    setOutlineRulesByProject(originalOutlineRulesByProject);
     setMcpServers(originalMcpServers);
     onClose();
   }, [
@@ -134,6 +174,7 @@ export const SettingsPage = ({ onClose, initialPageId, initialOptions, openProje
     originalAgentProfiles,
     originalProviders,
     originalWorkflowsByProject,
+    originalOutlineRulesByProject,
     originalMcpServers,
     onClose,
   ]);
@@ -167,9 +208,7 @@ export const SettingsPage = ({ onClose, initialPageId, initialOptions, openProje
 
     // Save workflow availability changes (per-project enabledWorkflows).
     try {
-      const changedBaseDirs = Object.keys(workflowsByProject).filter(
-        (baseDir) => !isEqual(workflowsByProject[baseDir], originalWorkflowsByProject[baseDir]),
-      );
+      const changedBaseDirs = Object.keys(workflowsByProject).filter((baseDir) => !isEqual(workflowsByProject[baseDir], originalWorkflowsByProject[baseDir]));
       for (const baseDir of changedBaseDirs) {
         await api.patchProjectSettings(baseDir, { enabledWorkflows: workflowsByProject[baseDir] });
       }
@@ -178,6 +217,27 @@ export const SettingsPage = ({ onClose, initialPageId, initialOptions, openProje
       // eslint-disable-next-line no-console
       console.error('Failed to save workflow availability:', error);
       errors.push({ stage: 'workflows', message: extractIpcErrorMessage(error) });
+    }
+
+    // Save outline rule changes (per-project).
+    try {
+      const normalizedByProject: Record<string, string[]> = {};
+      for (const [baseDir, rules] of Object.entries(outlineRulesByProject)) {
+        const normalizedRules = getRepositoryMappingsSettings({ repositoryMappings: { outlineRules: rules } }).outlineRules;
+        normalizedByProject[baseDir] = normalizedRules;
+        const originalRules = getRepositoryMappingsSettings({
+          repositoryMappings: { outlineRules: originalOutlineRulesByProject[baseDir] ?? [] },
+        }).outlineRules;
+        if (!isEqual(normalizedRules, originalRules)) {
+          await api.patchProjectSettings(baseDir, { outlineRules: normalizedRules });
+        }
+      }
+      setOutlineRulesByProject(normalizedByProject);
+      setOriginalOutlineRulesByProject(normalizedByProject);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to save outline rules:', error);
+      errors.push({ stage: 'outline rules', message: extractIpcErrorMessage(error) });
     }
 
     // Save MCP server changes.
@@ -314,12 +374,12 @@ export const SettingsPage = ({ onClose, initialPageId, initialOptions, openProje
             setMcpServers={setMcpServers}
             openProjects={openProjects}
             workflowsByProject={workflowsByProject}
+            outlineRulesByProject={outlineRulesByProject}
+            onOutlineRulesForProjectChange={(baseDir, rules) => setOutlineRulesByProject((prev) => ({ ...prev, [baseDir]: rules }))}
             onToggleWorkflowForProject={(baseDir, workflowId, checked) => {
               setWorkflowsByProject((prev) => {
                 const current = prev[baseDir] ?? [];
-                const next = checked
-                  ? [...new Set([...current, workflowId])]
-                  : current.filter((id) => id !== workflowId);
+                const next = checked ? [...new Set([...current, workflowId])] : current.filter((id) => id !== workflowId);
                 return { ...prev, [baseDir]: next };
               });
             }}

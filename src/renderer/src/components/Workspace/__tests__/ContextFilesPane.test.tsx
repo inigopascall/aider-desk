@@ -3,13 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ContextFilesPane } from '../ContextFilesPane';
 
-import type { ContextManifestEntry, ContextManifestSection, ContextNotSentReason, TaskContextManifest } from '@common/types';
+import type { ContextManifestEntry, ContextManifestSection, ContextNotSentReason, TaskContextManifest, TokensInfoData } from '@common/types';
 
 import { render } from '@/__tests__/render';
 import { createMockApi } from '@/__tests__/mocks/api';
 import { ApiContext } from '@/contexts/ApiContext';
 import { EMPTY_TASK_STATE, updateTaskState, useTaskStore } from '@/stores/taskStore';
 import { showErrorNotification } from '@/utils/notifications';
+import { CONTEXT_USAGE_COLORS } from '@/components/project/context-usage-layout';
 
 vi.mock('@/utils/notifications', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/utils/notifications')>()),
@@ -423,6 +424,87 @@ describe('ContextFilesPane', () => {
 
       expect(screen.getByText('b.ts')).toHaveClass('context-dimmed');
       expect(screen.getByText('a.ts')).not.toHaveClass('context-dimmed');
+    });
+  });
+
+  describe('token usage', () => {
+    const item = (id: string, tokens: number) => ({ id, label: id, tokens });
+    const usageSnapshot = (mappingTokens = 200): TokensInfoData => ({
+      baseDir: BASE_DIR,
+      taskId: TASK_ID,
+      chatHistory: { tokens: 0, cost: 0 },
+      files: {},
+      repoMap: { tokens: 0, cost: 0 },
+      systemMessages: { tokens: 0, cost: 0 },
+      agent: { tokens: 1000 + mappingTokens, cost: 0 },
+      contextBreakdown: {
+        categories: [
+          { id: 'rules', items: [item('AGENTS.md', 100)], tokens: 100 },
+          { id: 'repoMappings', items: [item('map.md', mappingTokens)], tokens: mappingTokens },
+          { id: 'readOnlyFiles', items: [item('ro.ts', 50)], tokens: 50 },
+          { id: 'editableFiles', items: [item('edit.ts', 150)], tokens: 150 },
+          { id: 'conversation', items: [item('msg', 700)], tokens: 700 },
+        ],
+        totalTokens: 1000 + mappingTokens,
+      },
+    });
+
+    const setTokensInfo = (tokensInfo: TokensInfoData) => {
+      act(() => updateTaskState(TASK_ID, { tokensInfo }));
+    };
+
+    const getBar = (filename: string): HTMLElement => {
+      const row = screen.getByText(filename).closest('[data-testid="context-entry-row"]');
+      expect(row).not.toBeNull();
+      return within(row as HTMLElement).getByTestId('context-file-token-bar');
+    };
+
+    it('renders section totals, entry proportions, colours and placement from a real usage snapshot', () => {
+      renderPane(
+        manifestOf(
+          rules(entry('AGENTS.md', { source: 'project-rule' })),
+          mappings(entry('map.md')),
+          files(entry('ro.ts', { readOnly: true }), entry('edit.ts'), unselected('off.ts'), entry('huge.md', { status: { kind: 'over-budget' } })),
+        ),
+      );
+      expect(screen.getAllByTestId('context-section-tokens').map((header) => header.textContent)).toEqual(['—', '—', '—']);
+
+      setTokensInfo(usageSnapshot());
+
+      expect(screen.getAllByTestId('context-section-tokens').map((header) => header.textContent)).toEqual(['100', '200', '200']);
+      expect((getBar('map.md').firstElementChild as HTMLElement).style.width).toBe('100%');
+      expect((getBar('AGENTS.md').firstElementChild as HTMLElement).style.width).toBe('50%');
+      expect((getBar('ro.ts').firstElementChild as HTMLElement).style.width).toBe('25%');
+      expect((getBar('edit.ts').firstElementChild as HTMLElement).style.width).toBe('75%');
+      expect((getBar('off.ts').firstElementChild as HTMLElement).style.width).toBe('0%');
+      expect((getBar('huge.md').firstElementChild as HTMLElement).style.width).toBe('0%');
+
+      const normalizedColor = (color: string) => {
+        const span = document.createElement('span');
+        span.style.backgroundColor = color;
+        return span.style.backgroundColor;
+      };
+      expect((getBar('AGENTS.md').firstElementChild as HTMLElement).style.backgroundColor).toBe(normalizedColor(CONTEXT_USAGE_COLORS.rules));
+      expect((getBar('map.md').firstElementChild as HTMLElement).style.backgroundColor).toBe(normalizedColor(CONTEXT_USAGE_COLORS.repoMappings));
+      expect((getBar('ro.ts').firstElementChild as HTMLElement).style.backgroundColor).toBe(normalizedColor(CONTEXT_USAGE_COLORS.readOnlyFiles));
+      expect((getBar('edit.ts').firstElementChild as HTMLElement).style.backgroundColor).toBe(normalizedColor(CONTEXT_USAGE_COLORS.editableFiles));
+
+      const header = within(getSection('rules')).getByTestId('context-section-tokens');
+      const placement = within(getSection('rules')).getByText('contextFiles.placementSystemPrompt');
+      expect(header.compareDocumentPosition(placement) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('rerenders entry proportions, maximum and section totals when usage changes', () => {
+      renderPane(manifestOf(rules(entry('AGENTS.md')), mappings(entry('map.md')), files(entry('ro.ts', { readOnly: true }), entry('edit.ts'))));
+      setTokensInfo(usageSnapshot(200));
+      setTokensInfo(usageSnapshot(100));
+
+      expect(screen.getAllByTestId('context-section-tokens').map((header) => header.textContent)).toEqual(['100', '100', '200']);
+      expect(getBar('edit.ts')).toHaveAttribute('data-max-tokens', '150');
+      expect(getBar('edit.ts')).toHaveAttribute('data-token-bar-fill', '100');
+      expect(Number(getBar('AGENTS.md').getAttribute('data-token-bar-fill'))).toBeCloseTo((100 / 150) * 100);
+      expect(Number(getBar('map.md').getAttribute('data-token-bar-fill'))).toBeCloseTo((100 / 150) * 100);
+      expect(Number(getBar('ro.ts').getAttribute('data-token-bar-fill'))).toBeCloseTo((50 / 150) * 100);
     });
   });
 });

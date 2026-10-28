@@ -1,9 +1,17 @@
-import { ContextManifestEntry, ContextManifestSection, ContextNotSentReason, ContextPlacement, ContextSectionId, TokensCost } from '@common/types';
+import {
+  ContextEntryStatusKind,
+  ContextManifestEntry,
+  ContextManifestSection,
+  ContextNotSentReason,
+  ContextPlacement,
+  ContextSectionId,
+  TokensCost,
+} from '@common/types';
 import { ReactNode, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { HiChevronDown, HiChevronRight, HiX } from 'react-icons/hi';
 import { MdOutlineMap, MdOutlinePublic } from 'react-icons/md';
-import { RiEyeOffLine, RiRobot2Line } from 'react-icons/ri';
+import { RiAlertLine, RiEyeOffLine, RiRobot2Line } from 'react-icons/ri';
 import { TbPencilOff } from 'react-icons/tb';
 import { VscFileCode } from 'react-icons/vsc';
 import { clsx } from 'clsx';
@@ -15,6 +23,9 @@ import type { SetContextFileSelection } from './useContextFileSelection';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { TriState, TriStateCheckbox } from '@/components/common/TriStateCheckbox';
 import { useShiftRangeSelection } from '@/hooks/useShiftRangeSelection';
+import { RelativeTokenBar } from '@/components/common/RelativeTokenBar';
+import { CONTEXT_USAGE_COLORS } from '@/components/project/context-usage-layout';
+import { formatHumanReadable } from '@/utils/string-utils';
 
 const SECTION_LABEL_KEYS: Record<ContextSectionId, string> = {
   rules: 'contextFiles.sectionRules',
@@ -36,6 +47,12 @@ const NOT_SENT_KEYS: Record<Exclude<ContextNotSentReason, 'unselected'>, string>
 };
 
 const PATH_ONLY_KEY = 'contextFiles.listedPathOnly';
+
+const STATUS_KEYS: Record<ContextEntryStatusKind, string> = {
+  stale: 'contextFiles.statusStale',
+  'over-budget': 'contextFiles.statusOverBudget',
+  truncated: 'contextFiles.statusTruncated',
+};
 
 // Fixed-width control slots shared with the other workspace rows: a 16px icon, the 16px checkbox and a
 // 24px trailing action slot, so the checkbox column lines up across groups and sections.
@@ -80,6 +97,9 @@ type Props = {
   onSetSelection: SetContextFileSelection;
   onOpenFile: (path: string) => void;
   onRemoveEntry?: (entry: ContextManifestEntry) => void;
+  tokenTotal?: number;
+  entryTokenUsage?: Record<string, { tokens: number; color: string }>;
+  maxFileTokens?: number;
 };
 
 export const ContextManifestSectionView = ({
@@ -91,6 +111,9 @@ export const ContextManifestSectionView = ({
   onSetSelection,
   onOpenFile,
   onRemoveEntry,
+  tokenTotal,
+  entryTokenUsage,
+  maxFileTokens = 0,
 }: Props) => {
   const { t } = useTranslation();
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
@@ -189,16 +212,30 @@ export const ContextManifestSectionView = ({
   const renderEntry = (entry: ContextManifestEntry) => {
     const markerKey = noticeKey ? undefined : getEntryMarkerKey(entry);
     const tokenInfo = section.id === 'files' ? fileTokensInfo?.[entry.path] : undefined;
+    const contribution = entryTokenUsage?.[entry.path];
+    const tokenColor =
+      contribution?.color ??
+      CONTEXT_USAGE_COLORS[section.id === 'rules' ? 'rules' : section.id === 'mappings' ? 'repoMappings' : entry.readOnly ? 'readOnlyFiles' : 'editableFiles'];
+    const itemTokens = contribution ? t('costInfo.contextUsage.itemTokens', { tokens: formatHumanReadable(t, contribution.tokens) }) : undefined;
     const tooltip = (
       <div className="flex flex-col">
         <span>{entry.displayPath}</span>
-        {tokenInfo && <span>{`${tokenInfo.tokens || 0} ${t('usageDashboard.charts.tokens')}, $${(tokenInfo.cost || 0).toFixed(5)}`}</span>}
+        {itemTokens && <span>{itemTokens}</span>}
+        {!contribution && tokenInfo && <span>{`${tokenInfo.tokens || 0} ${t('usageDashboard.charts.tokens')}, $${(tokenInfo.cost || 0).toFixed(5)}`}</span>}
       </div>
     );
+    const tokenBar = <RelativeTokenBar tokens={contribution?.tokens} maxTokens={maxFileTokens} color={tokenColor} data-testid="context-file-token-bar" />;
 
     return (
-      <div key={entry.path} className="flex items-center w-full h-6 pl-5 pr-1 group/item" data-testid="context-entry-row">
-        <div className="flex items-center flex-grow min-w-0 gap-1">
+      <div key={entry.path} className="flex items-center w-full h-6 pl-2 pr-1 gap-2 group/item" data-testid="context-entry-row">
+        {contribution ? (
+          <Tooltip content={itemTokens}>
+            <span className="inline-flex shrink-0">{tokenBar}</span>
+          </Tooltip>
+        ) : (
+          tokenBar
+        )}
+        <div className="flex items-center flex-grow min-w-0 gap-2">
           <Tooltip content={tooltip} delayDuration={1000}>
             <button
               type="button"
@@ -215,6 +252,13 @@ export const ContextManifestSectionView = ({
             <Tooltip content={t(markerKey)}>
               <span className="flex items-center flex-shrink-0 text-text-muted" data-testid="context-entry-not-sent">
                 <RiEyeOffLine className="w-3 h-3" />
+              </span>
+            </Tooltip>
+          )}
+          {entry.status && (
+            <Tooltip content={`${t(STATUS_KEYS[entry.status.kind])}${entry.status.message ? ` ${entry.status.message}` : ''}`}>
+              <span className="flex items-center flex-shrink-0 text-warning" data-testid="context-entry-status">
+                <RiAlertLine className="w-3 h-3" />
               </span>
             </Tooltip>
           )}
@@ -239,6 +283,9 @@ export const ContextManifestSectionView = ({
       <div className="flex items-center gap-1.5 h-7 pl-2 pr-1 bg-bg-primary-light border-y border-border-dark-light shrink-0">
         <TriStateCheckbox state={sectionState} onChange={() => setAll(section.entries, sectionState)} aria-label={label} />
         {section.id === 'rules' ? <Tooltip content={t('contextFiles.rulesTooltip')}>{labelElement}</Tooltip> : labelElement}
+        <span className="text-2xs text-text-tertiary shrink-0" data-testid="context-section-tokens" title={t('usageDashboard.charts.tokens')}>
+          {typeof tokenTotal === 'number' ? formatHumanReadable(t, tokenTotal) : '—'}
+        </span>
         <span className="text-3xs text-text-muted truncate min-w-0 flex-grow">{t(PLACEMENT_KEYS[section.placement])}</span>
         <span className="text-2xs text-text-tertiary flex-shrink-0">{`${sentCount}/${section.entries.length}`}</span>
         {actions && <div className="flex items-center flex-shrink-0">{actions}</div>}
@@ -248,6 +295,11 @@ export const ContextManifestSectionView = ({
           {t(noticeKey)}
         </div>
       )}
+      {section.notices?.map((notice) => (
+        <div key={notice} className="px-2 py-0.5 text-3xs text-warning italic" data-testid="context-section-generator-notice">
+          {notice}
+        </div>
+      ))}
       {section.entries.length === 0
         ? emptyContent
         : groups.map((group) => {

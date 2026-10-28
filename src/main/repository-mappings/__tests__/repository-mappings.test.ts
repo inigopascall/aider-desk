@@ -3,16 +3,9 @@ import path from 'path';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  deleteRepositoryMappingFile,
-  ensureRepositoryMappingsInitialized,
-  getDefaultGenerateRepoMapScript,
-  getDefaultMappingsScript,
-  listRepositoryMappingFiles,
-  runRepositoryMappingsGenerator,
-} from '../repository-mappings';
+import { deleteRepositoryMappingFile, ensureRepositoryMappingsInitialized, listRepositoryMappingFiles, runCustomMappingsScript } from '../repository-mappings';
 
-import { AIDER_DESK_GENERATE_REPO_MAP_SCRIPT, AIDER_DESK_MAPPINGS_SCRIPT, AIDER_DESK_PROJECT_MAPPINGS_DIR } from '@/constants';
+import { AIDER_DESK_PROJECT_MAPPINGS_DIR } from '@/constants';
 import { execWithShellPath } from '@/utils';
 
 vi.mock('fs/promises');
@@ -27,24 +20,14 @@ describe('repository mappings', () => {
     vi.clearAllMocks();
   });
 
-  it('initializes the configured directory and default scripts without overwriting existing scripts', async () => {
-    vi.mocked(fs.access).mockRejectedValueOnce(new Error('missing')).mockRejectedValueOnce(new Error('missing'));
+  it('initializes only the configured mappings directory', async () => {
     vi.mocked(fs.mkdir).mockResolvedValue(undefined);
-    vi.mocked(fs.writeFile).mockResolvedValue(undefined);
 
     await ensureRepositoryMappingsInitialized(baseDir);
 
     expect(fs.mkdir).toHaveBeenCalledWith(path.join(baseDir, AIDER_DESK_PROJECT_MAPPINGS_DIR), { recursive: true });
-    expect(fs.writeFile).toHaveBeenCalledWith(path.join(baseDir, AIDER_DESK_MAPPINGS_SCRIPT), getDefaultMappingsScript(), 'utf8');
-    expect(fs.writeFile).toHaveBeenCalledWith(
-      path.join(baseDir, AIDER_DESK_GENERATE_REPO_MAP_SCRIPT),
-      getDefaultGenerateRepoMapScript(),
-      'utf8',
-    );
-
-    vi.mocked(fs.access).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined);
-    await ensureRepositoryMappingsInitialized(baseDir);
-    expect(fs.writeFile).toHaveBeenCalledTimes(2);
+    expect(fs.mkdir).toHaveBeenCalledTimes(1);
+    expect(fs.writeFile).not.toHaveBeenCalled();
   });
 
   it('discovers recursive non-dot mapping files as sorted project-relative POSIX read-only files', async () => {
@@ -65,12 +48,28 @@ describe('repository mappings', () => {
     ]);
   });
 
-  it('returns success when the generator succeeds and failure details when it fails', async () => {
-    vi.mocked(execWithShellPath).mockResolvedValueOnce({} as never);
-    await expect(runRepositoryMappingsGenerator(baseDir)).resolves.toEqual({ success: true });
+  it('returns false without running a missing custom mappings script', async () => {
+    vi.mocked(fs.access).mockRejectedValueOnce(new Error('missing'));
 
-    vi.mocked(execWithShellPath).mockRejectedValueOnce(Object.assign(new Error('generator failed'), { stderr: 'details' }));
-    await expect(runRepositoryMappingsGenerator(baseDir)).resolves.toEqual({ success: false, error: 'generator failed\ndetails' });
+    await expect(runCustomMappingsScript(baseDir)).resolves.toEqual({ ran: false });
+    expect(execWithShellPath).not.toHaveBeenCalled();
+  });
+
+  it('runs a present custom mappings script', async () => {
+    vi.mocked(fs.access).mockResolvedValueOnce(undefined);
+    vi.mocked(execWithShellPath).mockResolvedValueOnce({} as never);
+
+    await expect(runCustomMappingsScript(baseDir)).resolves.toEqual({ ran: true });
+  });
+
+  it('returns custom mappings script errors with stderr', async () => {
+    vi.mocked(fs.access).mockResolvedValueOnce(undefined);
+    vi.mocked(execWithShellPath).mockRejectedValueOnce(Object.assign(new Error('script failed'), { stderr: 'details' }));
+
+    const result = await runCustomMappingsScript(baseDir);
+    expect(result.ran).toBe(true);
+    expect(result.error).toContain('script failed');
+    expect(result.error).toContain('details');
   });
 
   it('deletes a mapping file within the mappings directory and rejects unsafe paths', async () => {
@@ -84,20 +83,5 @@ describe('repository mappings', () => {
       'Invalid repository mapping file path',
     );
     expect(fs.rm).toHaveBeenCalledTimes(1);
-  });
-
-  it('keeps the optional Aider map generator separate from the main mappings script', () => {
-    expect(getDefaultMappingsScript()).toContain(`# bash "${AIDER_DESK_GENERATE_REPO_MAP_SCRIPT}"`);
-    expect(getDefaultMappingsScript()).not.toContain('class NonInteractiveIO:');
-
-    expect(getDefaultGenerateRepoMapScript()).toContain('.local/share/aider-desk-nodejs/python-venv/bin/python');
-    expect(getDefaultGenerateRepoMapScript()).toContain('class NonInteractiveIO:');
-    expect(getDefaultGenerateRepoMapScript()).toContain('from aider.repomap import RepoMap');
-    expect(getDefaultGenerateRepoMapScript()).toContain('force_refresh=True');
-    expect(getDefaultGenerateRepoMapScript()).toContain('OUTPUT_FILE="$OUTPUT_DIR/repo-map.txt"');
-  });
-
-  it('uses the configured mappings directory in the generated script', () => {
-    expect(getDefaultMappingsScript()).toContain(`OUTPUT_DIR="${AIDER_DESK_PROJECT_MAPPINGS_DIR}"`);
   });
 });

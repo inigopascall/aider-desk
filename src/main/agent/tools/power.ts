@@ -72,7 +72,7 @@ export const createPowerToolset = (
   const fileEditTool = tool({
     description: POWER_TOOL_DESCRIPTIONS[TOOL_FILE_EDIT],
     inputSchema: z.object({
-      filePath: z.string().describe('The path to the file to be edited (relative to the <WorkingDirectory>).'),
+      filePath: z.string().describe('The path to the file to be edited (relative to the <ProjectWorkingDirectory>).'),
       searchTerm: z.string().describe(
         `The string or regular expression to find in the file.
 *EXACTLY MATCH* the existing file content, character for character, including all comments, docstrings, etc.
@@ -202,7 +202,7 @@ Do not use escape characters \\ in the string like \\n or \\" and others. Do not
   const fileReadTool = tool({
     description: POWER_TOOL_DESCRIPTIONS[TOOL_FILE_READ],
     inputSchema: z.object({
-      filePath: z.string().describe('The path to the file to be read (relative to the <WorkingDirectory> or absolute if outside of the directory).'),
+      filePath: z.string().describe('The path to the file to be read (relative to the <ProjectWorkingDirectory> or absolute if outside of the directory).'),
       withLines: coerceBoolean
         .optional()
         .default(false)
@@ -257,7 +257,7 @@ Do not use escape characters \\ in the string like \\n or \\" and others. Do not
   const fileWriteTool = tool({
     description: POWER_TOOL_DESCRIPTIONS[TOOL_FILE_WRITE],
     inputSchema: z.object({
-      filePath: z.string().describe('The path to the file to be written (relative to the <WorkingDirectory>).'),
+      filePath: z.string().describe('The path to the file to be written (relative to the <ProjectWorkingDirectory>).'),
       content: z.string().describe('The content to write to the file. Do not use escape characters \\ in the string like \\n or \\" and others.'),
       mode: z
         .enum(FileWriteMode)
@@ -345,7 +345,7 @@ Do not use escape characters \\ in the string like \\n or \\" and others. Do not
       cwd: z
         .string()
         .optional()
-        .describe('The current working directory from which to apply the glob pattern (relative to <WorkingDirectory>). Default: <WorkingDirectory>.'),
+        .describe('The current working directory from which to apply the glob pattern (relative to <ProjectWorkingDirectory>). Default: <ProjectWorkingDirectory>.'),
       ignore: z.array(z.string()).optional().describe('An array of glob patterns to ignore.'),
     }),
     execute: async (input, { toolCallId }) => {
@@ -736,7 +736,7 @@ Do not use escape characters \\ in the string like \\n or \\" and others. Do not
     inputSchema: z.object({
       command: z.string().min(1).describe('The shell command to execute (e.g., ls -la, npm install).'),
       description: z.string().optional().describe('Optional short description of the command intent (e.g., "Install dependencies").'),
-      cwd: z.string().optional().describe('The working directory for the command (relative to <WorkingDirectory>). Default: <WorkingDirectory>.'),
+      cwd: z.string().optional().describe('The working directory for the command (relative to <ProjectWorkingDirectory>). Default: <ProjectWorkingDirectory>.'),
       timeout: z.coerce.number().int().min(0).optional().default(120000).describe('Timeout for the command execution in milliseconds. Default: 120000 ms.'),
     }),
     execute: async (input, { toolCallId }) => {

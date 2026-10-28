@@ -7,6 +7,7 @@ import {
   ContextDelivery,
   ContextFile,
   ContextManifestEntry,
+  ContextEntryStatus,
   ContextNotSentReason,
   ContextPlacement,
   Mode,
@@ -71,14 +72,27 @@ export interface ContextManifestInput {
   /** All mapping files, ticked or not. */
   mappingFiles: ContextFile[];
   disabledMappingFiles: string[];
+  /** Status per mapping path (stale, over budget). */
+  mappingStatuses?: Record<string, ContextEntryStatus>;
+  /** Problems with the mapping generators as a whole. */
+  mappingNotices?: string[];
   /** All context files, including disabled ones, in insertion order. */
   contextFiles: ContextFile[];
+  /** Status per context file path (truncated). */
+  fileStatuses?: Record<string, ContextEntryStatus>;
   homeDir?: string;
 }
 
 type Outcome = { delivery: Exclude<ContextDelivery, 'none'> } | { reason: ContextNotSentReason };
 
-const toEntry = (file: ContextFile, baseDir: string, homeDir: string, selected: boolean, outcome: Outcome): ContextManifestEntry => {
+const toEntry = (
+  file: ContextFile,
+  baseDir: string,
+  homeDir: string,
+  selected: boolean,
+  outcome: Outcome,
+  status?: ContextEntryStatus,
+): ContextManifestEntry => {
   const entry: ContextManifestEntry = {
     path: file.path,
     displayPath: toDisplayPath(file.path, baseDir, homeDir),
@@ -86,6 +100,7 @@ const toEntry = (file: ContextFile, baseDir: string, homeDir: string, selected: 
     ...(file.source ? { source: file.source } : {}),
     selected,
     delivery: 'none',
+    ...(selected && status ? { status } : {}),
   };
   if (!selected) {
     return { ...entry, notSentReason: 'unselected' };
@@ -134,7 +149,9 @@ export const buildContextManifest = (input: ContextManifestInput): TaskContextMa
     : includeRepoMappings
       ? { delivery: 'content' }
       : { reason: 'profile-excludes-mappings' };
-  const mappingEntries = input.mappingFiles.map((file) => toEntry(file, input.baseDir, homeDir, !disabledMappings.has(file.path), mappingOutcome));
+  const mappingEntries = input.mappingFiles.map((file) =>
+    toEntry(file, input.baseDir, homeDir, !disabledMappings.has(file.path), mappingOutcome, input.mappingStatuses?.[file.path]),
+  );
 
   // A path that is also a rule file is governed by the rule selection and listed only under rules.
   const ordinaryFiles = input.contextFiles.filter((file) => !rulePaths.has(resolveSelectionPath(file.path, input.baseDir, homeDir)));
@@ -142,7 +159,7 @@ export const buildContextManifest = (input: ContextManifestInput): TaskContextMa
     !isAiderMode && includeContextFiles ? [...ordinaryFiles.filter((file) => file.readOnly), ...ordinaryFiles.filter((file) => !file.readOnly)] : ordinaryFiles;
   const fileEntries = orderedFiles.map((file) => {
     const outcome: Outcome = isAiderMode || includeContextFiles || isImageFilePath(file.path) ? { delivery: 'content' } : { delivery: 'path-only' };
-    return toEntry(file, input.baseDir, homeDir, !file.disabled, outcome);
+    return toEntry(file, input.baseDir, homeDir, !file.disabled, outcome, input.fileStatuses?.[file.path]);
   });
 
   const messagesPlacement: ContextPlacement = isAiderMode ? 'aider-context' : includeContextFiles ? 'messages-after-history' : 'messages-before-history';
@@ -154,7 +171,12 @@ export const buildContextManifest = (input: ContextManifestInput): TaskContextMa
     ...(input.profile ? { agentProfileId: input.profile.id } : {}),
     sections: [
       { id: 'rules', placement: isAiderMode ? 'aider-context' : 'system-prompt', entries: ruleEntries },
-      { id: 'mappings', placement: messagesPlacement, entries: mappingEntries },
+      {
+        id: 'mappings',
+        placement: messagesPlacement,
+        entries: mappingEntries,
+        ...(input.mappingNotices && input.mappingNotices.length > 0 ? { notices: input.mappingNotices } : {}),
+      },
       { id: 'files', placement: messagesPlacement, entries: fileEntries },
     ],
   };

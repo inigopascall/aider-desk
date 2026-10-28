@@ -22,6 +22,7 @@ import { PromptsManager } from '@/prompts';
 import { ExtensionManager } from '@/extensions/extension-manager';
 import { AIDER_DESK_TASKS_DIR, AIDER_DESK_WATCH_FILES_LOCK } from '@/constants';
 import { ensureRepositoryMappingsInitialized } from '@/repository-mappings';
+import { getRepositoryMappingsManager } from '@/repository-mappings/instance';
 import { PythonDependenciesInstaller } from '@/python-dependencies-installer';
 import { determineMainModel, determineWeakModel } from '@/utils';
 import { FileWatcherManager } from '@/file-watcher-manager';
@@ -71,6 +72,7 @@ export class Project {
         await this.mcpConfigManager.initializeForProject(this.baseDir);
         await this.extensionManager.reloadProjectExtensions(this);
         await ensureRepositoryMappingsInitialized(this.baseDir);
+        getRepositoryMappingsManager()?.scheduleRegeneration(this.baseDir, 'project-open');
         await this.sendInputHistoryUpdatedEvent();
 
         await this.extensionManager.dispatchEvent('onProjectStarted', { baseDir: this.baseDir }, this);

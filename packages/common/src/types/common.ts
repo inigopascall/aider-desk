@@ -22,6 +22,7 @@ import { z } from 'zod';
 import { ContextFile, ContextMemoryMode, ContextMessage, PromptContext, UsageReportData } from './context';
 
 import type { TaskNavigationSettings } from './task-navigation';
+import type { RepositoryMappingsSettings } from './repository-mappings';
 
 // Worktree schema definition
 export const WorktreeSchema = z.object({
@@ -624,6 +625,7 @@ export const ProjectSettingsSchema = z.object({
   reasoningEffort: z.string().optional(),
   thinkingTokens: z.string().optional(),
   currentMode: z.string(),
+  outlineRules: z.array(z.string()).optional(),
   weakModelLocked: z.boolean().optional(),
   autonomyModeLocked: z.boolean().optional(),
   updatedFilesGroupMode: z.enum(['grouped', 'flat']).default('flat'),
@@ -1085,6 +1087,7 @@ export interface SettingsData {
   fileWatchMode?: FileWatchMode;
   workflowConfigs?: Record<string, WorkflowConfig>;
   taskNavigation?: Partial<TaskNavigationSettings>;
+  repositoryMappings?: Partial<RepositoryMappingsSettings>;
 }
 
 export interface ProviderProfile {

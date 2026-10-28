@@ -229,6 +229,28 @@ describe('Prompts with Handlebars', () => {
       expect(prompt).toContain('<DefaultSystemPrompt version="1.0">');
     });
 
+    it('should include the task working directory without a git root for custom system prompts', async () => {
+      mockProfile.systemPrompt = 'Custom prompt';
+      mockTask.getTaskDir = vi.fn().mockReturnValue('/proj');
+      mockTask.getProjectDir = vi.fn().mockReturnValue('/proj');
+
+      const prompt = await promptsManager.getSystemPrompt(mockSettings, mockTask, mockProfile);
+
+      expect(prompt).toContain('<ProjectWorkingDirectory>/proj</ProjectWorkingDirectory>');
+      expect(prompt).not.toContain('ProjectGitRootDirectory');
+    });
+
+    it('should include the task working directory and git root for custom system prompts', async () => {
+      mockProfile.systemPrompt = 'Custom prompt';
+      mockTask.getTaskDir = vi.fn().mockReturnValue('/proj/.aider-desk/tasks/t1/worktree');
+      mockTask.getProjectDir = vi.fn().mockReturnValue('/proj');
+
+      const prompt = await promptsManager.getSystemPrompt(mockSettings, mockTask, mockProfile);
+
+      expect(prompt).toContain('<ProjectWorkingDirectory>/proj/.aider-desk/tasks/t1/worktree</ProjectWorkingDirectory>');
+      expect(prompt).toContain('<ProjectGitRootDirectory>/proj</ProjectGitRootDirectory>');
+    });
+
     it('should use custom system prompt with compiled placeholders', async () => {
       mockProfile.systemPrompt = 'Work in {{taskDir}} on {{projectDir}}. Date: {{currentDate}}. OS: {{osName}}.';
       mockProfile.customInstructions = 'Prefer TypeScript';

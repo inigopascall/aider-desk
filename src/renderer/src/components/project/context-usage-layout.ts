@@ -1,4 +1,13 @@
-import { CONTEXT_USAGE_CATEGORY_IDS, ContextFile, ContextUsageCategory, ContextUsageCategoryId, ContextUsageItem, TokensInfoData } from '@common/types';
+import {
+  AIDER_MODES,
+  CONTEXT_USAGE_CATEGORY_IDS,
+  ContextFile,
+  ContextUsageCategory,
+  ContextUsageCategoryId,
+  ContextUsageItem,
+  Mode,
+  TokensInfoData,
+} from '@common/types';
 
 export const CONTEXT_USAGE_COLORS: Record<ContextUsageCategoryId, string> = {
   systemPrompt: '#8b5cf6',
@@ -17,6 +26,7 @@ export interface LaidOutItem extends ContextUsageItem {
   /** Offset and width as percentages of the whole bar. */
   leftPercent: number;
   widthPercent: number;
+  scaledTokens: number;
 }
 
 export interface LaidOutSegment {
@@ -102,6 +112,7 @@ export const layoutContextUsage = (categories: ContextUsageCategory[], usedToken
         ...item,
         leftPercent: itemLeft,
         widthPercent,
+        scaledTokens: Math.round(item.tokens * scale),
       };
       itemLeft += widthPercent;
       return laidOut;
@@ -117,6 +128,33 @@ export const layoutContextUsage = (categories: ContextUsageCategory[], usedToken
       items,
     };
   });
+};
+
+export const getContextUsageDisplay = (
+  tokensInfo: TokensInfoData | null | undefined,
+  mode: Mode,
+  contextFiles: ContextFile[],
+  maxInputTokens = 0,
+): {
+  categories: ContextUsageCategory[];
+  usedTokens: number;
+  tokensEstimated: boolean;
+  segments: LaidOutSegment[];
+  hasBreakdown: boolean;
+} => {
+  if (!tokensInfo) {
+    return { categories: [], usedTokens: 0, tokensEstimated: false, segments: [], hasBreakdown: false };
+  }
+  const isAiderMode = AIDER_MODES.includes(mode);
+  const categories = isAiderMode ? buildAiderCategories(tokensInfo, contextFiles) : (tokensInfo.contextBreakdown?.categories ?? []);
+  const usedTokens = isAiderMode ? categories.reduce((sum, category) => sum + category.tokens, 0) : (tokensInfo.agent?.tokens ?? 0);
+  return {
+    categories,
+    usedTokens,
+    tokensEstimated: !isAiderMode && !!tokensInfo.agent?.tokensEstimated,
+    segments: layoutContextUsage(categories, usedTokens, maxInputTokens),
+    hasBreakdown: isAiderMode || !!tokensInfo.contextBreakdown,
+  };
 };
 
 /** Offsets (percent of the bar) of the dividers between neighbouring items: drawn only where at least one neighbour is wide enough to see. */

@@ -55,6 +55,7 @@ import type { WindowManager } from '@/window-manager';
 
 import logger from '@/logger';
 import { notifyTaskNavigationEvent } from '@/task-navigation/hooks';
+import { notifyRepositoryMappingsEvent } from '@/repository-mappings/hooks';
 
 export interface EventsConnectorConfig {
   eventTypes?: string[];
@@ -107,8 +108,7 @@ const taskKey = (d: any): string => `${d?.baseDir ?? ''}|${d?.taskId ?? ''}`;
 const latest = (_prev: any, next: any) => next;
 
 /** Extracts the taskId from an event payload, checking both `taskId` and `id`. */
-const getEventTaskId = (d: any): string | undefined =>
-  d && typeof d === 'object' ? (d.taskId ?? d.id) : undefined;
+const getEventTaskId = (d: any): string | undefined => (d && typeof d === 'object' ? (d.taskId ?? d.id) : undefined);
 
 /**
  * Merges two response-chunk events by concatenating their `chunk` and `reasoning`
@@ -117,10 +117,7 @@ const getEventTaskId = (d: any): string | undefined =>
 const mergeResponseChunk = (prev: any, next: any) => ({
   ...next,
   chunk: (prev.chunk ?? '') + (next.chunk ?? ''),
-  reasoning:
-    prev.reasoning || next.reasoning
-      ? (prev.reasoning ?? '') + (next.reasoning ?? '')
-      : undefined,
+  reasoning: prev.reasoning || next.reasoning ? (prev.reasoning ?? '') + (next.reasoning ?? '') : undefined,
 });
 
 /**
@@ -178,10 +175,7 @@ const COALESCE_STRATEGIES: Record<string, CoalesceStrategy> = {
     merge: mergeCommandOutput,
   },
   log: {
-    key: (d) =>
-      d.level === 'loading' && !d.finished
-        ? `${taskKey(d)}|${d.promptContext?.group?.id ?? ''}`
-        : null,
+    key: (d) => (d.level === 'loading' && !d.finished ? `${taskKey(d)}|${d.promptContext?.group?.id ?? ''}` : null),
     merge: latest,
   },
   'update-tokens-info': {
@@ -671,6 +665,7 @@ export class EventManager {
 
   private broadcastToEventConnectors(eventType: string, data: unknown, log = true): void {
     notifyTaskNavigationEvent(eventType, data);
+    notifyRepositoryMappingsEvent(eventType, data);
     if (log) {
       logger.debug('Broadcasting event to connectors:', {
         connectors: this.eventsConnectors.length,
@@ -763,8 +758,7 @@ export class EventManager {
     const mergedEntry = connector.pending.get(mapKey)!;
     const mergedData = mergedEntry.data as any;
     const entryLength =
-      (typeof mergedData?.output === 'string' ? mergedData.output.length : 0) ||
-      (typeof mergedData?.chunk === 'string' ? mergedData.chunk.length : 0);
+      (typeof mergedData?.output === 'string' ? mergedData.output.length : 0) || (typeof mergedData?.chunk === 'string' ? mergedData.chunk.length : 0);
     if (entryLength > MAX_COALESCED_ENTRY_CHARS) {
       this.flushConnector(connector);
       return;

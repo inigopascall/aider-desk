@@ -49,6 +49,8 @@ import {
 import { GENERATING_TASK_NAME, formatRelativeTime } from './utils';
 
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { RelativeTokenBar } from '@/components/common/RelativeTokenBar';
+import { CONTEXT_USAGE_COLORS } from '@/components/project/context-usage-layout';
 import { extractFirstLine, truncateTitle } from '@/components/message/outline';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { useApi } from '@/contexts/ApiContext';
@@ -211,6 +213,26 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
     const section = topic?.sections?.[sectionIndex];
     return estimate?.sections.find((item) => item.firstMessageId === section?.startMessageId);
   };
+
+  const maxEstimateTokens = useMemo(() => {
+    const values: number[] = [];
+    topics.forEach((topic, topicIndex) => {
+      const estimate = estimates?.topics[topicIndex];
+      if (!estimate || estimate.firstMessageId !== topic.messageIds[0]) {
+        return;
+      }
+      if (typeof estimate.tokens === 'number' && Number.isFinite(estimate.tokens) && estimate.tokens > 0) {
+        values.push(estimate.tokens);
+      }
+      for (const section of topic.sections ?? []) {
+        const sectionValue = estimate.sections.find((item) => item.firstMessageId === section.startMessageId)?.tokens;
+        if (typeof sectionValue === 'number' && Number.isFinite(sectionValue) && sectionValue > 0) {
+          values.push(sectionValue);
+        }
+      }
+    });
+    return values.length ? Math.max(...values) : 0;
+  }, [topics, estimates]);
 
   // Every topic is expanded until the user changes the view of this task
   const expanded = useMemo(
@@ -504,18 +526,13 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
       );
     }
     if (compaction) {
-      return (
-        <>
-          <span className="shrink-0 text-2xs font-normal text-text-muted">{t('taskNavigation.compaction.compactedTag')}</span>
-          {renderIconButton(
-            t('taskNavigation.compaction.undo'),
-            <MdUndo className="w-3.5 h-3.5" />,
-            () => void undoCompaction(compaction.id),
-            undoing,
-            pendingState === 'overlap',
-            pendingState === 'overlap' ? t('taskNavigation.compaction.reasons.compacting') : undefined,
-          )}
-        </>
+      return renderIconButton(
+        t('taskNavigation.compaction.undo'),
+        <MdUndo className="w-3.5 h-3.5" />,
+        () => void undoCompaction(compaction.id),
+        undoing,
+        pendingState === 'overlap',
+        pendingState === 'overlap' ? t('taskNavigation.compaction.reasons.compacting') : undefined,
       );
     }
     if (!isCompactableFromClient(topics, topicIndex, sectionIndex)) {
@@ -530,6 +547,31 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
       pendingState === 'overlap' ? t('taskNavigation.compaction.reasons.compacting') : undefined,
     );
   };
+
+  const renderTokenControls = (
+    tokens: number | null | undefined,
+    numericLabel: ReactNode,
+    topicIndex: number,
+    sectionIndex: number | undefined,
+    compaction: TopicCompactionInfo | undefined,
+  ) => (
+    <div className="shrink-0 flex items-center gap-1">
+      <span className="mt-0.5 shrink-0 mr-[calc(1em_-_0.25rem)] text-2xs text-text-muted">
+        {compaction && <span className="mr-1 font-normal">{t('taskNavigation.compaction.compactedTag')}</span>}
+        {numericLabel}
+      </span>
+      <RelativeTokenBar
+        tokens={tokens}
+        maxTokens={maxEstimateTokens}
+        color={CONTEXT_USAGE_COLORS.conversation}
+        layout="intrinsic"
+        data-testid={sectionIndex === undefined ? 'topic-token-bar' : 'section-token-bar'}
+      />
+      <span className="w-5 shrink-0 flex items-center justify-center" data-testid="topic-token-controls">
+        {renderCompactionControls(topicIndex, sectionIndex, compaction)}
+      </span>
+    </div>
+  );
 
   const renderBottom = () => {
     if (compactionTarget) {
@@ -568,7 +610,7 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
         tabIndex={-1}
         onKeyDown={handleKeyDown}
         onClick={stopPropagation}
-        className="bg-bg-secondary-light-strongest shadow-2xl rounded-md border border-bg-tertiary-strong w-[1008px] max-w-[94vw] max-h-[76vh] flex flex-col overflow-hidden focus:outline-none"
+        className="bg-bg-secondary-light-strongest shadow-2xl rounded-md border border-bg-tertiary-strong w-[calc(1008px_+_2.2rem)] max-w-[94vw] max-h-[76vh] flex flex-col overflow-hidden focus:outline-none"
       >
         <div className="px-3 py-2 border-b border-bg-tertiary-strong flex items-center gap-2 min-w-0">
           {taskKey && <span className="shrink-0 font-mono text-2xs text-text-muted">{taskKey}</span>}
@@ -674,8 +716,13 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
                   >
                     {connectorPart && <TopicConnector part={connectorPart} />}
                     <span className="flex-1 min-w-0">{row.summary}</span>
-                    <span className="shrink-0 text-text-muted">[{formatTopicTokenCount(sectionEstimate(row.topicIndex, row.sectionIndex)?.tokens)}]</span>
-                    {renderCompactionControls(row.topicIndex, row.sectionIndex, section?.compaction)}
+                    {renderTokenControls(
+                      sectionEstimate(row.topicIndex, row.sectionIndex)?.tokens,
+                      formatTopicTokenCount(sectionEstimate(row.topicIndex, row.sectionIndex)?.tokens),
+                      row.topicIndex,
+                      row.sectionIndex,
+                      section?.compaction,
+                    )}
                   </div>
                 );
               }
@@ -700,15 +747,18 @@ const TopicMapContent = ({ task, viewKey, onScrollToMessage, onRequestRestore }:
                     <TopicCaret expanded={isExpanded} />
                     <span className="mt-0.5 w-6 shrink-0 text-right text-2xs text-text-muted">{`${row.topicIndex + 1}.`}</span>
                     <span className="flex-1 min-w-0 text-xs text-text-primary">{topic.summary}</span>
-                    <span className="mt-0.5 shrink-0 text-2xs text-text-muted">
-                      {topic.detached
+                    {renderTokenControls(
+                      topicEstimate(row.topicIndex)?.tokens,
+                      topic.detached
                         ? t('taskNavigation.topicMap.compacted')
                         : t('taskNavigation.topicMap.messageTokens', {
                             count: topicEstimate(row.topicIndex)?.messageCount ?? (topic.compaction ? 1 : topic.messageIds.length),
                             tokens: formatTopicTokenCount(topicEstimate(row.topicIndex)?.tokens),
-                          })}
-                    </span>
-                    {renderCompactionControls(row.topicIndex, undefined, topic.compaction)}
+                          }),
+                      row.topicIndex,
+                      undefined,
+                      topic.compaction,
+                    )}
                   </div>
                 );
               }

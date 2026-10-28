@@ -74,6 +74,8 @@ import {
   isNetworkError,
   readFileContent,
   safeStringifyToolOutput,
+  CONTEXT_FILE_LINE_LIMIT,
+  limitContextFileText,
 } from './utils';
 import { extractReasoningMiddleware } from './middlewares/extract-reasoning-middleware';
 import { CompactionLevel, generateCompactedSummary, getReloadableMessages, getSubagentOldResultIds, smartCompactMessages } from './compaction';
@@ -181,7 +183,7 @@ export class Agent {
           }
 
           // Read file as text
-          const fileContent = fileContentBuffer.toString('utf8');
+          const fileContent = limitContextFileText(fileContentBuffer.toString('utf8')).text;
 
           // Add line numbers to content
           const lines = fileContent.split('\n');
@@ -1872,7 +1874,7 @@ export class Agent {
       // Process non-binary files: each file gets its own assistant message with tool-call and tool-result
       for (const { path: filePath, relativePath } of nonBinaryFiles) {
         try {
-          const content = await readFileContent(filePath, true);
+          const content = await readFileContent(filePath, true, 0, CONTEXT_FILE_LINE_LIMIT);
           const toolCallId = uuidv4();
 
           const assistantMessage: ModelMessage = {
@@ -1957,14 +1959,23 @@ export class Agent {
     return messages;
   }
 
-  private async prepareMessages(task: Task, profile: AgentProfile, contextMessages: ContextMessage[], contextFiles: ContextFile[], targetModelId?: string): Promise<ModelMessage[]> {
-    const messages: ModelMessage[] = [];
-
-    const repositoryMappingFiles = profile.includeRepoMappings ? await task.getRepositoryMappingFiles() : [];
-    // A path that is also a rule file is governed by the rule selection and never sent as a context file.
+  private async getChannelContextFiles(task: Task, profile: AgentProfile, contextFiles: ContextFile[]): Promise<ContextFile[]> {
     const ruleFilePaths =
       contextFiles.length > 0 ? getRuleFileAbsolutePaths(await task.getRuleFilesAsContextFiles(profile, true), task.getProjectDir()) : new Set<string>();
-    const channelContextFiles = contextFiles.filter((file) => !file.disabled && !ruleFilePaths.has(resolveSelectionPath(file.path, task.getProjectDir())));
+    return contextFiles.filter((file) => !file.disabled && !ruleFilePaths.has(resolveSelectionPath(file.path, task.getProjectDir())));
+  }
+
+  private async prepareMessages(
+    task: Task,
+    profile: AgentProfile,
+    contextMessages: ContextMessage[],
+    contextFiles: ContextFile[],
+    targetModelId?: string,
+  ): Promise<ModelMessage[]> {
+    const messages: ModelMessage[] = [];
+
+    const repositoryMappingFiles = profile.includeRepoMappings ? (await task.getRepositoryMappingFilesForPrompt()).files : [];
+    const channelContextFiles = await this.getChannelContextFiles(task, profile, contextFiles);
 
     if (profile.includeContextFiles) {
       // Mappings first, then ordinary context files, all with inlined content.
@@ -2247,7 +2258,8 @@ export class Agent {
       tokens: countTextTokens(block),
     }));
 
-    const repositoryMappingFiles = profile.includeRepoMappings ? await task.getRepositoryMappingFiles() : [];
+    const repositoryMappingFiles = profile.includeRepoMappings ? (await task.getRepositoryMappingFilesForPrompt()).files : [];
+    const channelContextFiles = await this.getChannelContextFiles(task, profile, contextFiles);
 
     return buildContextUsageBreakdown({
       systemPromptTokens: countTextTokens(systemPrompt),
@@ -2257,13 +2269,13 @@ export class Agent {
       readOnlyFiles: await this.estimateContextFileItems(
         task,
         profile,
-        contextFiles.filter((file) => file.readOnly),
+        channelContextFiles.filter((file) => file.readOnly),
         profile.includeContextFiles,
       ),
       editableFiles: await this.estimateContextFileItems(
         task,
         profile,
-        contextFiles.filter((file) => !file.readOnly),
+        channelContextFiles.filter((file) => !file.readOnly),
         profile.includeContextFiles,
       ),
       conversation: estimateConversationItems(contextMessages, this.agentProfileManager.getProjectProfiles(task.project)),

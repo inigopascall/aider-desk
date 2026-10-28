@@ -366,22 +366,34 @@ code {
   line-height: 1.6;
 }
 
-/* Global CSS motion kill switch.
- * When the body class is present, every CSS animation and transition on
- * every element is forced off, so the only remaining motion is the
- * React-timer-driven red dot (TaskActivityIndicator) used where task
- * activity must remain visible.
- *
- * Exception: the `react-toastify` container (`.Toastify`) and all of its
- * descendants are excluded, because the library relies on CSS animation end
- * events to remove toasts after their auto-close timer. Without this
- * exception, `animation: none` leaves those notifications stuck on screen.
- */
-body.disable-css-streaming-animations *:not(.Toastify):not(.Toastify *),
-body.disable-css-streaming-animations *:not(.Toastify):not(.Toastify *)::before,
-body.disable-css-streaming-animations *:not(.Toastify):not(.Toastify *)::after {
+/* The global switch disables CSS motion; Toastify is exempt for dismissal; token footprint spans use finite width transitions. */
+body.disable-css-streaming-animations
+  *:not(.Toastify):not(.Toastify *):not(.token-footprint-motion),
+body.disable-css-streaming-animations
+  *:not(.Toastify):not(.Toastify *):not(.token-footprint-motion)::before,
+body.disable-css-streaming-animations
+  *:not(.Toastify):not(.Toastify *):not(.token-footprint-motion)::after {
   animation: none !important;
   transition: none !important;
+}
+
+/* One-off growth and value changes; intrinsic bars resize their layout box so adjacent labels follow the painted edge. */
+.token-footprint-motion {
+  transition: width 320ms ease-out;
+}
+
+@starting-style {
+  .token-footprint-bar[data-token-layout="column"] > .token-footprint-fill,
+  .token-footprint-bar[data-token-layout="intrinsic"] {
+    width: 0 !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .token-footprint-motion {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 
 .mermaid-diagram {

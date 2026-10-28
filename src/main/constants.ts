@@ -31,7 +31,6 @@ export const AIDER_DESK_PROJECT_RULES_DIR = path.join(AIDER_DESK_DIR, AIDER_DESK
 export const AIDER_DESK_MAPPINGS_DIR = 'mappings';
 export const AIDER_DESK_PROJECT_MAPPINGS_DIR = path.join(AIDER_DESK_DIR, AIDER_DESK_MAPPINGS_DIR);
 export const AIDER_DESK_MAPPINGS_SCRIPT = path.join(AIDER_DESK_DIR, 'mappings.sh');
-export const AIDER_DESK_GENERATE_REPO_MAP_SCRIPT = path.join(AIDER_DESK_DIR, 'generate-repo-map.sh');
 export const AIDER_DESK_GLOBAL_RULES_DIR = path.join(AIDER_DESK_HOME_DIR, AIDER_DESK_RULES_DIR);
 export const AIDER_DESK_COMMANDS_DIR = path.join(AIDER_DESK_DIR, 'commands');
 export const AIDER_DESK_EXTENSIONS_DIR = path.join(AIDER_DESK_DIR, 'extensions');
