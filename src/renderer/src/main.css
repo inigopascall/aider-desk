@@ -186,6 +186,46 @@ code {
   background-color: var(--color-bg-selection);
 }
 
+.quote-selection-source::selection {
+  color: #101400;
+  background-color: #c6ff00;
+}
+
+.quote-selection-source ::selection {
+  color: #101400;
+  background-color: #c6ff00;
+}
+
+.quote-selection-fade {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.quote-selection-fade-rect {
+  position: absolute;
+  border-radius: 0.2rem;
+  background-color: #c6ff00;
+  opacity: 0;
+  animation: quote-selection-fade 160ms ease-out forwards;
+}
+
+@keyframes quote-selection-fade {
+  from {
+    opacity: 0.6;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quote-selection-fade-rect {
+    animation-duration: 1ms;
+  }
+}
+
 
 /* Prompt editor: markdown highlighting. The classes come from components/PromptField/promptMarkdown.ts. */
 .pf-prompt-editor .pf-md-heading {

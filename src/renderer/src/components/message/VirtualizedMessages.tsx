@@ -9,6 +9,7 @@ import { twMerge } from 'tailwind-merge';
 import { MessageBlockWrapper } from './MessageBlockWrapper';
 import { flashMessageElement } from './outline';
 import { MessageMap } from './MessageMap';
+import { resolveTopLevelMessageId } from './resolve-scroll-target';
 
 import { IconButton } from '@/components/common/IconButton';
 import { useUserMessageNavigation } from '@/hooks/useUserMessageNavigation';
@@ -44,6 +45,7 @@ type Props = {
   onInterrupt?: () => void;
   onForkFromMessage?: (message: Message) => void;
   onRemoveUpToMessage?: (message: Message) => void;
+  onQuoteSelection?: (text: string) => void;
 };
 
 const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
@@ -65,6 +67,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
       onInterrupt,
       onForkFromMessage,
       onRemoveUpToMessage,
+      onQuoteSelection,
     },
     ref,
   ) => {
@@ -288,7 +291,11 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
 
     const scrollToMessage = useCallback(
       (messageId: string) => {
-        const index = processedMessages.findIndex((message) => message.id === messageId);
+        const resolvedId = resolveTopLevelMessageId(processedMessages, messageId);
+        if (!resolvedId) {
+          return;
+        }
+        const index = processedMessages.findIndex((message) => message.id === resolvedId);
         if (index === -1) {
           return;
         }
@@ -298,7 +305,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
         void listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0 });
 
         window.setTimeout(() => {
-          const element = listRef.current?.getScrollableNode()?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`);
+          const element = listRef.current?.getScrollableNode()?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(resolvedId)}"]`);
           if (element) {
             flashMessageElement(element);
           }
@@ -385,6 +392,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
         onInterrupt,
         onForkFromMessage,
         onRemoveUpToMessage,
+        onQuoteSelection,
         messagesLength,
         activityMessageId,
       }),
@@ -399,6 +407,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
         onInterrupt,
         onForkFromMessage,
         onRemoveUpToMessage,
+        onQuoteSelection,
         messagesLength,
         activityMessageId,
       ],
@@ -421,6 +430,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
             onInterrupt={onInterrupt}
             onForkFromMessage={onForkFromMessage}
             onRemoveUpToMessage={onRemoveUpToMessage}
+            onQuoteSelection={onQuoteSelection}
             activityMessageId={activityMessageId}
           />
         </div>
@@ -438,6 +448,7 @@ const VirtualizedMessagesComponent = forwardRef<VirtualizedMessagesRef, Props>(
         onInterrupt,
         onForkFromMessage,
         onRemoveUpToMessage,
+        onQuoteSelection,
         messagesLength,
         activityMessageId,
       ],

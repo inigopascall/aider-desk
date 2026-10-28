@@ -40,6 +40,7 @@ type Props = {
   onInterrupt?: (interruptId?: string) => void;
   onFork?: (message: Message) => void;
   onRemoveUpTo?: (message: Message) => void;
+  onQuoteSelection?: (text: string) => void;
   activityMessageId?: string;
 };
 
@@ -56,6 +57,7 @@ const GroupMessageBlockComponent = ({
   onInterrupt,
   onFork,
   onRemoveUpTo,
+  onQuoteSelection,
   activityMessageId,
 }: Props) => {
   const { t } = useTranslation();
@@ -214,6 +216,7 @@ const GroupMessageBlockComponent = ({
               onInterrupt={onInterrupt}
               onForkFromMessage={onFork}
               onRemoveUpToMessage={onRemoveUpTo}
+              onQuoteSelection={onQuoteSelection}
               activityMessageId={activityMessageId}
             />
           ))}
@@ -277,6 +280,7 @@ const arePropsEqual = (prevProps: Props, nextProps: Props): boolean => {
     (prevProps.editUserMessage !== nextProps.editUserMessage && (prevProps.editUserMessage === undefined) !== (nextProps.editUserMessage === undefined)) ||
     (prevProps.onInterrupt !== nextProps.onInterrupt && (prevProps.onInterrupt === undefined) !== (nextProps.onInterrupt === undefined)) ||
     (prevProps.onFork !== nextProps.onFork && (prevProps.onFork === undefined) !== (nextProps.onFork === undefined)) ||
+    prevProps.onQuoteSelection !== nextProps.onQuoteSelection ||
     (prevProps.onRemoveUpTo !== nextProps.onRemoveUpTo && (prevProps.onRemoveUpTo === undefined) !== (nextProps.onRemoveUpTo === undefined))
   ) {
     return false;

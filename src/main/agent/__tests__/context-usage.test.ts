@@ -6,6 +6,7 @@ import {
   countTextTokens,
   describeContextMessage,
   estimateContextMessageItem,
+  estimateConversationItems,
   groupToolTokensByServer,
   SYSTEM_PROMPT_ITEM_ID,
 } from '../context-usage';
@@ -161,6 +162,95 @@ describe('describeContextMessage', () => {
     } as unknown as ContextMessage;
 
     expect(describeContextMessage(message)).toBe('kb---kb_search');
+  });
+});
+
+describe('estimateConversationItems', () => {
+  it('splits subagent calls and uses final-only tool result tokens without mutating history', () => {
+    const messages = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: [
+          { type: 'tool-call', toolCallId: 'c1', toolName: 'subagents---run_task', input: { subagentId: 'investigator-pro', prompt: '\nFirst line\nrest' } },
+          { type: 'tool-call', toolCallId: 'c2', toolName: 'subagents---run_task', input: { subagentId: 'code-runner', prompt: '\nSecond line\nrest' } },
+        ],
+      },
+      {
+        id: 't1',
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 'c1',
+            toolName: 'subagents---run_task',
+            output: {
+              type: 'json',
+              value: {
+                messages: [
+                  { role: 'user', content: 'x'.repeat(100000) },
+                  { role: 'tool', content: 'x'.repeat(100000) },
+                  { role: 'assistant', content: 'final one' },
+                ],
+              },
+            },
+          },
+          {
+            type: 'tool-result',
+            toolCallId: 'c2',
+            toolName: 'subagents---run_task',
+            output: {
+              type: 'json',
+              value: {
+                messages: [
+                  { role: 'user', content: 'x'.repeat(100000) },
+                  { role: 'tool', content: 'x'.repeat(100000) },
+                  { role: 'assistant', content: 'final two' },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    ] as unknown as ContextMessage;
+    const original = JSON.stringify(messages);
+    const result = estimateConversationItems(messages as unknown as ContextMessage[], [
+      { id: 'investigator-pro', name: 'INVESTIGATOR PRO' },
+      { id: 'code-runner', name: 'CODE RUNNER' },
+    ]);
+    const toolResults = result.filter((item) => item.id.startsWith('t1:'));
+    expect(toolResults).toHaveLength(2);
+    expect(toolResults[0].scrollTargetId).not.toBe(toolResults[1].scrollTargetId);
+    expect(result.map((item) => item.label)).toContain('Subagent: INVESTIGATOR PRO | First line');
+    expect(result.map((item) => item.label)).toContain('Subagent: CODE RUNNER | Second line');
+    expect(toolResults.map((item) => item.tokens)).toEqual([countTextTokens('final report'), countTextTokens('final report')]);
+    expect(JSON.stringify(messages)).toBe(original);
+  });
+
+  it('counts assistant residual text and each call exactly once', () => {
+    const messages = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'residual' },
+          { type: 'tool-call', toolCallId: 'c1', toolName: 'subagents---run_task', input: {} },
+          { type: 'tool-call', toolCallId: 'c2', toolName: 'subagents---run_task', input: {} },
+        ],
+      },
+    ] as unknown as ContextMessage[];
+    const result = estimateConversationItems(messages, []);
+    expect(result).toHaveLength(3);
+    expect(result.reduce((sum, item) => sum + item.tokens, 0)).toBe(result.reduce((sum, item) => sum + item.tokens, 0));
+  });
+
+  it('handles a missing original call safely', () => {
+    expect(() =>
+      estimateConversationItems(
+        [{ id: 't1', role: 'tool', content: [{ type: 'tool-result', toolCallId: 'missing', output: 'x' }] }] as unknown as ContextMessage[],
+        [],
+      ),
+    ).not.toThrow();
   });
 });
 

@@ -98,6 +98,7 @@ type Props = {
   onInterrupt?: () => void;
   onFork?: () => void;
   onRemoveUpTo?: () => void;
+  onQuoteSelection?: (text: string) => void;
   activityMessageId?: string;
 };
 
@@ -116,6 +117,7 @@ const MessageBlockComponent = ({
   onInterrupt,
   onFork,
   onRemoveUpTo,
+  onQuoteSelection,
   activityMessageId,
 }: Props) => {
   const { t } = useTranslation();
@@ -123,15 +125,7 @@ const MessageBlockComponent = ({
   const taskDir = worktreePath ?? baseDir;
 
   if (isLoadingMessage(message)) {
-    return (
-      <LoadingMessageBlock
-        key={message.content}
-        message={message}
-        baseDir={baseDir}
-        taskId={taskId}
-        onInterrupt={onInterrupt}
-      />
-    );
+    return <LoadingMessageBlock key={message.content} message={message} baseDir={baseDir} taskId={taskId} onInterrupt={onInterrupt} />;
   }
 
   if (isLogMessage(message)) {
@@ -180,6 +174,7 @@ const MessageBlockComponent = ({
         compact={compact}
         showThinking={showThinking}
         hideMessageBar={hideMessageBar}
+        onQuoteSelection={onQuoteSelection}
         showActivityIndicator={message.id === activityMessageId}
       />
     );
@@ -520,6 +515,7 @@ const arePropsEqual = (prevProps: Props, nextProps: Props): boolean => {
     prevProps.compact !== nextProps.compact ||
     prevProps.hideMessageBar !== nextProps.hideMessageBar ||
     prevProps.activityMessageId !== nextProps.activityMessageId ||
+    prevProps.onQuoteSelection !== nextProps.onQuoteSelection ||
     (prevProps.remove !== nextProps.remove && (prevProps.remove === undefined) !== (nextProps.remove === undefined)) ||
     (prevProps.redo !== nextProps.redo && (prevProps.redo === undefined) !== (nextProps.redo === undefined)) ||
     (prevProps.edit !== nextProps.edit && (prevProps.edit === undefined) !== (nextProps.edit === undefined))

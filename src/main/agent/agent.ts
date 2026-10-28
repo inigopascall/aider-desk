@@ -81,10 +81,11 @@ import { sanitizeMessagesForModel } from './message-sanitizer';
 import {
   buildContextUsageBreakdown,
   countTextTokens,
-  estimateContextMessageItem,
+  estimateConversationItems,
   groupToolTokensByServer,
   type ToolDefinitionForEstimate,
 } from './context-usage';
+import { buildContextFilesUpdateNote, diffContextFiles, getContextFileKey } from './context-files-refresh';
 
 import type { ExtensionToolOrigin, ToolsetToolEntry } from '@common/extensions';
 import type { TextPart } from '@ai-sdk/provider-utils';
@@ -962,6 +963,11 @@ export class Agent {
     // Normalize messages for provider-specific requirements
     messages = this.modelManager.normalizeMessages(provider, modelName, messages);
 
+    // Files added to or dropped from the task during this run (e.g. by a sub-agent) are announced to the
+    // model at the next step. Only runs that take their files from the task itself, or sub-agents, follow it.
+    const followTaskContextFiles = initialContextFiles === undefined || !!profile.isSubagent;
+    let knownTaskContextFiles = followTaskContextFiles ? (await task.getContextFiles()).filter((file) => !file.disabled) : [];
+
     if (effectiveAbortSignal?.aborted) {
       logger.debug('Prompt aborted by user (before Agent run)');
       if (isDurable && !durability.isSuspended(executionId!)) {
@@ -1265,6 +1271,23 @@ export class Agent {
             promptContext,
           );
           break;
+        }
+
+        if (followTaskContextFiles) {
+          const currentTaskContextFiles = (await task.getContextFiles()).filter((file) => !file.disabled);
+          const { added, removed } = diffContextFiles(knownTaskContextFiles, currentTaskContextFiles);
+          if (added.length > 0 || removed.length > 0) {
+            knownTaskContextFiles = currentTaskContextFiles;
+            const removedKeys = new Set(removed.map(getContextFileKey));
+            contextFiles = [...contextFiles.filter((file) => !removedKeys.has(getContextFileKey(file))), ...added];
+            const updateMessages = await this.getContextFilesUpdateMessages(task, profile, added, removed);
+            messages.push(...updateMessages);
+            logger.info('Context files changed during the run', {
+              taskId: task.taskId,
+              added: added.map((file) => file.path),
+              removed: removed.map((file) => file.path),
+            });
+          }
         }
 
         if (isDurable) {
@@ -1963,6 +1986,23 @@ export class Agent {
     return targetModelId ? sanitizeMessagesForModel(messages, targetModelId) : messages;
   }
 
+  /** Messages announcing a mid-run change of the context files: a note, then the added files' contents when the profile includes them. */
+  private async getContextFilesUpdateMessages(task: Task, profile: AgentProfile, added: ContextFile[], removed: ContextFile[]): Promise<ModelMessage[]> {
+    // Rule files are part of the system prompt and are never sent as context files.
+    const ruleFilePaths =
+      added.length > 0 ? getRuleFileAbsolutePaths(await task.getRuleFilesAsContextFiles(profile, true), task.getProjectDir()) : new Set<string>();
+    const addedFiles = added.filter((file) => !ruleFilePaths.has(resolveSelectionPath(file.path, task.getProjectDir())));
+    const note = buildContextFilesUpdateNote(addedFiles, removed, profile.includeContextFiles);
+    if (!note) {
+      return [];
+    }
+    const messages: ModelMessage[] = [{ role: 'user', content: note }];
+    if (profile.includeContextFiles && addedFiles.length > 0) {
+      messages.push(...(await this.getContextFilesAsToolCallMessages(task, profile, addedFiles)));
+    }
+    return messages;
+  }
+
   async generateText(
     modelId: string,
     systemPrompt: string,
@@ -2226,7 +2266,7 @@ export class Agent {
         contextFiles.filter((file) => !file.readOnly),
         profile.includeContextFiles,
       ),
-      conversation: contextMessages.map(estimateContextMessageItem),
+      conversation: estimateConversationItems(contextMessages, this.agentProfileManager.getProjectProfiles(task.project)),
     });
   }
 

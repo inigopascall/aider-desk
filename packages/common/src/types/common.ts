@@ -1161,6 +1161,7 @@ export interface ContextUsageItem {
   label: string;
   /** Optional qualifier, e.g. the rule file source or the message role. */
   detail?: string;
+  scrollTargetId?: string;
   tokens: number;
 }
 

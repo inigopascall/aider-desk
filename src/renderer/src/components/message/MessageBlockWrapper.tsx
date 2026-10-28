@@ -27,6 +27,7 @@ type Props = {
   onInterrupt?: () => void;
   onForkFromMessage?: (message: Message) => void;
   onRemoveUpToMessage?: (message: Message) => void;
+  onQuoteSelection?: (text: string) => void;
   activityMessageId?: string;
 };
 
@@ -46,6 +47,7 @@ const MessageBlockWrapperInner = ({
   onInterrupt,
   onForkFromMessage,
   onRemoveUpToMessage,
+  onQuoteSelection,
   activityMessageId,
 }: Props) => {
   const additionalProps = useMemo(
@@ -79,6 +81,7 @@ const MessageBlockWrapperInner = ({
         onInterrupt={onInterrupt}
         onFork={onForkFromMessage}
         onRemoveUpTo={onRemoveUpToMessage}
+        onQuoteSelection={onQuoteSelection}
         activityMessageId={activityMessageId}
       />
     );
@@ -93,6 +96,7 @@ const MessageBlockWrapperInner = ({
         remove={inProgress ? undefined : removeMessage}
         onFork={onForkFromMessage}
         onRemoveUpTo={onRemoveUpToMessage}
+        onQuoteSelection={onQuoteSelection}
         activityMessageId={activityMessageId}
       />
     );
@@ -118,6 +122,7 @@ const MessageBlockWrapperInner = ({
         onInterrupt={onInterrupt}
         onFork={onForkFromMessage ? () => onForkFromMessage(message) : undefined}
         onRemoveUpTo={onRemoveUpToMessage ? () => onRemoveUpToMessage(message) : undefined}
+        onQuoteSelection={onQuoteSelection}
         activityMessageId={activityMessageId}
       />
     );
@@ -155,7 +160,8 @@ const arePropsEqual = (prevProps: Props, nextProps: Props): boolean => {
     prevProps.editUserMessage !== nextProps.editUserMessage ||
     prevProps.onInterrupt !== nextProps.onInterrupt ||
     prevProps.onForkFromMessage !== nextProps.onForkFromMessage ||
-    prevProps.onRemoveUpToMessage !== nextProps.onRemoveUpToMessage
+    prevProps.onRemoveUpToMessage !== nextProps.onRemoveUpToMessage ||
+    prevProps.onQuoteSelection !== nextProps.onQuoteSelection
   ) {
     return false;
   }

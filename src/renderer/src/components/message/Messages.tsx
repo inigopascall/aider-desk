@@ -7,6 +7,7 @@ import { GroupMessage, isAssistantGroupMessage, isGroupMessage, isLoadingMessage
 import { MessageBlockWrapper } from './MessageBlockWrapper';
 import { flashMessageElement } from './outline';
 import { MessageMap } from './MessageMap';
+import { resolveTopLevelMessageId } from './resolve-scroll-target';
 
 import { useScrollingPaused } from '@/hooks/useScrollingPaused';
 import { useUserMessageNavigation } from '@/hooks/useUserMessageNavigation';
@@ -40,6 +41,7 @@ type Props = {
   onInterrupt?: () => void;
   onForkFromMessage?: (message: Message) => void;
   onRemoveUpToMessage?: (message: Message) => void;
+  onQuoteSelection?: (text: string) => void;
 };
 
 const MessagesComponent = forwardRef<MessagesRef, Props>(
@@ -60,6 +62,7 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
       onInterrupt,
       onForkFromMessage,
       onRemoveUpToMessage,
+      onQuoteSelection,
     },
     ref,
   ) => {
@@ -218,8 +221,12 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
     }, []);
 
     const scrollToMessage = (messageId: string) => {
+      const resolvedId = resolveTopLevelMessageId(processedMessages, messageId);
+      if (!resolvedId) {
+        return;
+      }
       setScrollingPaused(true);
-      const element = messagesContainerRef.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`);
+      const element = messagesContainerRef.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(resolvedId)}"]`);
       if (element) {
         element.scrollIntoView({ behavior: 'smooth', block: 'start' });
         flashMessageElement(element);
@@ -257,6 +264,7 @@ const MessagesComponent = forwardRef<MessagesRef, Props>(
                   onInterrupt={onInterrupt}
                   onForkFromMessage={onForkFromMessage}
                   onRemoveUpToMessage={onRemoveUpToMessage}
+                  onQuoteSelection={onQuoteSelection}
                   activityMessageId={activityMessageId}
                 />
               </div>

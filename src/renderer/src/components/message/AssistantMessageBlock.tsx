@@ -4,7 +4,6 @@ import { Message, UsageReportData, AssistantGroupMessage, isResponseMessage, isT
 
 import { MessageBar } from './MessageBar';
 import { MessageBlockWrapper } from './MessageBlockWrapper';
-
 import { areMessagesEqual } from './utils';
 
 import { useParsedContent } from '@/hooks/useParsedContent';
@@ -18,10 +17,22 @@ type Props = {
   remove?: (message: Message) => void;
   onFork?: (message: Message) => void;
   onRemoveUpTo?: (message: Message) => void;
+  onQuoteSelection?: (text: string) => void;
   activityMessageId?: string;
 };
 
-const AssistantMessageBlockComponent = ({ baseDir, taskId, message, allFiles, renderMarkdown, remove, onFork, onRemoveUpTo, activityMessageId }: Props) => {
+const AssistantMessageBlockComponent = ({
+  baseDir,
+  taskId,
+  message,
+  allFiles,
+  renderMarkdown,
+  remove,
+  onFork,
+  onRemoveUpTo,
+  onQuoteSelection,
+  activityMessageId,
+}: Props) => {
   const { responseMessage, toolMessages } = message;
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -102,6 +113,7 @@ const AssistantMessageBlockComponent = ({ baseDir, taskId, message, allFiles, re
           compact={true}
           hideMessageBar={true}
           activityMessageId={activityMessageId}
+          onQuoteSelection={onQuoteSelection}
         />
       )}
 
@@ -149,7 +161,8 @@ const arePropsEqual = (prevProps: Props, nextProps: Props): boolean => {
     prevProps.activityMessageId !== nextProps.activityMessageId ||
     (prevProps.remove !== nextProps.remove && (prevProps.remove === undefined) !== (nextProps.remove === undefined)) ||
     (prevProps.onFork !== nextProps.onFork && (prevProps.onFork === undefined) !== (nextProps.onFork === undefined)) ||
-    (prevProps.onRemoveUpTo !== nextProps.onRemoveUpTo && (prevProps.onRemoveUpTo === undefined) !== (nextProps.onRemoveUpTo === undefined))
+    (prevProps.onRemoveUpTo !== nextProps.onRemoveUpTo && (prevProps.onRemoveUpTo === undefined) !== (nextProps.onRemoveUpTo === undefined)) ||
+    prevProps.onQuoteSelection !== nextProps.onQuoteSelection
   ) {
     return false;
   }

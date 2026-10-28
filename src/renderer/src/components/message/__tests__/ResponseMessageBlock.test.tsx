@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ResponseMessageBlock } from '../ResponseMessageBlock';
@@ -14,18 +14,11 @@ const message = {
 } as never;
 
 const renderResponse = (onQuoteSelection = vi.fn()) => {
-  render(
-    <ResponseMessageBlock
-      baseDir="/project"
-      message={message}
-      allFiles={[]}
-      renderMarkdown={false}
-      hideMessageBar
-      onQuoteSelection={onQuoteSelection}
-    />,
+  const { container } = render(
+    <ResponseMessageBlock baseDir="/project" message={message} allFiles={[]} renderMarkdown={false} hideMessageBar onQuoteSelection={onQuoteSelection} />,
   );
 
-  return screen.getByTestId('response-content');
+  return container.querySelector('[data-response-content]') as HTMLDivElement;
 };
 
 const selectionFor = (anchorNode: Node, focusNode: Node, text: string, isCollapsed = false) => ({
@@ -53,7 +46,7 @@ describe('ResponseMessageBlock quote selection', () => {
     vi.spyOn(window, 'getSelection').mockReturnValue(selection as unknown as Selection);
 
     fireEvent.mouseDown(content, { button: 0, ctrlKey: false });
-    window.dispatchEvent(new MouseEvent('mouseup', { ctrlKey: false }));
+    fireEvent.mouseUp(window, { ctrlKey: false });
 
     expect(onQuoteSelection).not.toHaveBeenCalled();
     expect(content).not.toHaveClass('quote-selection-source');
@@ -67,14 +60,14 @@ describe('ResponseMessageBlock quote selection', () => {
     const range = document.createRange();
     range.setStart(textNode, 2);
     range.setEnd(textNode, 24);
-    vi.spyOn(range, 'getClientRects').mockReturnValue([new DOMRect(0, 0, 10, 10)] as unknown as DOMRectList);
+    range.getClientRects = vi.fn(() => [new DOMRect(0, 0, 10, 10)] as unknown as DOMRectList);
     const selection = selectionFor(textNode, textNode, '  Response content  ');
     selection.getRangeAt = () => range;
     vi.spyOn(window, 'getSelection').mockReturnValue(selection as unknown as Selection);
 
     fireEvent.mouseDown(content, { button: 0, ctrlKey: true });
     expect(content).toHaveClass('quote-selection-source');
-    window.dispatchEvent(new MouseEvent('mouseup', { ctrlKey: true }));
+    fireEvent.mouseUp(window, { ctrlKey: true });
 
     expect(onQuoteSelection).toHaveBeenCalledOnce();
     expect(onQuoteSelection).toHaveBeenCalledWith('Response content');
@@ -91,12 +84,10 @@ describe('ResponseMessageBlock quote selection', () => {
     const onQuoteSelection = vi.fn();
     const content = renderResponse(onQuoteSelection);
     const textNode = content.firstChild as Text;
-    vi.spyOn(window, 'getSelection').mockReturnValue(
-      selectionFor(textNode, textNode, 'Response content') as unknown as Selection,
-    );
+    vi.spyOn(window, 'getSelection').mockReturnValue(selectionFor(textNode, textNode, 'Response content') as unknown as Selection);
 
     fireEvent.mouseDown(content, { button: 0, ctrlKey: true });
-    window.dispatchEvent(new MouseEvent('mouseup', { ctrlKey: false }));
+    fireEvent.mouseUp(window, { ctrlKey: false });
 
     expect(onQuoteSelection).not.toHaveBeenCalled();
   });
@@ -105,12 +96,10 @@ describe('ResponseMessageBlock quote selection', () => {
     const onQuoteSelection = vi.fn();
     const content = renderResponse(onQuoteSelection);
     const textNode = content.firstChild as Text;
-    vi.spyOn(window, 'getSelection').mockReturnValue(
-      selectionFor(textNode, textNode, '', true) as unknown as Selection,
-    );
+    vi.spyOn(window, 'getSelection').mockReturnValue(selectionFor(textNode, textNode, '', true) as unknown as Selection);
 
     fireEvent.mouseDown(content, { button: 0, ctrlKey: true });
-    window.dispatchEvent(new MouseEvent('mouseup', { ctrlKey: true }));
+    fireEvent.mouseUp(window, { ctrlKey: true });
 
     expect(onQuoteSelection).not.toHaveBeenCalled();
   });
@@ -124,12 +113,10 @@ describe('ResponseMessageBlock quote selection', () => {
     document.body.appendChild(outside);
     const insideText = content.firstChild as Text;
     const outsideText = outside.firstChild as Text;
-    vi.spyOn(window, 'getSelection').mockReturnValue(
-      selectionFor(outsideText, insideText, 'Response content') as unknown as Selection,
-    );
+    vi.spyOn(window, 'getSelection').mockReturnValue(selectionFor(outsideText, insideText, 'Response content') as unknown as Selection);
 
     fireEvent.mouseDown(content, { button: 0, ctrlKey: true });
-    window.dispatchEvent(new MouseEvent('mouseup', { ctrlKey: true }));
+    fireEvent.mouseUp(window, { ctrlKey: true });
 
     expect(onQuoteSelection).not.toHaveBeenCalled();
   });

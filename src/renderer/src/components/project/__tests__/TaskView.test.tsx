@@ -2,6 +2,7 @@ import { screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TaskData, ModelsData, Message } from '@common/types';
 import { toast } from 'react-toastify';
+import { forwardRef, useImperativeHandle } from 'react';
 
 import { TaskView } from '../TaskView';
 
@@ -135,35 +136,67 @@ vi.mock('../../message/Messages', () => ({
 }));
 
 vi.mock('../../message/VirtualizedMessages', () => ({
-  VirtualizedMessages: ({ messages }: { messages: { id: string; content: string }[] }) => (
+  VirtualizedMessages: ({ messages, onQuoteSelection }: { messages: { id: string; content: string }[]; onQuoteSelection?: (text: string) => void }) => (
     <div data-testid="virtualized-messages">
       {messages.map((m) => (
         <div key={m.id}>{m.content}</div>
       ))}
+      <button onClick={() => onQuoteSelection?.('First selected line')}>Quote First</button>
+      <button onClick={() => onQuoteSelection?.('Second selected line')}>Quote Second</button>
+      <button onClick={() => onQuoteSelection?.('  First line\r\n\r\nSecond line  ')}>Quote Multiline</button>
     </div>
   ),
 }));
 
-vi.mock('../../PromptField', () => ({
-  PromptField: ({
-    runPrompt,
-    addFiles,
-    editUserMessage,
-    savePrompt,
-  }: {
-    runPrompt: (prompt: string) => void;
-    addFiles: (files: string[], readOnly: boolean) => void;
-    editUserMessage: () => void;
-    savePrompt: (prompt: string) => Promise<void>;
-  }) => (
-    <div data-testid="prompt-field">
-      <button onClick={() => runPrompt('hello')}>Run Prompt</button>
-      <button onClick={() => addFiles(['file1.ts'], false)}>Add File</button>
-      <button onClick={editUserMessage}>Edit Last Prompt</button>
-      <button onClick={() => void savePrompt('edited prompt')}>Save Prompt</button>
-    </div>
-  ),
-}));
+const { mockPromptField } = vi.hoisted(() => {
+  const state = { text: '' };
+  return {
+    mockPromptField: {
+      state,
+      getValue: vi.fn(() => state.text),
+      setText: vi.fn((newText: string) => {
+        state.text = newText;
+      }),
+      focus: vi.fn(),
+      appendText: vi.fn(),
+      setImages: vi.fn(),
+    },
+  };
+});
+
+vi.mock('../../PromptField', () => {
+  const MockPromptField = forwardRef(
+    (
+      {
+        runPrompt,
+        addFiles,
+        editUserMessage,
+        savePrompt,
+      }: {
+        runPrompt: (prompt: string) => void;
+        addFiles: (files: string[], readOnly: boolean) => void;
+        editUserMessage: () => void;
+        savePrompt: (prompt: string) => Promise<void>;
+      },
+      ref,
+    ) => {
+      useImperativeHandle(ref, () => mockPromptField);
+      return (
+        <div data-testid="prompt-field">
+          <button onClick={() => runPrompt('hello')}>Run Prompt</button>
+          <button onClick={() => addFiles(['file1.ts'], false)}>Add File</button>
+          <button onClick={editUserMessage}>Edit Last Prompt</button>
+          <button onClick={() => void savePrompt('edited prompt')}>Save Prompt</button>
+        </div>
+      );
+    },
+  );
+  MockPromptField.displayName = 'MockPromptField';
+
+  return {
+    PromptField: MockPromptField,
+  };
+});
 
 vi.mock('../../PromptField/FilesSidebar', () => ({
   FilesSidebar: () => <div data-testid="files-sidebar">Files Sidebar</div>,
@@ -204,6 +237,7 @@ describe('TaskView', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPromptField.state.text = '';
     mockStoreGetState.mockReturnValue({
       taskStateMap: new Map([['task-1', mockTaskState]]),
       taskMessagesMap: new Map([['task-1', mockMessages]]),
@@ -331,6 +365,57 @@ describe('TaskView', () => {
 
     expect(mockApi.saveEditedPrompt).toHaveBeenCalledWith(projectDir, mockTask.id, savedPrompt.id, 'edited prompt');
     expect(mockApi.runPrompt).not.toHaveBeenCalled();
+  });
+
+  it('quotes separate selections with a blank line between them', async () => {
+    mockPromptField.state.text = 'Existing draft text';
+    render(
+      <TaskView
+        projectDir={projectDir}
+        task={mockTask}
+        updateTask={mockUpdateTask}
+        updateOptimisticTaskState={mockUpdateOptimisticTaskState}
+        inputHistory={[]}
+      />,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByText('Quote First'));
+      fireEvent.click(screen.getByText('Quote Second'));
+    });
+    expect(mockPromptField.setText).toHaveBeenLastCalledWith('Existing draft text\n\n> First selected line\n\n> Second selected line\n\n');
+  });
+
+  it('formats multiline quoted selections', async () => {
+    render(
+      <TaskView
+        projectDir={projectDir}
+        task={mockTask}
+        updateTask={mockUpdateTask}
+        updateOptimisticTaskState={mockUpdateOptimisticTaskState}
+        inputHistory={[]}
+      />,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByText('Quote Multiline'));
+    });
+    expect(mockPromptField.setText).toHaveBeenLastCalledWith('> First line\n>\n> Second line\n\n');
+  });
+
+  it('avoids an extra blank line when the prompt already ends with one', async () => {
+    mockPromptField.state.text = 'Existing draft text\n';
+    render(
+      <TaskView
+        projectDir={projectDir}
+        task={mockTask}
+        updateTask={mockUpdateTask}
+        updateOptimisticTaskState={mockUpdateOptimisticTaskState}
+        inputHistory={[]}
+      />,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByText('Quote First'));
+    });
+    expect(mockPromptField.setText).toHaveBeenLastCalledWith('Existing draft text\n\n> First selected line\n\n');
   });
 
   it('calls api.addFile when files are added', async () => {

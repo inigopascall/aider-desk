@@ -19,6 +19,7 @@ import { ApprovalManager } from './approval-manager';
 import type { ToolSet } from 'ai';
 
 import { coerceBoolean } from '@/agent/utils';
+import { isFileIgnored } from '@/utils';
 import { Task } from '@/task';
 
 export const createAiderToolset = (task: Task, profile: AgentProfile, promptContext?: PromptContext): ToolSet => {
@@ -117,6 +118,13 @@ export const createAiderToolset = (task: Task, profile: AgentProfile, promptCont
             : `Relative paths are resolved against the task directory '${taskDir}' only. If the file is in another project or anywhere else outside the task directory, pass its full absolute path.`;
           results.push(
             `Error: '${filePath}' was not added: nothing exists at '${resolvedPath}'. This tool never creates files, and nothing was created. ${hint} To work on a new file, create it first with a file-writing tool, then add it.`,
+          );
+          continue;
+        }
+
+        if (!readOnly && (await isFileIgnored(taskDir, filePath))) {
+          results.push(
+            `Not added - '${filePath}' is ignored by git (.gitignore), so it can only be added as read-only. Call this tool again with readOnly: true to add it.`,
           );
           continue;
         }

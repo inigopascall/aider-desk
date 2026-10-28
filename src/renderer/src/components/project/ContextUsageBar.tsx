@@ -27,9 +27,10 @@ type Props = {
   mode: Mode;
   maxInputTokens: number;
   contextFiles: ContextFile[];
+  onScrollToMessage?: (id: string) => void;
 };
 
-export const ContextUsageBar = ({ task, mode, maxInputTokens, contextFiles }: Props) => {
+export const ContextUsageBar = ({ task, mode, maxInputTokens, contextFiles, onScrollToMessage }: Props) => {
   const { t } = useTranslation();
   const visible = useSettingsStore((state) => state.settings?.showContextUsageBar ?? true);
   const globalThresholdConfig = useSettingsStore((state) => state.settings?.taskSettings.contextCompactingThreshold) ?? DEFAULT_THRESHOLD_CONFIG;
@@ -89,6 +90,18 @@ export const ContextUsageBar = ({ task, mode, maxInputTokens, contextFiles }: Pr
     }
   };
 
+  const handleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0) {
+      return;
+    }
+    const percent = ((event.clientX - rect.left) / rect.width) * 100;
+    const hit = findItemAt(segments, percent);
+    if (hit?.segment.id === 'conversation' && hit.item.scrollTargetId) {
+      onScrollToMessage?.(hit.item.scrollTargetId);
+    }
+  };
+
   const usageLabel = `${tokensEstimated ? '~' : ''}${t('costInfo.tokenUsage', {
     usedTokens: formatHumanReadable(t, usedTokens),
     maxTokens: maxInputTokens ? formatHumanReadable(t, maxInputTokens) : '?',
@@ -101,6 +114,7 @@ export const ContextUsageBar = ({ task, mode, maxInputTokens, contextFiles }: Pr
         className="relative h-[30px] w-full overflow-hidden rounded-md border border-border-dark-light bg-bg-secondary-light"
         onMouseMove={handleMouseMove}
         onMouseLeave={() => setHoverPercent(null)}
+        onClick={handleClick}
       >
         {segments.length === 0 && usedPercent > 0 && (
           <div className="absolute inset-y-0 left-0 bg-accent-light opacity-60" style={{ width: `${usedPercent}%` }} />

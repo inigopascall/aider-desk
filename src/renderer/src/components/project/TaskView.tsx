@@ -547,7 +547,9 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
     const handleRunWorkflow = useEvent((workflowId: string) => {
       setSelectedWorkflowId(workflowId);
       const prompt = promptFieldRef.current?.getValue().trim() ?? '';
-      if (!prompt) return; // Empty prompt: select-only, like Save & Close
+      if (!prompt) {
+        return;
+      } // Empty prompt: select-only, like Save & Close
       updateOptimisticTaskState(task.id, DefaultTaskState.InProgress);
       runCommand(`workflow ${workflowId} ${prompt}`);
       promptFieldRef.current?.setText(''); // Mirror PromptField's post-submit clearing
@@ -859,6 +861,26 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
       [promptFieldRef],
     );
 
+    const handleQuoteSelection = useCallback((selectedText: string) => {
+      const promptField = promptFieldRef.current;
+      if (!promptField) {
+        return;
+      }
+
+      const trimmedText = selectedText.trim();
+      if (!trimmedText) {
+        return;
+      }
+
+      const quote = trimmedText
+        .split(/\r\n?|\n/)
+        .map((line) => (line ? `> ${line}` : '>'))
+        .join('\n');
+      const draft = promptField.getValue();
+      const separator = !draft || draft.endsWith('\n\n') ? '' : draft.endsWith('\n') ? '\n' : '\n\n';
+      promptField.setText(`${draft}${separator}${quote}\n\n`);
+    }, []);
+
     const handleAutonomyModeChanged = useCallback(
       (autonomyMode: AutonomyMode) => {
         updateTask(task.id, {
@@ -977,7 +999,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
             onRestartAiderConnector={handleRestartAiderConnector}
             disabled={!!selectedWorkflowId}
           />
-          <ContextUsageBar task={task} mode={currentMode} maxInputTokens={maxInputTokens} contextFiles={contextFiles} />
+          <ContextUsageBar task={task} mode={currentMode} maxInputTokens={maxInputTokens} contextFiles={contextFiles} onScrollToMessage={handleScrollToMessage} />
           <div ref={messagesSectionRef} className={clsx('overflow-y-hidden relative flex flex-col', promptAreaMaximized ? 'h-0 flex-grow-0' : 'flex-grow')}>
             {renderSearchInput()}
             {!loading && todoListVisible && (
@@ -1017,6 +1039,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                       onInterrupt={handleInterruptResponse}
                       onForkFromMessage={handleForkFromMessage}
                       onRemoveUpToMessage={handleRemoveUpToMessage}
+                      onQuoteSelection={handleQuoteSelection}
                     />
                   ) : (
                     <VirtualizedMessages
@@ -1037,6 +1060,7 @@ export const TaskView = forwardRef<TaskViewRef, Props>(
                       onInterrupt={handleInterruptResponse}
                       onForkFromMessage={handleForkFromMessage}
                       onRemoveUpToMessage={handleRemoveUpToMessage}
+                      onQuoteSelection={handleQuoteSelection}
                     />
                   )}
                 </>

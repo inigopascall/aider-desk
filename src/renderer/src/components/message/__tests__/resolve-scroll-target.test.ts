@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { resolveTopLevelMessageId } from '../resolve-scroll-target';
 
 const message = (id: string) => ({ id, type: 'user', content: '' }) as any;
