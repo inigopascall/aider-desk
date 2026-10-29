@@ -1,59 +1,62 @@
-# AiderDesk (Inigo's fork)
+# AiderDesk: the Inigo Fork
 
-This is a personal fork of [AiderDesk](https://github.com/hotovo/aider-desk), the desktop and browser app for working with AI coding agents. It tracks upstream releases and adds the features below. For everything else, including installation and general use, see the [upstream project](https://github.com/hotovo/aider-desk) and its [documentation](https://aiderdesk.hotovo.com/docs).
+This is a fork of [AiderDesk](https://github.com/hotovo/aider-desk), the desktop and browser app for working with AI coding agents. It keeps up with upstream releases and adds tools for people who run long, serious sessions with agents: finding your way around big conversations, seeing exactly what the model is being sent, and handing whole jobs to a team of agents.
 
-## What this fork adds
+For installation and everything else AiderDesk does, see the [upstream project](https://github.com/hotovo/aider-desk) and its [documentation](https://aiderdesk.hotovo.com/docs).
 
-### Workflows
+## Find your way around long conversations
 
-A workflow hands a coding request to a team of specialist agents instead of one. You pick a workflow from the selector in the task bar, type your request, and the agents take it from there:
+**Topic map.** As a conversation grows, AiderDesk sorts it into topics, splits each finished topic into short titled sections, and keeps a plain-language summary of the whole task at the top. Open the map from the task bar to see the shape of a long session at a glance, then jump straight to any message.
 
-1. One agent decides whether there is enough information to start, and sends others to look through the code or search the web until there is.
-2. A planner writes an implementation plan.
-3. A decompositor splits the plan into one job per file.
-4. Editor agents carry out those jobs, several at once where the files don't depend on each other.
-5. A confirmer checks the result against the plan and writes a report.
+**Tasks that name themselves.** A task's title keeps up with what the conversation is about now, not what you typed first. Rename a task yourself and it stays renamed. Want a fresh title? One click.
 
-Two workflows are included:
+**Search everything.** One search box covers every conversation in every project, open or not. It matches your exact words, and can also find related wording using a small model that runs on your own machine.
 
-- **Dev Pipeline**: the steps above.
-- **Dev Pipeline + Review**: the same, plus optional reviewers and an arbiter who can send edits back for correction, up to four rounds.
+**Quick switcher.** A keystroke brings up your recent tasks with their latest topics, their last message and what any running task is doing right now. Sub-tasks show their parent, so you always know where you are.
 
-Each project turns workflows on or off under **Settings → Workflows**. There you can also give each agent role a main model and a fallback model, set a command to run after edits (tests or a linter, say), and limit how many editors run at once. Every batch of edits is committed to git, so each step can be inspected or undone.
+**Task keys.** Every task gets a short number, like `ADD-048`, so you can refer to it in a note, a commit or another conversation.
 
-> **Workflows need agent profiles that are not included.** Each role runs as an agent profile stored in `~/.aider-desk/workflow-agents/`, and the profile's name must match the role: `DIGESTER`, `INVESTIGATOR`, `RESEARCHER`, `GRAND-PLANNER`, `DECOMPOSITOR`, `EDITOR` and `CONFIRMER`, plus `REVIEWER-1`, `REVIEWER-2` and `ARBITER` for the review workflow. Each needs subagents enabled. Without them, a workflow stops at its first step with a message naming the missing agent.
+**Bookmarks.** Bookmark any message. A slim map down the side of the conversation shows your bookmarks and takes you from one to the next.
 
-### A bigger prompt editor
+## See what the model is actually being sent
 
-The prompt box opens into a full-size editor for long prompts. It shows your markdown formatted as you type, or switches to plain text. It can stretch to the full window width, and Ctrl + mouse wheel changes the text size.
+**Context usage bar.** A coloured bar shows what is filling the model's context window: the system prompt, rules, tool definitions, repository maps, files and the conversation itself. Hover over any part to see what it is and how big it is; click a piece of the conversation to jump to it. A marker shows where automatic compaction will kick in.
 
-### Agent prompts as markdown files
+**Context Files pane.** Everything the agent will receive (rules, repository maps and files) is listed in one place, in the order the model receives it, each with a bar showing its size. Untick anything to hold it back without removing it, and see at a glance what isn't being sent, and why.
 
-An agent profile's system prompt, custom instructions and subagent description are kept as separate markdown files next to its settings, not inside them. They can be edited in the app or in any text editor, and they are easy to keep under version control.
+**Topic sizes.** The topic map shows how much of the context each topic takes up, worked out locally at no cost.
 
-### Repository mappings
+**Reasoning and temperature, in plain sight.** Both sit right next to the model picker and show the value actually being used and where it comes from, for example `Medium · agent profile`. Change either one for just this task.
 
-A project can generate reference files into `.aider-desk/mappings/`, for example a map of the codebase or a list of database models. The script that produces them is `.aider-desk/mappings.sh` in the project. When an agent profile has **Include repository mappings** turned on, those files are given to the agent as read-only background.
+## Keep conversations lean without losing anything
 
-### Switching context files off without removing them
+**Compact a topic.** Squeeze any finished topic, or one section of it, into a short recap, at a level of detail you choose, from a couple of sentences to a detailed digest. The original messages are kept, stay searchable, and come back with one click.
 
-Each file in a task's context has a checkbox. Unticking it hides the file from the agent but keeps it in the list, so it can be switched back on later.
+**`/hone`.** Turn a long design discussion into a short document of what was actually decided, leaving out the back-and-forth and the ideas that were dropped. `/hone 5` keeps the last five messages untouched.
 
-### Bookmarks and thread outline
+## Give agents the background they need
 
-Any message can be bookmarked. A thread outline lists the conversation's prompts and bookmarks, and clicking an entry jumps to that message.
+**Repository mappings.** AiderDesk writes reference files about your project, keeps them up to date as the code changes, and gives them to the agent as background:
 
-### `/hone`
+- a **codebase outline**: every source folder with its files, each folder described in a line;
+- for **Laravel** projects, the database schema, models and routes, read from the running app, even when it runs on another machine.
 
-Type `/hone` to turn a long design discussion into a short document of what was actually decided, leaving out the back-and-forth and the ideas that were dropped. `/hone 5` keeps the last five messages untouched.
+A size budget stops them crowding out everything else.
 
-### Sub-subtasks
+## Hand a whole job to a team of agents
 
-With **Settings → Tasks → Allow Sub-Subtasks**, a subtask can have subtasks of its own, giving three levels.
+**Workflows.** Pick a workflow, type your request, and a team of specialist agents takes it from there. One gathers evidence from the code and the web, a planner writes the plan, the plan is split into one job per file, editor agents carry those jobs out side by side, and a final agent checks the result against the plan and reports back. **Dev Pipeline + Review** adds reviewers and an arbiter who can send work back for correction.
 
-### Quieter interface
+Every batch of edits is committed to git, so each step can be inspected or undone. For each role you choose a main and a fallback model, and you can set a check to run after every batch of edits (tests or a type check, say), a final command, and how many editors run at once.
 
-**Disable CSS animations** (in the message display settings) turns off the interface's animations and spinners. A small blinking dot shows which tasks are still working. This helps on slow machines and over remote connections.
+> Workflows need agent profiles that are not included: one per role, stored in `~/.aider-desk/workflow-agents/` and named after the role. The workflow's settings window lists the roles.
+
+## Nicer to work in
+
+- **A proper prompt editor.** Markdown is formatted as you type, Obsidian-style. Drag it taller, cycle through sizes, or expand it to fill the window for long prompts.
+- **Agent prompts as markdown files.** Each agent profile's prompts live in their own markdown files, editable in the app or in any text editor, and easy to keep under version control.
+- **Sub-subtasks.** Let subtasks have subtasks of their own, for three levels of nesting.
+- **A calmer interface.** Animations are off by default, and a small blinking dot shows which tasks are still working. Easier on slow machines and remote connections.
 
 ## Building from source
 
