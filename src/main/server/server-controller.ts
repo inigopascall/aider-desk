@@ -32,6 +32,7 @@ import { TaskNavigationApi } from '@/task-navigation/task-navigation-api';
 import { isDev, isElectron } from '@/app';
 import { PythonDependenciesInstaller } from '@/python-dependencies-installer';
 import { createCorsOriginValidator } from '@/server/cors';
+import { createStaticGzipMiddleware } from '@/server/static-compression';
 
 const REQUEST_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -200,6 +201,7 @@ export class ServerController {
           : path.join(__dirname, process.env.AIDER_DESK_RENDERER_DIR)
         : path.join(__dirname, '../renderer');
 
+      this.app.use(createStaticGzipMiddleware(rendererDir));
       this.app.use(express.static(rendererDir));
       // Handle SPA routing: serve index.html for non-API routes
       this.app.get('*', (req, res) => {
