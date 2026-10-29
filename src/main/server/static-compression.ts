@@ -24,7 +24,7 @@ interface CompressedAsset {
   body: Promise<Buffer>;
 }
 
-const acceptsGzip = (req: Request): boolean => {
+export const acceptsGzip = (req: Request): boolean => {
   const header = req.headers['accept-encoding'];
   if (!header) {
     return false;

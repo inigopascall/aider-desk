@@ -33,6 +33,7 @@ import { isDev, isElectron } from '@/app';
 import { PythonDependenciesInstaller } from '@/python-dependencies-installer';
 import { createCorsOriginValidator } from '@/server/cors';
 import { createStaticGzipMiddleware } from '@/server/static-compression';
+import { createJsonGzipMiddleware } from '@/server/json-compression';
 
 const REQUEST_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -187,6 +188,9 @@ export class ServerController {
 
     // Add Basic Auth
     this.app.use(this.basicAuthMiddleware.bind(this));
+
+    // Compress large JSON replies for clients that accept gzip
+    this.app.use('/api', createJsonGzipMiddleware());
 
     this.setupApiRoutes();
 
