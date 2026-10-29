@@ -34,6 +34,7 @@ import { Store } from '@/store';
 import { createCorsOriginValidator } from '@/server/cors';
 import { READONLY_MODE } from '@/constants';
 import { CONNECTOR_TOKEN } from '@/connector/connector-auth';
+import { PER_MESSAGE_DEFLATE } from '@/connector/socket-compression';
 
 export const READONLY_EVENT_TYPES = [
   'task-created',
@@ -83,6 +84,7 @@ export class ConnectorManager {
       },
       pingTimeout: 600_000, // 10 minutes
       maxHttpBufferSize: 1e8, // Increase payload size to 100 MB
+      perMessageDeflate: PER_MESSAGE_DEFLATE,
     });
 
     this.io.use((socket, next) => {
